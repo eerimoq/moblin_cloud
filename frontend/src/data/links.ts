@@ -42,6 +42,7 @@ export const navItems = [
 export const pages = {
   chatBot: "/chat-bot/",
   docs: "/docs/",
+  cards: "/cards/",
 } as const;
 
 export const platforms = [

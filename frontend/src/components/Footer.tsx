@@ -6,6 +6,7 @@ import Mascot from "./Mascot";
 const footerLinks: { label: string; href: string; icon?: IconName }[] = [
   { label: "Docs", href: asset(pages.docs) },
   { label: "Chat bot", href: asset(pages.chatBot) },
+  { label: "Trading cards", href: asset(pages.cards) },
   { label: "GitHub", href: links.github, icon: "github" },
   { label: "Discord", href: links.discord, icon: "discord" },
   { label: "Privacy policy", href: links.privacyPolicy },
