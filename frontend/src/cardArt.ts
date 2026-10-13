@@ -518,9 +518,8 @@ export const cardArt = {
     return svgH(
       `<rect width="260" height="150" fill="#1c0f33"/>
       ${face(50, 84, 30, { eyes: "open", look: [0, 4], mouth: "open" })}
-      <path d="M 22 46 q 28 -14 56 0 M 26 42 q 24 -12 48 0" fill="none" stroke="#c9b8ff" stroke-width="2" stroke-linecap="round" opacity=".8"/>
-      ${txt(50, 134, "you nod", { fs: 8, fill: "#c9b8ff" })}
-      <path d="M 90 84 h 22" stroke="#c9b8ff" stroke-width="2" marker-end="url(#arr2)"/>
+      ${txt(50, 134, "You", { fs: 8, fill: "#c9b8ff" })}
+      <path d="M 96 84 h 30" stroke="#c9b8ff" stroke-width="2" marker-end="url(#arr2)"/>
       <image href="${asset("cards/alicia.webp")}" x="120" y="9" width="132" height="150"/>
       <g transform="translate(120 9) scale(${132 / 422})"><path d="M 200 315 Q 211.5 311 223 315 Q 220 323 211.5 324 Q 203 323 200 315 Z" fill="#7a2a2e" stroke="#5a2024" stroke-width="1.2"/><ellipse cx="211.5" cy="321" rx="5" ry="2" fill="#e57a80"/></g>
       ${star(131, 31, 5.5)}${star(241, 15, 3)}${star(248, 71, 4.5)}${star(116, 98, 3.5)}${star(124, 128, 2.5)}${star(237, 112, 3)}`,
@@ -571,15 +570,17 @@ export const cardArt = {
       <path d="M 196 100 l -5 -4 M 198 112 l -7 1 M 246 98 l 5 -4" stroke="#34c759" stroke-width="2" stroke-linecap="round"/>`);
   },
   textwidget() {
-    const tag = (x: number, y: number, t: string, bg: string, fg = "#fff", w?: number) =>
-      pill(x, y, t, bg, fg, 10, w);
-    return svgH(`<rect width="260" height="150" fill="#e7ecef"/>
-      ${face(76, 84, 46, { eyes: "open", look: [3, -2], mouth: "open" })}
-      ${tag(178, 30, "12:34:56", "#1c1c1e", "#fff", 72)}
-      ${tag(200, 58, "42 km/h", "#2f7cf6", "#fff", 66)}
-      ${tag(168, 86, "♥ 128", "#ff3b30", "#fff", 52)}
-      ${tag(214, 114, "3.9 km", "#0d7a30", "#fff", 56)}
-      <g transform="translate(150 128)"><rect x="-26" y="-9" width="52" height="18" rx="9" fill="#999"/>${txt(0, 4, "oops", { fs: 10, fill: "#fff" })}<path d="M -22 0 h 44" stroke="#ff3b30" stroke-width="3"/><circle r="18" fill="none" stroke="#ff3b30" stroke-width="3"/><path d="M -13 -13 L 13 13" stroke="#ff3b30" stroke-width="3"/></g>`);
+    const row = (y: number, v: string, t: string, bg: string, w: number) =>
+      `<rect x="78" y="${y - 9}" width="72" height="18" rx="9" fill="#cfd6dc"/>${txt(114, y + 3.5, v, { fs: 9, fill: "#1c1c1e", font: MONO, w: 600 })}<path d="M 156 ${y} h 10" stroke="#6a737a" stroke-width="2" marker-end="url(#twarr)"/>${pill(214, y, t, bg, "#fff", 10, w)}`;
+    return svgH(
+      `<rect width="260" height="150" fill="#e7ecef"/>
+      ${face(44, 84, 28, { eyes: "open", look: [3, -2], mouth: "open" })}
+      ${row(30, "{time}", "12:34:56", "#1c1c1e", 72)}
+      ${row(58, "{speed}", "42 km/h", "#2f7cf6", 66)}
+      ${row(86, "{heartRate}", "♥ 128", "#ff3b30", 52)}
+      ${row(114, "{distance}", "3.9 km", "#0d7a30", 56)}`,
+      `<marker id="twarr" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto"><path d="M 0 0 L 4 2 L 0 4 z" fill="#6a737a"/></marker>`,
+    );
   },
   macros() {
     let small = "";
