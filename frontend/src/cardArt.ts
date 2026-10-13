@@ -570,17 +570,14 @@ export const cardArt = {
       <path d="M 196 100 l -5 -4 M 198 112 l -7 1 M 246 98 l 5 -4" stroke="#34c759" stroke-width="2" stroke-linecap="round"/>`);
   },
   textwidget() {
-    const row = (y: number, v: string, t: string, bg: string, w: number) =>
-      `<rect x="78" y="${y - 9}" width="72" height="18" rx="9" fill="#cfd6dc"/>${txt(114, y + 3.5, v, { fs: 9, fill: "#1c1c1e", font: MONO, w: 600 })}<path d="M 156 ${y} h 10" stroke="#6a737a" stroke-width="2" marker-end="url(#twarr)"/>${pill(214, y, t, bg, "#fff", 10, w)}`;
-    return svgH(
-      `<rect width="260" height="150" fill="#e7ecef"/>
-      ${face(44, 84, 28, { eyes: "open", look: [3, -2], mouth: "open" })}
-      ${row(30, "{time}", "12:34:56", "#1c1c1e", 72)}
-      ${row(58, "{speed}", "42 km/h", "#2f7cf6", 66)}
-      ${row(86, "{heartRate}", "♥ 128", "#ff3b30", 52)}
-      ${row(114, "{distance}", "3.9 km", "#0d7a30", 56)}`,
-      `<marker id="twarr" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto"><path d="M 0 0 L 4 2 L 0 4 z" fill="#6a737a"/></marker>`,
-    );
+    const row = (y: number, v: string, t: string, bg: string) =>
+      `<rect x="14" y="${y - 9}" width="118" height="18" rx="9" fill="#cfd6dc"/>${txt(73, y + 3.5, v, { fs: 9, fill: "#1c1c1e", font: MONO, w: 600 })}${pill(196, y, t, bg, "#fff", 9.5, 92)}`;
+    return svgH(`<rect width="260" height="150" fill="#e7ecef"/>
+      ${txt(73, 16, "YOU TYPE", { fs: 7, fill: "#6a737a", ls: 1 })}${txt(196, 16, "ON STREAM", { fs: 7, fill: "#6a737a", ls: 1 })}
+      ${row(34, "{time}", "12:34:56", "#1c1c1e")}
+      ${row(66, "Ran {distance}", "Ran 3.9 km", "#0d7a30")}
+      ${row(98, "{speed} ♥ {heartRate}", "42 km/h ♥ 128", "#7b3fe4")}
+      ${face(60, 152, 30, { eyes: "open", look: [2, -4], mouth: "open" })}`);
   },
   macros() {
     let small = "";
