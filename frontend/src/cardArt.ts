@@ -742,9 +742,9 @@ function backPhoneOnGreen(font: string, weight: number): string {
     <ellipse cx="140" cy="318" rx="60" ry="8" fill="#000" opacity="0.35"/>
     <rect x="86" y="92" width="108" height="222" rx="18" fill="url(#green-phone)" stroke="#8a8d93" stroke-opacity="0.7" stroke-width="1.5"/>
     <rect x="90" y="96" width="100" height="214" rx="15" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1"/>
-    <rect x="94" y="100" width="46" height="46" rx="11" fill="#34363b" stroke="#55585e" stroke-width="1"/>
-    ${lens(107, 112)}${lens(107, 134)}${lens(128, 123)}
-    <circle cx="130" cy="108" r="2.5" fill="#f3e6c2"/>
+    <rect x="92" y="99" width="96" height="54" rx="15" fill="#34363b" stroke="#55585e" stroke-width="1"/>
+    ${lens(108, 114)}${lens(108, 138)}${lens(130, 126)}
+    <circle cx="174" cy="112" r="4" fill="#f3e6c2" stroke="#8a8d93" stroke-width=".8"/><circle cx="174" cy="140" r="3.5" fill="#15161a" stroke="#55585e" stroke-width=".8"/><circle cx="158" cy="126" r="1.6" fill="#15161a"/>
     ${face(140, 208, 24, { eyes: "open", look: [-1, 1] })}
     ${txt(140, 256, "Moblin", { font, fs: 13, w: weight, fill: "#f2f0e8" })}
     ${txt(140, 346, "IRL STREAMING", { font, fs: 13, w: weight, fill: "#f3e9c6" })}
@@ -753,5 +753,5 @@ function backPhoneOnGreen(font: string, weight: number): string {
 }
 
 export function cardBack(): string {
-  return backPhoneOnGreen(DISPLAY, 600);
+  return backPhoneOnGreen("Marcellus, Georgia, serif", 400);
 }
