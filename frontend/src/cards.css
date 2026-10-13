@@ -373,12 +373,12 @@
 }
 
 .tcard-dash {
-  animation: tcard-dash 2.2s linear infinite;
+  animation: tcard-dash calc(var(--dash) * 0.055s) linear infinite;
 }
 
 @keyframes tcard-dash {
   to {
-    stroke-dashoffset: -40;
+    stroke-dashoffset: calc(var(--dash) * -1px);
   }
 }
 

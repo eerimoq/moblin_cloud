@@ -244,7 +244,7 @@ export const cardArt = {
   },
   ingests() {
     const cable = (y: number, c: string, t: string, ex: number, end = 150) =>
-      `<path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="${c}" stroke-width="7" stroke-linecap="round"/><path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6 10" class="tcard-dash" opacity=".7"/>${pill(34, y, t, c, "#fff", 8, 42)}`;
+      `<path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="${c}" stroke-width="7" stroke-linecap="round"/><path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6 10" class="tcard-dash" style="--dash: 16" opacity=".7"/>${pill(34, y, t, c, "#fff", 8, 42)}`;
     return svgH(`<rect width="260" height="150" fill="#f1efe4"/>
       ${face(168, 78, 64, { mouth: "big", eyes: "open", look: [-3, 2] })}
       ${cable(28, "#d2333c", "RTMP", -6)}${cable(70, "#e8891d", "SRT", 2)}${cable(112, "#2f7cf6", "RIST", 10, 155)}
@@ -324,7 +324,7 @@ export const cardArt = {
       <ellipse cx="130" cy="82" rx="22" ry="56" fill="none" stroke="#8fb6ea" opacity=".6"/><ellipse cx="130" cy="82" rx="42" ry="56" fill="none" stroke="#8fb6ea" opacity=".4"/>
       <path d="M 74 82 h 112 M 80 58 h 100 M 80 106 h 100" stroke="#8fb6ea" opacity=".5"/>
       <path d="M 100 70 q 10 -14 22 -6 q 12 -6 18 8 q -8 16 -24 10 z M 120 110 q 14 -8 26 4 q -6 12 -24 6 z" fill="#2e8b57" opacity=".9"/>
-      <path d="M 56 110 Q 130 10 206 110" fill="none" stroke="#ffd166" stroke-width="2.5" stroke-dasharray="6 8" class="tcard-dash"/>
+      <path d="M 56 110 Q 130 10 206 110" fill="none" stroke="#ffd166" stroke-width="2.5" stroke-dasharray="6 8" class="tcard-dash" style="--dash: 14"/>
       ${face(218, 112, 26, { extra: queen })}
       ${face(42, 112, 26, { extra: `<path d="M -53.6 -8 A 54 54 0 0 1 53.6 -8" fill="none" stroke="#9b6dff" stroke-width="6" stroke-linecap="round"/><rect x="-59" y="-16" width="13" height="26" rx="6" fill="#9b6dff" stroke="#4b2a99" stroke-width="1.2"/><rect x="46" y="-16" width="13" height="26" rx="6" fill="#9b6dff" stroke="#4b2a99" stroke-width="1.2"/><path d="M 50 8 q 0 16 -8 18" fill="none" stroke="#9b6dff" stroke-width="3.5" stroke-linecap="round"/><circle cx="40" cy="26" r="4.5" fill="#4b2a99"/>${heart}` })}
       <rect x="72" y="124" width="40" height="18" rx="9" fill="#ff3b30" stroke="#7a0f0f"/>${txt(92, 136, "ZOOM", { fs: 8 })}
@@ -390,7 +390,7 @@ export const cardArt = {
       </g>
       <path d="M 116 134 Q 132 140 138 156" fill="none" stroke="#008000" stroke-width="4" stroke-linecap="round"/>
       </g>
-      <path d="M 106 74 C 150 52 196 70 210 110" fill="none" stroke="#2f7cf6" stroke-width="3" stroke-dasharray="6 6" class="tcard-dash"/>
+      <path d="M 106 74 C 150 52 196 70 210 110" fill="none" stroke="#2f7cf6" stroke-width="3" stroke-dasharray="6 6" class="tcard-dash" style="--dash: 12"/>
       ${pill(160, 58, "RTMP", "#2f7cf6", "#fff", 9, 46)}
       <rect x="176" y="112" width="86" height="150" rx="14" fill="#1c1c1e" stroke="#000"/>
       <rect x="181" y="118" width="76" height="138" rx="10" fill="url(#lock)"/>
@@ -425,7 +425,7 @@ export const cardArt = {
       `<rect width="260" height="150" fill="#e9e5f6"/>
       <g transform="rotate(-7 100 76)"><rect x="40" y="18" width="118" height="128" rx="3" fill="#fff" stroke="#bbb"/><rect x="48" y="26" width="102" height="92" fill="#dfe8d8"/>${face(99, 74, 38, { eyes: "open", look: [0, -3], mouth: "o" })}${txt(99, 136, "perfect?", { fs: 9, fill: "#555", w: 400 })}</g>
       <g transform="translate(148 22)">${[0, 45, 90, 135, 180, 225, 270, 315].map(ray).join("")}<circle r="6" fill="#fff"/></g>
-      <path d="M 164 83 L 186 83" fill="none" stroke="#5865f2" stroke-width="3" stroke-dasharray="6 6" class="tcard-dash" marker-end="url(#arr)"/>
+      <path d="M 164 83 L 186 83" fill="none" stroke="#5865f2" stroke-width="3" stroke-dasharray="6 6" class="tcard-dash" style="--dash: 12" marker-end="url(#arr)"/>
       <rect x="200" y="60" width="46" height="46" rx="12" fill="#5865f2"/>
       <g transform="translate(223 83) scale(1.45) translate(-12 -12.4)"><path d="M4 6.5c2-1 4-1.5 4-1.5l.6 1.3a12 12 0 0 1 6.8 0L16 5s2 .5 4 1.5c1.5 4 2 8 1.5 11-1.6 1.3-4 2.2-4 2.2l-.9-1.6c-2.8 1.2-6.4 1.2-9.2 0L6.5 19.7s-2.4-.9-4-2.2C2 14.5 2.5 10.5 4 6.5Z" fill="#fff"/><ellipse cx="9" cy="12.5" rx="1.7" ry="1.9" fill="#5865f2"/><ellipse cx="15" cy="12.5" rx="1.7" ry="1.9" fill="#5865f2"/></g>
       ${txt(223, 120, "Discord", { fs: 9, fill: "#4b2f8a" })}`,
@@ -521,7 +521,7 @@ export const cardArt = {
   moblink() {
     const antenna = `<path transform="translate(-104.847 -157.801)" d="m 65.533703,191.87947 a 1.6070492,1.6070492 0 0 1 -2.408228,2.12858 c -3.806446,-4.30323 -5.750793,-8.87293 -5.675125,-13.51832 0.07896,-4.52365 2.069364,-9.03085 6.122557,-13.33407 a 1.6120649,1.6120649 0 0 1 2.345718,2.20753 c -3.480744,3.69459 -5.178347,7.48459 -5.250725,11.17919 -0.0658,3.81303 1.605485,7.64908 4.865803,11.33709 z m 13.597275,-7.79384 v 21.50296 a 1.4936277,1.4936277 0 0 1 -2.987255,0 v -21.50296 a 3.7899975,3.7899975 0 1 1 2.987255,0 z m 7.155594,4.66182 a 1.6090156,1.6090156 0 0 1 -2.497055,-2.02988 c 1.608774,-1.97396 2.444416,-4.06964 2.450995,-6.1423 0.0066,-2.07265 -0.779712,-4.09596 -2.408227,-6.09294 a 1.6090169,1.6090169 0 1 1 2.497056,-2.02989 c 2.115424,2.59247 3.132005,5.35271 3.125427,8.12283 0,2.83264 -1.092251,5.61263 -3.168196,8.17218 z m -14.801388,-2.02988 a 1.6090161,1.6090161 0 0 1 -2.497056,2.02988 c -2.075944,-2.55955 -3.158331,-5.33954 -3.168201,-8.17218 0,-2.77012 1.010009,-5.53036 3.128722,-8.12283 a 1.608775,1.608775 0 1 1 2.493766,2.02989 c -1.644965,1.99698 -2.411518,4.06635 -2.408228,6.09294 0.0032,2.0266 0.845512,4.16834 2.450997,6.1423 z m 20.664039,7.29048 a 1.6070492,1.6070492 0 0 1 -2.408228,-2.12858 c 3.263613,-3.68801 4.934893,-7.52406 4.865807,-11.33709 -0.06255,-3.71104 -1.769983,-7.4846 -5.263893,-11.18576 a 1.6120649,1.6120649 0 1 1 2.34572,-2.20754 c 4.053195,4.30323 6.043598,8.81043 6.119261,13.33408 0.07896,4.64538 -1.865375,9.21179 -5.671823,13.51831 z" fill="#000" stroke="#fff" stroke-width="0.93"/>`;
     const link = (x1: number, y1: number, x2: number, y2: number) =>
-      `<path d="M ${x1} ${y1} Q ${(x1 + x2) / 2} ${Math.min(y1, y2) - 26} ${x2} ${y2}" fill="none" stroke="#2f7cf6" stroke-width="2.5" stroke-dasharray="5 6" class="tcard-dash"/>`;
+      `<path d="M ${x1} ${y1} Q ${(x1 + x2) / 2} ${Math.min(y1, y2) - 26} ${x2} ${y2}" fill="none" stroke="#2f7cf6" stroke-width="2.5" stroke-dasharray="5 6" class="tcard-dash" style="--dash: 11"/>`;
     return svgH(`<rect width="260" height="150" fill="#eef3fb"/>
       ${link(104, 56, 50, 56)}${link(156, 56, 210, 56)}
       <image href="${asset("screenshots/moblin-800.webp")}" x="74" y="53" width="112" height="${(112 * 389) / 800}"/>
@@ -614,7 +614,7 @@ export const cardArt = {
     const arcs = [16, 30, 44]
       .map(
         (r) =>
-          `<path d="M ${140 - r} ${236} a ${r} ${r} 0 0 1 ${2 * r} 0" fill="none" stroke="#ff2d3a" stroke-width="3" stroke-linecap="round" stroke-dasharray="6 5" class="tcard-dash"/>`,
+          `<path d="M ${140 - r} ${236} a ${r} ${r} 0 0 1 ${2 * r} 0" fill="none" stroke="#ff2d3a" stroke-width="3" stroke-linecap="round" stroke-dasharray="6 5" class="tcard-dash" style="--dash: 11"/>`,
       )
       .join("");
     return svgF(
