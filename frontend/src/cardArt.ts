@@ -450,19 +450,35 @@ export const cardArt = {
     );
   },
   mobcam() {
-    return svgH(`<rect width="260" height="150" fill="#f1efe4"/>
-      <path d="M 54 137 C 54 150 96 150 96 126 S 98 113 104 113" fill="none" stroke="#000" stroke-width="5.5" stroke-linecap="round"/><path d="M 54 137 C 54 150 96 150 96 126 S 98 113 104 113" fill="none" stroke="#1a8a1a" stroke-width="3.5" stroke-linecap="round"/><rect x="100" y="109.5" width="10" height="7" rx="1.5" fill="#1a8a1a" stroke="#000"/>
-      ${phone(18, 14, 72, 124, `<rect x="22" y="20" width="64" height="112" rx="5" fill="#dfe8d8"/>${face(54, 80, 24, { extra: KING })}`)}
+    const cable = "M 58.5 129 C 58.5 148 80 152 90 140 C 97 136 92 114 107 114";
+    return svgH(
+      `<rect width="260" height="150" fill="#f1efe4"/>
+      <path d="${cable}" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/><path d="${cable}" fill="none" stroke="#1a8a1a" stroke-width="2.4" stroke-linecap="round"/><rect x="104" y="111.5" width="9" height="5" rx="1.2" fill="#1a8a1a" stroke="#000"/>
+      ${phone(31, 16, 55, 114, `<clipPath id="mcphone"><rect x="33.5" y="18.5" width="50" height="109" rx="5.5"/></clipPath><image href="${asset("cards/mobcam-phone.webp")}" x="33.5" y="18.5" width="50" height="109" preserveAspectRatio="xMidYMid slice" clip-path="url(#mcphone)"/>`)}
+      <g transform="translate(-2 0)">
       <rect x="116" y="22" width="132" height="86" rx="5" fill="#2c2c2e" stroke="#000"/>
-      <path d="M 108 108 h 144 l -6 10 h -132 z" fill="#bdbdc2" stroke="#666"/>
-      <rect x="121" y="27" width="122" height="76" fill="#1f1f23"/>
-      <rect x="125" y="31" width="114" height="50" fill="#dfe8d8"/>
-      ${face(182, 60, 18, { extra: KING })}
-      <rect x="125" y="85" width="55" height="15" rx="2" fill="#2b2b30"/><rect x="184" y="85" width="55" height="15" rx="2" fill="#2b2b30"/>
-      ${txt(128, 91, "Scenes", { fs: 5, fill: "#bbb", anchor: "start" })}${txt(187, 91, "Sources", { fs: 5, fill: "#bbb", anchor: "start" })}
-      <rect x="186" y="93" width="51" height="6" rx="1" fill="#3a5a9c"/>${txt(189, 98, "Mobcam", { fs: 4.5, fill: "#fff", anchor: "start", w: 600 })}
-      <rect x="127" y="93" width="51" height="6" rx="1" fill="#3a3a40"/>${txt(130, 98, "IRL", { fs: 4.5, fill: "#ddd", anchor: "start", w: 600 })}
-      ${pill(182, 12, "OBS", "#2c2c2e", "#fff", 8, 32)}`);
+      <path d="M 116 108 h 132 l 3 11 h -138 z" fill="#bdbdc2" stroke="#666"/><path d="M 113 119 h 138 v 3 h -138 z" fill="#9a9aa0" stroke="#666"/><path d="M 130 109.8 h 104 l 1.2 3.8 h -106.4 z" fill="#3a3a40"/><path d="M 156 114.8 h 52 l 1 3.2 h -54 z" fill="#aeaeb4" stroke="#7a7a80" stroke-width="0.6"/>
+      <rect x="117.5" y="23.5" width="129" height="83" rx="3.5" fill="#1f1f23"/>
+      <rect x="162" y="25" width="83" height="80" fill="#000"/><image href="${asset("cards/mobcam-obs.webp")}" x="162" y="25" width="83" height="80" preserveAspectRatio="xMidYMid meet"/>
+      <rect x="119" y="25" width="41" height="25" rx="2" fill="#2b2b30"/><rect x="119" y="51.5" width="41" height="25" rx="2" fill="#2b2b30"/><rect x="119" y="78" width="41" height="27" rx="2" fill="#2b2b30"/>
+      ${txt(122, 31.5, "Scenes", { fs: 5, fill: "#bbb", anchor: "start" })}${txt(122, 58, "Sources", { fs: 5, fill: "#bbb", anchor: "start" })}${txt(122, 84.5, "Audio Mixer", { fs: 5, fill: "#bbb", anchor: "start" })}
+      <rect x="121" y="34.5" width="37" height="7" rx="1" fill="#3a3a40"/>${txt(124, 39.7, "IRL", { fs: 4.5, fill: "#ddd", anchor: "start", w: 600 })}
+      <rect x="121" y="61" width="37" height="7" rx="1" fill="#3a5a9c"/>${txt(124, 66.2, "Mobcam", { fs: 4.5, fill: "#fff", anchor: "start", w: 600 })}
+      ${[
+        [124, 28],
+        [127.5, 34],
+        [146, 48],
+        [149.5, 54],
+      ]
+        .map(
+          ([x, top]) =>
+            `<rect x="${x}" y="87" width="2.5" height="12" fill="#3a3a40"/><rect x="${x}" y="87" width="2.5" height="12" fill="url(#mcvu)" clip-path="inset(${top}% 0 0 0)"/>`,
+        )
+        .join("")}
+      ${txt(127, 103.5, "Mobcam", { fs: 3.5, fill: "#aaa", w: 600 })}${txt(149, 103.5, "Mic/Aux", { fs: 3.5, fill: "#aaa", w: 600 })}
+      ${pill(182, 12, "OBS", "#2c2c2e", "#fff", 8, 32)}</g>`,
+      `<linearGradient id="mcvu" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#4caf50"/><stop offset=".6" stop-color="#4caf50"/><stop offset=".8" stop-color="#ffd54f"/><stop offset="1" stop-color="#e53935"/></linearGradient>`,
+    );
   },
   snapshot() {
     const ray = (a: number) =>
