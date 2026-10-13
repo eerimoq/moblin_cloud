@@ -157,8 +157,6 @@ const svgH = (inner: string, defs = "") =>
   `<svg viewBox="0 0 260 150" preserveAspectRatio="xMidYMid slice" role="img">${defs}${inner}</svg>`;
 const svgF = (inner: string, defs = "") =>
   `<svg viewBox="0 0 280 392" preserveAspectRatio="xMidYMid slice" role="img">${defs}${inner}</svg>`;
-const GLOW =
-  '<filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
 
 export const cardArt = {
   community() {
@@ -247,7 +245,7 @@ export const cardArt = {
       `<path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="${c}" stroke-width="7" stroke-linecap="round"/><path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6 10" class="tcard-dash" style="--dash: 16" opacity=".7"/>${pill(34, y, t, c, "#fff", 8, 42)}`;
     return svgH(`<rect width="260" height="150" fill="#f1efe4"/>
       ${face(168, 78, 64, { mouth: "big", eyes: "open", look: [-3, 2] })}
-      ${cable(28, "#d2333c", "RTMP", -6)}${cable(70, "#e8891d", "SRT", 2)}${cable(112, "#2f7cf6", "RIST", 10, 155)}
+      ${cable(24, "#d2333c", "RTMP", -8)}${cable(54, "#e8891d", "SRT", -2)}${cable(84, "#2f7cf6", "RIST", 4)}${cable(114, "#8e44ad", "WHIP", 10, 155)}
       <g transform="translate(150 136)"><rect x="-16" y="-10" width="32" height="20" rx="3" fill="#333" stroke="#000"/><circle cx="0" cy="0" r="6" fill="#111" stroke="#888"/><circle cx="0" cy="0" r="2.5" fill="#2f7cf6"/><rect x="-10" y="-14" width="10" height="5" fill="#333"/></g>
       ${txt(248, 17, "ALWAYS", { fs: 9, fill: "#6a6a60", anchor: "end" })}${txt(248, 28, "HUNGRY", { fs: 9, fill: "#6a6a60", anchor: "end" })}`);
   },
@@ -331,16 +329,64 @@ export const cardArt = {
       ${txt(42, 146, "assistant", { fs: 8, fill: "#8fb6ea" })}${txt(218, 146, "streamer", { fs: 8, fill: "#8fb6ea" })}`);
   },
   website() {
-    const bolt = (x: number, y: number, r: number) =>
-      `<path d="M 0 0 l -8 18 h 7 l -5 16 l 14 -22 h -7 l 5 -12 z" transform="translate(${x} ${y}) rotate(${r})" fill="#ffd60a" stroke="#b58900"/>`;
+    const marks: Record<string, [string, string, string]> = {
+      twitch: [
+        "#9146ff",
+        "#fff",
+        "M11.571 4.714h1.715v5.143H11.571zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z",
+      ],
+      youtube: [
+        "#ff0033",
+        "#fff",
+        "M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z",
+      ],
+      kick: [
+        "#000",
+        "#00e701",
+        "M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z",
+      ],
+    };
+    const code = (x: number, y: number) =>
+      `<image href="${asset("cards/eerimoq.webp")}" x="${x}" y="${y}" width="60" height="34" preserveAspectRatio="xMidYMid slice"/>`;
+    const night = (x: number, y: number) =>
+      `<rect x="${x}" y="${y}" width="60" height="34" fill="#0d1230"/><circle cx="${x + 50}" cy="${y + 8}" r="4" fill="#fff6c2"/><rect x="${x + 4}" y="${y + 14}" width="12" height="20" fill="#1a2047"/><rect x="${x + 20}" y="${y + 6}" width="14" height="28" fill="#161b3e"/><rect x="${x + 38}" y="${y + 18}" width="10" height="16" fill="#1a2047"/><g fill="#ffd866"><rect x="${x + 7}" y="${y + 18}" width="2" height="2"/><rect x="${x + 11}" y="${y + 24}" width="2" height="2"/><rect x="${x + 23}" y="${y + 10}" width="2" height="2"/><rect x="${x + 29}" y="${y + 16}" width="2" height="2"/><rect x="${x + 24}" y="${y + 24}" width="2" height="2"/><rect x="${x + 42}" y="${y + 22}" width="2" height="2"/></g>${face(x + 30, y + 28, 6, { eyes: "open", mouth: "logo", look: [0, -2] })}`;
+    const sunset = (x: number, y: number) =>
+      `<rect x="${x}" y="${y}" width="60" height="34" fill="url(#wsdusk)"/><circle cx="${x + 30}" cy="${y + 20}" r="8" fill="#ffb347"/><rect x="${x}" y="${y + 24}" width="60" height="10" fill="#2b4f7a"/>${face(x + 30, y + 30, 6, { eyes: "happy", mouth: "o" })}`;
+    const row = (
+      x: number,
+      y: number,
+      name: string,
+      cat: string,
+      platform: string,
+      logo: string,
+    ) => {
+      const [bg, fg, d] = marks[platform]!;
+      return `<clipPath id="wa${x}${y}"><circle cx="${x + 13}" cy="${y}" r="7"/></clipPath><image href="${asset(`cards/avatar-${logo}.png`)}" x="${x + 6}" y="${y - 7}" width="14" height="14" clip-path="url(#wa${x}${y})"/><circle cx="${x + 18.5}" cy="${y + 5.5}" r="4.3" fill="#1b1e1c"/><circle cx="${x + 18.5}" cy="${y + 5.5}" r="3.3" fill="${bg}"/><g transform="translate(${x + 16.5} ${y + 3.5}) scale(0.167)"><path d="${d}" fill="${fg}"/></g>
+      <clipPath id="wt${x}${y}"><rect x="${x + 24}" y="${y - 10}" width="42" height="20"/></clipPath><g clip-path="url(#wt${x}${y})">${txt(x + 24, y + (cat ? -1 : 2.5), name, { fs: 6.5, fill: "#f2f0e8", anchor: "start" })}${cat ? txt(x + 24, y + 7, cat, { fs: 5, fill: "#a3a89f", anchor: "start", w: 600 }) : ""}</g>`;
+    };
+    const card = (
+      x: number,
+      name: string,
+      cat: string,
+      platform: string,
+      scene: (x: number, y: number) => string,
+      logo: string,
+    ) =>
+      `<rect x="${x}" y="44" width="72" height="66" rx="6" fill="#1b1e1c" stroke="#2a2f2c" stroke-width="1.2"/>
+      <clipPath id="ws${x}"><rect x="${x + 6}" y="50" width="60" height="34" rx="3.5"/></clipPath><g clip-path="url(#ws${x})">${scene(x + 6, 50)}</g>
+      ${row(x, 97, name, cat, platform, logo)}`;
+    const small = (x: number, name: string, platform: string, logo: string) =>
+      `<rect x="${x}" y="118" width="72" height="30" rx="6" fill="#1b1e1c" stroke="#2a2f2c" stroke-width="1.2"/>${row(x, 133, name, "", platform, logo)}`;
     return svgH(
-      `<rect width="260" height="150" fill="#1a1030"/>
-      <rect x="62" y="12" width="136" height="44" rx="10" fill="#2a0b14" stroke="#ff2d55" stroke-width="2" filter="url(#glow)"/>
-      ${txt(131, 43, "LIVE", { fs: 28, ls: 2, fill: "#ff3b5c", font: DISPLAY, w: 400 })}
-      <circle cx="78" cy="34" r="4" fill="#ff2d55" class="tcard-pulse"/><circle cx="182" cy="34" r="4" fill="#ff2d55" class="tcard-pulse"/>
-      ${bolt(34, 30, -20)}${bolt(226, 30, 20)}
-      ${face(130, 108, 42, { eyes: "happy", mouth: "open" })}`,
-      GLOW,
+      `<rect width="260" height="150" fill="#161917"/>
+      ${txt(14, 17, "STREAMERS", { fs: 6, fill: "#4cd964", anchor: "start", ls: 0.8, font: DISPLAY, w: 600 })}
+      ${txt(14, 33, "Who's streaming with Moblin.", { fs: 12, fill: "#f2f0e8", anchor: "start", font: DISPLAY, w: 600 })}
+      ${txt(246, 23, "IRL streamers who recently", { fs: 4.6, fill: "#a3a89f", anchor: "end", w: 600 })}${txt(246, 29, "went live with Moblin. Drop by", { fs: 4.6, fill: "#a3a89f", anchor: "end", w: 600 })}${txt(246, 35, "their channels and say hi.", { fs: 4.6, fill: "#a3a89f", anchor: "end", w: 600 })}
+      ${card(94, "TokyoTom", "Just Chatting", "kick", night, "king")}
+      ${card(174, "sofia.cycles", "IRL", "youtube", sunset, "pink")}
+      ${card(14, "eerimoq", "Software and Ga…", "twitch", code, "default")}
+      ${small(14, "ChatterBox", "kick", "goblina")}${small(94, "moblin_mike", "youtube", "happy")}${small(174, "irl_ida", "twitch", "tetris")}`,
+      `<linearGradient id="wsdusk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a2a6b"/><stop offset="1" stop-color="#ff7a59"/></linearGradient>`,
     );
   },
   gamepad() {
@@ -390,8 +436,8 @@ export const cardArt = {
       </g>
       <path d="M 116 134 Q 132 140 138 156" fill="none" stroke="#008000" stroke-width="4" stroke-linecap="round"/>
       </g>
-      <path d="M 106 74 C 150 52 196 70 210 110" fill="none" stroke="#2f7cf6" stroke-width="3" stroke-dasharray="6 6" class="tcard-dash" style="--dash: 12"/>
-      ${pill(160, 58, "RTMP", "#2f7cf6", "#fff", 9, 46)}
+      <path d="M 106 74 C 150 70 196 84 210 112" fill="none" stroke="#2f7cf6" stroke-width="3" stroke-dasharray="6 6" class="tcard-dash" style="--dash: 12"/>
+      ${pill(160, 72, "RTMP", "#2f7cf6", "#fff", 9, 46)}
       <rect x="176" y="112" width="86" height="150" rx="14" fill="#1c1c1e" stroke="#000"/>
       <rect x="181" y="118" width="76" height="138" rx="10" fill="url(#lock)"/>
       <path d="M 214 132 v -3 a 5 5 0 0 1 10 0 v 3" fill="none" stroke="#fff" stroke-width="1.6"/><rect x="211" y="132" width="16" height="11" rx="2" fill="#fff"/>
