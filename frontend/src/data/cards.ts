@@ -111,7 +111,7 @@ export const cards: Card[] = [
     power: 3,
     subtype: "Video effect",
     full: true,
-    text: "Turns faces into tasty little squares. Protects the innocent and hides the license plate.",
+    text: "Turns faces into tasty little squares. Protects the innocent and makes every stream look like a retro game.",
     credit: nobody,
     also: "Strength slider: BoostedBen",
     version: "v0.135.0",
