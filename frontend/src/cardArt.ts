@@ -294,9 +294,7 @@ export const cardArt = {
           c = "#008000";
         out += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${c}"/>`;
       }
-    return svgF(`<rect width="280" height="392" fill="#2a2a2a"/>${out}
-      <rect x="86" y="344" width="108" height="30" rx="3" fill="#f3f3f0" stroke="#999"/><rect x="92" y="350" width="96" height="18" fill="#ddd"/>
-      ${["#777", "#444", "#999", "#555", "#333", "#888", "#666"].map((c, i) => `<rect x="${94 + i * 13}" y="352" width="12" height="14" fill="${c}"/>`).join("")}`);
+    return svgF(`<rect width="280" height="392" fill="#2a2a2a"/>${out}`);
   },
   remote() {
     const queen = `<g transform="translate(-104.847 -140.369)"><path d="m 63.636089,110.01898 -2.728176,-35.146164 10.829966,9.925875 8.500714,-10.814065 10.042946,9.628121 9.582953,-11.391137 9.630658,9.641489 9.66569,-11.021475 8.58851,9.745193 9.00335,-11.348496 2.9833,33.170669 z" fill="#fff80e" stroke="#000" stroke-width="0.6"/>${[
