@@ -243,12 +243,12 @@ export const cardArt = {
       ${face(140, 372, 84, { mouth: "big", eyes: "open", look: [2, -3] })}`);
   },
   ingests() {
-    const cable = (y: number, c: string, t: string, ex: number) =>
-      `<path d="M 34 ${y} C 80 ${y} 95 ${118 + ex} 150 ${118 + ex}" fill="none" stroke="${c}" stroke-width="7" stroke-linecap="round"/><path d="M 34 ${y} C 80 ${y} 95 ${118 + ex} 150 ${118 + ex}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6 10" class="tcard-dash" opacity=".7"/>${pill(34, y, t, c, "#fff", 8, 42)}`;
+    const cable = (y: number, c: string, t: string, ex: number, end = 150) =>
+      `<path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="${c}" stroke-width="7" stroke-linecap="round"/><path d="M 34 ${y} C 80 ${y} 95 ${112 + ex} ${end} ${112 + ex}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6 10" class="tcard-dash" opacity=".7"/>${pill(34, y, t, c, "#fff", 8, 42)}`;
     return svgH(`<rect width="260" height="150" fill="#f1efe4"/>
       ${face(168, 78, 64, { mouth: "big", eyes: "open", look: [-3, 2] })}
-      ${cable(28, "#d2333c", "RTMP", -6)}${cable(70, "#e8891d", "SRT", 2)}${cable(118, "#2f7cf6", "RIST", 10)}
-      <g transform="translate(150 134)"><rect x="-16" y="-10" width="32" height="20" rx="3" fill="#333" stroke="#000"/><circle cx="0" cy="0" r="6" fill="#111" stroke="#888"/><circle cx="0" cy="0" r="2.5" fill="#2f7cf6"/><rect x="-10" y="-14" width="10" height="5" fill="#333"/></g>
+      ${cable(28, "#d2333c", "RTMP", -6)}${cable(70, "#e8891d", "SRT", 2)}${cable(112, "#2f7cf6", "RIST", 10, 155)}
+      <g transform="translate(150 136)"><rect x="-16" y="-10" width="32" height="20" rx="3" fill="#333" stroke="#000"/><circle cx="0" cy="0" r="6" fill="#111" stroke="#888"/><circle cx="0" cy="0" r="2.5" fill="#2f7cf6"/><rect x="-10" y="-14" width="10" height="5" fill="#333"/></g>
       ${txt(248, 17, "ALWAYS", { fs: 9, fill: "#6a6a60", anchor: "end" })}${txt(248, 28, "HUNGRY", { fs: 9, fill: "#6a6a60", anchor: "end" })}`);
   },
   pixellate() {
@@ -299,16 +299,38 @@ export const cardArt = {
       ${["#777", "#444", "#999", "#555", "#333", "#888", "#666"].map((c, i) => `<rect x="${94 + i * 13}" y="352" width="12" height="14" fill="${c}"/>`).join("")}`);
   },
   remote() {
+    const queen = `<g transform="translate(-104.847 -140.369)"><path d="m 63.636089,110.01898 -2.728176,-35.146164 10.829966,9.925875 8.500714,-10.814065 10.042946,9.628121 9.582953,-11.391137 9.630658,9.641489 9.66569,-11.021475 8.58851,9.745193 9.00335,-11.348496 2.9833,33.170669 z" fill="#fff80e" stroke="#000" stroke-width="0.6"/>${[
+      [74.7, 100.74],
+      [94.33, 100.19],
+      [114.39, 99.05],
+    ]
+      .map(
+        ([x, y]) =>
+          `<ellipse cx="${x}" cy="${y}" rx="1.58" ry="4.74" fill="#ff00ba" transform="rotate(-3.64)"/>`,
+      )
+      .join("")}${[
+      [62.07, 73.77],
+      [80.08, 72.47],
+      [99.88, 70.55],
+      [119.01, 69.28],
+      [135.72, 68.15],
+    ]
+      .map(
+        ([x, y]) =>
+          `<circle cx="${x}" cy="${y}" r="3" fill="#fff80e" stroke="#000" stroke-width="0.5"/>`,
+      )
+      .join("")}</g>`;
+    const heart = `<g transform="translate(-104.847 -140.369) matrix(1.8079465,0.99176829,-0.93893779,1.9031765,-123.74366,-280.65907)" fill="#ff0a00" stroke="#000" stroke-width="0.3"><path d="m 177.72832,103.21526 -4.51816,-4.935088 c 0,0 -2.38729,-2.231374 -0.32188,-4.149985 2.14478,-1.992344 4.86842,0.888714 4.86842,0.888714"/><path d="m 177.5911,103.21811 4.51816,-4.935087 c 0,0 2.38729,-2.23138 0.32189,-4.14999 -2.14478,-1.99234 -4.86843,0.88872 -4.86843,0.88872"/></g>`;
     return svgH(`<rect width="260" height="150" fill="#0f1b2d"/>
       <circle cx="130" cy="82" r="56" fill="#1c3a63" stroke="#8fb6ea" stroke-width="1"/>
       <ellipse cx="130" cy="82" rx="22" ry="56" fill="none" stroke="#8fb6ea" opacity=".6"/><ellipse cx="130" cy="82" rx="42" ry="56" fill="none" stroke="#8fb6ea" opacity=".4"/>
       <path d="M 74 82 h 112 M 80 58 h 100 M 80 106 h 100" stroke="#8fb6ea" opacity=".5"/>
       <path d="M 100 70 q 10 -14 22 -6 q 12 -6 18 8 q -8 16 -24 10 z M 120 110 q 14 -8 26 4 q -6 12 -24 6 z" fill="#2e8b57" opacity=".9"/>
       <path d="M 56 110 Q 130 10 206 110" fill="none" stroke="#ffd166" stroke-width="2.5" stroke-dasharray="6 8" class="tcard-dash"/>
-      ${face(42, 112, 26, { eyes: "open", look: [2, -2], mouth: "o" })}
-      ${face(218, 112, 26, { eyes: "happy", extra: '<path d="M -46 -14 a 46 46 0 0 1 92 0" fill="none" stroke="#222" stroke-width="6"/><rect x="-52" y="-16" width="12" height="22" rx="4" fill="#222"/><rect x="40" y="-16" width="12" height="22" rx="4" fill="#222"/><path d="M 46 6 q 0 22 -22 24" fill="none" stroke="#222" stroke-width="3"/><circle cx="24" cy="30" r="4" fill="#222"/>' })}
-      <rect x="166" y="124" width="40" height="18" rx="9" fill="#ff3b30" stroke="#7a0f0f"/>${txt(186, 136, "ZOOM", { fs: 8 })}
-      ${txt(42, 146, "you", { fs: 8, fill: "#8fb6ea" })}${txt(218, 146, "a friend", { fs: 8, fill: "#8fb6ea" })}`);
+      ${face(218, 112, 26, { extra: queen })}
+      ${face(42, 112, 26, { extra: `<path d="M -53.6 -8 A 54 54 0 0 1 53.6 -8" fill="none" stroke="#9b6dff" stroke-width="6" stroke-linecap="round"/><rect x="-59" y="-16" width="13" height="26" rx="6" fill="#9b6dff" stroke="#4b2a99" stroke-width="1.2"/><rect x="46" y="-16" width="13" height="26" rx="6" fill="#9b6dff" stroke="#4b2a99" stroke-width="1.2"/><path d="M 50 8 q 0 16 -8 18" fill="none" stroke="#9b6dff" stroke-width="3.5" stroke-linecap="round"/><circle cx="40" cy="26" r="4.5" fill="#4b2a99"/>${heart}` })}
+      <rect x="72" y="124" width="40" height="18" rx="9" fill="#ff3b30" stroke="#7a0f0f"/>${txt(92, 136, "ZOOM", { fs: 8 })}
+      ${txt(42, 146, "assistant", { fs: 8, fill: "#8fb6ea" })}${txt(218, 146, "streamer", { fs: 8, fill: "#8fb6ea" })}`);
   },
   website() {
     const bolt = (x: number, y: number, r: number) =>

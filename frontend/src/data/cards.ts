@@ -122,7 +122,7 @@ export const cards: Card[] = [
     name: "Remote Control",
     power: 6,
     subtype: "Companion",
-    text: "Lets a friend press your buttons from the other side of the world. Choose your friends wisely.",
+    text: "An assistant anywhere in the world can zoom, switch scenes and fix settings while you keep walking. Choose wisely.",
     credit: nobody,
     also: "Most buttons since: djandrea.",
     version: "v0.152.0",
