@@ -677,7 +677,7 @@ export const cardArt = {
       ${rope(60, "#ff9f0a", 0)}${rope(140, "#2f7cf6", 2)}${rope(220, "#0d7a30", 4)}
       <rect x="128" y="196" width="24" height="200" fill="#c44d00"/>${braid}
       ${pill(60, 26, "Cellular", "#ff9f0a", "#000", 9, 60)}${pill(140, 26, "Wi-Fi", "#2f7cf6", "#fff", 9, 50)}${pill(220, 26, "Ethernet", "#0d7a30", "#fff", 9, 64)}
-      ${face(140, 318, 50, { eyes: "happy", mouth: "open", extra: '<path d="M -40 -4 q 40 -30 80 0" fill="none" stroke="#1e1a1a" stroke-width="6" stroke-linecap="round"/>' })}
+      <image href="${asset("logos/logo-looking.png")}" x="${244 - 13}" y="${226 - (26 * 573) / 500}" width="26" height="${(26 * 573) / 500}" transform="rotate(48 244 214) translate(488 0) scale(-1 1)"/>
       ${txt(140, 380, "one rope. zero fear.", { fs: 9, fill: "#ffe7a3" })}`,
       `<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1a33"/><stop offset="1" stop-color="#1f4a7a"/></linearGradient>`,
     );
