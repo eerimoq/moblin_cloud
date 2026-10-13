@@ -230,7 +230,7 @@ export const cards: Card[] = [
     name: "Macros",
     power: 8,
     subtype: "Automation",
-    text: "Presses ten buttons with one tap. Nobody remembers what the other nine were.",
+    text: "Presses ten buttons with one tap. Can also wait for a follow, a raid, a cheer or a dozen other events, endless possibilities!",
     credit: "💡 AUTdany",
     also: "Most actions since: Crozbo",
     version: "v33.4.0",

@@ -580,21 +580,26 @@ export const cardArt = {
       ${face(60, 152, 30, { eyes: "open", look: [2, -4], mouth: "open" })}`);
   },
   macros() {
-    let small = "";
-    for (let i = 0; i < 10; i++) {
-      const a = -70 + i * 15.5,
-        r = 84,
-        x = 92 + Math.cos((a * Math.PI) / 180) * r,
-        y = 84 + Math.sin((a * Math.PI) / 180) * r,
-        lit = i < 3;
-      small += `<path d="M 108 84 L ${x} ${y}" stroke="${lit ? "#ffcc00" : "#bbb"}" stroke-width="${lit ? 2 : 1}" stroke-dasharray="${lit ? "0" : "3 3"}"/><circle cx="${x}" cy="${y}" r="9" fill="${lit ? "#ffcc00" : "#ddd"}" stroke="#333"/>${txt(x, y + 3.5, i + 1, { fs: 8, fill: lit ? "#000" : "#777" })}`;
-    }
-    return svgH(`<rect width="260" height="150" fill="#f6f1e4"/>${small}
-      <ellipse cx="72" cy="94" rx="40" ry="14" fill="#8a2020"/><rect x="32" y="70" width="80" height="24" fill="#8a2020"/>
-      <ellipse cx="72" cy="70" rx="40" ry="14" fill="#ff3b30" stroke="#7a0f0f"/>
-      ${face(72, 42, 26, { eyes: "closed", mouth: "open" })}
-      <path d="M 60 72 h 24" stroke="#fff" stroke-width="3" opacity=".6"/>
-      ${txt(72, 124, "ONE TAP", { fs: 11, fill: "#333" })}${txt(72, 136, "ten things. allegedly.", { fs: 8, w: 400, fill: "#777" })}`);
+    const steps: [string, string, string][] = [
+      ["Wait for raid", "pauses until someone raids", "#9146ff"],
+      ["Shoutout the raider", "", "#e8891d"],
+      ["Reaction fireworks", "", "#ff3b7a"],
+    ];
+    const rows = steps
+      .map(
+        ([t, sub, c], i) =>
+          `<circle cx="108" cy="${60 + i * 30}" r="8" fill="${c}"/>${txt(108, 63 + i * 30, i + 1, { fs: 8 })}${txt(120, 63 + i * 30 - (sub ? 3 : 0), t, { fs: 8.5, fill: "#1c1c1e", anchor: "start" })}${sub ? txt(120, 70 + i * 30, sub, { fs: 5.5, fill: "#888", anchor: "start", w: 600 }) : ""}`,
+      )
+      .join("");
+    return svgH(`<rect width="260" height="150" fill="#f6f1e4"/>
+      <rect x="92" y="14" width="150" height="122" rx="8" fill="#fff" stroke="#d9d4c6"/>
+      <rect x="92" y="14" width="150" height="30" rx="8" fill="#ece8dc"/><rect x="92" y="36" width="150" height="8" fill="#ece8dc"/>
+      <path d="M 103 25 L 113 30 L 103 35 Z" fill="#555"/>${txt(120, 33, "Raid hype macro", { fs: 9, fill: "#1c1c1e", anchor: "start", font: DISPLAY, w: 600 })}
+      <path d="M 108 68 V 112" stroke="#d9d4c6" stroke-width="2"/>
+      ${rows}
+      <circle cx="44" cy="112" r="17" fill="#8a2020"/><circle cx="44" cy="109" r="16" fill="#ff3b30" stroke="#7a0f0f"/><path d="M 39 102 L 52 109 L 39 116 Z" fill="#fff"/>${txt(44, 140, "TAP TO RUN", { fs: 6, fill: "#555", ls: 0.5 })}
+      ${face(44, 48, 26, { eyes: "open", look: [0, 6], mouth: "o" })}
+      <path d="M 50 72 L 46 92" stroke="#1e1a1a" stroke-width="7.2" stroke-linecap="round"/><path d="M 50 72 L 46 92" stroke="#008000" stroke-width="6" stroke-linecap="round"/>`);
   },
   moblink() {
     const antenna = `<path transform="translate(-104.847 -157.801)" d="m 65.533703,191.87947 a 1.6070492,1.6070492 0 0 1 -2.408228,2.12858 c -3.806446,-4.30323 -5.750793,-8.87293 -5.675125,-13.51832 0.07896,-4.52365 2.069364,-9.03085 6.122557,-13.33407 a 1.6120649,1.6120649 0 0 1 2.345718,2.20753 c -3.480744,3.69459 -5.178347,7.48459 -5.250725,11.17919 -0.0658,3.81303 1.605485,7.64908 4.865803,11.33709 z m 13.597275,-7.79384 v 21.50296 a 1.4936277,1.4936277 0 0 1 -2.987255,0 v -21.50296 a 3.7899975,3.7899975 0 1 1 2.987255,0 z m 7.155594,4.66182 a 1.6090156,1.6090156 0 0 1 -2.497055,-2.02988 c 1.608774,-1.97396 2.444416,-4.06964 2.450995,-6.1423 0.0066,-2.07265 -0.779712,-4.09596 -2.408227,-6.09294 a 1.6090169,1.6090169 0 1 1 2.497056,-2.02989 c 2.115424,2.59247 3.132005,5.35271 3.125427,8.12283 0,2.83264 -1.092251,5.61263 -3.168196,8.17218 z m -14.801388,-2.02988 a 1.6090161,1.6090161 0 0 1 -2.497056,2.02988 c -2.075944,-2.55955 -3.158331,-5.33954 -3.168201,-8.17218 0,-2.77012 1.010009,-5.53036 3.128722,-8.12283 a 1.608775,1.608775 0 1 1 2.493766,2.02989 c -1.644965,1.99698 -2.411518,4.06635 -2.408228,6.09294 0.0032,2.0266 0.845512,4.16834 2.450997,6.1423 z m 20.664039,7.29048 a 1.6070492,1.6070492 0 0 1 -2.408228,-2.12858 c 3.263613,-3.68801 4.934893,-7.52406 4.865807,-11.33709 -0.06255,-3.71104 -1.769983,-7.4846 -5.263893,-11.18576 a 1.6120649,1.6120649 0 1 1 2.34572,-2.20754 c 4.053195,4.30323 6.043598,8.81043 6.119261,13.33408 0.07896,4.64538 -1.865375,9.21179 -5.671823,13.51831 z" fill="#000" stroke="#fff" stroke-width="0.93"/>`;
