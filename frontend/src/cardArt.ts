@@ -574,11 +574,20 @@ export const cardArt = {
     );
   },
   selfie() {
-    return svgH(`<rect width="260" height="150" fill="#dfeee6"/>
+    return svgH(
+      `<rect width="260" height="150" fill="#dfeee6"/>
       <path d="M 36 150 L 172 48" stroke="#333" stroke-width="7" stroke-linecap="round"/><path d="M 36 150 L 80 118" stroke="#1c1c1e" stroke-width="12" stroke-linecap="round"/>
-      <g transform="rotate(53 180 42)"><rect x="138" y="22" width="84" height="40" rx="8" fill="#1c1c1e" stroke="#000"/><rect x="144" y="26" width="72" height="32" rx="5" fill="#0a0f0a"/><rect x="140.5" y="35" width="2.5" height="14" rx="1.2" fill="#444"/>${face(180, 44, 12, { eyes: "happy", mouth: "open" })}</g>
+      <g transform="rotate(53 180 42)"><rect x="138" y="22" width="84" height="40" rx="8" fill="#1c1c1e" stroke="#000"/><g clip-path="url(#selfiescreen)"><rect x="144" y="26" width="72" height="32" fill="url(#selfiesky)"/>
+      <path d="M 140 58 L 140 55 Q 170 50 200 56 L 220 54 L 220 58 Z" fill="#4f8f4a"/><path d="M 204 50 a 2.5 2.5 0 0 1 4 -1.5 a 3 3 0 0 1 5 1 a 2 2 0 0 1 0 4 h -9 a 2 2 0 0 1 0 -3.5 z" fill="#fff"/>
+      <path d="M 151 39 Q 180 20 209 39" fill="none" stroke="#f4501a" stroke-width="6.5" stroke-linecap="round"/><path d="M 158 32 l 1.5 2.5 M 166 28.5 l 1 2.8 M 174 26.8 l 0.3 3 M 182 26.6 l -0.3 3 M 190 27.6 l -0.8 2.9 M 198 30.2 l -1.3 2.7" stroke="#ffd166" stroke-width="1.1"/>
+      <path d="M 152 41 L 175 47 M 166 33 L 177 45 M 194 33 L 183 45 M 208 41 L 185 47" stroke="#333" stroke-width="0.6"/>
+      ${face(180, 50, 8.5, { eyes: "open", mouth: "open" })}</g>
+      <rect x="140.5" y="35" width="2.5" height="14" rx="1.2" fill="#444"/></g>
       <circle cx="62" cy="128" r="12" fill="#ff3b30" stroke="#7a0f0f" stroke-width="2"/><circle cx="62" cy="128" r="6" fill="#fff" opacity=".4"/>
-      <path d="M 76 136 l 30 0" stroke="#333" stroke-width="1.5"/>${pill(152, 136, "press: switch scene", "#0d7a30", "#fff", 8, 92)}`);
+      <path d="M 76 136 l 30 0" stroke="#333" stroke-width="1.5"/>${pill(152, 136, "press: switch scene", "#0d7a30", "#fff", 8, 92)}`,
+      `<linearGradient id="selfiesky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6fb3ff"/><stop offset="1" stop-color="#d7ecff"/></linearGradient>
+      <clipPath id="selfiescreen"><rect x="144" y="26" width="72" height="32" rx="5"/></clipPath>`,
+    );
   },
   wifiaware() {
     const rows = ["Streams", "Scenes", "Chat", "Bonding", "Wi-Fi Aware"];
