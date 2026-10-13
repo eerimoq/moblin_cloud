@@ -727,21 +727,16 @@ export const cardArt = {
 export type CardId = keyof typeof cardArt;
 
 function backPhoneOnGreen(font: string, weight: number): string {
-  const leaf = (x: number, y: number, rot: number) =>
-    `<g transform="translate(${x} ${y}) rotate(${rot}) scale(0.55) translate(-87 -80)"><path d="${LEAF}" fill="#f3e9c6" stroke="#07230f" stroke-width="1"/></g>`;
   const lens = (x: number, y: number) =>
     `<circle cx="${x}" cy="${y}" r="8" fill="#1c1c1e" stroke="#4a4a4e" stroke-width="1"/><circle cx="${x}" cy="${y}" r="5" fill="#0d1a2e"/><circle cx="${x - 1.8}" cy="${y - 1.8}" r="1.4" fill="#fff" opacity="0.6"/>`;
   return `<svg viewBox="0 0 280 392" role="img">
     <defs>
-      <pattern id="green-lattice" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M 0 9 H 18 M 9 0 V 18" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/></pattern>
       <radialGradient id="green-glow" cx="50%" cy="48%" r="60%"><stop offset="0" stop-color="#1c6b31"/><stop offset="1" stop-color="#07230f"/></radialGradient>
       <linearGradient id="green-phone" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b5e63"/><stop offset="0.5" stop-color="#3e4146"/><stop offset="1" stop-color="#2c2e32"/></linearGradient>
     </defs>
     <rect width="280" height="392" fill="url(#green-glow)"/>
-    <rect width="280" height="392" fill="url(#green-lattice)"/>
     <rect x="10" y="10" width="260" height="372" rx="10" fill="none" stroke="#f3e9c6" stroke-width="2"/>
     <rect x="16" y="16" width="248" height="360" rx="7" fill="none" stroke="#f3e9c6" stroke-opacity="0.45" stroke-width="1"/>
-    ${leaf(34, 36, 0)}${leaf(246, 36, 90)}${leaf(246, 356, 180)}${leaf(34, 356, 270)}
     ${txt(140, 62, "MOBLIN", { font, fs: 30, w: weight, fill: "#f3e9c6" })}
     <path d="M 70 76 H 210" stroke="#f3e9c6" stroke-opacity="0.6" stroke-width="1"/>
     <ellipse cx="140" cy="318" rx="60" ry="8" fill="#000" opacity="0.35"/>
@@ -758,5 +753,5 @@ function backPhoneOnGreen(font: string, weight: number): string {
 }
 
 export function cardBack(): string {
-  return backPhoneOnGreen("Marcellus, Georgia, serif", 400);
+  return backPhoneOnGreen(DISPLAY, 600);
 }
