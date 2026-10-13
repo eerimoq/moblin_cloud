@@ -134,6 +134,7 @@ export const cards: Card[] = [
     power: 2,
     subtype: "Notification",
     text: "Lights up moblin.app the moment you go live. Opt in once and the front page does the rest.",
+    links: [{ label: "moblin.app/#streamers", href: "https://moblin.app/#streamers" }],
     credit: "💡 JohannesLiv",
     version: "v35.1.0",
   },
