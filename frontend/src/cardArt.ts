@@ -454,16 +454,21 @@ export const cardArt = {
     );
   },
   watch() {
+    const bubble = (x: number, y: number, w: number, t: string, color: string, rot: number) =>
+      `<g transform="rotate(${rot} ${x + w / 2} ${y + 9})"><rect x="${x}" y="${y}" width="${w}" height="18" rx="9" fill="#fff" stroke="#d6d2c2"/>${txt(x + w / 2, y + 12.5, t, { fs: 8, fill: color })}</g>`;
     return svgH(`<rect width="260" height="150" fill="#f1efe4"/>
-      <rect x="104" y="-10" width="52" height="40" rx="8" fill="#3a3a3c"/><rect x="104" y="120" width="52" height="40" rx="8" fill="#3a3a3c"/>
-      <rect x="86" y="24" width="88" height="102" rx="22" fill="#1c1c1e" stroke="#000"/><rect x="93" y="31" width="74" height="88" rx="18" fill="#000"/>
-      <rect x="174" y="52" width="6" height="18" rx="2" fill="#3a3a3c"/><rect x="174" y="78" width="6" height="12" rx="2" fill="#3a3a3c"/>
-      ${txt(130, 46, "12:34", { fs: 9, fill: "#fff", font: MONO })}
-      ${face(130, 78, 22, { eyes: "open", look: [-2, -2], mouth: "logo" })}
-      <rect x="99" y="100" width="46" height="12" rx="6" fill="#2f7cf6"/>${txt(122, 108.5, "W W W", { fs: 7 })}
-      ${pill(140, 113, "4.2 Mb", "#ff9f0a", "#000", 7, 36)}
-      <path d="M 60 50 q -10 25 0 50 M 48 44 q -14 31 0 62 M 200 50 q 10 25 0 50 M 212 44 q 14 31 0 62" fill="none" stroke="#ff3b30" stroke-width="2.5" stroke-linecap="round" class="tcard-pulse"/>
-      ${txt(40, 140, "bzzzt", { fs: 9, fill: "#ff3b30" })}${txt(220, 140, "bzzzt", { fs: 9, fill: "#ff3b30" })}`);
+      ${bubble(14, 30, 50, "W W W", "#2f7cf6", -8)}${bubble(22, 60, 58, "LETS GOOO", "#e0669c", 5)}${bubble(12, 92, 40, "gg", "#2ecc71", -4)}
+      <path d="M 70 44 q 8 4 12 12 M 74 98 q 6 -2 10 -8" fill="none" stroke="#bbb" stroke-width="1.5" stroke-dasharray="2 3" stroke-linecap="round"/>
+      <image href="${asset("screenshots/watch.webp")}" x="82" y="-4" width="${(158 * 400) / 650}" height="158"/>
+      <g transform="rotate(6 216 62)">
+        <rect x="186" y="40" width="62" height="44" rx="4" fill="#0b10ac"/>
+        ${txt(191, 55, "ERIK", { fs: 6, w: 500, anchor: "start" })}${txt(191, 62, "ANNA", { fs: 6, w: 500, anchor: "start" })}
+        ${txt(191, 73, "MAX", { fs: 6, w: 500, anchor: "start" })}${txt(191, 80, "LISA", { fs: 6, w: 500, anchor: "start" })}
+        ${txt(224, 61, "6", { fs: 13, w: 800 })}${txt(238, 61, "4", { fs: 13, w: 400 })}
+        ${txt(224, 80, "3", { fs: 13, w: 400 })}${txt(238, 80, "6", { fs: 13, w: 800 })}
+      </g>
+      <g transform="rotate(-10 222 110)"><rect x="204" y="100" width="36" height="20" rx="10" fill="#34c759"/>${txt(222, 114, "+1", { fs: 11 })}</g>
+      <path d="M 196 100 l -5 -4 M 198 112 l -7 1 M 246 98 l 5 -4" stroke="#34c759" stroke-width="2" stroke-linecap="round"/>`);
   },
   textwidget() {
     const tag = (x: number, y: number, t: string, bg: string, fg = "#fff", w?: number) =>
@@ -494,27 +499,24 @@ export const cardArt = {
       ${txt(72, 124, "ONE TAP", { fs: 11, fill: "#333" })}${txt(72, 136, "ten things. allegedly.", { fs: 8, w: 400, fill: "#777" })}`);
   },
   moblink() {
-    const heat = (x: number, y: number) =>
-      `<path d="M ${x} ${y} q 3 -5 0 -10 q -3 -5 0 -10 M ${x + 8} ${y} q 3 -5 0 -10 q -3 -5 0 -10" fill="none" stroke="#ff6b35" stroke-width="1.6" stroke-linecap="round" opacity=".9"/>`;
+    const antenna = `<path transform="translate(-104.847 -157.801)" d="m 65.533703,191.87947 a 1.6070492,1.6070492 0 0 1 -2.408228,2.12858 c -3.806446,-4.30323 -5.750793,-8.87293 -5.675125,-13.51832 0.07896,-4.52365 2.069364,-9.03085 6.122557,-13.33407 a 1.6120649,1.6120649 0 0 1 2.345718,2.20753 c -3.480744,3.69459 -5.178347,7.48459 -5.250725,11.17919 -0.0658,3.81303 1.605485,7.64908 4.865803,11.33709 z m 13.597275,-7.79384 v 21.50296 a 1.4936277,1.4936277 0 0 1 -2.987255,0 v -21.50296 a 3.7899975,3.7899975 0 1 1 2.987255,0 z m 7.155594,4.66182 a 1.6090156,1.6090156 0 0 1 -2.497055,-2.02988 c 1.608774,-1.97396 2.444416,-4.06964 2.450995,-6.1423 0.0066,-2.07265 -0.779712,-4.09596 -2.408227,-6.09294 a 1.6090169,1.6090169 0 1 1 2.497056,-2.02989 c 2.115424,2.59247 3.132005,5.35271 3.125427,8.12283 0,2.83264 -1.092251,5.61263 -3.168196,8.17218 z m -14.801388,-2.02988 a 1.6090161,1.6090161 0 0 1 -2.497056,2.02988 c -2.075944,-2.55955 -3.158331,-5.33954 -3.168201,-8.17218 0,-2.77012 1.010009,-5.53036 3.128722,-8.12283 a 1.608775,1.608775 0 1 1 2.493766,2.02989 c -1.644965,1.99698 -2.411518,4.06635 -2.408228,6.09294 0.0032,2.0266 0.845512,4.16834 2.450997,6.1423 z m 20.664039,7.29048 a 1.6070492,1.6070492 0 0 1 -2.408228,-2.12858 c 3.263613,-3.68801 4.934893,-7.52406 4.865807,-11.33709 -0.06255,-3.71104 -1.769983,-7.4846 -5.263893,-11.18576 a 1.6120649,1.6120649 0 1 1 2.34572,-2.20754 c 4.053195,4.30323 6.043598,8.81043 6.119261,13.33408 0.07896,4.64538 -1.865375,9.21179 -5.671823,13.51831 z" fill="#000" stroke="#fff" stroke-width="0.93"/>`;
     const link = (x1: number, y1: number, x2: number, y2: number) =>
       `<path d="M ${x1} ${y1} Q ${(x1 + x2) / 2} ${Math.min(y1, y2) - 26} ${x2} ${y2}" fill="none" stroke="#2f7cf6" stroke-width="2.5" stroke-dasharray="5 6" class="tcard-dash"/>`;
     return svgH(`<rect width="260" height="150" fill="#eef3fb"/>
-      ${link(60, 70, 118, 46)}${link(142, 46, 200, 70)}${link(42, 118, 112, 110)}
-      ${phone(106, 22, 48, 110, face(130, 78, 16, { eyes: "happy", mouth: "open" }), {})}${pill(130, 124, "you", "#2f7cf6", "#fff", 7, 30)}
-      ${phone(26, 54, 36, 70, face(44, 88, 11, { eyes: "open", look: [2, -2] }), {})}${heat(36, 52)}
-      ${phone(198, 54, 36, 70, face(216, 88, 11, { eyes: "open", look: [-2, -2] }), {})}${heat(208, 52)}
-      ${phone(14, 104, 30, 44, face(29, 126, 9, { eyes: "x", mouth: "flat" }), {})}${heat(22, 102)}
-      ${txt(228, 140, "+ 3 links", { fs: 9, fill: "#2f7cf6", anchor: "end" })}
-      ${txt(228, 32, "slightly warm", { fs: 7, w: 400, fill: "#ff6b35", anchor: "end" })}`);
+      ${link(104, 56, 50, 56)}${link(156, 56, 210, 56)}
+      <image href="${asset("screenshots/moblin-800.webp")}" x="74" y="53" width="112" height="${(112 * 389) / 800}"/>
+      <rect x="26" y="54" width="36" height="70" rx="4" fill="#2b2d31" stroke="#000"/><rect x="29" y="57" width="30" height="64" rx="2" fill="#0a0f0a"/><circle cx="44" cy="60.5" r="1.6" fill="#000" stroke="#444" stroke-width=".6"/>${face(44, 88, 11, { extra: antenna })}<path d="M 37 117 l -2.5 -1.5 l 2.5 -1.5 z" fill="#888"/><circle cx="44" cy="115.5" r="1.5" fill="none" stroke="#888" stroke-width=".8"/><rect x="50" y="114" width="3" height="3" fill="none" stroke="#888" stroke-width=".8"/>
+      <rect x="198" y="54" width="36" height="70" rx="9" fill="#1c1c1e" stroke="#9a9aa0" stroke-width="1.2"/><rect x="201" y="57" width="30" height="64" rx="7" fill="#0a0f0a"/><rect x="210" y="59.5" width="12" height="3.6" rx="1.8" fill="#000"/>${face(216, 88, 11, { extra: antenna })}<rect x="210" y="117.5" width="12" height="1.3" rx=".65" fill="#777"/>
+      ${txt(228, 140, "+ 2 links", { fs: 9, fill: "#2f7cf6", anchor: "end" })}`);
   },
   photoshoot() {
     return svgH(
       `<rect width="260" height="150" fill="#12101a"/>
       <path d="M 20 -10 L 90 150 L 170 150 Z" fill="url(#spot)" opacity=".8"/><path d="M 240 -10 L 170 150 L 90 150 Z" fill="url(#spot)" opacity=".8"/>
       <rect x="92" y="34" width="86" height="86" fill="none" stroke="#fff" opacity=".2"/><rect x="100" y="28" width="86" height="86" fill="none" stroke="#fff" opacity=".35"/><rect x="108" y="22" width="86" height="86" rx="2" fill="none" stroke="#fff" opacity=".6"/>
-      ${face(140, 88, 48, { eyes: "wink", mouth: "open", rot: -10, extra: '<path d="M -16 44 l 16 -8 l 16 8 l -16 8 z" fill="#1c1c1e" stroke="#fff" stroke-width=".8"/>' })}
+      ${face(140, 88, 48, { eyes: "wink", mouth: "open", rot: -10 })}
       <g transform="translate(228 22)">${[0, 45, 90, 135, 180, 225, 270, 315].map((a) => `<path d="M 0 0 l 0 -14" stroke="#fff" stroke-width="2.5" stroke-linecap="round" transform="rotate(${a})"/>`).join("")}<circle r="4" fill="#fff"/></g>
-      ${txt(140, 144, "burst · 3 of 30", { fs: 8, fill: "#bbb", font: MONO })}`,
+      ${txt(140, 144, "interval 3s", { fs: 8, fill: "#bbb", font: MONO })}`,
       `<linearGradient id="spot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff5c2" stop-opacity=".55"/><stop offset="1" stop-color="#fff5c2" stop-opacity="0"/></linearGradient>`,
     );
   },
@@ -532,13 +534,6 @@ export const cardArt = {
       [244, 46],
     ];
     const d = pts.map((p, i) => (i ? "L" : "M") + p[0] + " " + p[1]).join(" ");
-    const bars = (x: number, y: number, n: number) =>
-      [0, 1, 2, 3]
-        .map(
-          (i) =>
-            `<rect x="${x + i * 6}" y="${y - 4 - i * 4}" width="4" height="${6 + i * 4}" rx="1" fill="${i < n ? "#0d7a30" : "#ccc"}"/>`,
-        )
-        .join("");
     return svgH(`<rect width="260" height="150" fill="#f6f6f1"/>
       <path d="M 20 140 H 250 M 20 140 V 20" stroke="#bbb" stroke-width="1"/>
       <path d="${d} L 244 140 L 20 140 Z" fill="#0d7a30" opacity=".15"/>
@@ -546,7 +541,6 @@ export const cardArt = {
       ${pts.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#0d7a30"/>`).join("")}
       <ellipse cx="146" cy="116" rx="22" ry="5" fill="#ff9f0a" stroke="#7a4a00"/>
       ${face(146, 96, 18, { eyes: "open", look: [3, 2], mouth: "o", rot: 12 })}
-      ${bars(112, 120, 1)}${bars(214, 36, 4)}
       ${txt(66, 40, "6000", { fs: 9, fill: "#0d7a30", font: MONO })}${txt(146, 136, "800", { fs: 9, fill: "#b00", font: MONO })}${txt(240, 36, "6000", { fs: 9, fill: "#0d7a30", font: MONO, anchor: "end" })}`);
   },
   bonding() {
