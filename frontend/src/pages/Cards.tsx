@@ -41,7 +41,7 @@ export default function Cards() {
               </h1>
               <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
                 Every Moblin feature as a trading card, sorted by rarity. The number in the corner
-                says how good the card is, out of 10. One card refuses the scale.
+                says how good the card is. Higher is better.
               </p>
               <p class="text-[15px] text-muted">
                 The 💡 line credits whoever asked for the feature, as recorded in Moblin's version

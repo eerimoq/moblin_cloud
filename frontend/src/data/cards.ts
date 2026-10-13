@@ -1,7 +1,7 @@
 import type { CardId } from "../cardArt";
 import { links } from "./links";
 
-export type Rarity = "joker" | "white" | "blue" | "yellow" | "gold" | "black";
+export type Rarity = "essential" | "white" | "blue" | "yellow" | "gold" | "black";
 
 export type Card = {
   id: CardId;
@@ -19,6 +19,11 @@ export type Card = {
 };
 
 export const rarities: { key: Rarity; label: string; note: string }[] = [
+  {
+    key: "essential",
+    label: "Essential",
+    note: "Wild. Playable in any deck, by anyone, forever.",
+  },
   {
     key: "white",
     label: "Normal",
@@ -40,11 +45,6 @@ export const rarities: { key: Rarity; label: string; note: string }[] = [
     note: "One per deck. Shiny. Do not trade.",
   },
   {
-    key: "joker",
-    label: "Jokers",
-    note: "Wild. Playable in any deck, by anyone, forever.",
-  },
-  {
     key: "black",
     label: "Impossible",
     note: "Not legal in this universe. Still a very nice card.",
@@ -56,10 +56,10 @@ const nobody = "Nobody asked. It just appeared.";
 export const cards: Card[] = [
   {
     id: "community",
-    rarity: "joker",
+    rarity: "essential",
     name: "Moblin Community",
-    power: 10,
-    subtype: "Joker · Everyone",
+    power: 99,
+    subtype: "Everyone",
     full: true,
     text: "Builds the best streaming app and fixes your setup at 2 AM. Every other card in this deck started as one of their ideas.",
     links: [
@@ -294,7 +294,7 @@ export const cards: Card[] = [
     id: "wifiaware",
     rarity: "black",
     name: "WiFi Aware",
-    power: 11,
+    power: -1,
     subtype: "Transport?",
     full: true,
     text: "Appears in the settings menu of a parallel universe. In this one, it's just a very nice card.",

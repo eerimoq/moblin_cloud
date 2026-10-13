@@ -346,7 +346,7 @@
   text-shadow: 0 1px 1px rgb(0 0 0 / 0.6);
 }
 
-.tcard-joker {
+.tcard-essential {
   --frame: conic-gradient(from 200deg, #6a2fb5, #d63384, #f5a623, #2ecc71, #2f8cff, #6a2fb5);
   --frame2: #3b1a6b;
   --edge: #5a3a8c;
