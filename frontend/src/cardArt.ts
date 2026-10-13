@@ -603,14 +603,26 @@ export const cardArt = {
   },
   moblink() {
     const antenna = `<path transform="translate(-104.847 -157.801)" d="m 65.533703,191.87947 a 1.6070492,1.6070492 0 0 1 -2.408228,2.12858 c -3.806446,-4.30323 -5.750793,-8.87293 -5.675125,-13.51832 0.07896,-4.52365 2.069364,-9.03085 6.122557,-13.33407 a 1.6120649,1.6120649 0 0 1 2.345718,2.20753 c -3.480744,3.69459 -5.178347,7.48459 -5.250725,11.17919 -0.0658,3.81303 1.605485,7.64908 4.865803,11.33709 z m 13.597275,-7.79384 v 21.50296 a 1.4936277,1.4936277 0 0 1 -2.987255,0 v -21.50296 a 3.7899975,3.7899975 0 1 1 2.987255,0 z m 7.155594,4.66182 a 1.6090156,1.6090156 0 0 1 -2.497055,-2.02988 c 1.608774,-1.97396 2.444416,-4.06964 2.450995,-6.1423 0.0066,-2.07265 -0.779712,-4.09596 -2.408227,-6.09294 a 1.6090169,1.6090169 0 1 1 2.497056,-2.02989 c 2.115424,2.59247 3.132005,5.35271 3.125427,8.12283 0,2.83264 -1.092251,5.61263 -3.168196,8.17218 z m -14.801388,-2.02988 a 1.6090161,1.6090161 0 0 1 -2.497056,2.02988 c -2.075944,-2.55955 -3.158331,-5.33954 -3.168201,-8.17218 0,-2.77012 1.010009,-5.53036 3.128722,-8.12283 a 1.608775,1.608775 0 1 1 2.493766,2.02989 c -1.644965,1.99698 -2.411518,4.06635 -2.408228,6.09294 0.0032,2.0266 0.845512,4.16834 2.450997,6.1423 z m 20.664039,7.29048 a 1.6070492,1.6070492 0 0 1 -2.408228,-2.12858 c 3.263613,-3.68801 4.934893,-7.52406 4.865807,-11.33709 -0.06255,-3.71104 -1.769983,-7.4846 -5.263893,-11.18576 a 1.6120649,1.6120649 0 1 1 2.34572,-2.20754 c 4.053195,4.30323 6.043598,8.81043 6.119261,13.33408 0.07896,4.64538 -1.865375,9.21179 -5.671823,13.51831 z" fill="#000" stroke="#fff" stroke-width="0.93"/>`;
-    const link = (x1: number, y1: number, x2: number, y2: number) =>
-      `<path d="M ${x1} ${y1} Q ${(x1 + x2) / 2} ${Math.min(y1, y2) - 26} ${x2} ${y2}" fill="none" stroke="#2f7cf6" stroke-width="2.5" stroke-dasharray="5 6" class="tcard-dash" style="--dash: 11"/>`;
     return svgH(`<rect width="260" height="150" fill="#eef3fb"/>
-      ${link(104, 56, 50, 56)}${link(156, 56, 210, 56)}
-      <image href="${asset("screenshots/moblin-800.webp")}" x="74" y="53" width="112" height="${(112 * 389) / 800}"/>
-      <rect x="26" y="54" width="36" height="70" rx="4" fill="#2b2d31" stroke="#000"/><rect x="29" y="57" width="30" height="64" rx="2" fill="#0a0f0a"/><circle cx="44" cy="60.5" r="1.6" fill="#000" stroke="#444" stroke-width=".6"/>${face(44, 88, 11, { extra: antenna })}<path d="M 37 117 l -2.5 -1.5 l 2.5 -1.5 z" fill="#888"/><circle cx="44" cy="115.5" r="1.5" fill="none" stroke="#888" stroke-width=".8"/><rect x="50" y="114" width="3" height="3" fill="none" stroke="#888" stroke-width=".8"/>
+      <path d="M 44 54 C 44 34 100 38 116 26 M 130 66 V 26 M 216 54 C 216 34 160 38 144 26" fill="none" stroke="#2f7cf6" stroke-width="2" stroke-dasharray="4 4" class="tcard-dash" style="--dash: 8"/>
+      <rect x="108" y="8" width="44" height="18" rx="3" fill="#2b2d31" stroke="#000"/><rect x="112" y="11" width="24" height="4" rx="1" fill="#444"/><rect x="112" y="19" width="24" height="4" rx="1" fill="#444"/><circle cx="144" cy="13" r="1.6" fill="#4cd964"/><circle cx="144" cy="21" r="1.6" fill="#4cd964" class="tcard-pulse"/>
+      ${txt(158, 20, "Server", { fs: 7, fill: "#1c1c1e", anchor: "start" })}
+      <path d="M 80 90 H 64" stroke="#0d7a30" stroke-width="2.5" stroke-dasharray="4 4" class="tcard-dash" style="--dash: 8"/><path d="M 180 90 H 196" stroke="#2f7cf6" stroke-width="2.5" stroke-dasharray="4 4" class="tcard-dash" style="--dash: 8"/>
+      <image href="${asset("screenshots/moblin-800.webp")}" x="82" y="66" width="96" height="${(96 * 389) / 800}"/>
+      <rect x="26" y="54" width="36" height="70" rx="4" fill="#2b2d31" stroke="#000"/><rect x="29" y="57" width="30" height="64" rx="2" fill="#0a0f0a"/><circle cx="44" cy="60.5" r="1.6" fill="#000" stroke="#444" stroke-width=".6"/>${[5, 9, 13].map((r) => `<path d="M ${44 - r} 94 A ${r} ${r} 0 0 1 ${44 + r} 94" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>`).join("")}<circle cx="44" cy="95" r="2" fill="#fff"/><path d="M 37 117 l -2.5 -1.5 l 2.5 -1.5 z" fill="#888"/><circle cx="44" cy="115.5" r="1.5" fill="none" stroke="#888" stroke-width=".8"/><rect x="50" y="114" width="3" height="3" fill="none" stroke="#888" stroke-width=".8"/>
       <rect x="198" y="54" width="36" height="70" rx="9" fill="#1c1c1e" stroke="#9a9aa0" stroke-width="1.2"/><rect x="201" y="57" width="30" height="64" rx="7" fill="#0a0f0a"/><rect x="210" y="59.5" width="12" height="3.6" rx="1.8" fill="#000"/>${face(216, 88, 11, { extra: antenna })}<rect x="210" y="117.5" width="12" height="1.3" rx=".65" fill="#777"/>
-      ${txt(228, 140, "+ 2 links", { fs: 9, fill: "#2f7cf6", anchor: "end" })}`);
+      ${(
+        [
+          [44, "Hotspot", "A"],
+          [130, "Moblin", "B"],
+          [216, "Moblink", "C"],
+        ] as [number, string, string][]
+      )
+        .map(
+          ([x, t, c]) =>
+            `${txt(x, 135, t, { fs: 7, fill: "#1c1c1e" })}${txt(x, 143, `carrier ${c}`, { fs: 5.5, fill: "#777", w: 600 })}`,
+        )
+        .join("")}`);
   },
   photoshoot() {
     return svgH(

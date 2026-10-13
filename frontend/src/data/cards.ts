@@ -241,7 +241,7 @@ export const cards: Card[] = [
     name: "Moblink",
     power: 9,
     subtype: "Bonding",
-    text: "Turns spare phones into extra internet connections, ideally on different carriers. More networks, fewer dropouts.",
+    text: "Your cellular plus a hotspot phone gives you two connections to the server. Moblink turns a spare phone into a third, ideally on another carrier. More networks, fewer dropouts.",
     credit: "💡 Rick9K & xcopy94",
     also: "Rebuilt on request of mikeful",
     version: "v0.391.0",
