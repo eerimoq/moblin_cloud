@@ -411,7 +411,8 @@ export const cardArt = {
     ];
     const call = (lx: number, ly: number, t: string, bg: string, fg: string, b: [number, number]) =>
       `<path d="M ${lx + (lx < 130 ? 25 : -25)} ${ly} L ${b[0]} ${b[1]}" stroke="#888" stroke-width="1"/><circle cx="${b[0]}" cy="${b[1]}" r="1.8" fill="#888"/>${pill(lx, ly, t, bg, fg, 8, 50)}`;
-    return svgH(`<rect width="260" height="150" fill="#eef0e6"/>
+    return svgH(
+      `<rect width="260" height="150" fill="url(#gpsky)"/>
       ${face(130, 46, 30, { eyes: "open", look: [0, 4] })}
       <g transform="translate(130 104) scale(${k}) translate(-130 -125)">
       <rect x="94" y="94" width="20" height="8" rx="3" fill="#444" stroke="#000"/><rect x="146" y="94" width="20" height="8" rx="3" fill="#444" stroke="#000"/>
@@ -427,7 +428,9 @@ export const cardArt = {
       ${call(222, 30, "Replay", "#2c2c2e", "#fff", at(156, 96))}
       ${call(222, 56, "Mute", "#ff3b30", "#fff", at(166, 116))}
       ${call(222, 82, "Blackout", "#2f7cf6", "#fff", at(150, 116))}
-      ${call(222, 108, "Torch", "#ffcc00", "#1c1c1e", at(158, 123))}`);
+      ${call(222, 108, "Torch", "#ffcc00", "#1c1c1e", at(158, 123))}`,
+      `<linearGradient id="gpsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fbcf0"/><stop offset="1" stop-color="#f4f7fb"/></linearGradient>`,
+    );
   },
   background() {
     return svgF(
