@@ -21,6 +21,18 @@ server proxies `/api` to one running locally, so start it in another terminal:
 just backend-run
 ```
 
+## Printing the trading cards
+
+```
+just cards-print
+```
+
+builds the site and writes every card and the shared back to `cards-print/` as
+822x1122 PNGs at 300 dpi: a 2.5x3.5 inch poker card with 36 px bleed on each
+side, the size makeplayingcards.com asks for. Card text stays 36 px inside the
+cut line. It needs Google Chrome installed and warns about any card whose text
+overflows or leaves that safe area.
+
 ## Backend
 
 The Moblin app tells the backend who went live by posting to

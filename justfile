@@ -63,3 +63,8 @@ backend-docker-run *args: backend-docker-build
 docs-generate moblin="../moblin":
 	python3 scripts/generate_docs.py {{moblin}} frontend/src/data/docs/settings.json
 	cd frontend && oxfmt src/data/docs/settings.json
+
+# Renders every trading card as a 300 dpi PNG with bleed, sized for poker cards at makeplayingcards.com.
+cards-print out="cards-print":
+	cd frontend && npm run build
+	cd frontend && node scripts/print-cards.ts {{absolute_path(out)}}

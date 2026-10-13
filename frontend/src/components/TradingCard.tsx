@@ -17,6 +17,7 @@ export default function TradingCard(props: Props) {
       class={`tcard tcard-${props.card.rarity}${props.card.full ? " tcard-full" : ""}${interactive() ? " tcard-button" : ""}`}
       tabIndex={interactive() ? 0 : undefined}
       role={interactive() ? "button" : undefined}
+      data-card={props.card.id}
       aria-label={`${props.card.name}, ${rarity().label}, power ${props.card.power}`}
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest("a")) {
