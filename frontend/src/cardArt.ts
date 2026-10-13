@@ -467,12 +467,12 @@ export const cardArt = {
     );
   },
   mobcam() {
-    const cable = "M 58.5 129 C 58.5 148 80 152 90 140 C 97 136 92 114 107 114";
+    const cable = "M 58.5 129 C 58.5 148 72 150 84 142 C 92 137 90 121 107 121";
     return svgH(
       `<rect width="260" height="150" fill="#f1efe4"/>
-      <path d="${cable}" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/><path d="${cable}" fill="none" stroke="#1a8a1a" stroke-width="2.4" stroke-linecap="round"/><rect x="104" y="111.5" width="9" height="5" rx="1.2" fill="#1a8a1a" stroke="#000"/>
+      <path d="${cable}" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/><path d="${cable}" fill="none" stroke="#1a8a1a" stroke-width="2.4" stroke-linecap="round"/><rect x="104" y="118.5" width="9" height="5" rx="1.2" fill="#1a8a1a" stroke="#000"/>
       ${phone(31, 16, 55, 114, `<clipPath id="mcphone"><rect x="33.5" y="18.5" width="50" height="109" rx="5.5"/></clipPath><image href="${asset("cards/mobcam-phone.webp")}" x="33.5" y="18.5" width="50" height="109" preserveAspectRatio="xMidYMid slice" clip-path="url(#mcphone)"/>`)}
-      <g transform="translate(-2 0)">
+      <g transform="translate(-2 7)">
       <rect x="116" y="22" width="132" height="86" rx="5" fill="#2c2c2e" stroke="#000"/>
       <path d="M 116 108 h 132 l 3 11 h -138 z" fill="#bdbdc2" stroke="#666"/><path d="M 113 119 h 138 v 3 h -138 z" fill="#9a9aa0" stroke="#666"/><path d="M 130 109.8 h 104 l 1.2 3.8 h -106.4 z" fill="#3a3a40"/><path d="M 156 114.8 h 52 l 1 3.2 h -54 z" fill="#aeaeb4" stroke="#7a7a80" stroke-width="0.6"/>
       <rect x="117.5" y="23.5" width="129" height="83" rx="3.5" fill="#1f1f23"/>
@@ -493,7 +493,8 @@ export const cardArt = {
         )
         .join("")}
       ${txt(127, 103.5, "Mobcam", { fs: 3.5, fill: "#aaa", w: 600 })}${txt(149, 103.5, "Mic/Aux", { fs: 3.5, fill: "#aaa", w: 600 })}
-      ${pill(182, 12, "OBS", "#2c2c2e", "#fff", 8, 32)}</g>`,
+      ${pill(190, 7.5, "OBS Plugin", "#2c2c2e", "#fff", 8, 58)}</g>
+      <image href="${asset("logos/logo-mobcam.png")}" x="140" y="4.5" width="${(20 * 363) / 440}" height="20"/>`,
       `<linearGradient id="mcvu" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#4caf50"/><stop offset=".6" stop-color="#4caf50"/><stop offset=".8" stop-color="#ffd54f"/><stop offset="1" stop-color="#e53935"/></linearGradient>`,
     );
   },
