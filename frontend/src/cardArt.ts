@@ -317,16 +317,30 @@ export const cardArt = {
       )
       .join("")}</g>`;
     const heart = `<g transform="translate(-104.847 -140.369) matrix(1.8079465,0.99176829,-0.93893779,1.9031765,-123.74366,-280.65907)" fill="#ff0a00" stroke="#000" stroke-width="0.3"><path d="m 177.72832,103.21526 -4.51816,-4.935088 c 0,0 -2.38729,-2.231374 -0.32188,-4.149985 2.14478,-1.992344 4.86842,0.888714 4.86842,0.888714"/><path d="m 177.5911,103.21811 4.51816,-4.935087 c 0,0 2.38729,-2.23138 0.32189,-4.14999 -2.14478,-1.99234 -4.86843,0.88872 -4.86843,0.88872"/></g>`;
-    return svgH(`<rect width="260" height="150" fill="#0f1b2d"/>
-      <circle cx="130" cy="82" r="56" fill="#1c3a63" stroke="#8fb6ea" stroke-width="1"/>
+    return svgH(
+      `<rect width="260" height="150" fill="#0f1b2d"/>
+      <circle cx="130" cy="82" r="56" fill="#1f4a80" stroke="#8fb6ea" stroke-width="1"/>
       <ellipse cx="130" cy="82" rx="22" ry="56" fill="none" stroke="#8fb6ea" opacity=".6"/><ellipse cx="130" cy="82" rx="42" ry="56" fill="none" stroke="#8fb6ea" opacity=".4"/>
       <path d="M 74 82 h 112 M 80 58 h 100 M 80 106 h 100" stroke="#8fb6ea" opacity=".5"/>
-      <path d="M 100 70 q 10 -14 22 -6 q 12 -6 18 8 q -8 16 -24 10 z M 120 110 q 14 -8 26 4 q -6 12 -24 6 z" fill="#2e8b57" opacity=".9"/>
+      <clipPath id="globe"><circle cx="130" cy="82" r="56"/></clipPath>
+      <g clip-path="url(#globe)"><g transform="translate(130 82) scale(56)" >
+      <path d="M -0.95 -0.45 C -0.9 -0.7 -0.7 -0.85 -0.5 -0.85 C -0.35 -0.88 -0.2 -0.8 -0.22 -0.65 C -0.25 -0.55 -0.35 -0.52 -0.33 -0.42 C -0.3 -0.33 -0.25 -0.25 -0.35 -0.18 C -0.45 -0.12 -0.48 -0.05 -0.45 0.05 C -0.55 0 -0.62 -0.08 -0.68 -0.15 C -0.78 -0.2 -0.9 -0.3 -0.95 -0.45 Z" fill="#4a8a3c"/>
+      <path d="M -0.45 0.05 C -0.35 0 -0.2 0.05 -0.12 0.15 C -0.05 0.28 -0.12 0.42 -0.2 0.55 C -0.26 0.68 -0.3 0.82 -0.36 0.88 C -0.4 0.8 -0.42 0.65 -0.45 0.5 C -0.5 0.38 -0.55 0.25 -0.55 0.15 C -0.55 0.08 -0.5 0.05 -0.45 0.05 Z" fill="#3a7f33"/>
+      <path d="M 0.22 -0.6 C 0.3 -0.75 0.5 -0.8 0.65 -0.78 C 0.75 -0.7 0.72 -0.6 0.78 -0.5 C 0.7 -0.45 0.6 -0.42 0.5 -0.4 C 0.42 -0.36 0.34 -0.4 0.3 -0.45 C 0.26 -0.5 0.2 -0.55 0.22 -0.6 Z" fill="#5c9440"/>
+      <path d="M 0.3 -0.35 C 0.45 -0.42 0.62 -0.4 0.75 -0.3 C 0.85 -0.2 0.85 -0.05 0.78 0.02 C 0.74 0.15 0.68 0.3 0.6 0.45 C 0.55 0.58 0.47 0.6 0.43 0.5 C 0.4 0.38 0.4 0.25 0.42 0.12 C 0.36 0.1 0.26 0.08 0.2 0 C 0.15 -0.1 0.18 -0.25 0.3 -0.35 Z" fill="url(#africa)"/>
+      <path d="M 0.78 -0.75 C 0.9 -0.7 1 -0.6 1 -0.4 C 1 -0.2 0.95 -0.1 0.85 -0.05 C 0.9 -0.2 0.85 -0.35 0.8 -0.45 C 0.78 -0.55 0.75 -0.65 0.78 -0.75 Z" fill="#8a9a4a"/>
+      <path d="M -0.3 -0.84 C -0.2 -0.9 -0.06 -0.86 -0.06 -0.74 C -0.08 -0.63 -0.16 -0.55 -0.24 -0.58 C -0.32 -0.64 -0.34 -0.76 -0.3 -0.84 Z" fill="#e6eef2"/><ellipse cx="0.12" cy="-0.6" rx="0.055" ry="0.035" fill="#5c9440"/>
+      <path d="M -0.78 0.96 C -0.68 0.86 -0.56 0.9 -0.46 0.84 C -0.36 0.79 -0.28 0.87 -0.18 0.83 C -0.08 0.79 0 0.86 0.1 0.82 C 0.2 0.79 0.3 0.87 0.4 0.84 C 0.5 0.81 0.6 0.89 0.74 0.93 L 0.74 1.1 L -0.78 1.1 Z M -0.78 -0.96 C -0.66 -0.9 -0.56 -0.83 -0.46 -0.86 C -0.36 -0.89 -0.3 -0.8 -0.2 -0.82 C -0.1 -0.85 -0.02 -0.78 0.08 -0.8 C 0.18 -0.84 0.28 -0.89 0.38 -0.84 C 0.48 -0.79 0.58 -0.87 0.74 -0.93 L 0.74 -1.1 L -0.78 -1.1 Z" fill="#eef3f5"/>
+      </g></g>
+      <g transform="translate(126 27)"><ellipse rx="5" ry="2.6" fill="#fff" stroke="#333" stroke-width=".6"/><g fill="#fff" stroke="#333" stroke-width=".6"><rect x="-4.2" y="1.5" width="1.6" height="3" rx=".6"/><rect x="-1.8" y="1.8" width="1.6" height="2.8" rx=".6"/><rect x="1" y="1.8" width="1.6" height="2.8" rx=".6"/><rect x="3" y="1.5" width="1.6" height="3" rx=".6"/></g><circle cx="4.6" cy="-2.9" r=".7" fill="#fff" stroke="#333" stroke-width=".5"/><circle cx="5.5" cy="-1.2" r="1.9" fill="#fff" stroke="#333" stroke-width=".6"/><circle cx="7.2" cy="-1" r=".5" fill="#111"/><circle cx="5.4" cy="-1.8" r=".35" fill="#111"/></g>
+      <g transform="translate(134 135) rotate(180)"><ellipse rx="2.3" ry="3.3" fill="#111" stroke="#8fb6ea" stroke-width=".4"/><circle cy="-2.8" r="1.5" fill="#111" stroke="#8fb6ea" stroke-width=".4"/><ellipse cy=".7" rx="1.4" ry="2.3" fill="#fff"/><path d="M 1.3 -2.8 l 1.5 .4 l -1.5 .5 z" fill="#f5a623"/><circle cx=".6" cy="-3.2" r=".3" fill="#fff"/><path d="M -1.4 3.4 h 1.2 M .2 3.4 h 1.2" stroke="#f5a623" stroke-width=".8" stroke-linecap="round"/></g>
       <path d="M 56 110 Q 130 10 206 110" fill="none" stroke="#ffd166" stroke-width="2.5" stroke-dasharray="6 8" class="tcard-dash" style="--dash: 14"/>
       ${face(218, 112, 26, { extra: queen })}
       ${face(42, 112, 26, { extra: `<path d="M -53.6 -8 A 54 54 0 0 1 53.6 -8" fill="none" stroke="#9b6dff" stroke-width="6" stroke-linecap="round"/><rect x="-59" y="-16" width="13" height="26" rx="6" fill="#9b6dff" stroke="#4b2a99" stroke-width="1.2"/><rect x="46" y="-16" width="13" height="26" rx="6" fill="#9b6dff" stroke="#4b2a99" stroke-width="1.2"/><path d="M 50 8 q 0 16 -8 18" fill="none" stroke="#9b6dff" stroke-width="3.5" stroke-linecap="round"/><circle cx="40" cy="26" r="4.5" fill="#4b2a99"/>${heart}` })}
       <rect x="72" y="124" width="40" height="18" rx="9" fill="#ff3b30" stroke="#7a0f0f"/>${txt(92, 136, "ZOOM", { fs: 8 })}
-      ${txt(42, 146, "assistant", { fs: 8, fill: "#8fb6ea" })}${txt(218, 146, "streamer", { fs: 8, fill: "#8fb6ea" })}`);
+      ${txt(42, 146, "assistant", { fs: 8, fill: "#8fb6ea" })}${txt(218, 146, "streamer", { fs: 8, fill: "#8fb6ea" })}`,
+      `<linearGradient id="africa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9a85c"/><stop offset=".32" stop-color="#c9a85c"/><stop offset=".48" stop-color="#4a8a3c"/><stop offset=".8" stop-color="#4a8a3c"/><stop offset="1" stop-color="#b89a60"/></linearGradient>`,
+    );
   },
   website() {
     const marks: Record<string, [string, string, string]> = {
