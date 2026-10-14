@@ -1,14 +1,40 @@
 import { createSignal } from "solid-js";
 import Icon from "./Icon";
 
+function copyWithExecCommand(text: string): boolean {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  textarea.remove();
+  return ok;
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {}
+  }
+  return copyWithExecCommand(text);
+}
+
 export default function CopyButton(props: { text: string; label?: string }) {
   const [copied, setCopied] = createSignal(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(props.text);
-    } catch {
+    if (!(await copyText(props.text))) {
       return;
     }
     setCopied(true);
