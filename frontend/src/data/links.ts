@@ -45,6 +45,7 @@ export const pages = {
   docs: "/docs/",
   cards: "/cards/",
   songRequest: "/song-request/",
+  songRequestAdmin: "/song-request/admin/",
 } as const;
 
 export const platforms = [

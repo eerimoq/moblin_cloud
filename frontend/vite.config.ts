@@ -9,7 +9,21 @@ const base = existsSync("public/CNAME") ? "/" : "/moblin_website/";
 
 export default defineConfig({
   base,
-  plugins: [solid(), tailwindcss()],
+  plugins: [
+    solid(),
+    tailwindcss(),
+    {
+      name: "song-request-names",
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          if (req.url && /\/song-request\/(?!admin\/?(\?|$))[^/?.]+\/?(\?.*)?$/.test(req.url)) {
+            req.url = `${base}404.html`;
+          }
+          next();
+        });
+      },
+    },
+  ],
   server: {
     // Talk to a local backend (`just backend-run`) during development.
     proxy: {
@@ -71,6 +85,8 @@ export default defineConfig({
         "docs/index.html",
         "cards/index.html",
         "song-request/index.html",
+        "song-request/admin/index.html",
+        "404.html",
       ],
     },
   },

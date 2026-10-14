@@ -17,6 +17,7 @@ use crate::app_attest::AppAttest;
 use crate::challenges::Challenges;
 use crate::live::Live;
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers};
+use crate::song_requests::{SettingsError, SongRequests};
 use crate::store::{Channel, Store, Streamer};
 
 const ASSERTION_HEADER: &str = "moblin-assertion";
@@ -27,6 +28,7 @@ pub struct Api {
     pub app_attest: Option<AppAttest>,
     pub live: Option<Live>,
     pub remote_control: Streamers,
+    pub song_requests: SongRequests,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -47,6 +49,11 @@ pub fn router(api: Arc<Api>) -> Router {
             "/remote-control/streamer/{key}",
             get(handle_remote_control_streamer),
         )
+        .route(
+            "/remote-control/streamer/{key}/settings",
+            get(handle_settings).post(handle_settings_update),
+        )
+        .route("/remote-control/names/{name}", get(handle_name))
         .route(
             "/remote-control/{id}/music",
             get(handle_music_status).post(handle_music_add),
@@ -171,6 +178,103 @@ async fn handle_remote_control_streamer(
     Ok(upgrade.on_upgrade(move |socket| async move { api.remote_control.serve(id, socket).await }))
 }
 
+#[derive(Serialize)]
+struct SettingsResponse {
+    id: String,
+    connected: bool,
+    enabled: bool,
+    name: Option<String>,
+}
+
+fn settings_response(
+    api: &Api,
+    id: String,
+    enabled: bool,
+    name: Option<String>,
+) -> Json<SettingsResponse> {
+    Json(SettingsResponse {
+        connected: api.remote_control.is_connected(&id),
+        id,
+        enabled,
+        name,
+    })
+}
+
+async fn handle_settings(
+    State(api): State<Arc<Api>>,
+    Path(key): Path<String>,
+) -> Result<Json<SettingsResponse>, StatusCode> {
+    let id = remote_control::id_of(&key).ok_or(StatusCode::NOT_FOUND)?;
+    let settings = api.song_requests.get(&id);
+    Ok(settings_response(&api, id, settings.enabled, settings.name))
+}
+
+#[derive(Deserialize)]
+struct SettingsRequest {
+    enabled: bool,
+    name: Option<String>,
+}
+
+async fn handle_settings_update(
+    State(api): State<Arc<Api>>,
+    Path(key): Path<String>,
+    Json(request): Json<SettingsRequest>,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let id = remote_control::id_of(&key)
+        .ok_or((StatusCode::NOT_FOUND, "unknown streamer".to_string()))?;
+    let settings = api
+        .song_requests
+        .set(&id, request.enabled, request.name.as_deref())
+        .map_err(|error| match error {
+            SettingsError::InvalidName => (
+                StatusCode::BAD_REQUEST,
+                "the name must be 3 to 25 letters, digits and dashes".to_string(),
+            ),
+            SettingsError::NameTaken => (StatusCode::CONFLICT, "the name is taken".to_string()),
+            SettingsError::Full => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "too many streamers".to_string(),
+            ),
+            SettingsError::NotSaved => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "the settings could not be saved".to_string(),
+            ),
+        })?;
+    info!(
+        "remote control streamer {id} turned song requests {} with name {:?}",
+        if settings.enabled { "on" } else { "off" },
+        settings.name
+    );
+    Ok(settings_response(&api, id, settings.enabled, settings.name))
+}
+
+#[derive(Serialize)]
+struct NameResponse {
+    id: String,
+}
+
+async fn handle_name(
+    State(api): State<Arc<Api>>,
+    Path(name): Path<String>,
+) -> Result<Json<NameResponse>, StatusCode> {
+    let id = api
+        .song_requests
+        .id_of_name(&name)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(NameResponse { id }))
+}
+
+fn ensure_enabled(api: &Api, id: &str) -> Result<(), (StatusCode, String)> {
+    if api.song_requests.get(id).enabled {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            "the streamer turned song requests off".to_string(),
+        ))
+    }
+}
+
 fn music_error(error: RequestError) -> (StatusCode, String) {
     match error {
         RequestError::Offline => (StatusCode::NOT_FOUND, "the streamer is offline".to_string()),
@@ -193,6 +297,7 @@ async fn handle_music_status(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Result<Json<MusicStatus>, (StatusCode, String)> {
+    ensure_enabled(&api, &id)?;
     let status = api
         .remote_control
         .music(&id, MusicCommand::Status {})
@@ -212,6 +317,7 @@ async fn handle_music_add(
     Path(id): Path<String>,
     Json(request): Json<AddSongRequest>,
 ) -> Result<Json<MusicStatus>, (StatusCode, String)> {
+    ensure_enabled(&api, &id)?;
     let title = remote_control::normalize_song(&request.song).ok_or((
         StatusCode::BAD_REQUEST,
         "the song must be 1 to 200 characters".to_string(),
@@ -296,6 +402,7 @@ mod tests {
             app_attest: None,
             live: None,
             remote_control: Streamers::new(),
+            song_requests: SongRequests::load(None).unwrap(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -413,6 +520,102 @@ mod tests {
         socket.close(None).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
         let response = client.get(&music_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn settings_are_changed_with_the_key() {
+        let address = start().await;
+        let client = reqwest::Client::new();
+        let streamer: Value = client
+            .post(format!("http://{address}/remote-control/streamers"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let key = streamer["key"].as_str().unwrap();
+        let id = streamer["id"].as_str().unwrap();
+        let settings_url = format!("http://{address}/remote-control/streamer/{key}/settings");
+        let settings: Value = client
+            .get(&settings_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            settings,
+            json!({"id": id, "connected": false, "enabled": true, "name": null})
+        );
+        let settings: Value = client
+            .post(&settings_url)
+            .json(&json!({"enabled": false, "name": "Erik"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            settings,
+            json!({"id": id, "connected": false, "enabled": false, "name": "erik"})
+        );
+        let name: Value = client
+            .get(format!("http://{address}/remote-control/names/erik"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(name, json!({"id": id}));
+        let response = client
+            .get(format!("http://{address}/remote-control/names/other"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let response = client
+            .get(format!("http://{address}/remote-control/{id}/music"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = client
+            .post(format!("http://{address}/remote-control/{id}/music"))
+            .json(&json!({"song": "1440818839"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let other: Value = client
+            .post(format!("http://{address}/remote-control/streamers"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let response = client
+            .post(format!(
+                "http://{address}/remote-control/streamer/{}/settings",
+                other["key"].as_str().unwrap()
+            ))
+            .json(&json!({"enabled": true, "name": "erik"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let response = client
+            .get(format!(
+                "http://{address}/remote-control/streamer/{id}/settings"
+            ))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

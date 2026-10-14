@@ -6,10 +6,12 @@ mod live;
 mod live_status;
 mod profiles;
 mod remote_control;
+mod song_requests;
 mod store;
 mod twitch;
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,6 +28,7 @@ use crate::live::Live;
 use crate::live_status::LiveStatus;
 use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
+use crate::song_requests::SongRequests;
 use crate::store::Store;
 use crate::twitch::Twitch;
 
@@ -76,6 +79,11 @@ struct Cli {
     /// use the development environment, distributed apps the production one.
     #[arg(long, env = "APP_ATTEST_ENVIRONMENT", value_enum, default_value_t = Environment::Production)]
     app_attest_environment: Environment,
+    /// The file the song request settings of streamers, whether song
+    /// requests are on and the name of their page, are saved in. Without
+    /// one they are forgotten when the backend restarts.
+    #[arg(long, env = "SONG_REQUESTS_FILE")]
+    song_requests_file: Option<PathBuf>,
     /// Accept live posts from anyone, not only from the Moblin app, for
     /// developing the website.
     #[arg(long)]
@@ -140,12 +148,17 @@ async fn main() -> Result<()> {
         );
         Some(AppAttest::new(&cli.app_id, cli.app_attest_environment))
     };
+    if cli.song_requests_file.is_none() {
+        warn!("no song requests file, forgetting song request settings on restart");
+    }
+    let song_requests = SongRequests::load(cli.song_requests_file)?;
     let api = Arc::new(Api {
         store,
         challenges: Challenges::new(),
         app_attest,
         live: twitch.map(|twitch| Live::new(twitch, cli.twitch_live_channel)),
         remote_control: Streamers::new(),
+        song_requests,
     });
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await

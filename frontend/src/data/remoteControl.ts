@@ -20,6 +20,13 @@ export type Streamer = {
   id: string;
 };
 
+export type Settings = {
+  id: string;
+  connected: boolean;
+  enabled: boolean;
+  name: string | null;
+};
+
 export class BackendError extends Error {
   constructor(
     readonly status: number,
@@ -47,6 +54,21 @@ export const addSong = (id: string, song: string, user: string) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ song, user: user || null }),
   });
+
+export const streamerSettings = (key: string) =>
+  call<Settings>(`/streamer/${encodeURIComponent(key)}/settings`);
+
+export const saveStreamerSettings = (key: string, enabled: boolean, name: string | null) =>
+  call<Settings>(`/streamer/${encodeURIComponent(key)}/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled, name }),
+  });
+
+export const idOfName = async (name: string) =>
+  (await call<{ id: string }>(`/names/${encodeURIComponent(name)}`)).id;
+
+export const keyOf = (text: string) => text.trim().split("/").filter(Boolean).at(-1) ?? "";
 
 export const streamerUrl = (key: string) =>
   `${import.meta.env.DEV ? "ws://localhost:8080" : links.api.replace(/^https/, "wss")}/remote-control/streamer/${key}`;

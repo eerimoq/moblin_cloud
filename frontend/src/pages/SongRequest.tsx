@@ -1,21 +1,20 @@
-import { createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { asset } from "../asset";
-import CopyButton from "../components/CopyButton";
 import Footer from "../components/Footer";
 import Icon from "../components/Icon";
-import Mascot from "../components/Mascot";
 import Nav from "../components/Nav";
+import { Band, buttonClass, cardClass, Hero, inputClass } from "../components/SongRequestParts";
 import { links, pages } from "../data/links";
 import {
   addSong,
   BackendError,
-  createStreamer,
+  idOfName,
   musicStatus,
-  streamerUrl,
   type MusicStatus,
   type Song,
-  type Streamer,
 } from "../data/remoteControl";
+
+type Status = MusicStatus | "loading" | "offline" | "off" | "unknown";
 
 const nameKey = "songRequestName";
 
@@ -38,6 +37,8 @@ function errorText(error: unknown) {
     switch (error.status) {
       case 400:
         return "Enter an Apple Music link, a song ID or a search of at most 200 characters.";
+      case 403:
+        return "The streamer turned song requests off.";
       case 404:
         return "The streamer is offline right now. Try again when they are live.";
       case 429:
@@ -53,41 +54,19 @@ function songText(song: Song) {
   return song.artist ? `${song.artist} – ${song.title}` : song.title;
 }
 
-const inputClass =
-  "h-13 w-full rounded-2xl border-[1.5px] border-line bg-well px-4 text-[17px] text-ink placeholder:text-muted focus:border-leaf focus:outline-none";
-
-const buttonClass =
-  "inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-moss px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-moss-bright disabled:opacity-60";
-
-function Hero(props: { title: string; children: JSX.Element }) {
-  return (
-    <section class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 pt-12 pb-10 sm:px-8 lg:pt-18">
-      <div class="flex items-start justify-between gap-6">
-        <div class="flex max-w-[640px] flex-col gap-4">
-          <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-            Song requests
-          </span>
-          <h1 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-6xl">
-            {props.title}
-          </h1>
-          {props.children}
-        </div>
-        <Mascot
-          variant="looking"
-          class="hidden w-[150px] shrink-0 -rotate-[6deg] sm:block lg:w-[190px]"
-        />
-      </div>
-    </section>
-  );
-}
-
-function Queue(props: { status: MusicStatus | "offline" | "loading" }) {
+function Queue(props: { status: Status }) {
   return (
     <div class="flex flex-col gap-4 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8">
       <h2 class="text-[23px] font-semibold">Queue</h2>
       <Switch>
         <Match when={props.status === "loading"}>
           <p class="text-muted">Loading…</p>
+        </Match>
+        <Match when={props.status === "off"}>
+          <p class="text-ink-2">The streamer turned song requests off. Check back later.</p>
+        </Match>
+        <Match when={props.status === "unknown"}>
+          <p class="text-ink-2">There is no song request page with this name.</p>
         </Match>
         <Match when={props.status === "offline"}>
           <p class="text-ink-2">
@@ -140,22 +119,38 @@ function Queue(props: { status: MusicStatus | "offline" | "loading" }) {
   );
 }
 
-function Viewer(props: { id: string }) {
-  const [status, setStatus] = createSignal<MusicStatus | "offline" | "loading">("loading");
+function statusOfError(error: unknown): Status {
+  return error instanceof BackendError && error.status === 403 ? "off" : "offline";
+}
+
+function Viewer(props: { id: string | null; name: string | null }) {
+  const [id, setId] = createSignal(props.id);
+  const [status, setStatus] = createSignal<Status>("loading");
   const [song, setSong] = createSignal("");
   const [name, setName] = createSignal(readName());
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
 
   const refresh = async () => {
+    const current = id();
+    if (!current) {
+      return;
+    }
     try {
-      setStatus(await musicStatus(props.id));
-    } catch {
-      setStatus("offline");
+      setStatus(await musicStatus(current));
+    } catch (error) {
+      setStatus(statusOfError(error));
     }
   };
 
-  onMount(() => {
+  onMount(async () => {
+    if (props.name) {
+      try {
+        setId(await idOfName(props.name));
+      } catch {
+        setStatus("unknown");
+      }
+    }
     void refresh();
     const timer = setInterval(refresh, 30_000);
     onCleanup(() => clearInterval(timer));
@@ -164,14 +159,15 @@ function Viewer(props: { id: string }) {
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
     const text = song().trim();
-    if (!text || busy()) {
+    const current = id();
+    if (!text || !current || busy()) {
       return;
     }
     saveName(name().trim());
     setBusy(true);
     setResult(null);
     try {
-      const added = await addSong(props.id, text, name().trim());
+      const added = await addSong(current, text, name().trim());
       if (added.songNotFound) {
         setResult({ ok: false, text: `Could not find “${text}” on Apple Music.` });
       } else {
@@ -185,8 +181,8 @@ function Viewer(props: { id: string }) {
       setStatus({ ...added, songNotFound: null });
     } catch (error) {
       setResult({ ok: false, text: errorText(error) });
-      if (error instanceof BackendError && error.status === 404) {
-        setStatus("offline");
+      if (error instanceof BackendError && [403, 404].includes(error.status)) {
+        setStatus(statusOfError(error));
       }
     } finally {
       setBusy(false);
@@ -201,118 +197,72 @@ function Viewer(props: { id: string }) {
           straight into the streamer's queue in Moblin.
         </p>
       </Hero>
-      <section class="bg-band py-16 lg:py-20">
-        <div class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 sm:px-8">
-          <form
-            class="flex flex-col gap-4 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8"
-            onSubmit={submit}
-          >
-            <h2 class="text-[23px] font-semibold">Add a song</h2>
-            <label class="flex flex-col gap-2">
-              <span class="text-[15px] font-semibold text-ink-2">Song</span>
-              <input
-                type="text"
-                required
-                maxLength={200}
-                value={song()}
-                onInput={(event) => setSong(event.currentTarget.value)}
-                placeholder="https://music.apple.com/… or artist and title"
-                autocomplete="off"
-                spellcheck={false}
-                class={inputClass}
-              />
-              <span class="text-[15px] text-muted">
-                Search for songs on{" "}
-                <a
-                  href={links.appleMusic}
-                  target="_blank"
-                  rel="noopener"
-                  class="text-leaf hover:text-leaf-bright"
-                >
-                  Apple Music
-                </a>{" "}
-                and copy the share link of the one you want.
-              </span>
-            </label>
-            <label class="flex flex-col gap-2">
-              <span class="text-[15px] font-semibold text-ink-2">Your name (optional)</span>
-              <input
-                type="text"
-                maxLength={25}
-                value={name()}
-                onInput={(event) => setName(event.currentTarget.value)}
-                placeholder="Shown next to the song"
-                autocomplete="nickname"
-                class={inputClass}
-              />
-            </label>
-            <div class="flex flex-wrap items-center gap-4">
-              <button type="submit" class={buttonClass} disabled={busy()}>
-                <Icon name="music" class="size-5" />
-                {busy() ? "Adding…" : "Add to queue"}
-              </button>
-              <Show when={result()}>
-                {(result) => (
-                  <p role="status" class={result().ok ? "text-leaf" : "text-amber"}>
-                    {result().text}
-                  </p>
-                )}
-              </Show>
-            </div>
-          </form>
-          <Queue status={status()} />
-        </div>
-      </section>
+      <Band>
+        <form class={cardClass} onSubmit={submit}>
+          <h2 class="text-[23px] font-semibold">Add a song</h2>
+          <label class="flex flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">Song</span>
+            <input
+              type="text"
+              required
+              maxLength={200}
+              value={song()}
+              onInput={(event) => setSong(event.currentTarget.value)}
+              placeholder="https://music.apple.com/… or artist and title"
+              autocomplete="off"
+              spellcheck={false}
+              class={inputClass}
+            />
+            <span class="text-[15px] text-muted">
+              Search for songs on{" "}
+              <a
+                href={links.appleMusic}
+                target="_blank"
+                rel="noopener"
+                class="text-leaf hover:text-leaf-bright"
+              >
+                Apple Music
+              </a>{" "}
+              and copy the share link of the one you want.
+            </span>
+          </label>
+          <label class="flex flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">Your name (optional)</span>
+            <input
+              type="text"
+              maxLength={25}
+              value={name()}
+              onInput={(event) => setName(event.currentTarget.value)}
+              placeholder="Shown next to the song"
+              autocomplete="nickname"
+              class={inputClass}
+            />
+          </label>
+          <div class="flex flex-wrap items-center gap-4">
+            <button
+              type="submit"
+              class={buttonClass}
+              disabled={busy() || typeof status() === "string"}
+            >
+              <Icon name="music" class="size-5" />
+              {busy() ? "Adding…" : "Add to queue"}
+            </button>
+            <Show when={result()}>
+              {(result) => (
+                <p role="status" class={result().ok ? "text-leaf" : "text-amber"}>
+                  {result().text}
+                </p>
+              )}
+            </Show>
+          </div>
+        </form>
+        <Queue status={status()} />
+      </Band>
     </>
   );
 }
 
-function Value(props: { label: string; text: string; href?: string }) {
-  return (
-    <div class="flex flex-col gap-2">
-      <span class="text-[15px] font-semibold text-ink-2">{props.label}</span>
-      <span class="flex items-start gap-2 rounded-2xl border-[1.5px] border-line bg-well px-4 py-3">
-        <Show
-          when={props.href}
-          fallback={
-            <code class="min-w-0 flex-1 font-mono text-[15px] break-all">{props.text}</code>
-          }
-        >
-          {(href) => (
-            <a
-              href={href()}
-              class="min-w-0 flex-1 font-mono text-[15px] break-all text-leaf hover:text-leaf-bright"
-            >
-              {props.text}
-            </a>
-          )}
-        </Show>
-        <CopyButton text={props.text} label={props.label} />
-      </span>
-    </div>
-  );
-}
-
-function Setup() {
-  const [streamer, setStreamer] = createSignal<Streamer | null>(null);
-  const [busy, setBusy] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
-
-  const create = async () => {
-    setBusy(true);
-    setFailed(false);
-    try {
-      setStreamer(await createStreamer());
-    } catch {
-      setFailed(true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const pageUrl = (id: string) =>
-    new URL(`${asset(pages.songRequest)}?streamer=${encodeURIComponent(id)}`, location.origin).href;
-
+function Landing() {
   return (
     <>
       <Hero title="Let viewers pick the music.">
@@ -321,68 +271,35 @@ function Setup() {
           Moblin's music player, without typing commands in chat.
         </p>
       </Hero>
-      <section class="bg-band py-16 lg:py-20">
-        <div class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 sm:px-8">
-          <div class="flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8">
-            <h2 class="text-[23px] font-semibold">Set it up</h2>
-            <ol class="flex list-decimal flex-col gap-2 pl-6 text-ink-2">
-              <li>Create your page below.</li>
-              <li>
-                In Moblin, go to Settings, Remote control, Streamer, Assistant and paste the
-                streamer URL as URL. Then turn Enabled on.
-              </li>
-              <li>
-                Make sure Moblin may use Apple Music, and share your page link with your viewers.
-              </li>
-            </ol>
-            <Show
-              when={streamer()}
-              fallback={
-                <div class="flex flex-wrap items-center gap-4">
-                  <button type="button" class={buttonClass} disabled={busy()} onClick={create}>
-                    <Icon name="music" class="size-5" />
-                    {busy() ? "Creating…" : "Create my page"}
-                  </button>
-                  <Show when={failed()}>
-                    <p role="status" class="text-amber">
-                      Could not create a page. Try again.
-                    </p>
-                  </Show>
-                </div>
-              }
-            >
-              {(streamer) => (
-                <div class="flex flex-col gap-5">
-                  <Value label="Streamer URL for Moblin" text={streamerUrl(streamer().key)} />
-                  <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
-                    <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
-                    Keep the streamer URL to yourself. Anyone who has it can take over your page. It
-                    is not shown again, so save it now.
-                  </p>
-                  <Value
-                    label="Your page, for viewers"
-                    text={pageUrl(streamer().id)}
-                    href={pageUrl(streamer().id)}
-                  />
-                </div>
-              )}
-            </Show>
+      <Band>
+        <div class={cardClass}>
+          <h2 class="text-[23px] font-semibold">Are you a streamer?</h2>
+          <p class="text-ink-2">
+            Create your page, pick a name that is easy to remember and turn song requests on and off
+            on the admin page.
+          </p>
+          <div>
+            <a href={asset(pages.songRequestAdmin)} class={buttonClass}>
+              <Icon name="music" class="size-5" />
+              Set up my page
+            </a>
           </div>
         </div>
-      </section>
+      </Band>
     </>
   );
 }
 
-export default function SongRequest() {
+export default function SongRequest(props: { name?: string }) {
   const id = new URLSearchParams(location.search).get("streamer");
+  const name = props.name ?? null;
 
   return (
     <>
       <Nav />
       <main>
-        <Show when={id} fallback={<Setup />}>
-          {(id) => <Viewer id={id()} />}
+        <Show when={id || name} fallback={<Landing />}>
+          <Viewer id={id} name={name} />
         </Show>
       </main>
       <Footer />
