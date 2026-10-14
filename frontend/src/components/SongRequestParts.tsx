@@ -1,5 +1,6 @@
-import { Show, type JSX } from "solid-js";
+import { createSignal, Show, type JSX } from "solid-js";
 import CopyButton from "./CopyButton";
+import Icon from "./Icon";
 
 export const inputClass =
   "h-13 w-full rounded-2xl border-[1.5px] border-line bg-well px-4 text-[17px] text-ink placeholder:text-muted focus:border-leaf focus:outline-none";
@@ -33,7 +34,10 @@ export function Band(props: { children: JSX.Element }) {
   );
 }
 
-export function Value(props: { label: string; text: string; href?: string }) {
+export function Value(props: { label: string; text: string; href?: string; secret?: boolean }) {
+  const [shown, setShown] = createSignal(false);
+  const shownText = () => (props.secret && !shown() ? "•".repeat(24) : props.text);
+
   return (
     <div class="flex flex-col gap-2">
       <span class="text-[15px] font-semibold text-ink-2">{props.label}</span>
@@ -41,7 +45,7 @@ export function Value(props: { label: string; text: string; href?: string }) {
         <Show
           when={props.href}
           fallback={
-            <code class="min-w-0 flex-1 font-mono text-[15px] break-all">{props.text}</code>
+            <code class="min-w-0 flex-1 font-mono text-[15px] break-all">{shownText()}</code>
           }
         >
           {(href) => (
@@ -52,6 +56,18 @@ export function Value(props: { label: string; text: string; href?: string }) {
               {props.text}
             </a>
           )}
+        </Show>
+        <Show when={props.secret}>
+          <button
+            type="button"
+            class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-ghost hover:text-ink"
+            aria-label={`${shown() ? "Hide" : "Show"} ${props.label}`}
+            aria-pressed={shown()}
+            title={shown() ? "Hide" : "Show"}
+            onClick={() => setShown(!shown())}
+          >
+            <Icon name={shown() ? "eye-off" : "eye"} class="size-4" />
+          </button>
         </Show>
         <CopyButton text={props.text} label={props.label} />
       </span>

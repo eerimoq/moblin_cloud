@@ -311,7 +311,7 @@ function Admin(props: {
       <div class={cardClass}>
         <h2 class="text-[23px] font-semibold">Connect Moblin</h2>
         <Steps />
-        <Value label="Streamer URL for Moblin" text={streamerUrl(props.streamerKey)} />
+        <Value label="Streamer URL for Moblin" text={streamerUrl(props.streamerKey)} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
           <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
           {props.isNew
