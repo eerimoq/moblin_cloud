@@ -116,8 +116,8 @@ drops streamers silent for 60 seconds.
 
 `GET /remote-control/<id>/music` asks the streamer for its queue, cached for
 10 seconds, and `POST /remote-control/<id>/music` with `{"song", "user"}` adds
-a song, at most one every 3 seconds per streamer. A song ID or an Apple Music
-song link is turned into a link with an `i=<id>` query parameter, which is
+a song, at most one every 3 seconds per streamer. An Apple Music song link is
+turned into a link with an `i=<id>` query parameter, which is
 what Moblin looks songs up by; anything else is searched for. Both answer 404
 when the streamer is not connected.
 

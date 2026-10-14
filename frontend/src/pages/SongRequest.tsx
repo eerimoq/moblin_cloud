@@ -36,7 +36,7 @@ function errorText(error: unknown) {
   if (error instanceof BackendError) {
     switch (error.status) {
       case 400:
-        return "Enter an Apple Music link, a song ID or a search of at most 200 characters.";
+        return "Enter an Apple Music link or a search of at most 200 characters.";
       case 403:
         return "The streamer turned song requests off.";
       case 404:
@@ -193,8 +193,8 @@ function Viewer(props: { id: string | null; name: string | null }) {
     <>
       <Hero title="Pick the next song.">
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Paste an Apple Music share link or song ID, or just type what you want to hear. It goes
-          straight into the streamer's queue in Moblin.
+          Paste an Apple Music share link, or just type what you want to hear. It goes straight into
+          the streamer's queue in Moblin.
         </p>
       </Hero>
       <Band>

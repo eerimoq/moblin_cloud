@@ -141,9 +141,6 @@ pub fn normalize_song(text: &str) -> Option<String> {
     if text.is_empty() || text.chars().count() > 200 {
         return None;
     }
-    if text.chars().all(|c| c.is_ascii_digit()) {
-        return Some(format!("https://music.apple.com/song/{text}?i={text}"));
-    }
     if let Ok(mut url) = Url::parse(text)
         && url.host_str() == Some("music.apple.com")
         && !url.query_pairs().any(|(name, _)| name == "i")
@@ -506,7 +503,7 @@ mod tests {
     fn songs_are_normalized() {
         assert_eq!(
             normalize_song(" 1440818839 ").as_deref(),
-            Some("https://music.apple.com/song/1440818839?i=1440818839")
+            Some("1440818839")
         );
         assert_eq!(
             normalize_song("https://music.apple.com/us/album/x/1440818584?i=1440818839").as_deref(),
