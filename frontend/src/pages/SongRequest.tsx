@@ -191,7 +191,7 @@ function Viewer(props: { id: string | null; name: string | null }) {
 
   return (
     <>
-      <Hero title="Pick the next song." mascot={false}>
+      <Hero title="Pick the next song.">
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
           Paste an Apple Music share link or song ID, or just type what you want to hear. It goes
           straight into the streamer's queue in Moblin.
@@ -265,7 +265,7 @@ function Viewer(props: { id: string | null; name: string | null }) {
 function Landing() {
   return (
     <>
-      <Hero title="Let viewers pick the music." mascot={false}>
+      <Hero title="Let viewers pick the music.">
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
           Get your own song request page. Viewers add songs from Apple Music to the queue of
           Moblin's music player.
