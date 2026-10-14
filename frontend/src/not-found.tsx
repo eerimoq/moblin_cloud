@@ -6,7 +6,7 @@ import SongRequest from "./pages/SongRequest";
 
 const songRequestName = location.pathname
   .slice(import.meta.env.BASE_URL.length)
-  .match(/^song-request\/([^/]+)\/?$/)?.[1];
+  .match(/^song-requests\/([^/]+)\/?$/)?.[1];
 
 if (songRequestName) {
   document.title = "Song requests – Moblin";

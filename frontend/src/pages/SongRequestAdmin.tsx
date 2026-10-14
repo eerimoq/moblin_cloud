@@ -56,8 +56,8 @@ function errorText(error: unknown) {
 const pageUrl = (settings: Settings) =>
   new URL(
     settings.name
-      ? `${asset(pages.songRequest)}${settings.name}`
-      : `${asset(pages.songRequest)}?streamer=${encodeURIComponent(settings.id)}`,
+      ? `${asset(pages.songRequests)}${settings.name}`
+      : `${asset(pages.songRequests)}?streamer=${encodeURIComponent(settings.id)}`,
     location.origin,
   ).href;
 

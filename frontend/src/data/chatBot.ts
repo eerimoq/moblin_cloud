@@ -70,7 +70,7 @@ export const commandGroups: CommandGroup[] = [
     more: {
       text: "Viewers can also add songs without chat, on your own",
       link: "song request page",
-      href: pages.songRequest,
+      href: pages.songRequests,
     },
   },
   {

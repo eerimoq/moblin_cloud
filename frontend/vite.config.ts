@@ -13,10 +13,10 @@ export default defineConfig({
     solid(),
     tailwindcss(),
     {
-      name: "song-request-names",
+      name: "song-requests-names",
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
-          if (req.url && /\/song-request\/[^/?.]+\/?(\?.*)?$/.test(req.url)) {
+          if (req.url && /\/song-requests\/[^/?.]+\/?(\?.*)?$/.test(req.url)) {
             req.url = `${base}404.html`;
           }
           next();
@@ -84,7 +84,7 @@ export default defineConfig({
         "chat-bot/index.html",
         "docs/index.html",
         "cards/index.html",
-        "song-request/index.html",
+        "song-requests/index.html",
         "404.html",
       ],
     },
