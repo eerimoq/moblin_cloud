@@ -1,11 +1,14 @@
 mod api;
 mod app_attest;
 mod challenges;
+mod json_file;
 mod kick;
 mod live;
 mod live_status;
+mod paypal;
 mod profiles;
 mod remote_control;
+mod song_queue;
 mod song_requests;
 mod store;
 mod twitch;
@@ -26,8 +29,10 @@ use crate::challenges::Challenges;
 use crate::kick::Kick;
 use crate::live::Live;
 use crate::live_status::LiveStatus;
+use crate::paypal::PayPal;
 use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
+use crate::song_queue::SongQueue;
 use crate::song_requests::SongRequests;
 use crate::store::Store;
 use crate::twitch::Twitch;
@@ -84,6 +89,28 @@ struct Cli {
     /// one they are forgotten when the backend restarts.
     #[arg(long, env = "SONG_REQUESTS_FILE")]
     song_requests_file: Option<PathBuf>,
+    /// The file song requests are saved in until they are in the streamer's
+    /// queue. Without one requested songs not yet added are forgotten when
+    /// the backend restarts.
+    #[arg(long, env = "SONG_QUEUE_FILE")]
+    song_queue_file: Option<PathBuf>,
+    /// The client ID of a PayPal REST app, used together with its secret to
+    /// let streamers ask viewers to pay for song requests. The money goes
+    /// straight to the streamer's PayPal account. Without one paid song
+    /// requests are unavailable.
+    #[arg(long, env = "PAYPAL_CLIENT_ID", requires = "paypal_client_secret")]
+    paypal_client_id: Option<String>,
+    /// The client secret of the PayPal REST app.
+    #[arg(
+        long,
+        env = "PAYPAL_CLIENT_SECRET",
+        hide_env_values = true,
+        requires = "paypal_client_id"
+    )]
+    paypal_client_secret: Option<String>,
+    /// Use the PayPal sandbox instead of real payments.
+    #[arg(long, env = "PAYPAL_SANDBOX")]
+    paypal_sandbox: bool,
     /// Accept live posts from anyone, not only from the Moblin app, for
     /// developing the website.
     #[arg(long)]
@@ -152,6 +179,30 @@ async fn main() -> Result<()> {
         warn!("no song requests file, forgetting song request settings on restart");
     }
     let song_requests = SongRequests::load(cli.song_requests_file)?;
+    if cli.song_queue_file.is_none() {
+        warn!("no song queue file, forgetting requested songs not yet added on restart");
+    }
+    let song_queue = SongQueue::load(cli.song_queue_file)?;
+    let paypal = match (cli.paypal_client_id, cli.paypal_client_secret) {
+        (Some(client_id), Some(client_secret)) => {
+            let url = if cli.paypal_sandbox {
+                paypal::SANDBOX_URL
+            } else {
+                paypal::LIVE_URL
+            };
+            info!("taking payments for song requests through {url}");
+            Some(PayPal::new(
+                http_client(),
+                url.to_string(),
+                client_id,
+                client_secret,
+            ))
+        }
+        _ => {
+            warn!("no PayPal client ID and secret, paid song requests are unavailable");
+            None
+        }
+    };
     let api = Arc::new(Api {
         store,
         challenges: Challenges::new(),
@@ -159,6 +210,12 @@ async fn main() -> Result<()> {
         live: twitch.map(|twitch| Live::new(twitch, cli.twitch_live_channel)),
         remote_control: Streamers::new(),
         song_requests,
+        paypal,
+        song_queue,
+    });
+    tokio::spawn({
+        let api = api.clone();
+        async move { api.song_queue.run(&api.remote_control).await }
     });
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await

@@ -16,6 +16,10 @@ def create_streamer():
         return json.load(response)
 
 
+def found(link):
+    return not link.endswith("i=404")
+
+
 class Player:
     def __init__(self):
         self.next_id = 0
@@ -34,19 +38,26 @@ class Player:
         return status
 
     def handle(self, command):
+        if "find" in command:
+            if found(command["find"]["title"]):
+                return {"musicFind": {"song": {"id": "1", "title": "Fake Song", "artist": "Fake Artist"}}}
+            return {"musicFind": {}}
         if "add" in command:
-            title = command["add"]["title"]
-            if "notfound" in title:
-                return self.status(song_not_found=True)
+            add = command["add"]
+            if "requestId" in add and any(song.get("requestId") == add["requestId"] for song in self.songs):
+                return {"music": {"status": self.status(song_not_found=False)}}
+            if not found(add["title"]):
+                return {"music": {"status": self.status(song_not_found=True)}}
             self.next_id += 1
-            song = {"id": str(self.next_id), "title": title, "artist": "Fake Artist"}
-            if "user" in command["add"]:
-                song["user"] = command["add"]["user"]
+            song = {"id": str(self.next_id), "title": add["title"], "artist": "Fake Artist"}
+            for name in ["user", "requestId"]:
+                if name in add:
+                    song[name] = add[name]
             self.songs.append(song)
             if self.current_song_index is None:
                 self.current_song_index = 0
-            return self.status(song_not_found=False)
-        return self.status()
+            return {"music": {"status": self.status(song_not_found=False)}}
+        return {"music": {"status": self.status()}}
 
 
 async def ping(websocket):
@@ -71,11 +82,7 @@ async def run(key):
                         "response": {
                             "id": request["id"],
                             "result": {"ok": {}},
-                            "data": {
-                                "music": {
-                                    "status": player.handle(request["data"]["music"]["command"])
-                                }
-                            },
+                            "data": player.handle(request["data"]["music"]["command"]),
                         }
                     }
                 else:
@@ -99,6 +106,7 @@ def main():
         print(f"Key: {key}")
         print(f"Page: http://localhost:5173/song-requests/?streamer={streamer['id']}")
         print("Admin: http://localhost:5173/song-requests/ (paste the key)")
+        print("Songs with the id 404 are not found.")
     asyncio.run(run(key))
 
 

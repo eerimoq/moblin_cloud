@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { asset } from "../asset";
 import Icon from "../components/Icon";
 import {
@@ -14,10 +14,12 @@ import { pages } from "../data/links";
 import {
   BackendError,
   createStreamer,
+  currencies,
   keyOf,
   saveStreamerSettings,
   streamerSettings,
   streamerUrl,
+  type Paywall,
   type Settings,
 } from "../data/remoteControl";
 
@@ -84,11 +86,7 @@ function SignIn(props: { onKey: (key: string, settings: Settings, isNew: boolean
     setFailed(false);
     try {
       const streamer = await createStreamer();
-      props.onKey(
-        streamer.key,
-        { id: streamer.id, connected: false, enabled: true, name: null },
-        true,
-      );
+      props.onKey(streamer.key, await streamerSettings(streamer.key), true);
     } catch {
       setFailed(true);
     } finally {
@@ -171,6 +169,134 @@ function SignIn(props: { onKey: (key: string, settings: Settings, isNew: boolean
   );
 }
 
+function paywallErrorText(error: unknown) {
+  if (error instanceof BackendError) {
+    switch (error.status) {
+      case 400:
+        return "Enter your PayPal email and a price from 0.50 to 1000.";
+      case 422:
+        return "PayPal can't send payments to that email. Use the email of your PayPal business account.";
+      case 502:
+        return "PayPal could not be reached. Try again.";
+      case 503:
+        return "Payments are unavailable right now.";
+    }
+  }
+  return "Something went wrong. Try again.";
+}
+
+function Payments(props: {
+  paywall: Paywall | null;
+  busy: boolean;
+  onSave: (changes: { paywall: Paywall | null }) => Promise<void>;
+}) {
+  const [required, setRequired] = createSignal(props.paywall !== null);
+  const [email, setEmail] = createSignal(props.paywall?.email ?? "");
+  const [price, setPrice] = createSignal(
+    props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
+  );
+  const [currency, setCurrency] = createSignal(props.paywall?.currency ?? "USD");
+  const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.busy) {
+      return;
+    }
+    setResult(null);
+    try {
+      await props.onSave({
+        paywall: required()
+          ? {
+              email: email().trim(),
+              price: Math.round(Number.parseFloat(price()) * 100),
+              currency: currency(),
+            }
+          : null,
+      });
+      setResult({
+        ok: true,
+        text: required() ? "Saved. Viewers now pay to add songs." : "Song requests are free.",
+      });
+    } catch (error) {
+      setResult({ ok: false, text: paywallErrorText(error) });
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">Paid requests</h2>
+      <p class="text-ink-2">
+        Let viewers pay with PayPal to add a song. The money goes straight to your PayPal account.
+        Moblin takes nothing, PayPal charges its usual fees.
+      </p>
+      <label class="flex items-center gap-3 text-ink-2">
+        <input
+          type="checkbox"
+          checked={required()}
+          onChange={(event) => setRequired(event.currentTarget.checked)}
+          class="size-5 accent-moss"
+        />
+        Viewers pay to add songs
+      </label>
+      <Show when={required()}>
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">Your PayPal email</span>
+          <input
+            type="email"
+            required
+            maxLength={254}
+            value={email()}
+            onInput={(event) => setEmail(event.currentTarget.value)}
+            placeholder="you@example.com"
+            autocomplete="email"
+            spellcheck={false}
+            class={inputClass}
+          />
+        </label>
+        <div class="flex flex-wrap gap-4">
+          <label class="flex min-w-40 flex-1 flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">Price per song</span>
+            <input
+              type="number"
+              required
+              min="0.5"
+              max="1000"
+              step="0.01"
+              inputmode="decimal"
+              value={price()}
+              onInput={(event) => setPrice(event.currentTarget.value)}
+              class={inputClass}
+            />
+          </label>
+          <label class="flex w-32 flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">Currency</span>
+            <select
+              value={currency()}
+              onChange={(event) => setCurrency(event.currentTarget.value)}
+              class={inputClass}
+            >
+              <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
+            </select>
+          </label>
+        </div>
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <button type="submit" class={buttonClass} disabled={props.busy}>
+          Save
+        </button>
+        <Show when={result()}>
+          {(result) => (
+            <p role="status" class={result().ok ? "text-leaf" : "text-amber"}>
+              {result().text}
+            </p>
+          )}
+        </Show>
+      </div>
+    </form>
+  );
+}
+
 function Admin(props: {
   streamerKey: string;
   settings: Settings;
@@ -181,7 +307,6 @@ function Admin(props: {
   const [name, setName] = createSignal(props.settings.name ?? "");
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
-  const [toggleFailed, setToggleFailed] = createSignal(false);
 
   onMount(() => {
     const timer = setInterval(async () => {
@@ -192,24 +317,12 @@ function Admin(props: {
     onCleanup(() => clearInterval(timer));
   });
 
-  const save = async (enabled: boolean, name: string | null) => {
+  const save = async (changes: Partial<Pick<Settings, "name" | "paywall">>) => {
     setBusy(true);
     try {
-      setSettings(await saveStreamerSettings(props.streamerKey, enabled, name));
+      setSettings(await saveStreamerSettings(props.streamerKey, { ...settings(), ...changes }));
     } finally {
       setBusy(false);
-    }
-  };
-
-  const toggle = async () => {
-    if (busy()) {
-      return;
-    }
-    setToggleFailed(false);
-    try {
-      await save(!settings().enabled, settings().name);
-    } catch {
-      setToggleFailed(true);
     }
   };
 
@@ -220,7 +333,7 @@ function Admin(props: {
     }
     setResult(null);
     try {
-      await save(settings().enabled, name().trim() || null);
+      await save({ name: name().trim() || null });
       setName(settings().name ?? "");
       setResult({ ok: true, text: settings().name ? "Saved." : "Name removed." });
     } catch (error) {
@@ -231,42 +344,13 @@ function Admin(props: {
   return (
     <>
       <div class={cardClass}>
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <h2 class="text-[23px] font-semibold">Song requests</h2>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={settings().enabled}
-            aria-label="Song requests"
-            disabled={busy()}
-            onClick={toggle}
-            class={`relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
-              settings().enabled ? "bg-moss" : "bg-ghost-line"
-            }`}
-          >
-            <span
-              class={`absolute top-1 left-1 size-6 rounded-full bg-white transition-transform ${
-                settings().enabled ? "translate-x-6" : ""
-              }`}
-            />
-          </button>
-        </div>
-        <p class="text-ink-2">
-          {settings().enabled
-            ? "Viewers can add songs to your queue."
-            : "Your page tells viewers that song requests are turned off."}
-        </p>
+        <h2 class="text-[23px] font-semibold">Song requests</h2>
         <p class="flex items-center gap-2.5 text-[15px] text-muted">
           <span
             class={`size-2.5 shrink-0 rounded-full ${settings().connected ? "bg-leaf" : "bg-muted"}`}
           />
           {settings().connected ? "Moblin is connected." : "Moblin is not connected right now."}
         </p>
-        <Show when={toggleFailed()}>
-          <p role="status" class="text-amber">
-            Could not save. Try again.
-          </p>
-        </Show>
       </div>
       <form class={cardClass} onSubmit={saveName}>
         <h2 class="text-[23px] font-semibold">Page name</h2>
@@ -308,6 +392,9 @@ function Admin(props: {
           href={pageUrl(settings())}
         />
       </form>
+      <Show when={settings().paypal || settings().paywall}>
+        <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
+      </Show>
       <div class={cardClass}>
         <h2 class="text-[23px] font-semibold">Connect Moblin</h2>
         <Steps />

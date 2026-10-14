@@ -12,7 +12,7 @@ use ring::digest::{SHA256, digest};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, sleep_until, timeout, timeout_at};
 
 const KEY_LENGTH: usize = 32;
@@ -74,13 +74,39 @@ enum Request {
 #[serde(rename_all = "camelCase")]
 pub enum MusicCommand {
     Status {},
-    Add { title: String, user: String },
+    #[serde(rename_all = "camelCase")]
+    Add {
+        title: String,
+        user: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
+    },
+    Find {
+        title: String,
+    },
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum ResponseData {
     Music { status: MusicStatus },
+    MusicFind { song: Option<FoundSong> },
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct FoundSong {
+    pub id: String,
+    pub title: String,
+    pub artist: Option<String>,
+}
+
+impl FoundSong {
+    pub fn name(&self) -> String {
+        match &self.artist {
+            Some(artist) => format!("{artist} - {}", self.title),
+            None => self.title.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -113,7 +139,7 @@ struct Session {
     sender: mpsc::UnboundedSender<MessageToStreamer>,
     next_request_id: u64,
     pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
-    last_add: Option<Instant>,
+    last_request: Option<Instant>,
     status: Option<(Instant, MusicStatus)>,
 }
 
@@ -126,6 +152,7 @@ struct Sessions {
 pub struct Streamers {
     random: SystemRandom,
     sessions: Mutex<Sessions>,
+    pub connected: Notify,
 }
 
 pub fn id_of(key: &str) -> Option<String> {
@@ -136,29 +163,27 @@ pub fn id_of(key: &str) -> Option<String> {
     Some(BASE64_URL_SAFE_NO_PAD.encode(&digest(&SHA256, key.as_bytes()).as_ref()[..12]))
 }
 
-pub fn normalize_song(text: &str) -> Option<String> {
-    let text = text.trim();
-    if text.is_empty() || text.chars().count() > 200 {
+pub fn song_link(text: &str) -> Option<String> {
+    let url = Url::parse(text.trim()).ok()?;
+    if url.scheme() != "https" || url.host_str() != Some("music.apple.com") {
         return None;
     }
-    if let Ok(mut url) = Url::parse(text)
-        && url.host_str() == Some("music.apple.com")
-        && !url.query_pairs().any(|(name, _)| name == "i")
-    {
-        let segments: Vec<String> = url
-            .path_segments()
-            .map(|segments| segments.map(str::to_string).collect())
-            .unwrap_or_default();
-        if segments.iter().any(|segment| segment == "song")
-            && let Some(song_id) = segments.last()
-            && !song_id.is_empty()
-            && song_id.chars().all(|c| c.is_ascii_digit())
-        {
-            url.query_pairs_mut().append_pair("i", song_id);
-            return Some(url.to_string());
+    let song_id = match url.query_pairs().find(|(name, _)| name == "i") {
+        Some((_, song_id)) => song_id.into_owned(),
+        None => {
+            let segments: Vec<&str> = url.path_segments()?.collect();
+            if !segments.contains(&"song") {
+                return None;
+            }
+            segments.last()?.to_string()
         }
+    };
+    if !(1..=20).contains(&song_id.len()) || !song_id.chars().all(|c| c.is_ascii_digit()) {
+        return None;
     }
-    Some(text.to_string())
+    Some(format!(
+        "https://music.apple.com/song/{song_id}?i={song_id}"
+    ))
 }
 
 async fn send(socket: &mut WebSocket, message: &MessageToStreamer) -> Result<()> {
@@ -172,6 +197,7 @@ impl Streamers {
         Self {
             random: SystemRandom::new(),
             sessions: Mutex::new(Sessions::default()),
+            connected: Notify::new(),
         }
     }
 
@@ -185,6 +211,23 @@ impl Streamers {
         let key = BASE64_URL_SAFE_NO_PAD.encode(self.random_bytes::<KEY_LENGTH>()?);
         let id = id_of(&key)?;
         Some((key, id))
+    }
+
+    pub fn new_request_id(&self) -> Option<String> {
+        Some(BASE64_URL_SAFE_NO_PAD.encode(self.random_bytes::<16>()?))
+    }
+
+    pub fn limit_requests(&self, id: &str) -> Result<(), RequestError> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions.by_id.get_mut(id).ok_or(RequestError::Offline)?;
+        if session
+            .last_request
+            .is_some_and(|last_request| last_request.elapsed() < Duration::from_secs(3))
+        {
+            return Err(RequestError::TooFast);
+        }
+        session.last_request = Some(Instant::now());
+        Ok(())
     }
 
     pub fn is_connected(&self, id: &str) -> bool {
@@ -202,6 +245,7 @@ impl Streamers {
             return;
         };
         info!("remote control streamer {id} connected");
+        self.connected.notify_one();
         let mut deadline = Instant::now() + Duration::from_secs(60);
         loop {
             tokio::select! {
@@ -308,7 +352,7 @@ impl Streamers {
                 sender,
                 next_request_id: 0,
                 pending: HashMap::new(),
-                last_add: None,
+                last_request: None,
                 status: None,
             },
         );
@@ -331,23 +375,58 @@ impl Streamers {
         id: &str,
         command: MusicCommand,
     ) -> Result<MusicStatus, RequestError> {
-        let is_add = matches!(command, MusicCommand::Add { .. });
-        let (number, request_id, receiver) = {
-            let mut sessions = self.sessions.lock().unwrap();
-            let session = sessions.by_id.get_mut(id).ok_or(RequestError::Offline)?;
-            if is_add {
-                if session
-                    .last_add
-                    .is_some_and(|last_add| last_add.elapsed() < Duration::from_secs(3))
-                {
-                    return Err(RequestError::TooFast);
-                }
-                session.last_add = Some(Instant::now());
-            } else if let Some((fetched, status)) = &session.status
+        if matches!(command, MusicCommand::Status {}) {
+            let sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.by_id.get(id)
+                && let Some((fetched, status)) = &session.status
                 && fetched.elapsed() < Duration::from_secs(10)
             {
                 return Ok(status.clone());
             }
+        }
+        self.music_uncached(id, command).await
+    }
+
+    pub async fn music_uncached(
+        &self,
+        id: &str,
+        command: MusicCommand,
+    ) -> Result<MusicStatus, RequestError> {
+        let (number, ResponseData::Music { status }) =
+            self.request(id, command, Duration::from_secs(20)).await?
+        else {
+            return Err(RequestError::Failed);
+        };
+        let mut sessions = self.sessions.lock().unwrap();
+        if let Some(session) = sessions.by_id.get_mut(id)
+            && session.number == number
+        {
+            let mut cached = status.clone();
+            cached.song_not_found = None;
+            session.status = Some((Instant::now(), cached));
+        }
+        Ok(status)
+    }
+
+    pub async fn find(&self, id: &str, title: String) -> Result<Option<FoundSong>, RequestError> {
+        match self
+            .request(id, MusicCommand::Find { title }, Duration::from_secs(10))
+            .await?
+        {
+            (_, ResponseData::MusicFind { song }) => Ok(song),
+            _ => Err(RequestError::Failed),
+        }
+    }
+
+    async fn request(
+        &self,
+        id: &str,
+        command: MusicCommand,
+        wait: Duration,
+    ) -> Result<(u64, ResponseData), RequestError> {
+        let (number, request_id, receiver) = {
+            let mut sessions = self.sessions.lock().unwrap();
+            let session = sessions.by_id.get_mut(id).ok_or(RequestError::Offline)?;
             session.next_request_id += 1;
             let request_id = session.next_request_id;
             let (sender, receiver) = oneshot::channel();
@@ -361,17 +440,14 @@ impl Streamers {
                 .map_err(|_| RequestError::Offline)?;
             (session.number, request_id, receiver)
         };
-        let response = timeout(Duration::from_secs(20), receiver).await;
-        let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions
-            .by_id
-            .get_mut(id)
-            .filter(|session| session.number == number);
-        let (result, data) = match response {
+        let (result, data) = match timeout(wait, receiver).await {
             Ok(Ok(response)) => response,
             Ok(Err(_)) => return Err(RequestError::Offline),
             Err(_) => {
-                if let Some(session) = session {
+                let mut sessions = self.sessions.lock().unwrap();
+                if let Some(session) = sessions.by_id.get_mut(id)
+                    && session.number == number
+                {
                     session.pending.remove(&request_id);
                 }
                 return Err(RequestError::Timeout);
@@ -380,15 +456,10 @@ impl Streamers {
         if result != (Outcome::Ok {}) {
             return Err(RequestError::Failed);
         }
-        let Some(Ok(ResponseData::Music { status })) = data.map(serde_json::from_value) else {
+        let Some(Ok(data)) = data.map(serde_json::from_value) else {
             return Err(RequestError::Failed);
         };
-        if let Some(session) = session {
-            let mut cached = status.clone();
-            cached.song_not_found = None;
-            session.status = Some((Instant::now(), cached));
-        }
-        Ok(status)
+        Ok((number, data))
     }
 }
 
@@ -430,10 +501,35 @@ mod tests {
                     command: MusicCommand::Add {
                         title: "Song".to_string(),
                         user: "Erik".to_string(),
+                        request_id: None,
                     },
                 },
             }),
             r#"{"request":{"id":3,"data":{"music":{"command":{"add":{"title":"Song","user":"Erik"}}}}}}"#
+        );
+        assert_eq!(
+            encode(&MessageToStreamer::Request {
+                id: 5,
+                data: Request::Music {
+                    command: MusicCommand::Add {
+                        title: "Song".to_string(),
+                        user: "Erik".to_string(),
+                        request_id: Some("ORDER1".to_string()),
+                    },
+                },
+            }),
+            r#"{"request":{"id":5,"data":{"music":{"command":{"add":{"title":"Song","user":"Erik","requestId":"ORDER1"}}}}}}"#
+        );
+        assert_eq!(
+            encode(&MessageToStreamer::Request {
+                id: 6,
+                data: Request::Music {
+                    command: MusicCommand::Find {
+                        title: "Song".to_string(),
+                    },
+                },
+            }),
+            r#"{"request":{"id":6,"data":{"music":{"command":{"find":{"title":"Song"}}}}}}"#
         );
         assert_eq!(
             encode(&MessageToStreamer::Request {
@@ -469,7 +565,9 @@ mod tests {
         else {
             panic!();
         };
-        let ResponseData::Music { status } = serde_json::from_value(data).unwrap();
+        let Ok(ResponseData::Music { status }) = serde_json::from_value(data) else {
+            panic!();
+        };
         assert_eq!(
             status,
             MusicStatus {
@@ -483,6 +581,32 @@ mod tests {
                 }],
                 song_not_found: Some(false),
             }
+        );
+        let found = |text: &str| -> Option<FoundSong> {
+            let MessageToAssistant::Response {
+                data: Some(data), ..
+            } = decode(text)
+            else {
+                panic!();
+            };
+            let Ok(ResponseData::MusicFind { song }) = serde_json::from_value(data) else {
+                panic!();
+            };
+            song
+        };
+        assert_eq!(
+            found(
+                r#"{"response":{"id":3,"result":{"ok":{}},"data":{"musicFind":{"song":{"id":"1440818839","title":"Song","artist":"Band"}}}}}"#
+            ),
+            Some(FoundSong {
+                id: "1440818839".to_string(),
+                title: "Song".to_string(),
+                artist: Some("Band".to_string()),
+            })
+        );
+        assert_eq!(
+            found(r#"{"response":{"id":4,"result":{"ok":{}},"data":{"musicFind":{}}}}"#),
+            None
         );
     }
 
@@ -500,28 +624,32 @@ mod tests {
     }
 
     #[test]
-    fn songs_are_normalized() {
+    fn only_song_links_are_accepted() {
+        let link = Some("https://music.apple.com/song/1440818839?i=1440818839");
         assert_eq!(
-            normalize_song(" 1440818839 ").as_deref(),
-            Some("1440818839")
+            song_link(" https://music.apple.com/us/album/x/1440818584?i=1440818839 ").as_deref(),
+            link
         );
         assert_eq!(
-            normalize_song("https://music.apple.com/us/album/x/1440818584?i=1440818839").as_deref(),
-            Some("https://music.apple.com/us/album/x/1440818584?i=1440818839")
+            song_link("https://music.apple.com/us/song/never-gonna/1440818839").as_deref(),
+            link
         );
         assert_eq!(
-            normalize_song("https://music.apple.com/us/song/never-gonna/1440818839").as_deref(),
-            Some("https://music.apple.com/us/song/never-gonna/1440818839?i=1440818839")
+            song_link("https://music.apple.com/se/song/x/1440818839?l=en").as_deref(),
+            link
         );
         assert_eq!(
-            normalize_song("https://music.apple.com/se/song/x/1440818839?l=en").as_deref(),
-            Some("https://music.apple.com/se/song/x/1440818839?l=en&i=1440818839")
+            song_link("https://music.apple.com/us/album/x/1440818584"),
+            None
         );
+        assert_eq!(song_link("https://music.apple.com/us/album/x/1?i=x1"), None);
+        assert_eq!(song_link("https://example.com/us/song/x/1440818839"), None);
         assert_eq!(
-            normalize_song("Rick Astley Never Gonna").as_deref(),
-            Some("Rick Astley Never Gonna")
+            song_link("http://music.apple.com/us/song/x/1440818839"),
+            None
         );
-        assert_eq!(normalize_song("  "), None);
-        assert_eq!(normalize_song(&"a".repeat(201)), None);
+        assert_eq!(song_link("1440818839"), None);
+        assert_eq!(song_link("Rick Astley Never Gonna"), None);
+        assert_eq!(song_link("  "), None);
     }
 }

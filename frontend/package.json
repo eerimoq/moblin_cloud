@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build"
   },
   "dependencies": {
+    "@paypal/paypal-js": "^11.2.0",
     "solid-js": "^1.9.15"
   },
   "devDependencies": {

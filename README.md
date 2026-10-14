@@ -115,23 +115,69 @@ password is never known to the backend), answers `ping` with `pong`, and
 drops streamers silent for 60 seconds.
 
 `GET /remote-control/<id>/music` asks the streamer for its queue, cached for
-10 seconds, and `POST /remote-control/<id>/music` with `{"song", "user"}` adds
-a song, at most one every 3 seconds per streamer. An Apple Music song link is
-turned into a link with an `i=<id>` query parameter, which is
-what Moblin looks songs up by; anything else is searched for. Both answer 404
-when the streamer is not connected.
+10 seconds, and `POST /remote-control/<id>/music` with `{"song", "user"}`
+requests a song, at most one every 3 seconds per streamer. The song must be
+an Apple Music song link (an album link with `?i=<id>`, or a `/song/` link);
+anything else answers 400. It is sent to Moblin as
+`https://music.apple.com/song/<id>?i=<id>`, since Moblin looks songs up by
+`i`. The backend first asks Moblin with a `find` music command whether the
+song is on the streamer's Apple Music, answering 422 when it isn't, and then
+answers 202 and puts the song in its queue of requested songs. Both answer
+404 when the streamer is not connected. Error answers are sentences meant to
+be shown to the viewer as they are.
+
+Requested songs are added by a background task, which retries until the song
+is in the streamer's queue: whenever the streamer connects, right after a
+request and every 10 seconds. Every add carries a request id as `requestId`
+(random for free requests, the PayPal order id for paid ones). Moblin keeps
+it on the song in its playlist and answers `ok` without adding again when a
+song in the playlist already has it, so resending an add whose answer got lost
+is safe (unless the streamer removed the song in between). It answers `error` when it could not add the song, and the task retries.
+The task drops a song Moblin can't find and gives up after 7 days. The songs not yet added are saved in the JSON file
+given by `--song-queue-file` (or `SONG_QUEUE_FILE`), which needs a volume in
+Docker; without one they are forgotten on restart.
 
 Streamers manage their page at `/song-requests/`, which shows the viewer page
 only when given a name or `?streamer=<id>`. The secret key authenticates them: `GET /remote-control/streamer/<key>/settings` answers
-`{"id", "connected", "enabled", "name"}` and `POST` with `{"enabled",
-"name"}` changes them. While song requests are off both music endpoints answer
-403. A name is 3 to 25 lowercase letters, digits and dashes, unique, and gives the page a second address, `/song-requests/<name>`. GitHub
+`{"id", "connected", "name"}` and `POST` with `{"name"}` changes them. A
+name is 3 to 25 lowercase letters, digits and dashes, unique, and gives the page a second address, `/song-requests/<name>`. GitHub
 Pages has no such file, so it serves `404.html`, which renders the song request
 page for those paths and resolves the name with
 `GET /remote-control/names/<name>`, answering `{"id"}`. The dev server
 rewrites the same paths to `404.html`. Settings are saved in the JSON file
 given by `--song-requests-file` (or `SONG_REQUESTS_FILE`), which needs a
 volume when running in Docker; without one they are forgotten on restart.
+
+### Paid song requests
+
+A streamer can ask viewers to pay for every song, with PayPal. They enter
+their PayPal email, a price of 0.50 to 1000 and a currency on their page,
+which the settings endpoint takes as `"paywall": {"email", "price",
+"currency"}` (`price` in hundredths) or `null`. Saving looks up the merchant
+ID of the email with a PayPal order that is never paid, and answers 422 when
+PayPal can't send payments to it. The money goes straight to the streamer:
+every PayPal order names the streamer as payee, so the backend never holds
+any of it and PayPal takes its fees from the streamer.
+
+While a paywall is set `POST /remote-control/<id>/music` answers 402.
+`GET /remote-control/<id>/paywall` answers `{"paywall": {"price", "currency",
+"clientId", "merchantId"}}` or `{"paywall": null}`, without the email. The
+viewer page loads the PayPal JavaScript SDK with those and shows PayPal's
+buttons, which open PayPal's checkout in a popup over the page. The buttons
+create the order with `POST /remote-control/<id>/music/orders` and `{"song",
+"user"}`, which checks the song like a free request does, so nobody pays for a
+song that can't be added. It answers `{"orderId"}` and remembers the song for
+three hours. Once the viewer approves, the page posts to
+`/remote-control/<id>/music/orders/<order id>/capture`. The backend captures
+the payment only while the streamer is connected, checks the amount, and then
+queues the song like a free one, answering 202.
+
+The backend needs the client ID and secret of a
+[PayPal REST app](https://developer.paypal.com/dashboard/applications), given
+with `--paypal-client-id` and `--paypal-client-secret` (or `PAYPAL_CLIENT_ID`
+and `PAYPAL_CLIENT_SECRET`). `--paypal-sandbox` (or `PAYPAL_SANDBOX=true`)
+uses the PayPal sandbox instead. Without credentials streamers can't turn
+paid requests on, and paywalled pages answer 503 when a viewer tries to pay.
 
 `just backend-fake-streamer [key]` connects a made-up streamer to a local
 backend, for developing the page.

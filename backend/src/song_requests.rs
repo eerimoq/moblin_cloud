@@ -1,31 +1,64 @@
 use std::collections::HashMap;
-use std::fs;
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::warn;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+use crate::json_file;
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
-    pub enabled: bool,
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paywall: Option<Paywall>,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            name: None,
-        }
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Paywall {
+    pub email: String,
+    pub price: u32,
+    pub currency: String,
+    #[serde(
+        default,
+        rename = "merchantId",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub merchant_id: Option<String>,
+}
+
+pub const CURRENCIES: [&str; 16] = [
+    "AUD", "BRL", "CAD", "CHF", "CZK", "DKK", "EUR", "GBP", "HKD", "MXN", "NOK", "NZD", "PLN",
+    "SEK", "SGD", "USD",
+];
+
+pub fn format_price(price: u32) -> String {
+    format!("{}.{:02}", price / 100, price % 100)
+}
+
+impl Paywall {
+    pub fn normalize(self) -> Option<Self> {
+        let email = self.email.trim().to_string();
+        let currency = self.currency.trim().to_uppercase();
+        let valid = (3..=254).contains(&email.len())
+            && email.contains('@')
+            && !email.chars().any(char::is_whitespace)
+            && (50..=100_000).contains(&self.price)
+            && CURRENCIES.contains(&currency.as_str());
+        valid.then_some(Self {
+            email,
+            price: self.price,
+            currency,
+            merchant_id: self.merchant_id,
+        })
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
     InvalidName,
+    InvalidPaywall,
     NameTaken,
     Full,
     NotSaved,
@@ -49,18 +82,7 @@ pub fn normalize_name(name: &str) -> Option<String> {
 
 impl SongRequests {
     pub fn load(path: Option<PathBuf>) -> Result<Self> {
-        let settings = match &path {
-            Some(path) => match fs::read(path) {
-                Ok(data) => serde_json::from_slice(&data)
-                    .with_context(|| format!("failed to parse {}", path.display()))?,
-                Err(error) if error.kind() == ErrorKind::NotFound => HashMap::new(),
-                Err(error) => {
-                    return Err(error)
-                        .with_context(|| format!("failed to read {}", path.display()));
-                }
-            },
-            None => HashMap::new(),
-        };
+        let settings = json_file::load(path.as_deref())?;
         Ok(Self {
             path,
             settings: Mutex::new(settings),
@@ -89,14 +111,18 @@ impl SongRequests {
     pub fn set(
         &self,
         id: &str,
-        enabled: bool,
         name: Option<&str>,
+        paywall: Option<Paywall>,
     ) -> Result<Settings, SettingsError> {
         let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
             Some(name) => Some(normalize_name(name).ok_or(SettingsError::InvalidName)?),
             None => None,
         };
-        let new = Settings { enabled, name };
+        let paywall = match paywall {
+            Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
+            None => None,
+        };
+        let new = Settings { name, paywall };
         let mut settings = self.settings.lock().unwrap();
         if new.name.is_some()
             && settings
@@ -113,7 +139,7 @@ impl SongRequests {
         } else {
             settings.insert(id.to_string(), new.clone())
         };
-        if let Err(error) = self.save(&settings) {
+        if let Err(error) = json_file::save(self.path.as_deref(), &*settings) {
             warn!("failed to save song request settings: {error:#}");
             match old {
                 Some(old) => settings.insert(id.to_string(), old),
@@ -122,18 +148,6 @@ impl SongRequests {
             return Err(SettingsError::NotSaved);
         }
         Ok(new)
-    }
-
-    fn save(&self, settings: &HashMap<String, Settings>) -> Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        let temporary = path.with_extension("tmp");
-        fs::write(&temporary, serde_json::to_vec(settings)?)
-            .with_context(|| format!("failed to write {}", temporary.display()))?;
-        fs::rename(&temporary, path)
-            .with_context(|| format!("failed to rename to {}", path.display()))?;
-        Ok(())
     }
 }
 
@@ -158,25 +172,25 @@ mod tests {
         let song_requests = SongRequests::load(None).unwrap();
         assert_eq!(song_requests.get("a"), Settings::default());
         assert_eq!(
-            song_requests.set("a", false, Some("Erik")),
+            song_requests.set("a", Some("Erik"), None),
             Ok(Settings {
-                enabled: false,
-                name: Some("erik".to_string())
+                name: Some("erik".to_string()),
+                paywall: None,
             })
         );
         assert_eq!(song_requests.id_of_name("ERIK").as_deref(), Some("a"));
         assert_eq!(
-            song_requests.set("b", true, Some("erik")),
+            song_requests.set("b", Some("erik"), None),
             Err(SettingsError::NameTaken)
         );
         assert_eq!(
-            song_requests.set("b", true, Some("e r")),
+            song_requests.set("b", Some("e r"), None),
             Err(SettingsError::InvalidName)
         );
-        assert!(song_requests.set("a", true, Some("erik")).is_ok());
-        assert!(song_requests.set("a", true, Some(" ")).is_ok());
+        assert!(song_requests.set("a", Some("erik"), None).is_ok());
+        assert!(song_requests.set("a", Some(" "), None).is_ok());
         assert_eq!(song_requests.id_of_name("erik"), None);
-        assert!(song_requests.set("b", true, Some("erik")).is_ok());
+        assert!(song_requests.set("b", Some("erik"), None).is_ok());
         assert_eq!(song_requests.id_of_name("erik").as_deref(), Some("b"));
     }
 
@@ -187,16 +201,57 @@ mod tests {
             std::process::id(),
             std::thread::current().id()
         ));
-        let _ = fs::remove_file(&path);
+        let _ = std::fs::remove_file(&path);
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
-        song_requests.set("a", false, Some("erik")).unwrap();
-        song_requests.set("b", false, None).unwrap();
-        song_requests.set("b", true, None).unwrap();
+        song_requests.set("a", Some("erik"), None).unwrap();
+        song_requests.set("b", Some("other"), None).unwrap();
+        song_requests.set("b", None, None).unwrap();
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
         assert_eq!(song_requests.id_of_name("erik").as_deref(), Some("a"));
-        assert!(!song_requests.get("a").enabled);
         assert_eq!(song_requests.get("b"), Settings::default());
         assert_eq!(song_requests.settings.lock().unwrap().len(), 1);
-        fs::remove_file(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn paywalls_are_validated() {
+        let song_requests = SongRequests::load(None).unwrap();
+        let paywall = |email: &str, price, currency: &str| {
+            Some(Paywall {
+                email: email.to_string(),
+                price,
+                currency: currency.to_string(),
+                merchant_id: None,
+            })
+        };
+        assert_eq!(
+            song_requests
+                .set("a", None, paywall(" erik@example.com ", 250, "sek"))
+                .unwrap()
+                .paywall,
+            paywall("erik@example.com", 250, "SEK")
+        );
+        assert_eq!(song_requests.get("a").paywall.unwrap().price, 250);
+        for (email, price, currency) in [
+            ("erik", 250, "SEK"),
+            ("er ik@example.com", 250, "SEK"),
+            ("erik@example.com", 49, "SEK"),
+            ("erik@example.com", 100_001, "SEK"),
+            ("erik@example.com", 250, "JPY"),
+        ] {
+            assert_eq!(
+                song_requests.set("a", None, paywall(email, price, currency)),
+                Err(SettingsError::InvalidPaywall)
+            );
+        }
+        assert!(song_requests.set("a", None, None).is_ok());
+        assert_eq!(song_requests.get("a"), Settings::default());
+    }
+
+    #[test]
+    fn prices_are_formatted() {
+        assert_eq!(format_price(50), "0.50");
+        assert_eq!(format_price(205), "2.05");
+        assert_eq!(format_price(100_000), "1000.00");
     }
 }
