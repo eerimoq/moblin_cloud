@@ -97,3 +97,29 @@ as its base path. To serve it on a custom domain, add a `frontend/public/CNAME` 
 containing the domain and point the domain's DNS at GitHub Pages. When that
 file exists the build switches to `/` automatically (see
 `frontend/vite.config.ts`).
+
+## Song requests
+
+The backend also acts as a Moblin remote control assistant, so that viewers
+can add songs to a streamer's music queue from `/song-request/?streamer=<id>`
+on the website.
+
+A streamer creates their page at `/song-request/`, which asks
+`POST /remote-control/streamers` for a random secret key and the public id
+derived from it (the first 12 bytes of its SHA-256, base64url). They paste
+`wss://api.moblin.app/remote-control/streamer/<key>` as the assistant URL in
+Moblin under Settings, Remote control, Streamer. Moblin keeps that WebSocket
+open and the backend speaks the assistant side of the protocol: it sends
+`hello`, accepts any `identify` (the key in the URL is the secret, Moblin's
+password is never known to the backend), answers `ping` with `pong`, and
+drops streamers silent for 60 seconds.
+
+`GET /remote-control/<id>/music` asks the streamer for its queue, cached for
+10 seconds, and `POST /remote-control/<id>/music` with `{"song", "user"}` adds
+a song, at most one every 3 seconds per streamer. A song ID or an Apple Music
+song link is turned into a link with an `i=<id>` query parameter, which is
+what Moblin looks songs up by; anything else is searched for. Both answer 404
+when the streamer is not connected.
+
+`just backend-fake-streamer [key]` connects a made-up streamer to a local
+backend, for developing the page.

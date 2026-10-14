@@ -5,6 +5,7 @@ mod kick;
 mod live;
 mod live_status;
 mod profiles;
+mod remote_control;
 mod store;
 mod twitch;
 
@@ -24,6 +25,7 @@ use crate::kick::Kick;
 use crate::live::Live;
 use crate::live_status::LiveStatus;
 use crate::profiles::Profiles;
+use crate::remote_control::Streamers;
 use crate::store::Store;
 use crate::twitch::Twitch;
 
@@ -143,6 +145,7 @@ async fn main() -> Result<()> {
         challenges: Challenges::new(),
         app_attest,
         live: twitch.map(|twitch| Live::new(twitch, cli.twitch_live_channel)),
+        remote_control: Streamers::new(),
     });
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await

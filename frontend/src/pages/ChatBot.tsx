@@ -1,6 +1,7 @@
-import { createSignal, For } from "solid-js";
+import { For, Show } from "solid-js";
+import { asset } from "../asset";
+import CopyButton from "../components/CopyButton";
 import Footer from "../components/Footer";
-import Icon from "../components/Icon";
 import Mascot from "../components/Mascot";
 import Nav from "../components/Nav";
 import { commandGroups } from "../data/chatBot";
@@ -8,34 +9,10 @@ import { links } from "../data/links";
 
 /** A command exactly as typed in chat, with a button that copies it to the clipboard. */
 function Command(props: { text: string }) {
-  const [copied, setCopied] = createSignal(false);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(props.text);
-    } catch {
-      return;
-    }
-    setCopied(true);
-    clearTimeout(timer);
-    timer = setTimeout(() => setCopied(false), 1500);
-  };
-
   return (
     <span class="flex items-start gap-2">
       <code class="font-mono text-[15px] font-semibold text-ink">{props.text}</code>
-      <button
-        type="button"
-        class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors ${
-          copied() ? "text-leaf" : "text-muted hover:bg-ghost hover:text-ink"
-        }`}
-        aria-label={copied() ? "Copied" : `Copy ${props.text}`}
-        title={copied() ? "Copied" : "Copy"}
-        onClick={copy}
-      >
-        <Icon name={copied() ? "check" : "copy"} class="size-4" />
-      </button>
+      <CopyButton text={props.text} />
     </span>
   );
 }
@@ -99,6 +76,17 @@ export default function ChatBot() {
                       </For>
                     </tbody>
                   </table>
+                  <Show when={group.more}>
+                    {(more) => (
+                      <p class="border-t border-line pt-4 text-ink-2">
+                        {more().text}{" "}
+                        <a href={asset(more().href)} class="text-leaf hover:text-leaf-bright">
+                          {more().link}
+                        </a>
+                        .
+                      </p>
+                    )}
+                  </Show>
                 </div>
               )}
             </For>

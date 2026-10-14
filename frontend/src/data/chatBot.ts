@@ -5,6 +5,8 @@
  * Commands are written out exactly as typed in chat so they can be copied.
  * Placeholders are written as <name> and optional parts as [<name>].
  */
+import { pages } from "./links";
+
 export type Command = {
   command: string;
   text: string;
@@ -13,6 +15,7 @@ export type Command = {
 export type CommandGroup = {
   title: string;
   commands: Command[];
+  more?: { text: string; link: string; href: string };
 };
 
 const filters = [
@@ -64,6 +67,11 @@ export const commandGroups: CommandGroup[] = [
       { command: "!moblin music status", text: "Show status." },
       { command: "!moblin music clear", text: "Clear the queue." },
     ],
+    more: {
+      text: "Viewers can also add songs without chat, on your own",
+      link: "song request page",
+      href: pages.songRequest,
+    },
   },
   {
     title: "Chat and AI",

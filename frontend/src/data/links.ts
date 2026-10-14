@@ -43,6 +43,7 @@ export const pages = {
   chatBot: "/chat-bot/",
   docs: "/docs/",
   cards: "/cards/",
+  songRequest: "/song-request/",
 } as const;
 
 export const platforms = [

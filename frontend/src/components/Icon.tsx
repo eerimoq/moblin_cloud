@@ -23,7 +23,8 @@ export type IconName =
   | "menu"
   | "close"
   | "copy"
-  | "check";
+  | "check"
+  | "music";
 
 type Props = {
   name: IconName;
@@ -159,6 +160,11 @@ export default function Icon(props: Props) {
         </Match>
         <Match when={props.name === "check"}>
           <path d="M5 12.5l4.5 4.5L19 7" />
+        </Match>
+        <Match when={props.name === "music"}>
+          <path d="M9 18V5l11-2v13" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="17" cy="16" r="3" />
         </Match>
       </Switch>
     </svg>

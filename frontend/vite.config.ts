@@ -65,7 +65,13 @@ export default defineConfig({
     rollupOptions: {
       // One HTML entry per page. Sub pages live in their own directory so
       // GitHub Pages serves them at clean URLs like /chat-bot/.
-      input: ["index.html", "chat-bot/index.html", "docs/index.html", "cards/index.html"],
+      input: [
+        "index.html",
+        "chat-bot/index.html",
+        "docs/index.html",
+        "cards/index.html",
+        "song-request/index.html",
+      ],
     },
   },
 });

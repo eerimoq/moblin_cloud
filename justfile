@@ -68,3 +68,7 @@ docs-generate moblin="../moblin":
 cards-print out="cards-print":
 	cd frontend && npm run build
 	cd frontend && node scripts/print-cards.ts {{absolute_path(out)}}
+
+# Pretends to be a Moblin streamer connected over remote control, for developing the song request page.
+backend-fake-streamer *key:
+	python3 scripts/remote_control_streamer.py {{key}}
