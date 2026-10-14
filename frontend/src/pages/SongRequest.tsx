@@ -5,7 +5,7 @@ import Footer from "../components/Footer";
 import Icon from "../components/Icon";
 import Mascot from "../components/Mascot";
 import Nav from "../components/Nav";
-import { pages } from "../data/links";
+import { links, pages } from "../data/links";
 import {
   addSong,
   BackendError,
@@ -221,6 +221,18 @@ function Viewer(props: { id: string }) {
                 spellcheck={false}
                 class={inputClass}
               />
+              <span class="text-[15px] text-muted">
+                Search for songs on{" "}
+                <a
+                  href={links.appleMusic}
+                  target="_blank"
+                  rel="noopener"
+                  class="text-leaf hover:text-leaf-bright"
+                >
+                  Apple Music
+                </a>{" "}
+                and copy the share link of the one you want.
+              </span>
             </label>
             <label class="flex flex-col gap-2">
               <span class="text-[15px] font-semibold text-ink-2">Your name (optional)</span>
