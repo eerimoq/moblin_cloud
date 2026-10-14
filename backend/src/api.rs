@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(
             request["request"]["data"],
             json!({"music": {"command": {"add": {
-                "title": "https://music.apple.com/song/1440818839?i=1440818839",
+                "title": "1440818839",
                 "user": "Viewer",
             }}}})
         );
