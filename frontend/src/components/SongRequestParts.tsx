@@ -14,11 +14,16 @@ export const ghostButtonClass =
 export const cardClass =
   "flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8";
 
-export function Hero(props: { eyebrow?: string; title: string; children: JSX.Element }) {
+export function Hero(props: {
+  eyebrow?: string;
+  title: string;
+  mascot?: boolean;
+  children: JSX.Element;
+}) {
   return (
     <section class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 pt-12 pb-10 sm:px-8 lg:pt-18">
       <div class="flex items-start justify-between gap-6">
-        <div class="flex max-w-[640px] flex-col gap-4">
+        <div class="flex flex-col gap-4" classList={{ "max-w-[640px]": props.mascot ?? true }}>
           <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
             {props.eyebrow ?? "Song requests"}
           </span>
@@ -27,10 +32,12 @@ export function Hero(props: { eyebrow?: string; title: string; children: JSX.Ele
           </h1>
           {props.children}
         </div>
-        <Mascot
-          variant="looking"
-          class="hidden w-[150px] shrink-0 -rotate-[6deg] sm:block lg:w-[190px]"
-        />
+        <Show when={props.mascot ?? true}>
+          <Mascot
+            variant="looking"
+            class="hidden w-[150px] shrink-0 -rotate-[6deg] sm:block lg:w-[190px]"
+          />
+        </Show>
       </div>
     </section>
   );
