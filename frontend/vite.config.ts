@@ -25,6 +25,7 @@ export default defineConfig({
     },
   ],
   server: {
+    host: true,
     // Talk to a local backend (`just backend-run`) during development.
     proxy: {
       "/api": {
