@@ -276,23 +276,18 @@ function Admin(props: {
           <span class="text-[15px] font-semibold text-ink-2">
             A short name for your page link, easy to remember
           </span>
-          <span class="flex items-center rounded-2xl border-[1.5px] border-line bg-well focus-within:border-leaf">
-            <span class="hidden pl-4 font-mono text-[17px] whitespace-nowrap text-muted sm:inline">
-              {location.host + asset(pages.songRequest)}
-            </span>
-            <input
-              type="text"
-              minLength={3}
-              maxLength={25}
-              pattern="[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?"
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value.toLowerCase())}
-              placeholder="your-name"
-              autocomplete="off"
-              spellcheck={false}
-              class="h-13 min-w-0 flex-1 bg-transparent px-4 font-mono text-[17px] text-ink placeholder:text-muted focus:outline-none sm:pl-0"
-            />
-          </span>
+          <input
+            type="text"
+            minLength={3}
+            maxLength={25}
+            pattern="[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?"
+            value={name()}
+            onInput={(event) => setName(event.currentTarget.value.toLowerCase())}
+            placeholder="your-name"
+            autocomplete="off"
+            spellcheck={false}
+            class={`${inputClass} font-mono`}
+          />
           <span class="text-[15px] text-muted">
             Letters, digits and dashes. Leave it empty to only use the random link.
           </span>
