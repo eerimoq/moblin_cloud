@@ -98,7 +98,7 @@ def main():
         key = streamer["key"]
         print(f"Key: {key}")
         print(f"Page: http://localhost:5173/song-request/?streamer={streamer['id']}")
-        print("Admin: http://localhost:5173/song-request/admin/ (paste the key)")
+        print("Admin: http://localhost:5173/song-request/ (paste the key)")
     asyncio.run(run(key))
 
 

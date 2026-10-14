@@ -121,12 +121,11 @@ turned into a link with an `i=<id>` query parameter, which is
 what Moblin looks songs up by; anything else is searched for. Both answer 404
 when the streamer is not connected.
 
-Streamers manage their page at `/song-request/admin/`. The secret key
-authenticates them: `GET /remote-control/streamer/<key>/settings` answers
+Streamers manage their page at `/song-request/`, which shows the viewer page
+only when given a name or `?streamer=<id>`. The secret key authenticates them: `GET /remote-control/streamer/<key>/settings` answers
 `{"id", "connected", "enabled", "name"}` and `POST` with `{"enabled",
 "name"}` changes them. While song requests are off both music endpoints answer
-403. A name is 3 to 25 lowercase letters, digits and dashes, unique and not
-`admin`, and gives the page a second address, `/song-request/<name>`. GitHub
+403. A name is 3 to 25 lowercase letters, digits and dashes, unique, and gives the page a second address, `/song-request/<name>`. GitHub
 Pages has no such file, so it serves `404.html`, which renders the song request
 page for those paths and resolves the name with
 `GET /remote-control/names/<name>`, answering `{"id"}`. The dev server

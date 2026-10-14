@@ -1,10 +1,9 @@
 import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
-import { asset } from "../asset";
 import Footer from "../components/Footer";
 import Icon from "../components/Icon";
 import Nav from "../components/Nav";
 import { Band, buttonClass, cardClass, Hero, inputClass } from "../components/SongRequestParts";
-import { links, pages } from "../data/links";
+import { links } from "../data/links";
 import {
   addSong,
   BackendError,
@@ -13,6 +12,7 @@ import {
   type MusicStatus,
   type Song,
 } from "../data/remoteControl";
+import SongRequestAdmin from "./SongRequestAdmin";
 
 type Status = MusicStatus | "loading" | "offline" | "off" | "unknown";
 
@@ -262,34 +262,6 @@ function Viewer(props: { id: string | null; name: string | null }) {
   );
 }
 
-function Landing() {
-  return (
-    <>
-      <Hero title="Let viewers pick the music.">
-        <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Get your own song request page. Viewers add songs from Apple Music to the queue of
-          Moblin's music player.
-        </p>
-      </Hero>
-      <Band>
-        <div class={cardClass}>
-          <h2 class="text-[23px] font-semibold">Are you a streamer?</h2>
-          <p class="text-ink-2">
-            Create your page, pick a name that is easy to remember and turn song requests on and off
-            on the admin page.
-          </p>
-          <div>
-            <a href={asset(pages.songRequestAdmin)} class={buttonClass}>
-              <Icon name="music" class="size-5" />
-              Set up my page
-            </a>
-          </div>
-        </div>
-      </Band>
-    </>
-  );
-}
-
 export default function SongRequest(props: { name?: string }) {
   const id = new URLSearchParams(location.search).get("streamer");
   const name = props.name ?? null;
@@ -298,7 +270,7 @@ export default function SongRequest(props: { name?: string }) {
     <>
       <Nav />
       <main>
-        <Show when={id || name} fallback={<Landing />}>
+        <Show when={id || name} fallback={<SongRequestAdmin />}>
           <Viewer id={id} name={name} />
         </Show>
       </main>

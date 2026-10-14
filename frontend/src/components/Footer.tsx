@@ -5,6 +5,7 @@ import Icon, { type IconName } from "./Icon";
 const footerLinks: { label: string; href: string; icon?: IconName }[] = [
   { label: "Docs", href: asset(pages.docs) },
   { label: "Chat bot", href: asset(pages.chatBot) },
+  { label: "Song requests", href: asset(pages.songRequest) },
   { label: "Trading cards", href: asset(pages.cards) },
   { label: "GitHub", href: links.github, icon: "github" },
   { label: "Discord", href: links.discord, icon: "discord" },

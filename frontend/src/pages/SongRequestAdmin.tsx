@@ -1,8 +1,6 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { asset } from "../asset";
-import Footer from "../components/Footer";
 import Icon from "../components/Icon";
-import Nav from "../components/Nav";
 import {
   Band,
   buttonClass,
@@ -364,30 +362,26 @@ export default function SongRequestAdmin() {
 
   return (
     <>
-      <Nav />
-      <main>
-        <Hero eyebrow="Song requests admin" title="Your song request page.">
-          <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-            Turn song requests on and off, and pick a name for your page so viewers can find it
-            easily.
-          </p>
-        </Hero>
-        <Band>
-          <Show when={!loading()} fallback={<p class="text-muted">Loading…</p>}>
-            <Show when={session()} fallback={<SignIn onKey={onKey} />}>
-              {(session) => (
-                <Admin
-                  streamerKey={session().key}
-                  settings={session().settings}
-                  isNew={session().isNew}
-                  onForget={forget}
-                />
-              )}
-            </Show>
+      <Hero title="Let viewers pick the music.">
+        <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
+          Get your own song request page. Viewers add songs from Apple Music to the queue of
+          Moblin's music player, and you turn requests on and off here.
+        </p>
+      </Hero>
+      <Band>
+        <Show when={!loading()} fallback={<p class="text-muted">Loading…</p>}>
+          <Show when={session()} fallback={<SignIn onKey={onKey} />}>
+            {(session) => (
+              <Admin
+                streamerKey={session().key}
+                settings={session().settings}
+                isNew={session().isNew}
+                onForget={forget}
+              />
+            )}
           </Show>
-        </Band>
-      </main>
-      <Footer />
+        </Show>
+      </Band>
     </>
   );
 }

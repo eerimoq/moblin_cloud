@@ -16,7 +16,7 @@ export default defineConfig({
       name: "song-request-names",
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
-          if (req.url && /\/song-request\/(?!admin\/?(\?|$))[^/?.]+\/?(\?.*)?$/.test(req.url)) {
+          if (req.url && /\/song-request\/[^/?.]+\/?(\?.*)?$/.test(req.url)) {
             req.url = `${base}404.html`;
           }
           next();
@@ -85,7 +85,6 @@ export default defineConfig({
         "docs/index.html",
         "cards/index.html",
         "song-request/index.html",
-        "song-request/admin/index.html",
         "404.html",
       ],
     },

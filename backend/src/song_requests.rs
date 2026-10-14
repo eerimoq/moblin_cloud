@@ -43,8 +43,7 @@ pub fn normalize_name(name: &str) -> Option<String> {
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !name.starts_with('-')
-        && !name.ends_with('-')
-        && name != "admin";
+        && !name.ends_with('-');
     valid.then_some(name)
 }
 
@@ -152,7 +151,6 @@ mod tests {
         assert_eq!(normalize_name("er ik"), None);
         assert_eq!(normalize_name("erik_"), None);
         assert_eq!(normalize_name("éric"), None);
-        assert_eq!(normalize_name("Admin"), None);
     }
 
     #[test]
