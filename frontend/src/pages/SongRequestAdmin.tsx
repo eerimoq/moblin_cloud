@@ -253,8 +253,8 @@ function Admin(props: {
         </div>
         <p class="text-ink-2">
           {settings().enabled
-            ? "On. Viewers can add songs to your queue."
-            : "Off. Your page tells viewers that song requests are turned off."}
+            ? "Viewers can add songs to your queue."
+            : "Your page tells viewers that song requests are turned off."}
         </p>
         <p class="flex items-center gap-2.5 text-[15px] text-muted">
           <span
