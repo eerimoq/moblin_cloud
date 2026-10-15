@@ -557,6 +557,7 @@ struct PublicPaywall {
     currency: String,
     client_id: Option<String>,
     merchant_id: Option<String>,
+    environment: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -582,6 +583,7 @@ async fn handle_paywall(
                     .filter(|_| !paywall.merchant_id.is_empty())
                     .map(|paypal| paypal.client_id().to_string()),
                 merchant_id: Some(paywall.merchant_id).filter(|id| !id.is_empty()),
+                environment: api.paypal.as_ref().map(PayPal::environment),
             }),
     })
 }
@@ -1115,6 +1117,7 @@ mod tests {
                 "currency": "SEK",
                 "clientId": null,
                 "merchantId": null,
+                "environment": "production",
             }})
         );
         let response = client
@@ -1264,6 +1267,7 @@ mod tests {
                 "currency": "SEK",
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
+                "environment": "production",
             }})
         );
         let music_url = format!("http://{address}/remote-control/{id}/music");

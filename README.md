@@ -227,12 +227,13 @@ any of it and PayPal takes its fees from the streamer.
 
 While a paywall is set `POST /remote-control/<id>/music` answers 402.
 `GET /remote-control/<id>/paywall` answers `{"paywall": {"price", "currency",
-"clientId", "merchantId"}}` or `{"paywall": null}`. Paywalls saved with an
+"clientId", "merchantId", "environment"}}` or `{"paywall": null}`, where
+`environment` is `sandbox` or `production`. Paywalls saved with an
 email before merchant IDs were required answer `null` for both IDs and can't
 be paid until the streamer enters their merchant ID. The
-viewer page loads the PayPal JavaScript SDK with those and shows PayPal's
-buttons, which open PayPal's checkout in a popup over the page. The buttons
-create the order with `POST /remote-control/<id>/music/orders` and `{"song",
+viewer page loads version 6 of the PayPal JavaScript SDK with those and
+shows PayPal's button, which opens PayPal's checkout over the page. The button
+creates the order with `POST /remote-control/<id>/music/orders` and `{"song",
 "user"}`, which checks the song like a free request does, so nobody pays for a
 song that can't be added. It answers `{"orderId"}` and remembers the song for
 three hours. Once the viewer approves, the page posts to

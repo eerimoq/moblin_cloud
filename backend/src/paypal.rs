@@ -90,6 +90,14 @@ impl PayPal {
         &self.client_id
     }
 
+    pub fn environment(&self) -> &'static str {
+        if self.url == SANDBOX_URL {
+            "sandbox"
+        } else {
+            "production"
+        }
+    }
+
     pub async fn check_payee(
         &self,
         merchant_id: &str,

@@ -45,6 +45,7 @@ export type Price = {
 export type PublicPaywall = Price & {
   clientId: string | null;
   merchantId: string | null;
+  environment: "production" | "sandbox" | null;
 };
 
 export const currencies = [

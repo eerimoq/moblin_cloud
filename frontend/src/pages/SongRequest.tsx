@@ -1,14 +1,13 @@
 import {
-  loadScript,
-  type PayPalButtonsComponent,
-  type PayPalButtonsComponentOptions,
-} from "@paypal/paypal-js";
+  loadCoreSdkScript,
+  type OnApproveDataOneTimePayments,
+  type OneTimePaymentSession,
+} from "@paypal/paypal-js/sdk-v6";
 import {
   createEffect,
   createMemo,
   createSignal,
   For,
-  on,
   Match,
   onCleanup,
   onMount,
@@ -62,58 +61,69 @@ function errorText(error: unknown) {
     : "Something went wrong. Try again.";
 }
 
+type PayPalOptions = {
+  start: () => boolean;
+  createOrder: () => Promise<{ orderId: string }>;
+  onApprove: (data: OnApproveDataOneTimePayments) => Promise<void>;
+  onCancel: () => void;
+  onError: () => void;
+};
+
 function PayPalButtons(props: {
-  paywall: PublicPaywall & { clientId: string; merchantId: string };
-  options: PayPalButtonsComponentOptions;
+  paywall: PublicPaywall & { clientId: string; merchantId: string; environment: string };
+  options: PayPalOptions;
   disabled: boolean;
-  round: number;
 }) {
   let container: HTMLDivElement | undefined;
-  let buttons: PayPalButtonsComponent | undefined;
+  let button: HTMLElement | undefined;
+  let session: OneTimePaymentSession | undefined;
   const [failed, setFailed] = createSignal(false);
-  const [actions, setActions] = createSignal<{
-    enable: () => Promise<void>;
-    disable: () => Promise<void>;
-  }>();
 
   createEffect(() => {
-    void (props.disabled ? actions()?.disable() : actions()?.enable());
+    const disabled = props.disabled;
+    button?.toggleAttribute("disabled", disabled);
   });
-  onCleanup(() => void buttons?.close());
+  onCleanup(() => session?.destroy());
 
-  const render = async () => {
+  const pay = async () => {
+    if (!session || props.disabled || !props.options.start()) {
+      return;
+    }
     try {
-      const paypal = await loadScript({
-        clientId: props.paywall.clientId,
-        merchantId: props.paywall.merchantId,
-        currency: props.paywall.currency,
-        intent: "capture",
-        components: "buttons",
-      });
-      const old = buttons;
-      if (container && old) {
-        container.style.minHeight = `${container.offsetHeight}px`;
-        await old.close();
-      }
-      setActions(undefined);
-      buttons = paypal?.Buttons?.({
-        style: { layout: "vertical", shape: "pill", height: 52, label: "pay" },
-        onInit: (_, actions) => setActions(actions),
-        ...props.options,
-      });
-      if (!buttons) {
-        throw new Error("no PayPal buttons");
-      }
-      if (container) {
-        await buttons.render(container);
-        container.style.minHeight = "";
-      }
+      await session.start({ presentationMode: "auto" }, props.options.createOrder());
     } catch {
-      setFailed(true);
+      props.options.onError();
     }
   };
 
-  createEffect(on(() => props.round, render));
+  onMount(async () => {
+    try {
+      const paypal = await loadCoreSdkScript({
+        environment: props.paywall.environment === "sandbox" ? "sandbox" : "production",
+      });
+      const instance = await paypal?.createInstance({
+        clientId: props.paywall.clientId,
+        merchantId: props.paywall.merchantId,
+        components: ["paypal-payments"],
+        pageType: "checkout",
+      });
+      if (!instance || !container) {
+        throw new Error("no PayPal");
+      }
+      session = instance.createPayPalOneTimePaymentSession({
+        onApprove: props.options.onApprove,
+        onCancel: props.options.onCancel,
+        onError: props.options.onError,
+      });
+      button = document.createElement("paypal-button");
+      button.setAttribute("type", "pay");
+      button.toggleAttribute("disabled", props.disabled);
+      button.addEventListener("click", () => void pay());
+      container.append(button);
+    } catch {
+      setFailed(true);
+    }
+  });
 
   return (
     <>
@@ -289,13 +299,19 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [profile, setProfile] = createSignal<Profile | null>(null);
   const [styled, setStyled] = createSignal(false);
   let form: HTMLFormElement | undefined;
-  const [round, setRound] = createSignal(0);
-  const nextRound = () => setRound(round() + 1);
   const payable = createMemo(
     () => {
       const current = paywall();
-      return current?.clientId && current.merchantId && typeof status() === "object"
-        ? { ...current, clientId: current.clientId, merchantId: current.merchantId }
+      return current?.clientId &&
+        current.merchantId &&
+        current.environment &&
+        typeof status() === "object"
+        ? {
+            ...current,
+            clientId: current.clientId,
+            merchantId: current.merchantId,
+            environment: current.environment,
+          }
         : null;
     },
     null,
@@ -303,6 +319,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       equals: (a, b) =>
         a?.clientId === b?.clientId &&
         a?.merchantId === b?.merchantId &&
+        a?.environment === b?.environment &&
         a?.currency === b?.currency &&
         a?.price === b?.price,
     },
@@ -344,12 +361,12 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
   };
 
-  const payPalOptions: PayPalButtonsComponentOptions = {
-    onClick: (_, actions) => (start() ? actions.resolve() : actions.reject()),
+  const payPalOptions: PayPalOptions = {
+    start,
     createOrder: async () => {
       orderError = null;
       try {
-        return await orderSong(id() ?? "", song().trim(), name().trim());
+        return { orderId: await orderSong(id() ?? "", song().trim(), name().trim()) };
       } catch (error) {
         orderError = error;
         throw error;
@@ -359,21 +376,18 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       setBusy(true);
       setResult({ ok: true, text: "Payment approved. Completing it…" });
       try {
-        await captureSong(id() ?? "", data.orderID);
+        await captureSong(id() ?? "", data.orderId);
         requested(true);
       } catch (error) {
         showError(error);
       } finally {
         setBusy(false);
-        nextRound();
       }
     },
     onCancel: () => {
       setResult({ ok: false, text: "Payment cancelled. No song was added." });
-      nextRound();
     },
     onError: () => {
-      nextRound();
       if (orderError) {
         showError(orderError);
       } else {
@@ -516,7 +530,6 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                       paywall={current}
                       options={payPalOptions}
                       disabled={busy() || !song().trim()}
-                      round={round()}
                     />
                   )}
                 </Show>
