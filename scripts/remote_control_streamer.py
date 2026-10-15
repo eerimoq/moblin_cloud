@@ -10,6 +10,15 @@ import secrets
 import websockets
 
 BACKEND = "localhost:8080"
+WHEEL = {
+    "options": [
+        {"text": "Push-ups", "weight": 1},
+        {"text": "Sing a song", "weight": 2},
+        {"text": "Nothing", "weight": 3},
+        {"text": "Dance", "weight": 1},
+        {"text": "Spin again", "weight": 1},
+    ]
+}
 
 
 def base64url(data):
@@ -80,6 +89,8 @@ async def run(key):
                 print("<-", text)
                 if "hello" in message:
                     reply = {"identify": {"streamerId": "FAKE", "authentication": "fake"}}
+                elif "identified" in message:
+                    reply = {"event": {"data": {"wheelOfLuck": {"wheel": WHEEL}}}}
                 elif "request" in message:
                     request = message["request"]
                     reply = {

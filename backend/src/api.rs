@@ -24,7 +24,7 @@ use crate::pages::{
     Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price, valid_price,
 };
 use crate::paypal::{CaptureError, Item, Order, PayPal, PayeeError};
-use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers};
+use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
 use crate::song_queue::{self, QueuedSong, SongQueue};
 use crate::store::{Channel, Store, Streamer};
 use crate::webhooks::Webhooks;
@@ -767,6 +767,7 @@ struct PublicSpin {
 #[derive(Serialize)]
 struct SpinResponse {
     spin: Option<PublicSpin>,
+    wheel: Option<Wheel>,
 }
 
 async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SpinResponse> {
@@ -781,6 +782,7 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
             merchant_id: spin.merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
         }),
+        wheel: api.remote_control.wheel(&id),
     })
 }
 
@@ -1773,6 +1775,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wheels_are_pushed_by_the_streamer() {
+        let (address, api) = start_api(None).await;
+        let (_, key, id) = streamer(&address, &api).await;
+        let spin_url = format!("http://{address}/remote-control/{id}/spin");
+        let wheel = || async {
+            reqwest::get(&spin_url)
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()["wheel"]
+                .clone()
+        };
+        let mut socket = connect(&address, &key).await;
+        assert_eq!(wheel().await, Value::Null);
+        let options = json!([{"text": "Yes", "weight": 1}, {"text": "No", "weight": 3}]);
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": options}}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        assert_eq!(wheel().await, json!({"options": options}));
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {}}}}).to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        assert_eq!(wheel().await, Value::Null);
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": options}}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        drop(socket);
+        for _ in 0..100 {
+            if !api.remote_control.is_connected(&id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(wheel().await, Value::Null);
+    }
+
+    #[tokio::test]
     async fn pending_captures_add_no_song() {
         let (address, api, _) = start_paid().await;
         let client = reqwest::Client::new();
@@ -1887,7 +1948,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(public, json!({"spin": null}));
+        assert_eq!(public, json!({"spin": null, "wheel": null}));
         let settings_url = format!("http://{address}/account/settings");
         for webhook in [" ", "ftp://example.com/spin"] {
             let response = client
@@ -1942,7 +2003,7 @@ mod tests {
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
-            }})
+            }, "wheel": null})
         );
         let orders_url = format!("{spin_url}/orders");
         for request in [

@@ -310,13 +310,22 @@ what happens. It works like tips: `"spin": {"merchantId", "options": [{"spins",
 "price"}], "currency", "webhookUrl"}` in `POST /account/settings` (1 to 100
 spins, prices in hundredths from 0.50 to 1000, each number of spins once; the
 webhook URL is required), `GET /remote-control/<id>/spin` answers `{"spin":
-{"options", "currency", "clientId", "merchantId", "environment"}}` or
-`{"spin": null}`, and the page pays with `POST
+{"options", "currency", "clientId", "merchantId", "environment"}, "wheel"}` or
+`{"spin": null, "wheel"}`, and the page pays with `POST
 /remote-control/<id>/spin/orders` and `{"spins", "user", "message"}` (the
 backend looks the price up; the message is optional and at most 200
 characters, as for tips) and `POST
 /remote-control/<id>/spin/orders/<order id>/capture`. Each purchase is posted
 like a tip, with `"type": "spin"` and `"spins"`.
+
+`"wheel"` is the wheel the page draws so viewers see what they pay for:
+`{"options": [{"text", "weight"}]}`, or `null` when the streamer is not
+connected or has no wheel. Moblin pushes it over remote control as a
+`{"event": {"data": {"wheelOfLuck": {"wheel": ...}}}}` message (without
+`wheel` when there is none) when it connects and whenever it changes. It is the
+first enabled wheel of luck widget in the current scene. The backend keeps it
+with the connection, dropping options with weight 0 and keeping at most 100
+options of at most 100 characters and weight 1000.
 
 The page shows tips, the wheel and song requests one at a time, with
 Tip, Spin and Songs tabs for the ones the streamer turned on. `#tip` and
@@ -328,7 +337,8 @@ To try a page locally without Twitch or a phone:
 2. Open `http://localhost:5173/dashboard/`, sign in with Twitch (faked)
    and your page is created.
 3. Copy the streamer URL from the page and run
-   `just backend-fake-streamer <streamer URL>`, which connects a
+   `just backend-fake-streamer <streamer URL>` (its Python dependencies are in
+   `requirements.txt`: `pip install -r requirements.txt`), which connects a
    made-up Moblin to the backend. Without a key it makes up a new one, only
    reachable at `/page/?streamer=<id>` and not manageable.
 4. Request songs at `http://localhost:5173/twitch/streamer`. Songs with the id

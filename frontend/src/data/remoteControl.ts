@@ -194,8 +194,12 @@ export const captureTip = (id: string, orderId: string) =>
     method: "POST",
   });
 
-export const streamerSpin = async (id: string) =>
-  (await call<{ spin: PublicSpin | null }>(`/${encodeURIComponent(id)}/spin`)).spin;
+export type Wheel = {
+  options: { text: string; weight: number }[];
+};
+
+export const streamerSpin = (id: string) =>
+  call<{ spin: PublicSpin | null; wheel: Wheel | null }>(`/${encodeURIComponent(id)}/spin`);
 
 export const orderSpin = async (id: string, spins: number, user: string, message: string) =>
   (

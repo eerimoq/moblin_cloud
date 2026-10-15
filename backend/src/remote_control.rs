@@ -61,7 +61,43 @@ enum MessageToAssistant {
         result: Outcome,
         data: Option<Value>,
     },
+    Event {
+        data: Event,
+    },
     Ping {},
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum Event {
+    WheelOfLuck { wheel: Option<Wheel> },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Wheel {
+    pub options: Vec<WheelOption>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WheelOption {
+    pub text: String,
+    pub weight: u32,
+}
+
+impl Wheel {
+    fn normalize(self) -> Option<Self> {
+        let options: Vec<WheelOption> = self
+            .options
+            .into_iter()
+            .filter(|option| option.weight > 0)
+            .take(100)
+            .map(|option| WheelOption {
+                text: option.text.trim().chars().take(100).collect(),
+                weight: option.weight.min(1000),
+            })
+            .collect();
+        (!options.is_empty()).then_some(Self { options })
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -142,6 +178,7 @@ struct Session {
     pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
     last_request: Option<Instant>,
     status: Option<(Instant, MusicStatus)>,
+    wheel: Option<Wheel>,
 }
 
 #[derive(Default)]
@@ -338,6 +375,16 @@ impl Streamers {
                     let _ = pending.send((result, data));
                 }
             }
+            Ok(MessageToAssistant::Event {
+                data: Event::WheelOfLuck { wheel },
+            }) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                if let Some(session) = sessions.by_id.get_mut(id)
+                    && session.number == number
+                {
+                    session.wheel = wheel.and_then(Wheel::normalize);
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -359,6 +406,7 @@ impl Streamers {
                 pending: HashMap::new(),
                 last_request: None,
                 status: None,
+                wheel: None,
             },
         );
         Some(number)
@@ -373,6 +421,15 @@ impl Streamers {
         {
             sessions.by_id.remove(id);
         }
+    }
+
+    pub fn wheel(&self, id: &str) -> Option<Wheel> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .by_id
+            .get(id)
+            .and_then(|session| session.wheel.clone())
     }
 
     pub async fn music(
@@ -613,6 +670,81 @@ mod tests {
         assert_eq!(
             found(r#"{"response":{"id":4,"result":{"ok":{}},"data":{"musicFind":{}}}}"#),
             None
+        );
+    }
+
+    #[test]
+    fn wheel_events_match_moblin() {
+        assert_eq!(
+            decode(
+                r#"{"event":{"data":{"wheelOfLuck":{"wheel":{"options":[{"text":"Yes","weight":1},{"text":" No ","weight":3}]}}}}}"#
+            ),
+            MessageToAssistant::Event {
+                data: Event::WheelOfLuck {
+                    wheel: Some(Wheel {
+                        options: vec![
+                            WheelOption {
+                                text: "Yes".to_string(),
+                                weight: 1,
+                            },
+                            WheelOption {
+                                text: " No ".to_string(),
+                                weight: 3,
+                            },
+                        ],
+                    }),
+                },
+            }
+        );
+        assert_eq!(
+            decode(r#"{"event":{"data":{"wheelOfLuck":{}}}}"#),
+            MessageToAssistant::Event {
+                data: Event::WheelOfLuck { wheel: None },
+            }
+        );
+        assert!(
+            serde_json::from_str::<MessageToAssistant>(
+                r#"{"event":{"data":{"log":{"entry":"x"}}}}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn wheels_are_normalized() {
+        let option = |text: &str, weight| WheelOption {
+            text: text.to_string(),
+            weight,
+        };
+        assert_eq!(
+            Wheel {
+                options: vec![
+                    option(" Yes ", 1),
+                    option("Never", 0),
+                    option(&"a".repeat(101), 5000),
+                ],
+            }
+            .normalize(),
+            Some(Wheel {
+                options: vec![option("Yes", 1), option(&"a".repeat(100), 1000)],
+            })
+        );
+        assert_eq!(
+            Wheel {
+                options: vec![option("Never", 0)],
+            }
+            .normalize(),
+            None
+        );
+        assert_eq!(
+            Wheel {
+                options: (0..150).map(|_| option("Yes", 1)).collect(),
+            }
+            .normalize()
+            .unwrap()
+            .options
+            .len(),
+            100
         );
     }
 

@@ -42,6 +42,7 @@ import {
   type PublicPaywall,
   type PublicSpin,
   type PublicTips,
+  type Wheel,
 } from "../data/remoteControl";
 
 type Status = MusicStatus | "loading" | "offline" | "unknown";
@@ -544,9 +545,73 @@ function PoweredBy() {
 
 const spinsText = (spins: number) => (spins === 1 ? "1 spin" : `${spins} spins`);
 
+const wheelColors = [
+  "fill-wheel-1",
+  "fill-wheel-2",
+  "fill-wheel-3",
+  "fill-wheel-4",
+  "fill-wheel-5",
+  "fill-wheel-6",
+];
+
+function WheelPicture(props: { wheel: Wheel }) {
+  const sectors = () => {
+    const total = props.wheel.options.reduce((sum, option) => sum + option.weight, 0);
+    let start = 0;
+    return props.wheel.options.map((option, index) => {
+      const sweep = (option.weight / total) * 360;
+      const middle = start + sweep / 2;
+      const point = (angle: number) => {
+        const radians = (angle * Math.PI) / 180;
+        return `${100 * Math.sin(radians)} ${-100 * Math.cos(radians)}`;
+      };
+      const path =
+        sweep >= 360
+          ? "M 0 -100 A 100 100 0 1 1 0 100 A 100 100 0 1 1 0 -100 Z"
+          : `M 0 0 L ${point(start)} A 100 100 0 ${sweep > 180 ? 1 : 0} 1 ${point(start + sweep)} Z`;
+      start += sweep;
+      const fontSize = Math.min(
+        20,
+        75 / Math.max(option.text.length * 0.55, 1),
+        sweep >= 180 ? 20 : 59 * Math.sin((sweep * Math.PI) / 180) * 0.8,
+      );
+      return { option, path, middle, color: wheelColors[index % wheelColors.length], fontSize };
+    });
+  };
+
+  return (
+    <svg
+      viewBox="-110 -110 220 220"
+      role="img"
+      aria-label={`The wheel: ${props.wheel.options.map((option) => option.text).join(", ")}`}
+      class="mx-auto w-full max-w-72"
+    >
+      <For each={sectors()}>
+        {(sector) => (
+          <g>
+            <path d={sector.path} class={sector.color} />
+            <text
+              transform={`rotate(${sector.middle - 90}) translate(59 0)`}
+              text-anchor="middle"
+              dominant-baseline="central"
+              font-size={String(sector.fontSize)}
+              class="fill-black font-body"
+            >
+              {sector.option.text}
+            </text>
+          </g>
+        )}
+      </For>
+      <circle r="20" class="fill-white" />
+      <path d="M 92 0 L 110 -9 L 110 9 Z" class="fill-white stroke-black" stroke-width="1.5" />
+    </svg>
+  );
+}
+
 function SpinWheel(props: {
   id: string;
   spin: PublicSpin & PayPalConfig;
+  wheel: Wheel | null;
   streamer: string | undefined;
   name: string;
   onName: (name: string) => void;
@@ -619,6 +684,9 @@ function SpinWheel(props: {
         </h2>
         <p class="text-ink-2">Pick how many spins you want and add a message if you like.</p>
       </div>
+      <Show when={props.wheel} keyed>
+        {(wheel) => <WheelPicture wheel={wheel} />}
+      </Show>
       <Show when={props.spin.options.length > 1}>
         <fieldset class="flex flex-col gap-3">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">Spins</legend>
@@ -718,6 +786,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
   const [spin, setSpin] = createSignal<PublicSpin | null>(null);
+  const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
   const [profile, setProfile] = createSignal<Profile | null>(null);
   const [styled, setStyled] = createSignal(false);
   const [section, setSection] = createSignal<Section>(
@@ -828,7 +899,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     const current = id();
     if (current) {
       try {
-        setSpin(await streamerSpin(current));
+        const found = await streamerSpin(current);
+        setSpin(found.spin);
+        setWheelOfLuck(found.wheel);
       } catch {}
     }
   };
@@ -934,7 +1007,10 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     void refreshTips();
     void refreshSpin();
     void refresh();
-    const timer = setInterval(refresh, 30_000);
+    const timer = setInterval(() => {
+      void refresh();
+      void refreshSpin();
+    }, 30_000);
     onCleanup(() => clearInterval(timer));
   });
 
@@ -1080,6 +1156,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   <SpinWheel
                     id={id() ?? ""}
                     spin={current}
+                    wheel={wheelOfLuck()}
                     streamer={profile()?.name}
                     name={name()}
                     onName={setName}
