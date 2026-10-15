@@ -45,7 +45,7 @@ export type Price = {
 
 export type PublicPaywall = Price & {
   clientId: string | null;
-  merchantId: string;
+  merchantId: string | null;
 };
 
 export const currencies = [

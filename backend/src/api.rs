@@ -448,19 +448,21 @@ async fn paywall_with_merchant_id(
         .and_then(|current| current.merchant_id)
     {
         Some(merchant_id) => Some(merchant_id),
-        None => paypal
-            .merchant_id(&paywall.email, paywall.price, &paywall.currency)
-            .await
-            .map_err(|error| match error {
-                PayeeError::Invalid => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "PayPal can't send payments to that email".to_string(),
-                ),
-                PayeeError::Failed => (
-                    StatusCode::BAD_GATEWAY,
-                    "PayPal could not be reached".to_string(),
-                ),
-            })?,
+        None => Some(
+            paypal
+                .merchant_id(&paywall.email, paywall.price, &paywall.currency)
+                .await
+                .map_err(|error| match error {
+                    PayeeError::Invalid => (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "PayPal can't send payments to that email".to_string(),
+                    ),
+                    PayeeError::Failed => (
+                        StatusCode::BAD_GATEWAY,
+                        "PayPal could not be reached".to_string(),
+                    ),
+                })?,
+        ),
     };
     Ok(paywall)
 }
@@ -513,7 +515,7 @@ struct PublicPaywall {
     price: u32,
     currency: String,
     client_id: Option<String>,
-    merchant_id: String,
+    merchant_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -536,8 +538,9 @@ async fn handle_paywall(
                 client_id: api
                     .paypal
                     .as_ref()
+                    .filter(|_| paywall.merchant_id.is_some())
                     .map(|paypal| paypal.client_id().to_string()),
-                merchant_id: paywall.merchant_id.unwrap_or(paywall.email),
+                merchant_id: paywall.merchant_id,
             }),
     })
 }
@@ -688,10 +691,14 @@ async fn handle_order(
         StatusCode::BAD_REQUEST,
         "The streamer no longer asks for a payment. Reload the page.",
     ))?;
-    let paypal = api.paypal.as_ref().ok_or(failure(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "Payments are unavailable right now. Try again later.",
-    ))?;
+    let paypal = api
+        .paypal
+        .as_ref()
+        .filter(|_| paywall.merchant_id.is_some())
+        .ok_or(failure(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Payments are unavailable right now. Try again later.",
+        ))?;
     let song = requested_song(&api, &id, song_and_user(request)?).await?;
     let order = Order {
         streamer: id.clone(),
@@ -1034,6 +1041,51 @@ mod tests {
         )))
         .await;
         (address, api, paypal_order)
+    }
+
+    #[tokio::test]
+    async fn paywalls_without_merchant_id_hide_the_email() {
+        let (address, api, _) = start_paid().await;
+        let (_, _, id) = streamer(&address, &api).await;
+        api.song_requests
+            .set(
+                &id,
+                Settings {
+                    paywall: Some(Paywall {
+                        email: "erik@example.com".to_string(),
+                        price: 250,
+                        currency: "SEK".to_string(),
+                        merchant_id: None,
+                    }),
+                    ..Settings::default()
+                },
+            )
+            .unwrap();
+        let client = reqwest::Client::new();
+        let public: Value = client
+            .get(format!("http://{address}/remote-control/{id}/paywall"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            public,
+            json!({"paywall": {
+                "price": 250,
+                "currency": "SEK",
+                "clientId": null,
+                "merchantId": null,
+            }})
+        );
+        let response = client
+            .post(format!("http://{address}/remote-control/{id}/music/orders"))
+            .json(&json!({"song": LINK, "user": "Viewer"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     fn key_of(account: &Value) -> String {

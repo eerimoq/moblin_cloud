@@ -63,7 +63,7 @@ function errorText(error: unknown) {
 }
 
 function PayPalButtons(props: {
-  paywall: PublicPaywall & { clientId: string };
+  paywall: PublicPaywall & { clientId: string; merchantId: string };
   options: PayPalButtonsComponentOptions;
   disabled: boolean;
   round: number;
@@ -294,8 +294,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const payable = createMemo(
     () => {
       const current = paywall();
-      return current?.clientId && typeof status() === "object"
-        ? { ...current, clientId: current.clientId }
+      return current?.clientId && current.merchantId && typeof status() === "object"
+        ? { ...current, clientId: current.clientId, merchantId: current.merchantId }
         : null;
     },
     null,

@@ -100,7 +100,7 @@ impl PayPal {
         email: &str,
         price: u32,
         currency: &str,
-    ) -> Result<Option<String>, PayeeError> {
+    ) -> Result<String, PayeeError> {
         let order = Order {
             streamer: String::new(),
             link: String::new(),
@@ -125,9 +125,13 @@ impl PayPal {
             info!("looking the PayPal merchant id of {email} up failed ({status}): {body}");
             return Err(PayeeError::Failed);
         }
-        Ok(body["purchase_units"][0]["payee"]["merchant_id"]
-            .as_str()
-            .map(str::to_string))
+        match body["purchase_units"][0]["payee"]["merchant_id"].as_str() {
+            Some(merchant_id) => Ok(merchant_id.to_string()),
+            None => {
+                info!("PayPal answered without a merchant id for {email}: {body}");
+                Err(PayeeError::Failed)
+            }
+        }
     }
 
     async fn post_order(&self, order: &Order, representation: bool) -> Result<reqwest::Response> {
