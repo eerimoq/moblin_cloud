@@ -203,8 +203,7 @@ function Queue(props: { status: Status; name: string | undefined }) {
 
 function StreamerHeader(props: { profile: Profile | null; unknown: boolean }) {
   return (
-    <header class="relative overflow-hidden">
-      <div class="absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(ellipse_at_top,color-mix(in_oklab,var(--color-moss)_28%,transparent),transparent_70%)]" />
+    <header>
       <div class="mx-auto flex max-w-[720px] flex-col items-center gap-4 px-5 pt-14 pb-10 text-center sm:px-8 lg:pt-20">
         <Show
           when={props.profile}
