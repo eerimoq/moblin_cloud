@@ -15,10 +15,9 @@ export type MusicStatus = {
 };
 
 export type Paywall = {
-  email: string;
+  merchantId: string;
   price: number;
   currency: string;
-  merchantId?: string;
 };
 
 export type Page = {

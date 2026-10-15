@@ -224,7 +224,7 @@ async fn update_settings(
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let paywall = match request.paywall {
-        Some(paywall) => Some(paywall_with_merchant_id(api, &id, paywall).await?),
+        Some(paywall) => Some(checked_paywall(api, &id, paywall).await?),
         None => None,
     };
     let settings = api
@@ -438,16 +438,20 @@ async fn handle_account_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let signed_in = signed_in(&api, &headers)?;
     let id = signed_in.account.page.ok_or_else(no_page)?.id;
-    let email = api
+    let merchant_id = api
         .song_requests
         .get(&id)
         .paywall
-        .map(|paywall| paywall.email);
-    let new_email = request.paywall.as_ref().map(|paywall| paywall.email.trim());
-    if new_email.is_some() && new_email != email.as_deref() && !signed_in.fresh {
+        .map(|paywall| paywall.merchant_id);
+    let new_merchant_id = request
+        .paywall
+        .clone()
+        .and_then(Paywall::normalize)
+        .map(|paywall| paywall.merchant_id);
+    if new_merchant_id.is_some() && new_merchant_id != merchant_id && !signed_in.fresh {
         return Err((
             StatusCode::FORBIDDEN,
-            "sign in again to change the PayPal email".to_string(),
+            "sign in again to change the PayPal merchant ID".to_string(),
         ));
     }
     update_settings(&api, id, request).await
@@ -466,45 +470,41 @@ async fn handle_account_sign_out(
 fn invalid_paywall() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the paywall needs a PayPal email, a price of 0.50 to 1000 and a supported currency"
+        "the paywall needs a PayPal merchant ID, a price of 0.50 to 1000 and a supported currency"
             .to_string(),
     )
 }
 
-async fn paywall_with_merchant_id(
+async fn checked_paywall(
     api: &Api,
     id: &str,
     paywall: Paywall,
 ) -> Result<Paywall, (StatusCode, String)> {
-    let mut paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
+    let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
     let paypal = api.paypal.as_ref().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "payments are unavailable".to_string(),
     ))?;
-    paywall.merchant_id = match api
+    let checked = api
         .song_requests
         .get(id)
         .paywall
-        .filter(|current| current.email == paywall.email)
-        .and_then(|current| current.merchant_id)
-    {
-        Some(merchant_id) => Some(merchant_id),
-        None => Some(
-            paypal
-                .merchant_id(&paywall.email, paywall.price, &paywall.currency)
-                .await
-                .map_err(|error| match error {
-                    PayeeError::Invalid => (
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        "PayPal can't send payments to that email".to_string(),
-                    ),
-                    PayeeError::Failed => (
-                        StatusCode::BAD_GATEWAY,
-                        "PayPal could not be reached".to_string(),
-                    ),
-                })?,
-        ),
-    };
+        .is_some_and(|current| current.merchant_id == paywall.merchant_id);
+    if !checked {
+        paypal
+            .check_payee(&paywall.merchant_id, paywall.price, &paywall.currency)
+            .await
+            .map_err(|error| match error {
+                PayeeError::Invalid => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "PayPal can't send payments to that merchant ID".to_string(),
+                ),
+                PayeeError::Failed => (
+                    StatusCode::BAD_GATEWAY,
+                    "PayPal could not be reached".to_string(),
+                ),
+            })?;
+    }
     Ok(paywall)
 }
 
@@ -579,9 +579,9 @@ async fn handle_paywall(
                 client_id: api
                     .paypal
                     .as_ref()
-                    .filter(|_| paywall.merchant_id.is_some())
+                    .filter(|_| !paywall.merchant_id.is_empty())
                     .map(|paypal| paypal.client_id().to_string()),
-                merchant_id: paywall.merchant_id,
+                merchant_id: Some(paywall.merchant_id).filter(|id| !id.is_empty()),
             }),
     })
 }
@@ -735,7 +735,7 @@ async fn handle_order(
     let paypal = api
         .paypal
         .as_ref()
-        .filter(|_| paywall.merchant_id.is_some())
+        .filter(|_| !paywall.merchant_id.is_empty())
         .ok_or(failure(
             StatusCode::SERVICE_UNAVAILABLE,
             "Payments are unavailable right now. Try again later.",
@@ -746,7 +746,6 @@ async fn handle_order(
         link: song.link,
         song: song.name,
         user: song.user,
-        email: paywall.email,
         merchant_id: paywall.merchant_id,
         price: paywall.price,
         currency: paywall.currency,
@@ -890,12 +889,13 @@ mod tests {
     }
 
     async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
-        start_api_with(paypal, None).await
+        start_api_with(paypal, None, SongRequests::load(None).unwrap()).await
     }
 
     async fn start_api_with(
         paypal: Option<PayPal>,
         twitch: Option<OAuthApp>,
+        song_requests: SongRequests,
     ) -> (String, Arc<Api>) {
         let api = Arc::new(Api {
             store: Arc::new(Store::new(6)),
@@ -903,7 +903,7 @@ mod tests {
             app_attest: None,
             live: None,
             remote_control: Streamers::new(),
-            song_requests: SongRequests::load(None).unwrap(),
+            song_requests,
             paypal,
             song_queue: SongQueue::load(None).unwrap(),
             auth: Auth::new(
@@ -976,9 +976,7 @@ mod tests {
                 post({
                     let order = order.clone();
                     move |Json(request): Json<Value>| async move {
-                        if request["purchase_units"][0]["payee"]["email_address"]
-                            == "nobody@example.com"
-                        {
+                        if request["purchase_units"][0]["payee"]["merchant_id"] == "NOBODY0000000" {
                             return (
                                 StatusCode::UNPROCESSABLE_ENTITY,
                                 Json(json!({"details": [{"issue": "PAYEE_ACCOUNT_INVALID"}]})),
@@ -990,7 +988,6 @@ mod tests {
                             Json(json!({
                                 "id": "ORDER1",
                                 "status": "CREATED",
-                                "purchase_units": [{"payee": {"merchant_id": "MERCHANT1"}}],
                             })),
                         )
                     }
@@ -1085,26 +1082,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paywalls_without_merchant_id_hide_the_email() {
-        let (address, api, _) = start_paid().await;
-        let (_, _, id) = streamer(&address, &api).await;
-        api.song_requests
-            .set(
-                &id,
-                Settings {
-                    paywall: Some(Paywall {
-                        email: "erik@example.com".to_string(),
-                        price: 250,
-                        currency: "SEK".to_string(),
-                        merchant_id: None,
-                    }),
-                    ..Settings::default()
-                },
-            )
-            .unwrap();
+    async fn email_paywalls_cant_be_paid() {
+        let path = std::env::temp_dir().join(format!("email-paywalls-{}.json", std::process::id()));
+        std::fs::write(
+            &path,
+            r#"{"p": {"paywall": {"email": "erik@example.com", "price": 250, "currency": "SEK"}}}"#,
+        )
+        .unwrap();
+        let song_requests = SongRequests::load(Some(path.clone())).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let (paypal_url, _) = start_paypal().await;
+        let paypal = PayPal::new(
+            reqwest::Client::new(),
+            paypal_url,
+            "id".to_string(),
+            "secret".to_string(),
+        );
+        let (address, _) = start_api_with(Some(paypal), None, song_requests).await;
         let client = reqwest::Client::new();
         let public: Value = client
-            .get(format!("http://{address}/remote-control/{id}/paywall"))
+            .get(format!("http://{address}/remote-control/p/paywall"))
             .send()
             .await
             .unwrap()
@@ -1121,7 +1118,7 @@ mod tests {
             }})
         );
         let response = client
-            .post(format!("http://{address}/remote-control/{id}/music/orders"))
+            .post(format!("http://{address}/remote-control/p/music/orders"))
             .json(&json!({"song": LINK, "user": "Viewer"}))
             .send()
             .await
@@ -1160,7 +1157,7 @@ mod tests {
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": {
-                "email": "erik@example.com", "price": 250, "currency": "SEK", "merchantId": "FAKE",
+                "merchantId": "merchant00001", "price": 250, "currency": "SEK",
             }}))
             .send()
             .await
@@ -1225,7 +1222,7 @@ mod tests {
             .post(&settings_url)
             .bearer_auth(&session)
             .json(&json!({"paywall": {
-                "email": "nobody@example.com", "price": 250, "currency": "SEK",
+                "merchantId": "NOBODY0000000", "price": 250, "currency": "SEK",
             }}))
             .send()
             .await
@@ -1235,7 +1232,7 @@ mod tests {
             .post(&settings_url)
             .bearer_auth(&session)
             .json(&json!({"paywall": {
-                "email": "erik@example.com", "price": 250, "currency": "SEK", "merchantId": "FAKE",
+                "merchantId": "merchant00001", "price": 250, "currency": "SEK",
             }}))
             .send()
             .await
@@ -1246,10 +1243,9 @@ mod tests {
         assert_eq!(
             settings["paywall"],
             json!({
-                "email": "erik@example.com",
                 "price": 250,
                 "currency": "SEK",
-                "merchantId": "MERCHANT1",
+                "merchantId": "MERCHANT00001",
             })
         );
         assert_eq!(settings["paypal"], true);
@@ -1267,7 +1263,7 @@ mod tests {
                 "price": 250,
                 "currency": "SEK",
                 "clientId": "id",
-                "merchantId": "MERCHANT1",
+                "merchantId": "MERCHANT00001",
             }})
         );
         let music_url = format!("http://{address}/remote-control/{id}/music");
@@ -1325,7 +1321,7 @@ mod tests {
         );
         assert_eq!(
             sent["purchase_units"][0]["payee"],
-            json!({"merchant_id": "MERCHANT1"})
+            json!({"merchant_id": "MERCHANT00001"})
         );
         assert_eq!(
             sent["purchase_units"][0]["description"],
@@ -1546,6 +1542,7 @@ mod tests {
                 token_url: format!("{twitch}/token"),
                 users_url: format!("{twitch}/users"),
             }),
+            SongRequests::load(None).unwrap(),
         )
         .await;
         let client = reqwest::Client::builder()
@@ -1795,34 +1792,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paypal_emails_change_only_after_signing_in_again() {
+    async fn paypal_merchant_ids_change_only_after_signing_in_again() {
         let (address, api, _) = start_paid().await;
         let (_, _, id) = streamer(&address, &api).await;
         let old = api.auth.session_at("1", 0, crate::song_queue::now() - 601);
         let client = reqwest::Client::new();
-        let save = |session: String, email: Option<&str>| {
+        let save = |session: String, merchant_id: Option<&str>| {
             let paywall =
-                email.map(|email| json!({"email": email, "price": 250, "currency": "SEK"}));
+                merchant_id.map(|id| json!({"merchantId": id, "price": 250, "currency": "SEK"}));
             client
                 .post(format!("http://{address}/account/settings"))
                 .bearer_auth(session)
                 .json(&json!({"paywall": paywall}))
                 .send()
         };
-        let response = save(old.clone(), Some("erik@example.com")).await.unwrap();
+        let response = save(old.clone(), Some("MERCHANT00001")).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         assert_eq!(api.song_requests.get(&id).paywall, None);
-        let response = save(api.auth.session("1", 0), Some("erik@example.com"))
+        let response = save(api.auth.session("1", 0), Some("MERCHANT00001"))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let response = save(old.clone(), Some(" erik@example.com ")).await.unwrap();
+        let response = save(old.clone(), Some(" merchant00001 ")).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let response = save(old.clone(), Some("other@example.com")).await.unwrap();
+        let response = save(old.clone(), Some("MERCHANT00002")).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         assert_eq!(
-            api.song_requests.get(&id).paywall.unwrap().email,
-            "erik@example.com"
+            api.song_requests.get(&id).paywall.unwrap().merchant_id,
+            "MERCHANT00001"
         );
         let response = save(old, None).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);

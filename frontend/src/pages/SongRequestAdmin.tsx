@@ -78,11 +78,11 @@ function paywallErrorText(error: unknown) {
   if (error instanceof BackendError) {
     switch (error.status) {
       case 400:
-        return "Enter your PayPal email and a price from 0.50 to 1000.";
+        return "Enter your 13 character PayPal merchant ID and a price from 0.50 to 1000.";
       case 403:
-        return "To change your PayPal email, sign in again first.";
+        return "To change your PayPal merchant ID, sign in again first.";
       case 422:
-        return "PayPal can't send payments to that email. Use the email of your PayPal business account.";
+        return "PayPal can't send payments to that merchant ID. Check it in your PayPal business account.";
       case 502:
         return "PayPal could not be reached. Try again.";
       case 503:
@@ -204,7 +204,7 @@ function Payments(props: {
   onSave: (changes: { paywall: Paywall | null }) => Promise<void>;
 }) {
   const [required, setRequired] = createSignal(props.paywall !== null);
-  const [email, setEmail] = createSignal(props.paywall?.email ?? "");
+  const [merchantId, setMerchantId] = createSignal(props.paywall?.merchantId ?? "");
   const [price, setPrice] = createSignal(
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
   );
@@ -226,7 +226,7 @@ function Payments(props: {
       await props.onSave({
         paywall: required()
           ? {
-              email: email().trim(),
+              merchantId: merchantId().trim(),
               price: Math.round(Number.parseFloat(price()) * 100),
               currency: currency(),
             }
@@ -259,18 +259,23 @@ function Payments(props: {
       </label>
       <Show when={required()}>
         <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">Your PayPal email</span>
+          <span class="text-[15px] font-semibold text-ink-2">Your PayPal merchant ID</span>
           <input
-            type="email"
+            type="text"
             required
-            maxLength={254}
-            value={email()}
-            onInput={(event) => setEmail(event.currentTarget.value)}
-            placeholder="you@example.com"
-            autocomplete="email"
+            minLength={13}
+            maxLength={13}
+            value={merchantId()}
+            onInput={(event) => setMerchantId(event.currentTarget.value)}
+            placeholder="ABCDEFGHJKLMN"
+            autocomplete="off"
+            autocapitalize="characters"
             spellcheck={false}
-            class={inputClass}
+            class={`${inputClass} font-mono uppercase`}
           />
+          <span class="text-[15px] text-muted">
+            Find it on PayPal under Account settings, Business information.
+          </span>
         </label>
         <div class="flex flex-wrap gap-4">
           <label class="flex min-w-40 flex-1 flex-col gap-2">

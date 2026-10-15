@@ -21,18 +21,13 @@ pub struct Order {
     pub link: String,
     pub song: String,
     pub user: String,
-    pub email: String,
-    pub merchant_id: Option<String>,
+    pub merchant_id: String,
     pub price: u32,
     pub currency: String,
 }
 
 impl Order {
     fn body(&self) -> Value {
-        let payee = match &self.merchant_id {
-            Some(merchant_id) => json!({"merchant_id": merchant_id}),
-            None => json!({"email_address": self.email}),
-        };
         let description: String = format!("Song request: {}", self.song)
             .chars()
             .take(127)
@@ -44,7 +39,7 @@ impl Order {
                     "currency_code": self.currency,
                     "value": format_price(self.price),
                 },
-                "payee": payee,
+                "payee": {"merchant_id": self.merchant_id},
                 "description": description,
             }],
             "application_context": {"shipping_preference": "NO_SHIPPING"},
@@ -95,56 +90,46 @@ impl PayPal {
         &self.client_id
     }
 
-    pub async fn merchant_id(
+    pub async fn check_payee(
         &self,
-        email: &str,
+        merchant_id: &str,
         price: u32,
         currency: &str,
-    ) -> Result<String, PayeeError> {
+    ) -> Result<(), PayeeError> {
         let order = Order {
             streamer: String::new(),
             link: String::new(),
             song: "Check".to_string(),
             user: String::new(),
-            email: email.to_string(),
-            merchant_id: None,
+            merchant_id: merchant_id.to_string(),
             price,
             currency: currency.to_string(),
         };
-        let response = self.post_order(&order, true).await.map_err(|error| {
-            info!("looking the PayPal merchant id of {email} up failed: {error:#}");
+        let response = self.post_order(&order).await.map_err(|error| {
+            info!("checking PayPal merchant {merchant_id} failed: {error:#}");
             PayeeError::Failed
         })?;
         let status = response.status();
-        let body: Value = response.json().await.unwrap_or_default();
         if status.is_client_error() && status != reqwest::StatusCode::UNAUTHORIZED {
-            info!("PayPal refused {email} as payee ({status}): {body}");
+            info!("PayPal refused merchant {merchant_id} as payee ({status})");
             return Err(PayeeError::Invalid);
         }
         if !status.is_success() {
-            info!("looking the PayPal merchant id of {email} up failed ({status}): {body}");
+            info!("checking PayPal merchant {merchant_id} failed ({status})");
             return Err(PayeeError::Failed);
         }
-        match body["purchase_units"][0]["payee"]["merchant_id"].as_str() {
-            Some(merchant_id) => Ok(merchant_id.to_string()),
-            None => {
-                info!("PayPal answered without a merchant id for {email}: {body}");
-                Err(PayeeError::Failed)
-            }
-        }
+        Ok(())
     }
 
-    async fn post_order(&self, order: &Order, representation: bool) -> Result<reqwest::Response> {
+    async fn post_order(&self, order: &Order) -> Result<reqwest::Response> {
         let token = self.token().await?;
-        let mut request = self
+        Ok(self
             .client
             .post(format!("{}/v2/checkout/orders", self.url))
             .bearer_auth(&token)
-            .json(&order.body());
-        if representation {
-            request = request.header("Prefer", "return=representation");
-        }
-        Ok(request.send().await?)
+            .json(&order.body())
+            .send()
+            .await?)
     }
 
     pub fn order(&self, order_id: &str) -> Option<Order> {
@@ -168,7 +153,7 @@ impl PayPal {
             }
         }
         let response = self
-            .post_order(&order, false)
+            .post_order(&order)
             .await
             .context("failed to create a PayPal order")?;
         let status = response.status();

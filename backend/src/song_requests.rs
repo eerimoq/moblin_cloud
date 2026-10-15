@@ -22,15 +22,10 @@ pub struct Settings {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Paywall {
-    pub email: String,
+    #[serde(default, rename = "merchantId")]
+    pub merchant_id: String,
     pub price: u32,
     pub currency: String,
-    #[serde(
-        default,
-        rename = "merchantId",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub merchant_id: Option<String>,
 }
 
 pub const CURRENCIES: [&str; 16] = [
@@ -77,18 +72,16 @@ pub fn format_price(price: u32) -> String {
 
 impl Paywall {
     pub fn normalize(self) -> Option<Self> {
-        let email = self.email.trim().to_string();
+        let merchant_id = self.merchant_id.trim().to_uppercase();
         let currency = self.currency.trim().to_uppercase();
-        let valid = (3..=254).contains(&email.len())
-            && email.contains('@')
-            && !email.chars().any(char::is_whitespace)
+        let valid = merchant_id.len() == 13
+            && merchant_id.chars().all(|c| c.is_ascii_alphanumeric())
             && (50..=100_000).contains(&self.price)
             && CURRENCIES.contains(&currency.as_str());
         valid.then_some(Self {
-            email,
+            merchant_id,
             price: self.price,
             currency,
-            merchant_id: self.merchant_id,
         })
     }
 }
@@ -161,10 +154,9 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
         let paywall = Paywall {
-            email: "erik@example.com".to_string(),
+            merchant_id: "ABCDEFGHJKLMN".to_string(),
             price: 250,
             currency: "SEK".to_string(),
-            merchant_id: None,
         };
         let settings = Settings {
             paywall: Some(paywall.clone()),
@@ -185,12 +177,11 @@ mod tests {
     #[test]
     fn paywalls_are_validated() {
         let song_requests = SongRequests::load(None).unwrap();
-        let paywall = |email: &str, price, currency: &str| {
+        let paywall = |merchant_id: &str, price, currency: &str| {
             Some(Paywall {
-                email: email.to_string(),
+                merchant_id: merchant_id.to_string(),
                 price,
                 currency: currency.to_string(),
-                merchant_id: None,
             })
         };
         let settings = |paywall| Settings {
@@ -199,26 +190,36 @@ mod tests {
         };
         assert_eq!(
             song_requests
-                .set("a", settings(paywall(" erik@example.com ", 250, "sek")))
+                .set("a", settings(paywall(" abcdefghjklmn ", 250, "sek")))
                 .unwrap()
                 .paywall,
-            paywall("erik@example.com", 250, "SEK")
+            paywall("ABCDEFGHJKLMN", 250, "SEK")
         );
         assert_eq!(song_requests.get("a").paywall.unwrap().price, 250);
-        for (email, price, currency) in [
-            ("erik", 250, "SEK"),
-            ("er ik@example.com", 250, "SEK"),
-            ("erik@example.com", 49, "SEK"),
-            ("erik@example.com", 100_001, "SEK"),
-            ("erik@example.com", 250, "JPY"),
+        for (merchant_id, price, currency) in [
+            ("ABCDEFGHJKLM", 250, "SEK"),
+            ("erik@example.com", 250, "SEK"),
+            ("ABCDEF HJKLMN", 250, "SEK"),
+            ("ABCDEFGHJKLMN", 49, "SEK"),
+            ("ABCDEFGHJKLMN", 100_001, "SEK"),
+            ("ABCDEFGHJKLMN", 250, "JPY"),
         ] {
             assert_eq!(
-                song_requests.set("a", settings(paywall(email, price, currency))),
+                song_requests.set("a", settings(paywall(merchant_id, price, currency))),
                 Err(SettingsError::InvalidPaywall)
             );
         }
         assert!(song_requests.set("a", Settings::default()).is_ok());
         assert_eq!(song_requests.get("a"), Settings::default());
+    }
+
+    #[test]
+    fn email_paywalls_load_without_merchant_id() {
+        let settings: Settings = serde_json::from_str(
+            r#"{"paywall": {"email": "erik@example.com", "price": 250, "currency": "SEK"}}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.paywall.unwrap().merchant_id, "");
     }
 
     #[test]

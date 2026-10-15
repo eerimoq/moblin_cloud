@@ -179,7 +179,7 @@ other's page. `POST /account/streamer-url` resets the streamer URL with a
 new key, for when it leaked: the old one stops working at once and a Moblin
 connected with it is disconnected, while the page, its settings and queued
 songs stay. `POST /account/settings` with `{"paywall", "title", "message", "accent"}`
-changes the settings. Setting a new PayPal email needs a session issued in the
+changes the settings. Setting a new PayPal merchant ID needs a session issued in the
 last 10 minutes and answers 403 otherwise, so a stolen session can't redirect
 payments.
 
@@ -214,19 +214,22 @@ Twitch user `streamer` (account id `fake-streamer`), or as another login with
 ### Paid song requests
 
 A streamer can ask viewers to pay for every song, with PayPal. They enter
-their PayPal email, a price of 0.50 to 1000 and a currency on their page,
-which the settings endpoint takes as `"paywall": {"email", "price",
-"currency"}` (`price` in hundredths) or `null`. Saving looks up the merchant
-ID of the email with a PayPal order that is never paid, and answers 422 when
-PayPal can't send payments to it. The money goes straight to the streamer:
+their PayPal merchant ID (13 characters, under Account settings, Business
+information on PayPal), a price of 0.50 to 1000 and a currency on their page,
+which the settings endpoint takes as `"paywall": {"merchantId", "price",
+"currency"}` (`price` in hundredths) or `null`. Streamers enter the merchant
+ID rather than their email because PayPal no longer accepts emails as the
+JavaScript SDK's `merchant-id`, and the viewer page must not show anyone's
+email. Saving checks the merchant ID with a PayPal order that is never paid,
+and answers 422 when PayPal can't send payments to it. The money goes straight to the streamer:
 every PayPal order names the streamer as payee, so the backend never holds
 any of it and PayPal takes its fees from the streamer.
 
 While a paywall is set `POST /remote-control/<id>/music` answers 402.
 `GET /remote-control/<id>/paywall` answers `{"paywall": {"price", "currency",
-"clientId", "merchantId"}}` or `{"paywall": null}`, without the email.
-Saving a paywall fails unless PayPal tells the merchant ID, and a paywall
-without one answers `null` for both IDs and can't be paid. The
+"clientId", "merchantId"}}` or `{"paywall": null}`. Paywalls saved with an
+email before merchant IDs were required answer `null` for both IDs and can't
+be paid until the streamer enters their merchant ID. The
 viewer page loads the PayPal JavaScript SDK with those and shows PayPal's
 buttons, which open PayPal's checkout in a popup over the page. The buttons
 create the order with `POST /remote-control/<id>/music/orders` and `{"song",
