@@ -21,12 +21,22 @@ export type Paywall = {
   merchantId?: string;
 };
 
-export type Settings = {
+export type Page = {
+  title: string | null;
+  message: string | null;
+  accent: string | null;
+};
+
+export type Settings = Page & {
   id: string;
   connected: boolean;
   paywall: Paywall | null;
   paypal: boolean;
 };
+
+export const accents = ["green", "purple", "blue", "pink", "orange", "red"];
+
+export const defaultTitle = "Pick the next song.";
 
 export type Price = {
   price: number;
@@ -90,7 +100,7 @@ const songRequest = (song: string, user: string) => ({
 export const requestSong = (id: string, song: string, user: string) =>
   call<object>(`/${encodeURIComponent(id)}/music`, songRequest(song, user));
 
-export type Profile = {
+export type Profile = Page & {
   name: string;
   login: string;
   avatar: string | null;

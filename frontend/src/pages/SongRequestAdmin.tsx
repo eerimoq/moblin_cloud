@@ -20,8 +20,17 @@ import {
   signInUrl,
   takeSignInResult,
   type Account,
+  type SettingsChanges,
 } from "../data/account";
-import { BackendError, currencies, type Paywall, type Settings } from "../data/remoteControl";
+import {
+  accents,
+  BackendError,
+  currencies,
+  defaultTitle,
+  type Page,
+  type Paywall,
+  type Settings,
+} from "../data/remoteControl";
 
 const pageUrl = (account: Account) =>
   new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
@@ -77,6 +86,109 @@ function paywallErrorText(error: unknown) {
     }
   }
   return "Something went wrong. Try again.";
+}
+
+function YourPage(props: {
+  account: Account;
+  page: Page;
+  busy: boolean;
+  onSave: (changes: Page) => Promise<void>;
+}) {
+  const [title, setTitle] = createSignal(props.page.title ?? "");
+  const [message, setMessage] = createSignal(props.page.message ?? "");
+  const [accent, setAccent] = createSignal(props.page.accent ?? accents[0]);
+  const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.busy) {
+      return;
+    }
+    setResult(null);
+    try {
+      await props.onSave({ title: title(), message: message(), accent: accent() });
+      setResult({ ok: true, text: "Saved." });
+    } catch {
+      setResult({ ok: false, text: "Something went wrong. Try again." });
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">Your page</h2>
+      <p class="text-ink-2">Share it with your viewers so they can request songs.</p>
+      <Value
+        label="Your page"
+        text={pageUrl(props.account)}
+        href={pageUrl(props.account)}
+        hideLabel
+      />
+      <label class="flex flex-col gap-2">
+        <span class="text-[15px] font-semibold text-ink-2">Headline</span>
+        <input
+          type="text"
+          maxLength={60}
+          value={title()}
+          onInput={(event) => setTitle(event.currentTarget.value)}
+          placeholder={defaultTitle}
+          class={inputClass}
+        />
+      </label>
+      <label class="flex flex-col gap-2">
+        <span class="text-[15px] font-semibold text-ink-2">Message to your viewers (optional)</span>
+        <textarea
+          maxLength={300}
+          rows={3}
+          value={message()}
+          onInput={(event) => setMessage(event.currentTarget.value)}
+          placeholder="Thanks for hanging out! Keep it chill, no explicit songs please."
+          class={`${inputClass} h-auto resize-y py-3`}
+        />
+      </label>
+      <fieldset class="flex flex-col gap-2">
+        <legend class="mb-2 text-[15px] font-semibold text-ink-2">Color</legend>
+        <div class="flex flex-wrap gap-3">
+          <For each={accents}>
+            {(name) => (
+              <label
+                data-accent={name}
+                class="relative flex size-11 cursor-pointer items-center justify-center rounded-full bg-moss text-white has-[:checked]:ring-3 has-[:checked]:ring-ink has-[:checked]:ring-offset-3 has-[:checked]:ring-offset-card has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-6 has-[:focus-visible]:outline-ink"
+                title={name[0].toUpperCase() + name.slice(1)}
+              >
+                <input
+                  type="radio"
+                  name="accent"
+                  value={name}
+                  checked={accent() === name}
+                  onChange={() => setAccent(name)}
+                  class="sr-only"
+                />
+                <span class="sr-only">{name}</span>
+                <Show when={accent() === name}>
+                  <Icon name="check" class="size-5" />
+                </Show>
+              </label>
+            )}
+          </For>
+        </div>
+      </fieldset>
+      <div class="flex flex-wrap items-center gap-4">
+        <button type="submit" class={buttonClass} disabled={props.busy}>
+          Save
+        </button>
+        <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
+          Open your page
+        </a>
+        <Show when={result()}>
+          {(result) => (
+            <p role="status" class={result().ok ? "text-leaf" : "text-amber"}>
+              {result().text}
+            </p>
+          )}
+        </Show>
+      </div>
+    </form>
+  );
 }
 
 function Payments(props: {
@@ -242,7 +354,7 @@ function Admin(props: {
     onCleanup(() => clearInterval(timer));
   });
 
-  const save = async (changes: Pick<Settings, "paywall">) => {
+  const save = async (changes: Partial<SettingsChanges>) => {
     setBusy(true);
     try {
       setSettings(await saveAccountSettings(props.session, { ...settings(), ...changes }));
@@ -258,16 +370,7 @@ function Admin(props: {
 
   return (
     <>
-      <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Your page</h2>
-        <p class="text-ink-2">Share it with your viewers so they can request songs.</p>
-        <Value
-          label="Your page"
-          text={pageUrl(props.account)}
-          href={pageUrl(props.account)}
-          hideLabel
-        />
-      </div>
+      <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
       <Show when={settings().paypal || settings().paywall}>
         <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
       </Show>

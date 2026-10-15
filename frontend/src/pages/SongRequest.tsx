@@ -15,14 +15,16 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { asset } from "../asset";
 import Footer from "../components/Footer";
 import Icon from "../components/Icon";
 import Nav from "../components/Nav";
-import { Band, buttonClass, cardClass, Hero, inputClass } from "../components/SongRequestParts";
-import { links } from "../data/links";
+import { buttonClass, cardClass, inputClass } from "../components/SongRequestParts";
+import { links, pages } from "../data/links";
 import {
   BackendError,
   captureSong,
+  defaultTitle,
   formatPrice,
   idOfTwitchLogin,
   musicStatus,
@@ -139,7 +141,7 @@ function PayPalButtons(props: {
   );
 }
 
-function Queue(props: { status: Status }) {
+function Queue(props: { status: Status; name: string | undefined }) {
   return (
     <div class="flex flex-col gap-4 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8">
       <h2 class="text-[23px] font-semibold">Queue</h2>
@@ -147,12 +149,10 @@ function Queue(props: { status: Status }) {
         <Match when={props.status === "loading"}>
           <p class="text-muted">Loading…</p>
         </Match>
-        <Match when={props.status === "unknown"}>
-          <p class="text-ink-2">There is no song request page with this name.</p>
-        </Match>
         <Match when={props.status === "offline"}>
           <p class="text-ink-2">
-            The streamer is offline. The queue shows up here when Moblin is connected.
+            {props.name ?? "The streamer"} is offline. The queue shows up here when they go live
+            with Moblin.
           </p>
         </Match>
         <Match when={typeof props.status === "object" && props.status}>
@@ -201,34 +201,78 @@ function Queue(props: { status: Status }) {
   );
 }
 
-function StreamerHeader(props: { profile: Profile }) {
+function StreamerHeader(props: { profile: Profile | null; unknown: boolean }) {
   return (
-    <div class="flex items-center gap-4">
-      <Show
-        when={props.profile.avatar}
-        fallback={
-          <span class="flex size-16 shrink-0 items-center justify-center rounded-full border-[1.5px] border-ghost-line bg-ghost font-display text-[28px] font-semibold text-ink">
-            {props.profile.name.slice(0, 1).toUpperCase()}
-          </span>
-        }
-      >
-        {(avatar) => (
-          <img src={avatar()} alt="" class="size-16 shrink-0 rounded-full bg-ghost object-cover" />
-        )}
-      </Show>
-      <div class="flex min-w-0 flex-col gap-0.5">
-        <span class="truncate font-display text-[23px] font-semibold">{props.profile.name}</span>
-        <a
-          href={`https://www.twitch.tv/${encodeURIComponent(props.profile.login)}`}
-          target="_blank"
-          rel="noopener"
-          class="inline-flex items-center gap-1.5 text-[15px] text-muted transition-colors hover:text-ink"
+    <header class="relative overflow-hidden">
+      <div class="absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(ellipse_at_top,color-mix(in_oklab,var(--color-moss)_28%,transparent),transparent_70%)]" />
+      <div class="mx-auto flex max-w-[720px] flex-col items-center gap-4 px-5 pt-14 pb-10 text-center sm:px-8 lg:pt-20">
+        <Show
+          when={props.profile}
+          fallback={
+            <>
+              <span class="size-28 rounded-full bg-ghost sm:size-32" />
+              <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">
+                {props.unknown ? "Page not found." : "\u00a0"}
+              </h1>
+            </>
+          }
         >
-          <Icon name="twitch" class="size-4 shrink-0" />
-          twitch.tv/{props.profile.login}
-        </a>
+          {(profile) => (
+            <>
+              <Show
+                when={profile().avatar}
+                fallback={
+                  <span class="flex size-28 shrink-0 items-center justify-center rounded-full bg-moss font-display text-5xl font-semibold text-white ring-4 ring-moss/40 ring-offset-4 ring-offset-page sm:size-32">
+                    {profile().name.slice(0, 1).toUpperCase()}
+                  </span>
+                }
+              >
+                {(avatar) => (
+                  <img
+                    src={avatar()}
+                    alt=""
+                    class="size-28 shrink-0 rounded-full bg-ghost object-cover ring-4 ring-moss ring-offset-4 ring-offset-page sm:size-32"
+                  />
+                )}
+              </Show>
+              <h1 class="max-w-full text-[40px] leading-[1.05] font-bold break-words sm:text-6xl">
+                {profile().name}
+              </h1>
+              <a
+                href={`https://www.twitch.tv/${encodeURIComponent(profile().login)}`}
+                target="_blank"
+                rel="noopener"
+                class="inline-flex items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
+              >
+                <Icon name="twitch" class="size-5 shrink-0 text-twitch" />
+                twitch.tv/{profile().login}
+              </a>
+              <Show when={profile().message}>
+                {(message) => (
+                  <p class="mt-2 text-lg whitespace-pre-line text-ink-2 text-pretty sm:text-[21px]">
+                    {message()}
+                  </p>
+                )}
+              </Show>
+            </>
+          )}
+        </Show>
       </div>
-    </div>
+    </header>
+  );
+}
+
+function PoweredBy() {
+  return (
+    <footer class="py-10">
+      <a
+        href={asset(pages.songRequests)}
+        class="mx-auto flex w-fit items-center gap-2 text-[15px] font-semibold text-muted transition-colors hover:text-ink"
+      >
+        <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto" />
+        Song requests by Moblin
+      </a>
+    </footer>
   );
 }
 
@@ -360,7 +404,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       streamerProfile(current)
         .then((found) => {
           setProfile(found);
-          document.title = `${found.name} song requests – Moblin`;
+          document.title = `${found.name} song requests`;
         })
         .catch(() => {});
     }
@@ -387,104 +431,115 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   };
 
   return (
-    <>
-      <Hero
-        title="Pick the next song."
-        top={profile() ? <StreamerHeader profile={profile()!} /> : undefined}
-      >
-        <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Paste the Apple Music share link of the song you want to hear. It goes straight into{" "}
-          {profile() ? `${profile()!.name}'s` : "the streamer's"} queue in Moblin.
-        </p>
-      </Hero>
-      <Band>
-        <form ref={(element) => (form = element)} class={cardClass} onSubmit={submit}>
-          <h2 class="text-[23px] font-semibold">Add a song</h2>
-          <label class="flex flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">Apple Music song link</span>
-            <input
-              type="url"
-              required
-              maxLength={500}
-              value={song()}
-              onInput={(event) => setSong(event.currentTarget.value)}
-              placeholder="https://music.apple.com/…"
-              autocomplete="off"
-              spellcheck={false}
-              class={inputClass}
-            />
-            <span class="text-[15px] text-muted">
-              Find the song on{" "}
-              <a
-                href={links.appleMusic}
-                target="_blank"
-                rel="noopener"
-                class="text-leaf hover:text-leaf-bright"
-              >
-                Apple Music
-              </a>
-              , then use Share → Copy Link.
-            </span>
-          </label>
-          <label class="flex flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">Your name (optional)</span>
-            <input
-              type="text"
-              maxLength={25}
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-              placeholder="Shown next to the song"
-              autocomplete="nickname"
-              class={inputClass}
-            />
-          </label>
-          <div class="flex flex-wrap items-center gap-4">
-            <Show
-              when={payable()}
-              keyed
-              fallback={
-                <button
-                  type="submit"
-                  class={buttonClass}
-                  disabled={busy() || typeof status() === "string" || paywall() !== null}
+    <div data-accent={profile()?.accent ?? undefined} class="isolate flex min-h-svh flex-col">
+      <main class="flex-1">
+        <StreamerHeader profile={profile()} unknown={status() === "unknown"} />
+        <Show
+          when={status() !== "unknown"}
+          fallback={
+            <p class="mx-auto max-w-[720px] px-5 text-center text-lg text-ink-2 sm:px-8">
+              There is no song request page with this name.
+            </p>
+          }
+        >
+          <div class="mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8">
+            <form ref={(element) => (form = element)} class={cardClass} onSubmit={submit}>
+              <div class="flex flex-col gap-1">
+                <h2 class="text-[28px] leading-tight font-semibold text-balance">
+                  {profile()?.title ?? defaultTitle}
+                </h2>
+                <p class="text-ink-2">
+                  Paste the Apple Music link of a song and it goes straight into the queue.
+                </p>
+              </div>
+              <label class="flex flex-col gap-2">
+                <span class="text-[15px] font-semibold text-ink-2">Apple Music song link</span>
+                <input
+                  type="url"
+                  required
+                  maxLength={500}
+                  value={song()}
+                  onInput={(event) => setSong(event.currentTarget.value)}
+                  placeholder="https://music.apple.com/…"
+                  autocomplete="off"
+                  spellcheck={false}
+                  class={inputClass}
+                />
+                <span class="text-[15px] text-muted">
+                  Find the song on{" "}
+                  <a
+                    href={links.appleMusic}
+                    target="_blank"
+                    rel="noopener"
+                    class="text-leaf hover:text-leaf-bright"
+                  >
+                    Apple Music
+                  </a>
+                  , then use Share → Copy Link.
+                </span>
+              </label>
+              <label class="flex flex-col gap-2">
+                <span class="text-[15px] font-semibold text-ink-2">Your name (optional)</span>
+                <input
+                  type="text"
+                  maxLength={25}
+                  value={name()}
+                  onInput={(event) => setName(event.currentTarget.value)}
+                  placeholder="Shown next to the song"
+                  autocomplete="nickname"
+                  class={inputClass}
+                />
+              </label>
+              <div class="flex flex-wrap items-center gap-4">
+                <Show
+                  when={payable()}
+                  keyed
+                  fallback={
+                    <button
+                      type="submit"
+                      class={buttonClass}
+                      disabled={busy() || typeof status() === "string" || paywall() !== null}
+                    >
+                      <Icon name="music" class="size-5" />
+                      {busy() ? "Adding…" : "Add to queue"}
+                    </button>
+                  }
                 >
-                  <Icon name="music" class="size-5" />
-                  {busy() ? "Adding…" : "Add to queue"}
-                </button>
-              }
-            >
-              {(current) => (
-                <PayPalButtons
-                  paywall={current}
-                  options={payPalOptions}
-                  disabled={busy() || !song().trim()}
-                  round={round()}
-                />
-              )}
-            </Show>
+                  {(current) => (
+                    <PayPalButtons
+                      paywall={current}
+                      options={payPalOptions}
+                      disabled={busy() || !song().trim()}
+                      round={round()}
+                    />
+                  )}
+                </Show>
+              </div>
+              <Show when={result()}>
+                {(result) => (
+                  <p
+                    role="status"
+                    class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[17px] font-semibold ${
+                      result().ok
+                        ? "border-moss bg-well text-leaf"
+                        : "border-amber-line bg-amber-bg text-amber-ink"
+                    }`}
+                  >
+                    <Icon
+                      name={result().ok ? "check" : "warning"}
+                      class={`mt-0.5 size-5 shrink-0 ${result().ok ? "text-leaf" : "text-amber"}`}
+                    />
+                    {result().text}
+                  </p>
+                )}
+              </Show>
+            </form>
+            <Queue status={status()} name={profile()?.name} />
           </div>
-          <Show when={result()}>
-            {(result) => (
-              <p
-                role="status"
-                class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[17px] font-semibold ${
-                  result().ok
-                    ? "border-moss bg-well text-leaf"
-                    : "border-amber-line bg-amber-bg text-amber-ink"
-                }`}
-              >
-                <Icon
-                  name={result().ok ? "check" : "warning"}
-                  class={`mt-0.5 size-5 shrink-0 ${result().ok ? "text-leaf" : "text-amber"}`}
-                />
-                {result().text}
-              </p>
-            )}
-          </Show>
-        </form>
-        <Queue status={status()} />
-      </Band>
-    </>
+        </Show>
+      </main>
+      <PoweredBy />
+    </div>
   );
 }
 
@@ -493,14 +548,19 @@ export default function SongRequest(props: { twitch?: string }) {
   const twitch = props.twitch ?? null;
 
   return (
-    <>
-      <Nav />
-      <main>
-        <Show when={id || twitch} fallback={<SongRequestAdmin />}>
-          <Viewer id={id} twitch={twitch} />
-        </Show>
-      </main>
-      <Footer />
-    </>
+    <Show
+      when={id || twitch}
+      fallback={
+        <>
+          <Nav />
+          <main>
+            <SongRequestAdmin />
+          </main>
+          <Footer />
+        </>
+      }
+    >
+      <Viewer id={id} twitch={twitch} />
+    </Show>
   );
 }

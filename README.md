@@ -142,8 +142,13 @@ Docker; without one they are forgotten on restart.
 
 Streamers manage their page at `/song-requests/`, which shows the viewer page
 only when given `?streamer=<id>`. The settings of a page are
-`{"id", "connected", "paywall", "paypal"}`, read and changed through the
-account endpoints below. Settings are saved in the JSON file
+`{"id", "connected", "paywall", "paypal", "title", "message", "accent"}`, read
+and changed through the account endpoints below. `title` (at most 60
+characters) and `message` (at most 300) are shown on the viewer page, and
+`accent` is one of `green`, `purple`, `blue`, `pink`, `orange` and `red`; all
+three are `null` when unset. `GET /remote-control/<id>/profile` answers
+`{"name", "login", "avatar", "title", "message", "accent"}` for the viewer
+page. Settings are saved in the JSON file
 given by `--song-requests-file` (or `SONG_REQUESTS_FILE`), which needs a
 volume when running in Docker; without one they are forgotten on restart.
 
@@ -171,8 +176,8 @@ existing page when the account already has one, so two tabs can't replace each
 other's page. `POST /account/streamer-url` resets the streamer URL with a
 new key, for when it leaked: the old one stops working at once and a Moblin
 connected with it is disconnected, while the page, its settings and queued
-songs stay. `POST /account/settings` with `{"paywall"}` changes the
-settings.
+songs stay. `POST /account/settings` with `{"paywall", "title", "message", "accent"}`
+changes the settings.
 
 GitHub Pages has no file for `/twitch/<login>`, so it serves `404.html`,
 which renders the song request page for those paths (the dev server rewrites

@@ -189,6 +189,9 @@ struct SettingsResponse {
     connected: bool,
     paywall: Option<Paywall>,
     paypal: bool,
+    title: Option<String>,
+    message: Option<String>,
+    accent: Option<String>,
 }
 
 fn settings_response(api: &Api, id: String, settings: Settings) -> Json<SettingsResponse> {
@@ -197,12 +200,21 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         id,
         paywall: settings.paywall,
         paypal: api.paypal.is_some(),
+        title: settings.title,
+        message: settings.message,
+        accent: settings.accent,
     })
 }
 
 #[derive(Deserialize)]
 struct SettingsRequest {
     paywall: Option<Paywall>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    accent: Option<String>,
 }
 
 async fn update_settings(
@@ -216,9 +228,21 @@ async fn update_settings(
     };
     let settings = api
         .song_requests
-        .set(&id, paywall)
+        .set(
+            &id,
+            Settings {
+                paywall,
+                title: request.title,
+                message: request.message,
+                accent: request.accent,
+            },
+        )
         .map_err(|error| match error {
             SettingsError::InvalidPaywall => invalid_paywall(),
+            SettingsError::InvalidPage => (
+                StatusCode::BAD_REQUEST,
+                "the title can be at most 60 characters, the message at most 300 and the accent one of the supported colors".to_string(),
+            ),
             SettingsError::Full => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "too many streamers".to_string(),
@@ -229,8 +253,8 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set paywall {:?}",
-        settings.paywall
+        "remote control streamer {id} set paywall {:?}, title {:?}, message {:?} and accent {:?}",
+        settings.paywall, settings.title, settings.message, settings.accent
     );
     Ok(settings_response(api, id, settings))
 }
@@ -451,6 +475,9 @@ struct ProfileResponse {
     name: String,
     login: String,
     avatar: Option<String>,
+    title: Option<String>,
+    message: Option<String>,
+    accent: Option<String>,
 }
 
 async fn handle_profile(
@@ -458,10 +485,14 @@ async fn handle_profile(
     Path(id): Path<String>,
 ) -> Result<Json<ProfileResponse>, StatusCode> {
     let account = api.accounts.of_page(&id).ok_or(StatusCode::NOT_FOUND)?;
+    let settings = api.song_requests.get(&id);
     Ok(Json(ProfileResponse {
         name: account.name,
         login: account.login,
         avatar: account.avatar,
+        title: settings.title,
+        message: settings.message,
+        accent: settings.accent,
     }))
 }
 
@@ -1512,6 +1543,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(settings, account["settings"]);
+        let settings: Value = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({
+                "paywall": null,
+                "title": "Pick a banger",
+                "message": "Thanks for hanging out!",
+                "accent": "pink",
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["title"], "Pick a banger");
+        assert_eq!(settings["accent"], "pink");
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null, "accent": "teal"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let name: Value = client
             .get(format!("http://{address}/remote-control/names/twitch/Erik"))
             .send()
@@ -1538,6 +1594,9 @@ mod tests {
                 "name": "Erik",
                 "login": "erik",
                 "avatar": "https://static-cdn.jtvnw.net/erik.png",
+                "title": "Pick a banger",
+                "message": "Thanks for hanging out!",
+                "accent": "pink",
             })
         );
         let response = client

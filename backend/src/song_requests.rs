@@ -12,6 +12,12 @@ use crate::json_file;
 pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paywall: Option<Paywall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -31,6 +37,39 @@ pub const CURRENCIES: [&str; 16] = [
     "AUD", "BRL", "CAD", "CHF", "CZK", "DKK", "EUR", "GBP", "HKD", "MXN", "NOK", "NZD", "PLN",
     "SEK", "SGD", "USD",
 ];
+
+pub const ACCENTS: [&str; 6] = ["green", "purple", "blue", "pink", "orange", "red"];
+
+fn text(text: Option<String>, max: usize) -> Result<Option<String>, SettingsError> {
+    let text = text
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
+    match text {
+        Some(text) if text.chars().count() > max => Err(SettingsError::InvalidPage),
+        text => Ok(text),
+    }
+}
+
+impl Settings {
+    pub fn normalize(self) -> Result<Self, SettingsError> {
+        let paywall = match self.paywall {
+            Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
+            None => None,
+        };
+        let accent = match self.accent {
+            Some(accent) if !ACCENTS.contains(&accent.as_str()) => {
+                return Err(SettingsError::InvalidPage);
+            }
+            accent => accent.filter(|accent| accent != ACCENTS[0]),
+        };
+        Ok(Self {
+            paywall,
+            title: text(self.title, 60)?,
+            message: text(self.message, 300)?,
+            accent,
+        })
+    }
+}
 
 pub fn format_price(price: u32) -> String {
     format!("{}.{:02}", price / 100, price % 100)
@@ -57,6 +96,7 @@ impl Paywall {
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
     InvalidPaywall,
+    InvalidPage,
     Full,
     NotSaved,
 }
@@ -84,12 +124,8 @@ impl SongRequests {
             .unwrap_or_default()
     }
 
-    pub fn set(&self, id: &str, paywall: Option<Paywall>) -> Result<Settings, SettingsError> {
-        let paywall = match paywall {
-            Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
-            None => None,
-        };
-        let new = Settings { paywall };
+    pub fn set(&self, id: &str, new: Settings) -> Result<Settings, SettingsError> {
+        let new = new.normalize()?;
         let mut settings = self.settings.lock().unwrap();
         if !settings.contains_key(id) && settings.len() >= 10000 {
             return Err(SettingsError::Full);
@@ -130,11 +166,17 @@ mod tests {
             currency: "SEK".to_string(),
             merchant_id: None,
         };
-        song_requests.set("a", Some(paywall.clone())).unwrap();
-        song_requests.set("b", Some(paywall.clone())).unwrap();
-        song_requests.set("b", None).unwrap();
+        let settings = Settings {
+            paywall: Some(paywall.clone()),
+            title: Some("Hi".to_string()),
+            ..Settings::default()
+        };
+        song_requests.set("a", settings.clone()).unwrap();
+        song_requests.set("b", settings).unwrap();
+        song_requests.set("b", Settings::default()).unwrap();
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
         assert_eq!(song_requests.get("a").paywall, Some(paywall));
+        assert_eq!(song_requests.get("a").title.as_deref(), Some("Hi"));
         assert_eq!(song_requests.get("b"), Settings::default());
         assert_eq!(song_requests.settings.lock().unwrap().len(), 1);
         std::fs::remove_file(&path).unwrap();
@@ -151,9 +193,13 @@ mod tests {
                 merchant_id: None,
             })
         };
+        let settings = |paywall| Settings {
+            paywall,
+            ..Settings::default()
+        };
         assert_eq!(
             song_requests
-                .set("a", paywall(" erik@example.com ", 250, "sek"))
+                .set("a", settings(paywall(" erik@example.com ", 250, "sek")))
                 .unwrap()
                 .paywall,
             paywall("erik@example.com", 250, "SEK")
@@ -167,12 +213,51 @@ mod tests {
             ("erik@example.com", 250, "JPY"),
         ] {
             assert_eq!(
-                song_requests.set("a", paywall(email, price, currency)),
+                song_requests.set("a", settings(paywall(email, price, currency))),
                 Err(SettingsError::InvalidPaywall)
             );
         }
-        assert!(song_requests.set("a", None).is_ok());
+        assert!(song_requests.set("a", Settings::default()).is_ok());
         assert_eq!(song_requests.get("a"), Settings::default());
+    }
+
+    #[test]
+    fn pages_are_validated() {
+        let song_requests = SongRequests::load(None).unwrap();
+        let page = |title: &str, message: &str, accent: &str| Settings {
+            title: Some(title.to_string()),
+            message: Some(message.to_string()),
+            accent: Some(accent.to_string()),
+            ..Settings::default()
+        };
+        assert_eq!(
+            song_requests.set("a", page(" Hi! ", "  ", "purple")),
+            Ok(Settings {
+                title: Some("Hi!".to_string()),
+                accent: Some("purple".to_string()),
+                ..Settings::default()
+            })
+        );
+        assert_eq!(
+            song_requests.set("a", page("", "", "green")),
+            Ok(Settings::default())
+        );
+        assert_eq!(song_requests.get("a"), Settings::default());
+        assert!(
+            song_requests
+                .set("a", page(&"å".repeat(60), &"å".repeat(300), "red"))
+                .is_ok()
+        );
+        for (title, message, accent) in [
+            ("a".repeat(61), String::new(), "red"),
+            (String::new(), "a".repeat(301), "red"),
+            (String::new(), String::new(), "teal"),
+        ] {
+            assert_eq!(
+                song_requests.set("a", page(&title, &message, accent)),
+                Err(SettingsError::InvalidPage)
+            );
+        }
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { backendUrl } from "./backend";
-import { BackendError, type Settings } from "./remoteControl";
+import { BackendError, type Page, type Settings } from "./remoteControl";
 
 export type Account = {
   name: string;
@@ -66,5 +66,16 @@ export const createStreamer = (session: string) =>
 export const newStreamerUrl = (session: string) =>
   call<Account>(session, "/account/streamer-url", { method: "POST" });
 
-export const saveAccountSettings = (session: string, settings: Pick<Settings, "paywall">) =>
-  call<Settings>(session, "/account/settings", post({ paywall: settings.paywall }));
+export type SettingsChanges = Page & Pick<Settings, "paywall">;
+
+export const saveAccountSettings = (session: string, settings: SettingsChanges) =>
+  call<Settings>(
+    session,
+    "/account/settings",
+    post({
+      paywall: settings.paywall,
+      title: settings.title,
+      message: settings.message,
+      accent: settings.accent,
+    }),
+  );
