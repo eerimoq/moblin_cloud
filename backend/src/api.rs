@@ -383,15 +383,15 @@ async fn signed_in_redirect(
     query: CallbackQuery,
     browser_state: Option<&str>,
 ) -> Redirect {
-    let page = format!("{}/page/", api.auth.frontend_url);
+    let dashboard = format!("{}/dashboard/", api.auth.frontend_url);
     let (Some(code), Some(state)) = (query.code, query.state) else {
-        return Redirect::to(&format!("{page}#signInFailed"));
+        return Redirect::to(&format!("{dashboard}#signInFailed"));
     };
     let user = match api.auth.callback(&code, &state, browser_state).await {
         Ok(user) => user,
         Err(error) => {
             warn!("signing in with Twitch failed: {error:#}");
-            return Redirect::to(&format!("{page}#signInFailed"));
+            return Redirect::to(&format!("{dashboard}#signInFailed"));
         }
     };
     let account =
@@ -402,12 +402,12 @@ async fn signed_in_redirect(
             Ok(account) => account,
             Err(error) => {
                 warn!("saving account {} failed: {error:?}", user.id);
-                return Redirect::to(&format!("{page}#signInFailed"));
+                return Redirect::to(&format!("{dashboard}#signInFailed"));
             }
         };
     info!("Twitch user {} ({}) signed in", user.id, user.login);
     Redirect::to(&format!(
-        "{page}#session={}",
+        "{dashboard}#session={}",
         api.auth.session(&user.id, account.sessions)
     ))
 }
@@ -2332,7 +2332,7 @@ mod tests {
                 .unwrap(),
         );
         let session = page
-            .strip_prefix("https://moblin.app/page/#session=")
+            .strip_prefix("https://moblin.app/dashboard/#session=")
             .unwrap()
             .to_string();
         assert_eq!(
@@ -2344,7 +2344,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/page/#signInFailed"
+            "https://moblin.app/dashboard/#signInFailed"
         );
         let response = client
             .get(format!("http://{address}/auth/twitch/login"))
@@ -2369,7 +2369,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/page/#signInFailed"
+            "https://moblin.app/dashboard/#signInFailed"
         );
         let response = client
             .get(format!("http://{address}/account"))

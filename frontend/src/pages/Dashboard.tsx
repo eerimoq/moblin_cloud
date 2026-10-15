@@ -841,7 +841,7 @@ function SignedIn(props: {
   );
 }
 
-export default function PageAdmin() {
+export default function Dashboard() {
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [signInFailed, setSignInFailed] = createSignal(false);

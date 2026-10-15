@@ -103,10 +103,10 @@ file exists the build switches to `/` automatically (see
 Every signed in streamer gets a page at `/twitch/<login>` (or
 `/page/?streamer=<id>`) on the website, where viewers can tip, spin the
 streamer's wheel and request songs. Old `/song-requests/` links redirect to
-`/page/`. For song requests the backend acts as a Moblin remote control
+`/page/` or `/dashboard/`. For song requests the backend acts as a Moblin remote control
 assistant, so that viewers can add songs to the streamer's music queue.
 
-A streamer signs in with Twitch at `/page/` (see Signing in) and gets
+A streamer signs in with Twitch at `/dashboard/` (see Signing in) and gets
 their page right away, with a random secret key and a public id (the first
 12 bytes of the key's SHA-256, base64url). The id stays when the streamer gets
 a new key, so it is stored with the account rather than derived again. They
@@ -142,8 +142,9 @@ The task drops a song Moblin can't find and gives up after 7 days. The songs not
 given by `--song-queue-file` (or `SONG_QUEUE_FILE`), which needs a volume in
 Docker; without one they are forgotten on restart.
 
-Streamers manage their page at `/page/`, which shows the page itself
-only when given `?streamer=<id>`. The settings of a page are
+Streamers manage their page from the dashboard at `/dashboard/`; `/page/`
+shows the page itself when given `?streamer=<id>` and otherwise redirects to
+the dashboard. The settings of a page are
 `{"id", "connected", "paywall", "paypal", "title", "message", "accent"}`, read
 and changed through the account endpoints below. `title` (at most 60
 characters) and `message` (at most 300) are shown on the page, and
@@ -166,7 +167,7 @@ that lives 10 minutes and is also set as the `moblin_sign_in_state` cookie.
 Twitch redirects back to `GET /auth/twitch/callback`, which refuses a state
 that doesn't match the cookie (so a callback URL can't sign in another
 browser), exchanges the code, looks the user up and redirects to
-`<frontend url>/page/#session=<session>` (or `#signInFailed`). A
+`<frontend url>/dashboard/#session=<session>` (or `#signInFailed`). A
 session is the Twitch user id, the account's session generation and the time
 it was issued, signed with HMAC-SHA256. It lasts 30 days and is sent as
 `Authorization: Bearer <session>`. `POST /account/sign-out` signs the account
@@ -176,7 +177,7 @@ before.
 `GET /account` answers `{"name", "login", "streamerUrl", "settings"}`, where
 `streamerUrl` and `settings` are `null` until the account has a page. The key
 is only ever handed out inside the streamer URL, which the backend builds from
-`--public-url` (`https` becomes `wss`). The admin page then
+`--public-url` (`https` becomes `wss`). The dashboard then
 creates one at once with `POST /account/streamer`, which answers with the
 existing page when the account already has one, so two tabs can't replace each
 other's page. `POST /account/streamer-url` resets the streamer URL with a
@@ -324,7 +325,7 @@ Tip, Spin and Songs tabs for the ones the streamer turned on. `#tip` and
 To try a page locally without Twitch or a phone:
 
 1. `just backend-run` and `just frontend-run`.
-2. Open `http://localhost:5173/page/`, sign in with Twitch (faked)
+2. Open `http://localhost:5173/dashboard/`, sign in with Twitch (faked)
    and your page is created.
 3. Copy the streamer URL from the page and run
    `just backend-fake-streamer <streamer URL>`, which connects a

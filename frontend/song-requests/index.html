@@ -6,7 +6,12 @@
     <title>Moblin</title>
     <script>
       location.replace(
-        location.pathname.replace(/song-requests\/?$/, "page/") + location.search + location.hash,
+        location.pathname.replace(
+          /song-requests\/?$/,
+          location.search.includes("streamer=") ? "page/" : "dashboard/",
+        ) +
+          location.search +
+          location.hash,
       );
     </script>
   </head>

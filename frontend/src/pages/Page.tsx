@@ -15,9 +15,7 @@ import {
   Switch,
 } from "solid-js";
 import { asset } from "../asset";
-import Footer from "../components/Footer";
 import Icon from "../components/Icon";
-import Nav from "../components/Nav";
 import { buttonClass, cardClass, inputClass } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
@@ -45,7 +43,6 @@ import {
   type PublicSpin,
   type PublicTips,
 } from "../data/remoteControl";
-import PageAdmin from "./PageAdmin";
 
 type Status = MusicStatus | "loading" | "offline" | "unknown";
 
@@ -535,7 +532,7 @@ function PoweredBy() {
   return (
     <footer class="py-10">
       <a
-        href={asset(pages.page)}
+        href={asset(pages.dashboard)}
         class="mx-auto flex w-fit items-center gap-2 text-[15px] font-semibold text-muted transition-colors hover:text-ink"
       >
         <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto" />
@@ -1106,20 +1103,5 @@ export default function Page(props: { twitch?: string }) {
   const id = new URLSearchParams(location.search).get("streamer");
   const twitch = props.twitch ?? null;
 
-  return (
-    <Show
-      when={id || twitch}
-      fallback={
-        <>
-          <Nav />
-          <main>
-            <PageAdmin />
-          </main>
-          <Footer />
-        </>
-      }
-    >
-      <Viewer id={id} twitch={twitch} />
-    </Show>
-  );
+  return <Viewer id={id} twitch={twitch} />;
 }

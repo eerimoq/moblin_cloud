@@ -44,7 +44,7 @@ export const pages = {
   chatBot: "/chat-bot/",
   docs: "/docs/",
   cards: "/cards/",
-  page: "/page/",
+  dashboard: "/dashboard/",
 } as const;
 
 export const platforms = [

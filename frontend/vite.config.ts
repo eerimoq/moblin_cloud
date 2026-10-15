@@ -87,6 +87,7 @@ export default defineConfig({
         "docs/index.html",
         "cards/index.html",
         "page/index.html",
+        "dashboard/index.html",
         "song-requests/index.html",
         "404.html",
       ],
