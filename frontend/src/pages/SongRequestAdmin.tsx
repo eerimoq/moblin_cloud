@@ -19,6 +19,7 @@ import {
   saveAccountSettings,
   saveSession,
   signInUrl,
+  signOutEverywhere,
   takeSignInResult,
   type Account,
   type SettingsChanges,
@@ -78,6 +79,8 @@ function paywallErrorText(error: unknown) {
     switch (error.status) {
       case 400:
         return "Enter your PayPal email and a price from 0.50 to 1000.";
+      case 403:
+        return "To change your PayPal email, sign in again first.";
       case 422:
         return "PayPal can't send payments to that email. Use the email of your PayPal business account.";
       case 502:
@@ -209,6 +212,7 @@ function Payments(props: {
   const [saving, setSaving] = createSignal(false);
   const [saved, flashSaved] = createFlash(2000);
   const [error, setError] = createSignal<string | null>(null);
+  const [signInAgain, setSignInAgain] = createSignal(false);
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -216,6 +220,7 @@ function Payments(props: {
       return;
     }
     setError(null);
+    setSignInAgain(false);
     setSaving(true);
     try {
       await props.onSave({
@@ -230,6 +235,7 @@ function Payments(props: {
       flashSaved();
     } catch (error) {
       setError(paywallErrorText(error));
+      setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
     }
@@ -301,6 +307,11 @@ function Payments(props: {
               {error()}
             </p>
           )}
+        </Show>
+        <Show when={signInAgain()}>
+          <a href={signInUrl} class={ghostButtonClass}>
+            Sign in again
+          </a>
         </Show>
       </div>
     </form>
@@ -405,8 +416,17 @@ function Admin(props: {
         </div>
       </div>
       <div>
-        <button type="button" class={ghostButtonClass} onClick={props.onSignOut}>
-          Sign out
+        <button
+          type="button"
+          class={ghostButtonClass}
+          onClick={async () => {
+            try {
+              await signOutEverywhere(props.session);
+            } catch {}
+            props.onSignOut();
+          }}
+        >
+          Sign out everywhere
         </button>
       </div>
     </>

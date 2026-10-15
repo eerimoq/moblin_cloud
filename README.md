@@ -163,9 +163,11 @@ links to
 that lives 10 minutes. Twitch redirects back to `GET /auth/twitch/callback`,
 which exchanges the code, looks the user up and redirects to
 `<frontend url>/song-requests/#session=<session>` (or `#signInFailed`). A
-session is the Twitch user id and an expiry 30 days later, signed with
-HMAC-SHA256, and is sent as `Authorization: Bearer <session>`. Signing out only
-forgets it in the browser.
+session is the Twitch user id, the account's session generation and the time
+it was issued, signed with HMAC-SHA256. It lasts 30 days and is sent as
+`Authorization: Bearer <session>`. `POST /account/sign-out` signs the account
+out everywhere by moving its generation on, which ends every session issued
+before.
 
 `GET /account` answers `{"name", "login", "streamerUrl", "settings"}`, where
 `streamerUrl` and `settings` are `null` until the account has a page. The key
@@ -177,7 +179,9 @@ other's page. `POST /account/streamer-url` resets the streamer URL with a
 new key, for when it leaked: the old one stops working at once and a Moblin
 connected with it is disconnected, while the page, its settings and queued
 songs stay. `POST /account/settings` with `{"paywall", "title", "message", "accent"}`
-changes the settings.
+changes the settings. Setting a new PayPal email needs a session issued in the
+last 10 minutes and answers 403 otherwise, so a stolen session can't redirect
+payments.
 
 GitHub Pages has no file for `/twitch/<login>`, so it serves `404.html`,
 which renders the song request page for those paths (the dev server rewrites

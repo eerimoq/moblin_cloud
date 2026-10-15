@@ -17,6 +17,8 @@ pub struct Account {
     pub avatar: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page: Option<Page>,
+    #[serde(default)]
+    pub sessions: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -121,6 +123,13 @@ impl Accounts {
         })
     }
 
+    pub fn sign_out(&self, id: &str) -> Result<Account, AccountError> {
+        self.change(id, false, |account| {
+            account.sessions += 1;
+            Ok(())
+        })
+    }
+
     fn change(
         &self,
         id: &str,
@@ -138,6 +147,7 @@ impl Accounts {
                 login: String::new(),
                 avatar: None,
                 page: None,
+                sessions: 0,
             },
         };
         change(&mut account)?;
@@ -187,6 +197,7 @@ mod tests {
                 login: "erik".to_string(),
                 avatar: None,
                 page: None,
+                sessions: 0,
             })
         );
         assert_eq!(
@@ -238,6 +249,21 @@ mod tests {
     }
 
     #[test]
+    fn signing_out_ends_sessions() {
+        let accounts = Accounts::load(None).unwrap();
+        assert_eq!(accounts.sign_out("1"), Err(AccountError::Unknown));
+        accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        assert_eq!(accounts.sign_out("1").unwrap().sessions, 1);
+        assert_eq!(
+            accounts
+                .signed_in("1", "Erik", "erik", None)
+                .unwrap()
+                .sessions,
+            1
+        );
+    }
+
+    #[test]
     fn logins_find_pages() {
         let accounts = Accounts::load(None).unwrap();
         accounts.signed_in("1", "Erik", "erik", None).unwrap();
@@ -271,6 +297,7 @@ mod tests {
                 login: "erik".to_string(),
                 avatar: None,
                 page: Some(page("p", "k")),
+                sessions: 0,
             })
         );
         std::fs::remove_file(&path).unwrap();

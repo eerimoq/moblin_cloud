@@ -65,6 +65,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/streamer", post(handle_account_streamer))
         .route("/account/streamer-url", post(handle_account_streamer_url))
         .route("/account/settings", post(handle_account_settings))
+        .route("/account/sign-out", post(handle_account_sign_out))
         .route("/remote-control/{id}/paywall", get(handle_paywall))
         .route("/remote-control/{id}/profile", get(handle_profile))
         .route(
@@ -296,17 +297,21 @@ async fn handle_callback(
             return Ok(Redirect::to(&format!("{page}#signInFailed")));
         }
     };
-    if let Err(error) =
-        api.accounts
+    let account =
+        match api
+            .accounts
             .signed_in(&user.id, &user.name, &user.login, user.avatar.as_deref())
-    {
-        warn!("saving account {} failed: {error:?}", user.id);
-        return Ok(Redirect::to(&format!("{page}#signInFailed")));
-    }
+        {
+            Ok(account) => account,
+            Err(error) => {
+                warn!("saving account {} failed: {error:?}", user.id);
+                return Ok(Redirect::to(&format!("{page}#signInFailed")));
+            }
+        };
     info!("Twitch user {} ({}) signed in", user.id, user.login);
     Ok(Redirect::to(&format!(
         "{page}#session={}",
-        api.auth.session(&user.id)
+        api.auth.session(&user.id, account.sessions)
     )))
 }
 
@@ -323,15 +328,29 @@ fn not_signed_in() -> (StatusCode, String) {
     (StatusCode::UNAUTHORIZED, "not signed in".to_string())
 }
 
-fn signed_in(api: &Api, headers: &HeaderMap) -> Result<(String, Account), (StatusCode, String)> {
-    let id = headers
+struct SignedIn {
+    id: String,
+    account: Account,
+    fresh: bool,
+}
+
+fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
+    let session = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .and_then(|session| api.auth.account_of(session))
+        .and_then(|session| api.auth.session_of(session))
         .ok_or_else(not_signed_in)?;
-    let account = api.accounts.get(&id).ok_or_else(not_signed_in)?;
-    Ok((id, account))
+    let account = api
+        .accounts
+        .get(&session.account)
+        .filter(|account| account.sessions == session.generation)
+        .ok_or_else(not_signed_in)?;
+    Ok(SignedIn {
+        fresh: session.is_fresh(),
+        id: session.account,
+        account,
+    })
 }
 
 fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
@@ -377,15 +396,15 @@ async fn handle_account(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let (_, account) = signed_in(&api, &headers)?;
-    Ok(account_response(&api, account))
+    let signed_in = signed_in(&api, &headers)?;
+    Ok(account_response(&api, signed_in.account))
 }
 
 async fn handle_account_streamer(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let (id, account) = signed_in(&api, &headers)?;
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     if account.page.is_some() {
         return Ok(account_response(&api, account));
     }
@@ -402,7 +421,7 @@ async fn handle_account_streamer_url(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let (id, _) = signed_in(&api, &headers)?;
+    let id = signed_in(&api, &headers)?.id;
     let (key, _) = new_key(&api)?;
     let account = api.accounts.replace_key(&id, key).map_err(account_error)?;
     if let Some(page) = &account.page {
@@ -417,9 +436,31 @@ async fn handle_account_settings(
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let (_, account) = signed_in(&api, &headers)?;
-    let id = account.page.ok_or_else(no_page)?.id;
+    let signed_in = signed_in(&api, &headers)?;
+    let id = signed_in.account.page.ok_or_else(no_page)?.id;
+    let email = api
+        .song_requests
+        .get(&id)
+        .paywall
+        .map(|paywall| paywall.email);
+    let new_email = request.paywall.as_ref().map(|paywall| paywall.email.trim());
+    if new_email.is_some() && new_email != email.as_deref() && !signed_in.fresh {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "sign in again to change the PayPal email".to_string(),
+        ));
+    }
     update_settings(&api, id, request).await
+}
+
+async fn handle_account_sign_out(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?.id;
+    api.accounts.sign_out(&id).map_err(account_error)?;
+    info!("{id} signed out everywhere");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn invalid_paywall() -> (StatusCode, String) {
@@ -1096,7 +1137,7 @@ mod tests {
 
     async fn streamer(address: &str, api: &Api) -> (String, String, String) {
         api.accounts.signed_in("1", "Erik", "erik", None).unwrap();
-        let session = api.auth.session("1");
+        let session = api.auth.session("1", 0);
         let account: Value = reqwest::Client::new()
             .post(format!("http://{address}/account/streamer"))
             .bearer_auth(&session)
@@ -1723,10 +1764,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn signing_out_ends_every_session() {
+        let (address, api) = start_api(None).await;
+        let (session, _, _) = streamer(&address, &api).await;
+        let other = api.auth.session("1", 0);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/sign-out"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        for token in [&session, &other] {
+            let response = client
+                .get(format!("http://{address}/account"))
+                .bearer_auth(token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        let response = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(api.auth.session("1", 1))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn paypal_emails_change_only_after_signing_in_again() {
+        let (address, api, _) = start_paid().await;
+        let (_, _, id) = streamer(&address, &api).await;
+        let old = api.auth.session_at("1", 0, crate::song_queue::now() - 601);
+        let client = reqwest::Client::new();
+        let save = |session: String, email: Option<&str>| {
+            let paywall =
+                email.map(|email| json!({"email": email, "price": 250, "currency": "SEK"}));
+            client
+                .post(format!("http://{address}/account/settings"))
+                .bearer_auth(session)
+                .json(&json!({"paywall": paywall}))
+                .send()
+        };
+        let response = save(old.clone(), Some("erik@example.com")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(api.song_requests.get(&id).paywall, None);
+        let response = save(api.auth.session("1", 0), Some("erik@example.com"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = save(old.clone(), Some(" erik@example.com ")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = save(old.clone(), Some("other@example.com")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            api.song_requests.get(&id).paywall.unwrap().email,
+            "erik@example.com"
+        );
+        let response = save(old, None).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn account_routes_need_a_session() {
         let (address, api) = start_api(None).await;
         let (session, _, _) = streamer(&address, &api).await;
-        let unknown = api.auth.session("2");
+        let unknown = api.auth.session("2", 0);
+        let old = api.auth.session("1", 1);
         let (payload, _) = session.split_once('.').unwrap();
         let forged = format!("{payload}.AAAA");
         let client = reqwest::Client::new();
@@ -1735,12 +1842,14 @@ mod tests {
             ("POST", "/account/streamer"),
             ("POST", "/account/streamer-url"),
             ("POST", "/account/settings"),
+            ("POST", "/account/sign-out"),
         ] {
             for token in [
                 None,
                 Some("garbage"),
                 Some(forged.as_str()),
                 Some(unknown.as_str()),
+                Some(old.as_str()),
             ] {
                 let mut request = client
                     .request(method.parse().unwrap(), format!("http://{address}{path}"))

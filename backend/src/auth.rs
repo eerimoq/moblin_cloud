@@ -35,6 +35,19 @@ impl OAuthApp {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Session {
+    pub account: String,
+    pub generation: u64,
+    pub issued: u64,
+}
+
+impl Session {
+    pub fn is_fresh(&self) -> bool {
+        now() < self.issued + 600
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct User {
     pub id: String,
     pub name: String,
@@ -223,12 +236,12 @@ impl Auth {
         })
     }
 
-    pub fn session(&self, account: &str) -> String {
-        self.session_until(account, now() + SESSION_LIFETIME)
+    pub fn session(&self, account: &str, generation: u64) -> String {
+        self.session_at(account, generation, now())
     }
 
-    fn session_until(&self, account: &str, expires: u64) -> String {
-        let payload = format!("{account}:{expires}");
+    pub fn session_at(&self, account: &str, generation: u64, issued: u64) -> String {
+        let payload = format!("{account}:{generation}:{issued}");
         let tag = hmac::sign(&self.key, payload.as_bytes());
         format!(
             "{}.{}",
@@ -237,13 +250,20 @@ impl Auth {
         )
     }
 
-    pub fn account_of(&self, session: &str) -> Option<String> {
+    pub fn session_of(&self, session: &str) -> Option<Session> {
         let (payload, tag) = session.split_once('.')?;
         let payload = BASE64_URL_SAFE_NO_PAD.decode(payload).ok()?;
         let tag = BASE64_URL_SAFE_NO_PAD.decode(tag).ok()?;
         hmac::verify(&self.key, &payload, &tag).ok()?;
-        let (account, expires) = std::str::from_utf8(&payload).ok()?.rsplit_once(':')?;
-        (expires.parse::<u64>().ok()? > now()).then(|| account.to_string())
+        let (rest, issued) = std::str::from_utf8(&payload).ok()?.rsplit_once(':')?;
+        let (account, generation) = rest.rsplit_once(':')?;
+        let issued = issued.parse::<u64>().ok()?;
+        let generation = generation.parse().ok()?;
+        (issued + SESSION_LIFETIME > now()).then(|| Session {
+            account: account.to_string(),
+            generation,
+            issued,
+        })
     }
 }
 
@@ -273,18 +293,22 @@ mod tests {
     #[test]
     fn sessions_are_verified() {
         let auth = new_auth("secret");
-        let session = auth.session("1");
-        assert_eq!(auth.account_of(&session).as_deref(), Some("1"));
-        assert_eq!(new_auth("other").account_of(&session), None);
-        let expired = auth.session_until("1", now() - 1);
-        assert_eq!(auth.account_of(&expired), None);
+        let session = auth.session_of(&auth.session("1", 3)).unwrap();
+        assert_eq!(session.account, "1");
+        assert_eq!(session.generation, 3);
+        assert!(session.is_fresh());
+        let session = auth.session_at("1", 0, now() - 601);
+        assert!(!auth.session_of(&session).unwrap().is_fresh());
+        assert_eq!(new_auth("other").session_of(&session), None);
+        let expired = auth.session_at("1", 0, now() - SESSION_LIFETIME);
+        assert_eq!(auth.session_of(&expired), None);
         let (_, tag) = session.split_once('.').unwrap();
         let forged = format!(
             "{}.{tag}",
-            BASE64_URL_SAFE_NO_PAD.encode(format!("2:{}", now() + 100))
+            BASE64_URL_SAFE_NO_PAD.encode(format!("2:0:{}", now()))
         );
-        assert_eq!(auth.account_of(&forged), None);
-        assert_eq!(auth.account_of("garbage"), None);
+        assert_eq!(auth.session_of(&forged), None);
+        assert_eq!(auth.session_of("garbage"), None);
     }
 
     #[test]

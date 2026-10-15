@@ -60,6 +60,13 @@ const post = (body: unknown) => ({
 
 export const fetchAccount = (session: string) => call<Account>(session, "/account");
 
+export async function signOutEverywhere(session: string) {
+  await fetch(`${backendUrl}/account/sign-out`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${session}` },
+  });
+}
+
 export const createStreamer = (session: string) =>
   call<Account>(session, "/account/streamer", { method: "POST" });
 
