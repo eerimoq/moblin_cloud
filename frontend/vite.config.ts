@@ -30,6 +30,7 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8080",
+        ws: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
         // Every other Twitch and Kick channel, and every one of a streamer
         // without a snapshot, is shown as live, with varying categories and

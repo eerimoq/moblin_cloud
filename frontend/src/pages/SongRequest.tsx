@@ -182,11 +182,14 @@ function Queue(props: { status: Status; name: string | undefined }) {
                           >
                             {song.title}
                           </span>
-                          <span class="truncate text-[15px] text-muted">
-                            {[song.artist, song.user && `added by ${song.user}`]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
+                          <Show when={song.artist}>
+                            <span class="truncate text-[15px] text-muted">{song.artist}</span>
+                          </Show>
+                          <Show when={song.user}>
+                            <span class="truncate text-[15px] text-muted">
+                              added by <span class="font-medium text-ink">{song.user}</span>
+                            </span>
+                          </Show>
                         </span>
                       </li>
                     );
