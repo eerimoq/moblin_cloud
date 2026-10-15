@@ -287,6 +287,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
   const [profile, setProfile] = createSignal<Profile | null>(null);
+  const [styled, setStyled] = createSignal(false);
   let form: HTMLFormElement | undefined;
   const [round, setRound] = createSignal(0);
   const nextRound = () => setRound(round() + 1);
@@ -408,7 +409,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
           setProfile(found);
           document.title = `${found.name} song requests`;
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setStyled(true));
     }
     void refreshPaywall();
     void refresh();
@@ -444,7 +446,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
             </p>
           }
         >
-          <div class="mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8">
+          <div
+            class={`mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8 ${styled() ? "" : "invisible"}`}
+          >
             <form ref={(element) => (form = element)} class={cardClass} onSubmit={submit}>
               <div class="flex flex-col gap-1">
                 <h2 class="text-[28px] leading-tight font-semibold text-balance">
