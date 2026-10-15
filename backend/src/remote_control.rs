@@ -123,6 +123,7 @@ pub struct Song {
     pub id: String,
     pub title: String,
     pub artist: Option<String>,
+    pub duration: Option<u32>,
     pub user: Option<String>,
 }
 
@@ -564,7 +565,7 @@ mod tests {
         let MessageToAssistant::Response {
             data: Some(data), ..
         } = decode(
-            r#"{"response":{"id":2,"result":{"ok":{}},"data":{"music":{"status":{"playing":true,"currentSongIndex":0,"songs":[{"id":"q1","title":"Song","artist":"Band"}],"songNotFound":false}}}}}"#,
+            r#"{"response":{"id":2,"result":{"ok":{}},"data":{"music":{"status":{"playing":true,"currentSongIndex":0,"songs":[{"id":"q1","title":"Song","artist":"Band","duration":213}],"songNotFound":false}}}}}"#,
         )
         else {
             panic!();
@@ -581,6 +582,7 @@ mod tests {
                     id: "q1".to_string(),
                     title: "Song".to_string(),
                     artist: Some("Band".to_string()),
+                    duration: Some(213),
                     user: None,
                 }],
                 song_not_found: Some(false),

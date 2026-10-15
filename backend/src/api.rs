@@ -1529,7 +1529,7 @@ mod tests {
         answer(
             &mut socket,
             &request,
-            music(json!([{"id": "q1", "title": "Song", "user": "Viewer"}])),
+            music(json!([{"id": "q1", "title": "Song", "duration": 213, "user": "Viewer"}])),
         )
         .await;
         wait_until_added(&api).await;
@@ -1543,7 +1543,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             cached["songs"],
-            json!([{"id": "q1", "title": "Song", "artist": null, "user": "Viewer"}])
+            json!([{"id": "q1", "title": "Song", "artist": null, "duration": 213, "user": "Viewer"}])
         );
         socket.close(None).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;

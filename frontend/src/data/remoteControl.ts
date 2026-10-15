@@ -4,6 +4,7 @@ export type Song = {
   id: string;
   title: string;
   artist: string | null;
+  duration: number | null;
   user: string | null;
 };
 
@@ -12,6 +13,15 @@ export type MusicStatus = {
   currentSongIndex: number | null;
   songs: Song[];
   songNotFound: boolean | null;
+};
+
+export const formatDuration = (duration: number) => {
+  const seconds = String(duration % 60).padStart(2, "0");
+  if (duration < 3600) {
+    return `${Math.floor(duration / 60)}:${seconds}`;
+  }
+  const minutes = String(Math.floor(duration / 60) % 60).padStart(2, "0");
+  return `${Math.floor(duration / 3600)}:${minutes}:${seconds}`;
 };
 
 export type Paywall = {

@@ -24,6 +24,7 @@ import {
   BackendError,
   captureSong,
   defaultTitle,
+  formatDuration,
   formatPrice,
   idOfTwitchLogin,
   musicStatus,
@@ -199,6 +200,13 @@ function Queue(props: { status: Status; name: string | undefined }) {
                             </span>
                           </Show>
                         </span>
+                        <Show when={song.duration}>
+                          {(duration) => (
+                            <span class="ml-auto shrink-0 font-mono text-sm text-muted tabular-nums">
+                              {formatDuration(duration())}
+                            </span>
+                          )}
+                        </Show>
                       </li>
                     );
                   }}
