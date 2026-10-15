@@ -30,6 +30,13 @@ export type Paywall = {
   currency: string;
 };
 
+export type Tips = {
+  merchantId: string;
+  currency: string;
+  amounts: number[];
+  webhookUrl: string | null;
+};
+
 export type Page = {
   title: string | null;
   message: string | null;
@@ -40,6 +47,7 @@ export type Settings = Page & {
   id: string;
   connected: boolean;
   paywall: Paywall | null;
+  tips: Tips | null;
   paypal: boolean;
 };
 
@@ -55,6 +63,20 @@ export type Price = {
 export type PublicPaywall = Price & {
   clientId: string | null;
   merchantId: string | null;
+  environment: "production" | "sandbox" | null;
+};
+
+export type PayPalConfig = {
+  clientId: string;
+  merchantId: string;
+  environment: "production" | "sandbox";
+};
+
+export type PublicTips = {
+  amounts: number[];
+  currency: string;
+  clientId: string | null;
+  merchantId: string;
   environment: "production" | "sandbox" | null;
 };
 
@@ -131,6 +153,23 @@ export const orderSong = async (id: string, song: string, user: string) =>
 
 export const captureSong = (id: string, orderId: string) =>
   call<object>(`/${encodeURIComponent(id)}/music/orders/${encodeURIComponent(orderId)}/capture`, {
+    method: "POST",
+  });
+
+export const streamerTips = async (id: string) =>
+  (await call<{ tips: PublicTips | null }>(`/${encodeURIComponent(id)}/tips`)).tips;
+
+export const orderTip = async (id: string, amount: number, user: string, message: string) =>
+  (
+    await call<{ orderId: string }>(`/${encodeURIComponent(id)}/tips/orders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ amount, user: user || null, message: message || null }),
+    })
+  ).orderId;
+
+export const captureTip = (id: string, orderId: string) =>
+  call<object>(`/${encodeURIComponent(id)}/tips/orders/${encodeURIComponent(orderId)}/capture`, {
     method: "POST",
   });
 

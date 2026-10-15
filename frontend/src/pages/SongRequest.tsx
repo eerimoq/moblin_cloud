@@ -23,18 +23,23 @@ import { links, pages } from "../data/links";
 import {
   BackendError,
   captureSong,
+  captureTip,
   defaultTitle,
   formatDuration,
   formatPrice,
   idOfTwitchLogin,
   musicStatus,
   orderSong,
+  orderTip,
   requestSong,
   streamerPaywall,
   streamerProfile,
+  streamerTips,
   type MusicStatus,
+  type PayPalConfig,
   type Profile,
   type PublicPaywall,
+  type PublicTips,
 } from "../data/remoteControl";
 import SongRequestAdmin from "./SongRequestAdmin";
 
@@ -70,11 +75,7 @@ type PayPalOptions = {
   onError: () => void;
 };
 
-function PayPalButtons(props: {
-  paywall: PublicPaywall & { clientId: string; merchantId: string; environment: string };
-  options: PayPalOptions;
-  disabled: boolean;
-}) {
+function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; disabled: boolean }) {
   let container: HTMLDivElement | undefined;
   let button: HTMLElement | undefined;
   let session: OneTimePaymentSession | undefined;
@@ -100,11 +101,11 @@ function PayPalButtons(props: {
   onMount(async () => {
     try {
       const paypal = await loadCoreSdkScript({
-        environment: props.paywall.environment === "sandbox" ? "sandbox" : "production",
+        environment: props.config.environment,
       });
       const instance = await paypal?.createInstance({
-        clientId: props.paywall.clientId,
-        merchantId: props.paywall.merchantId,
+        clientId: props.config.clientId,
+        merchantId: props.config.merchantId,
         components: ["paypal-payments"],
         pageType: "checkout",
       });
@@ -128,25 +129,239 @@ function PayPalButtons(props: {
 
   return (
     <>
-      <div class="flex w-full max-w-sm flex-col gap-3">
-        <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
-          <span class="text-ink-2">Price per song</span>
-          <span class="font-display text-2xl font-semibold">{formatPrice(props.paywall)}</span>
-        </p>
-        <div
-          ref={(element) => (container = element)}
-          class={`transition-opacity [color-scheme:light] ${
-            props.disabled ? "pointer-events-none opacity-40" : ""
-          }`}
-        />
-        <p class="text-[15px] text-muted">Your payment goes straight to the streamer.</p>
-      </div>
+      <div
+        ref={(element) => (container = element)}
+        class={`transition-opacity [color-scheme:light] ${
+          props.disabled ? "pointer-events-none opacity-40" : ""
+        }`}
+      />
       <Show when={failed()}>
         <p role="status" class="text-amber">
           PayPal could not be loaded. Reload the page to try again.
         </p>
       </Show>
     </>
+  );
+}
+
+type Result = { ok: boolean; text: string };
+
+function ResultLine(props: { result: Result | null }) {
+  return (
+    <Show when={props.result}>
+      {(result) => (
+        <p
+          role="status"
+          class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[17px] font-semibold ${
+            result().ok
+              ? "border-moss bg-well text-leaf"
+              : "border-amber-line bg-amber-bg text-amber-ink"
+          }`}
+        >
+          <Icon
+            name={result().ok ? "check" : "warning"}
+            class={`mt-0.5 size-5 shrink-0 ${result().ok ? "text-leaf" : "text-amber"}`}
+          />
+          {result().text}
+        </p>
+      )}
+    </Show>
+  );
+}
+
+const formatTip = (amount: number, currency: string) =>
+  new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency,
+    minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
+  }).format(amount / 100);
+
+function TipJar(props: {
+  id: string;
+  tips: PublicTips & PayPalConfig;
+  streamer: string | undefined;
+  name: string;
+  onName: (name: string) => void;
+  onError: (error: unknown) => void;
+}) {
+  const [choice, setChoice] = createSignal<number | "other">(
+    props.tips.amounts[Math.min(1, props.tips.amounts.length - 1)],
+  );
+  const [other, setOther] = createSignal("");
+  const [message, setMessage] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [result, setResult] = createSignal<Result | null>(null);
+  let form: HTMLFormElement | undefined;
+  let orderError: unknown = null;
+
+  const amount = () => {
+    const current = choice();
+    if (current !== "other") {
+      return current;
+    }
+    const cents = Math.round(Number.parseFloat(other()) * 100);
+    return cents >= 50 && cents <= 100_000 ? cents : null;
+  };
+
+  const showError = (error: unknown) => {
+    setResult({ ok: false, text: errorText(error) });
+    props.onError(error);
+  };
+
+  const options: PayPalOptions = {
+    start: () => {
+      setResult(null);
+      if (busy() || amount() === null || !form?.reportValidity()) {
+        return false;
+      }
+      saveName(props.name.trim());
+      return true;
+    },
+    createOrder: async () => {
+      orderError = null;
+      try {
+        return {
+          orderId: await orderTip(props.id, amount() ?? 0, props.name.trim(), message().trim()),
+        };
+      } catch (error) {
+        orderError = error;
+        throw error;
+      }
+    },
+    onApprove: async (data) => {
+      setBusy(true);
+      setResult({ ok: true, text: "Payment approved. Completing it…" });
+      try {
+        await captureTip(props.id, data.orderId);
+        setResult({ ok: true, text: "Thanks for the tip!" });
+        setMessage("");
+      } catch (error) {
+        showError(error);
+      } finally {
+        setBusy(false);
+      }
+    },
+    onCancel: () => {
+      setResult({ ok: false, text: "Payment cancelled. No tip was sent." });
+    },
+    onError: () => {
+      if (orderError) {
+        showError(orderError);
+      } else {
+        setResult({ ok: false, text: "PayPal could not complete the payment. Try again." });
+      }
+    },
+  };
+
+  const chipClass =
+    "relative inline-flex h-12 min-w-20 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-line bg-well px-5 font-display text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink";
+
+  return (
+    <form
+      ref={(element) => (form = element)}
+      class={cardClass}
+      onSubmit={(event) => event.preventDefault()}
+    >
+      <div class="flex flex-col gap-1">
+        <h2 class="text-[28px] leading-tight font-semibold text-balance">
+          Send {props.streamer ?? "the streamer"} a tip.
+        </h2>
+        <p class="text-ink-2">Pick an amount and add a message if you like.</p>
+      </div>
+      <fieldset class="flex flex-col gap-3">
+        <legend class="mb-2 text-[15px] font-semibold text-ink-2">Amount</legend>
+        <div class="flex flex-wrap gap-3">
+          <For each={props.tips.amounts}>
+            {(preset) => (
+              <label class={chipClass}>
+                <input
+                  type="radio"
+                  name="tip"
+                  checked={choice() === preset}
+                  onChange={() => setChoice(preset)}
+                  class="sr-only"
+                />
+                {formatTip(preset, props.tips.currency)}
+              </label>
+            )}
+          </For>
+          <label class={chipClass}>
+            <input
+              type="radio"
+              name="tip"
+              checked={choice() === "other"}
+              onChange={() => setChoice("other")}
+              class="sr-only"
+            />
+            Other
+          </label>
+        </div>
+        <Show when={choice() === "other"}>
+          <label class="flex max-w-60 flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">
+              Your amount in {props.tips.currency}
+            </span>
+            <input
+              type="number"
+              required
+              min="0.5"
+              max="1000"
+              step="0.01"
+              inputmode="decimal"
+              value={other()}
+              onInput={(event) => setOther(event.currentTarget.value)}
+              placeholder="0.50 to 1000"
+              class={inputClass}
+            />
+          </label>
+        </Show>
+      </fieldset>
+      <label class="flex flex-col gap-2">
+        <span class="text-[15px] font-semibold text-ink-2">Your name (optional)</span>
+        <input
+          type="text"
+          maxLength={25}
+          value={props.name}
+          onInput={(event) => props.onName(event.currentTarget.value)}
+          placeholder="Shown with your message"
+          autocomplete="nickname"
+          class={inputClass}
+        />
+      </label>
+      <label class="flex flex-col gap-2">
+        <span class="flex items-baseline justify-between gap-4 text-[15px] font-semibold text-ink-2">
+          Message (optional)
+          <span class="font-mono text-sm font-normal text-muted tabular-nums">
+            {message().length}/200
+          </span>
+        </span>
+        <textarea
+          maxLength={200}
+          rows={3}
+          value={message()}
+          onInput={(event) => setMessage(event.currentTarget.value)}
+          placeholder="Love the stream!"
+          class={`${inputClass} h-auto resize-y py-3`}
+        />
+      </label>
+      <div class="flex w-full max-w-sm flex-col gap-3">
+        <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
+          <span class="text-ink-2">Your tip</span>
+          <span class="font-display text-2xl font-semibold">
+            {amount() === null
+              ? "–"
+              : formatPrice({ price: amount()!, currency: props.tips.currency })}
+          </span>
+        </p>
+        <PayPalButton
+          config={props.tips}
+          options={options}
+          disabled={busy() || amount() === null}
+        />
+        <p class="text-[15px] text-muted">Your tip goes straight to the streamer.</p>
+      </div>
+      <ResultLine result={result()} />
+    </form>
   );
 }
 
@@ -294,16 +509,57 @@ function PoweredBy() {
   );
 }
 
+type Section = "songs" | "tip";
+
+function SectionSwitch(props: { section: Section; onSection: (section: Section) => void }) {
+  const tab = (section: Section, icon: "music" | "heart", label: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={props.section === section}
+      onClick={() => props.onSection(section)}
+      class={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full px-4 font-display whitespace-nowrap text-lg font-semibold transition-colors ${
+        props.section === section ? "bg-moss text-white" : "text-ink-2 hover:text-ink"
+      }`}
+    >
+      <Icon name={icon} class="size-5" />
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      role="tablist"
+      class="mx-auto flex w-full max-w-sm gap-1 rounded-full border-[1.5px] border-line bg-card p-1"
+    >
+      {tab("tip", "heart", "Tip")}
+      {tab("songs", "music", "Songs")}
+    </div>
+  );
+}
+
 function Viewer(props: { id: string | null; twitch: string | null }) {
   const [id, setId] = createSignal(props.id);
   const [status, setStatus] = createSignal<Status>("loading");
   const [song, setSong] = createSignal("");
   const [name, setName] = createSignal(readName());
   const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
+  const [result, setResult] = createSignal<Result | null>(null);
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
+  const [tips, setTips] = createSignal<PublicTips | null>(null);
   const [profile, setProfile] = createSignal<Profile | null>(null);
   const [styled, setStyled] = createSignal(false);
+  const [section, setSection] = createSignal<Section>(location.hash === "#tip" ? "tip" : "songs");
+  const showingTip = () => tipJar() !== null && section() === "tip";
+
+  const changeSection = (next: Section) => {
+    setSection(next);
+    history.replaceState(
+      null,
+      "",
+      location.pathname + location.search + (next === "tip" ? "#tip" : ""),
+    );
+  };
   let form: HTMLFormElement | undefined;
   const payable = createMemo(
     () => {
@@ -330,6 +586,23 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         a?.price === b?.price,
     },
   );
+  const tipJar = createMemo(
+    () => {
+      const current = tips();
+      return current?.clientId && current.environment
+        ? { ...current, clientId: current.clientId, environment: current.environment }
+        : null;
+    },
+    null,
+    {
+      equals: (a, b) =>
+        a?.clientId === b?.clientId &&
+        a?.merchantId === b?.merchantId &&
+        a?.environment === b?.environment &&
+        a?.currency === b?.currency &&
+        a?.amounts.join() === b?.amounts.join(),
+    },
+  );
   let orderError: unknown = null;
 
   const refreshPaywall = async () => {
@@ -338,6 +611,21 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       try {
         setPaywall(await streamerPaywall(current));
       } catch {}
+    }
+  };
+
+  const refreshTips = async () => {
+    const current = id();
+    if (current) {
+      try {
+        setTips(await streamerTips(current));
+      } catch {}
+    }
+  };
+
+  const tipError = (error: unknown) => {
+    if (error instanceof BackendError && error.status === 400) {
+      void refreshTips();
     }
   };
 
@@ -433,6 +721,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         .finally(() => setStyled(true));
     }
     void refreshPaywall();
+    void refreshTips();
     void refresh();
     const timer = setInterval(refresh, 30_000);
     onCleanup(() => clearInterval(timer));
@@ -469,7 +758,14 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
           <div
             class={`mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8 ${styled() ? "" : "invisible"}`}
           >
-            <form ref={(element) => (form = element)} class={cardClass} onSubmit={submit}>
+            <Show when={tipJar()}>
+              <SectionSwitch section={section()} onSection={changeSection} />
+            </Show>
+            <form
+              ref={(element) => (form = element)}
+              class={`${cardClass} ${showingTip() ? "hidden" : ""}`}
+              onSubmit={submit}
+            >
               <div class="flex flex-col gap-1">
                 <h2 class="text-[28px] leading-tight font-semibold text-balance">
                   {profile()?.title ?? defaultTitle}
@@ -532,34 +828,44 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   }
                 >
                   {(current) => (
-                    <PayPalButtons
-                      paywall={current}
-                      options={payPalOptions}
-                      disabled={busy() || !song().trim()}
-                    />
+                    <div class="flex w-full max-w-sm flex-col gap-3">
+                      <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
+                        <span class="text-ink-2">Price per song</span>
+                        <span class="font-display text-2xl font-semibold">
+                          {formatPrice(current)}
+                        </span>
+                      </p>
+                      <PayPalButton
+                        config={current}
+                        options={payPalOptions}
+                        disabled={busy() || !song().trim()}
+                      />
+                      <p class="text-[15px] text-muted">
+                        Your payment goes straight to the streamer.
+                      </p>
+                    </div>
                   )}
                 </Show>
               </div>
-              <Show when={result()}>
-                {(result) => (
-                  <p
-                    role="status"
-                    class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[17px] font-semibold ${
-                      result().ok
-                        ? "border-moss bg-well text-leaf"
-                        : "border-amber-line bg-amber-bg text-amber-ink"
-                    }`}
-                  >
-                    <Icon
-                      name={result().ok ? "check" : "warning"}
-                      class={`mt-0.5 size-5 shrink-0 ${result().ok ? "text-leaf" : "text-amber"}`}
-                    />
-                    {result().text}
-                  </p>
-                )}
-              </Show>
+              <ResultLine result={result()} />
             </form>
-            <Queue status={status()} name={profile()?.name} />
+            <Show when={tipJar()} keyed>
+              {(current) => (
+                <div class={showingTip() ? "" : "hidden"}>
+                  <TipJar
+                    id={id() ?? ""}
+                    tips={current}
+                    streamer={profile()?.name}
+                    name={name()}
+                    onName={setName}
+                    onError={tipError}
+                  />
+                </div>
+              )}
+            </Show>
+            <div class={showingTip() ? "hidden" : ""}>
+              <Queue status={status()} name={profile()?.name} />
+            </div>
           </div>
         </Show>
       </main>

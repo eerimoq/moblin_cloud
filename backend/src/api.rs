@@ -12,7 +12,7 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{Account, AccountError, Accounts, Page};
@@ -20,11 +20,14 @@ use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
 use crate::live::Live;
-use crate::paypal::{CaptureError, Order, PayPal, PayeeError};
+use crate::paypal::{CaptureError, Item, Order, PayPal, PayeeError};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers};
 use crate::song_queue::{self, QueuedSong, SongQueue};
-use crate::song_requests::{Paywall, Settings, SettingsError, SongRequests, format_price};
+use crate::song_requests::{
+    Paywall, Settings, SettingsError, SongRequests, Tips, format_price, valid_price,
+};
 use crate::store::{Channel, Store, Streamer};
+use crate::webhooks::Webhooks;
 
 const ASSERTION_HEADER: &str = "moblin-assertion";
 
@@ -39,6 +42,7 @@ pub struct Api {
     pub song_queue: SongQueue,
     pub auth: Auth,
     pub accounts: Accounts,
+    pub webhooks: Webhooks,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -76,6 +80,12 @@ pub fn router(api: Arc<Api>) -> Router {
         .route(
             "/remote-control/{id}/music/orders/{order_id}/capture",
             post(handle_capture),
+        )
+        .route("/remote-control/{id}/tips", get(handle_tips))
+        .route("/remote-control/{id}/tips/orders", post(handle_tip_order))
+        .route(
+            "/remote-control/{id}/tips/orders/{order_id}/capture",
+            post(handle_tip_capture),
         )
         .layer(cors)
         .with_state(api)
@@ -189,6 +199,7 @@ struct SettingsResponse {
     id: String,
     connected: bool,
     paywall: Option<Paywall>,
+    tips: Option<Tips>,
     paypal: bool,
     title: Option<String>,
     message: Option<String>,
@@ -200,6 +211,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         connected: api.remote_control.is_connected(&id),
         id,
         paywall: settings.paywall,
+        tips: settings.tips,
         paypal: api.paypal.is_some(),
         title: settings.title,
         message: settings.message,
@@ -210,6 +222,8 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
 #[derive(Deserialize)]
 struct SettingsRequest {
     paywall: Option<Paywall>,
+    #[serde(default)]
+    tips: Option<Tips>,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -224,7 +238,34 @@ async fn update_settings(
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let paywall = match request.paywall {
-        Some(paywall) => Some(checked_paywall(api, &id, paywall).await?),
+        Some(paywall) => {
+            let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
+            check_merchant(
+                api,
+                &id,
+                &paywall.merchant_id,
+                paywall.price,
+                &paywall.currency,
+            )
+            .await?;
+            Some(paywall)
+        }
+        None => None,
+    };
+    let tips = match request.tips {
+        Some(tips) => {
+            let tips = tips.normalize().ok_or_else(invalid_tips)?;
+            if let Some(url) = &tips.webhook_url
+                && !api.webhooks.allows(url)
+            {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "the webhook URL must be an https URL of a public host".to_string(),
+                ));
+            }
+            check_merchant(api, &id, &tips.merchant_id, tips.amounts[0], &tips.currency).await?;
+            Some(tips)
+        }
         None => None,
     };
     let settings = api
@@ -233,6 +274,7 @@ async fn update_settings(
             &id,
             Settings {
                 paywall,
+                tips,
                 title: request.title,
                 message: request.message,
                 accent: request.accent,
@@ -240,6 +282,7 @@ async fn update_settings(
         )
         .map_err(|error| match error {
             SettingsError::InvalidPaywall => invalid_paywall(),
+            SettingsError::InvalidTips => invalid_tips(),
             SettingsError::InvalidPage => (
                 StatusCode::BAD_REQUEST,
                 "the title can be at most 60 characters, the message at most 300 and the accent one of the supported colors".to_string(),
@@ -254,8 +297,8 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set paywall {:?}, title {:?}, message {:?} and accent {:?}",
-        settings.paywall, settings.title, settings.message, settings.accent
+        "remote control streamer {id} set paywall {:?}, tips {:?}, title {:?}, message {:?} and accent {:?}",
+        settings.paywall, settings.tips, settings.title, settings.message, settings.accent
     );
     Ok(settings_response(api, id, settings))
 }
@@ -464,17 +507,17 @@ async fn handle_account_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let signed_in = signed_in(&api, &headers)?;
     let id = signed_in.account.page.ok_or_else(no_page)?.id;
-    let merchant_id = api
-        .song_requests
-        .get(&id)
-        .paywall
-        .map(|paywall| paywall.merchant_id);
-    let new_merchant_id = request
-        .paywall
-        .clone()
-        .and_then(Paywall::normalize)
-        .map(|paywall| paywall.merchant_id);
-    if new_merchant_id.is_some() && new_merchant_id != merchant_id && !signed_in.fresh {
+    let current_merchant_ids = merchant_ids(&api.song_requests.get(&id));
+    let new_merchant_ids = merchant_ids(&Settings {
+        paywall: request.paywall.clone().and_then(Paywall::normalize),
+        tips: request.tips.clone().and_then(Tips::normalize),
+        ..Settings::default()
+    });
+    if new_merchant_ids
+        .iter()
+        .any(|merchant_id| !current_merchant_ids.contains(merchant_id))
+        && !signed_in.fresh
+    {
         return Err((
             StatusCode::FORBIDDEN,
             "sign in again to change the PayPal merchant ID".to_string(),
@@ -493,6 +536,28 @@ async fn handle_account_sign_out(
     Ok(StatusCode::NO_CONTENT)
 }
 
+fn merchant_ids(settings: &Settings) -> Vec<String> {
+    let paywall = settings
+        .paywall
+        .as_ref()
+        .map(|paywall| &paywall.merchant_id);
+    let tips = settings.tips.as_ref().map(|tips| &tips.merchant_id);
+    paywall
+        .into_iter()
+        .chain(tips)
+        .filter(|merchant_id| !merchant_id.is_empty())
+        .cloned()
+        .collect()
+}
+
+fn invalid_tips() -> (StatusCode, String) {
+    (
+        StatusCode::BAD_REQUEST,
+        "tips need a PayPal merchant ID, one to four amounts of 0.50 to 1000 and a supported currency"
+            .to_string(),
+    )
+}
+
 fn invalid_paywall() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
@@ -501,24 +566,23 @@ fn invalid_paywall() -> (StatusCode, String) {
     )
 }
 
-async fn checked_paywall(
+async fn check_merchant(
     api: &Api,
     id: &str,
-    paywall: Paywall,
-) -> Result<Paywall, (StatusCode, String)> {
-    let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
+    merchant_id: &str,
+    price: u32,
+    currency: &str,
+) -> Result<(), (StatusCode, String)> {
     let paypal = api.paypal.as_ref().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "payments are unavailable".to_string(),
     ))?;
-    let checked = api
-        .song_requests
-        .get(id)
-        .paywall
-        .is_some_and(|current| current.merchant_id == paywall.merchant_id);
+    let checked = merchant_ids(&api.song_requests.get(id))
+        .iter()
+        .any(|current| current == merchant_id);
     if !checked {
         paypal
-            .check_payee(&paywall.merchant_id, paywall.price, &paywall.currency)
+            .check_payee(merchant_id, price, currency)
             .await
             .map_err(|error| match error {
                 PayeeError::Invalid => (
@@ -531,7 +595,7 @@ async fn checked_paywall(
                 ),
             })?;
     }
-    Ok(paywall)
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -614,6 +678,36 @@ async fn handle_paywall(
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicTips {
+    amounts: Vec<u32>,
+    currency: String,
+    client_id: Option<String>,
+    merchant_id: String,
+    environment: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct TipsResponse {
+    tips: Option<PublicTips>,
+}
+
+async fn handle_tips(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<TipsResponse> {
+    Json(TipsResponse {
+        tips: api.song_requests.get(&id).tips.map(|tips| PublicTips {
+            amounts: tips.amounts,
+            currency: tips.currency,
+            client_id: api
+                .paypal
+                .as_ref()
+                .map(|paypal| paypal.client_id().to_string()),
+            merchant_id: tips.merchant_id,
+            environment: api.paypal.as_ref().map(PayPal::environment),
+        }),
+    })
+}
+
 type Failure = (StatusCode, String);
 
 fn failure(status: StatusCode, text: &str) -> Failure {
@@ -670,12 +764,13 @@ fn song_and_user(request: SongRequest) -> Result<(String, String), Failure> {
         StatusCode::BAD_REQUEST,
         "Paste the Apple Music share link of a song.",
     ))?;
-    let user = request
-        .user
-        .map(|user| user.trim().chars().take(25).collect::<String>())
+    Ok((link, user_name(request.user, "Moblin website")))
+}
+
+fn user_name(user: Option<String>, anonymous: &str) -> String {
+    user.map(|user| user.trim().chars().take(25).collect::<String>())
         .filter(|user| !user.is_empty())
-        .unwrap_or_else(|| "Moblin website".to_string());
-    Ok((link, user))
+        .unwrap_or_else(|| anonymous.to_string())
 }
 
 async fn requested_song(
@@ -764,15 +859,14 @@ async fn handle_order(
         .paypal
         .as_ref()
         .filter(|_| !paywall.merchant_id.is_empty())
-        .ok_or(failure(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Payments are unavailable right now. Try again later.",
-        ))?;
+        .ok_or_else(paypal_unavailable)?;
     let song = requested_song(&api, &id, song_and_user(request)?).await?;
     let order = Order {
         streamer: id.clone(),
-        link: song.link,
-        song: song.name,
+        item: Item::Song {
+            link: song.link,
+            name: song.name,
+        },
         user: song.user,
         merchant_id: paywall.merchant_id,
         price: paywall.price,
@@ -792,42 +886,48 @@ async fn handle_capture(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    tokio::spawn(capture(api, id, order_id))
+    tokio::spawn(capture_song(api, id, order_id))
         .await
-        .unwrap_or_else(|_| {
-            Err(failure(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Something went wrong with the payment.",
-            ))
-        })
+        .unwrap_or_else(|_| Err(capture_crashed()))
 }
 
-async fn capture(
-    api: Arc<Api>,
-    id: String,
-    order_id: String,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let paypal = api.paypal.as_ref().ok_or(failure(
+fn capture_crashed() -> Failure {
+    failure(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Something went wrong with the payment.",
+    )
+}
+
+fn paypal_unavailable() -> Failure {
+    failure(
         StatusCode::SERVICE_UNAVAILABLE,
         "Payments are unavailable right now. Try again later.",
-    ))?;
+    )
+}
+
+async fn capture(api: &Api, id: &str, order_id: &str, tip: bool) -> Result<Order, Failure> {
+    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
     let order = paypal
-        .order(&order_id)
-        .filter(|order| order.streamer == id)
+        .order(order_id)
+        .filter(|order| order.streamer == id && matches!(order.item, Item::Tip { .. }) == tip)
         .ok_or(failure(
             StatusCode::GONE,
             "This payment is unknown or expired, so no money was taken.",
         ))?;
-    if !api.remote_control.is_connected(&id) {
+    if !tip && !api.remote_control.is_connected(id) {
         return Err(failure(
             StatusCode::NOT_FOUND,
             "The streamer went offline, so your payment was not taken.",
         ));
     }
     paypal
-        .capture(&order_id, &order)
+        .capture(order_id, &order)
         .await
         .map_err(|error| match error {
+            CaptureError::NotApproved if tip => failure(
+                StatusCode::PAYMENT_REQUIRED,
+                "The payment was not completed.",
+            ),
             CaptureError::NotApproved => failure(
                 StatusCode::PAYMENT_REQUIRED,
                 "The payment was not completed. No song was added.",
@@ -835,6 +935,10 @@ async fn capture(
             CaptureError::AlreadyCaptured => {
                 failure(StatusCode::CONFLICT, "This payment was already used.")
             }
+            CaptureError::Pending if tip => failure(
+                StatusCode::PAYMENT_REQUIRED,
+                "PayPal is still reviewing the payment. Your tip reaches the streamer once PayPal approves it.",
+            ),
             CaptureError::Pending => failure(
                 StatusCode::PAYMENT_REQUIRED,
                 "PayPal is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund.",
@@ -850,12 +954,121 @@ async fn capture(
         format_price(order.price),
         order.currency
     );
+    Ok(order)
+}
+
+async fn capture_song(
+    api: Arc<Api>,
+    id: String,
+    order_id: String,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let order = capture(&api, &id, &order_id, false).await?;
+    let Item::Song { link, name } = order.item else {
+        return Err(capture_crashed());
+    };
     let song = RequestedSong {
-        link: order.link,
+        link,
         user: order.user,
-        name: order.song,
+        name,
     };
     Ok(queue(&api, id, order_id, song))
+}
+
+#[derive(Deserialize)]
+struct TipRequest {
+    amount: u32,
+    user: Option<String>,
+    message: Option<String>,
+}
+
+async fn handle_tip_order(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    Json(request): Json<TipRequest>,
+) -> Result<Json<OrderResponse>, Failure> {
+    let tips = api.song_requests.get(&id).tips.ok_or(failure(
+        StatusCode::BAD_REQUEST,
+        "The streamer no longer takes tips. Reload the page.",
+    ))?;
+    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
+    if !valid_price(request.amount) {
+        return Err(failure(StatusCode::BAD_REQUEST, "Tip from 0.50 to 1000."));
+    }
+    let message = request
+        .message
+        .map(|message| message.trim().to_string())
+        .filter(|message| !message.is_empty());
+    if message
+        .as_ref()
+        .is_some_and(|message| message.chars().count() > 200)
+    {
+        return Err(failure(
+            StatusCode::BAD_REQUEST,
+            "The message can be at most 200 characters.",
+        ));
+    }
+    let order = Order {
+        streamer: id.clone(),
+        item: Item::Tip { message },
+        user: user_name(request.user, "Someone"),
+        merchant_id: tips.merchant_id,
+        price: request.amount,
+        currency: tips.currency,
+    };
+    let order_id = paypal.create_order(order).await.map_err(|error| {
+        warn!("creating a PayPal tip order for remote control streamer {id} failed: {error:#}");
+        failure(
+            StatusCode::BAD_GATEWAY,
+            "PayPal could not start the payment. Try again.",
+        )
+    })?;
+    Ok(Json(OrderResponse { order_id }))
+}
+
+async fn handle_tip_capture(
+    State(api): State<Arc<Api>>,
+    Path((id, order_id)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    tokio::spawn(capture_tip(api, id, order_id))
+        .await
+        .unwrap_or_else(|_| Err(capture_crashed()))
+}
+
+async fn capture_tip(
+    api: Arc<Api>,
+    id: String,
+    order_id: String,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let order = capture(&api, &id, &order_id, true).await?;
+    let Item::Tip { message } = order.item else {
+        return Err(capture_crashed());
+    };
+    info!("remote control streamer {id} got tip {order_id}");
+    if let Some(url) = api
+        .song_requests
+        .get(&id)
+        .tips
+        .and_then(|tips| tips.webhook_url)
+    {
+        let account = api.accounts.of_page(&id);
+        let body = json!({
+            "type": "tip",
+            "id": order_id,
+            "streamer": {
+                "login": account.as_ref().map(|account| &account.login),
+                "name": account.as_ref().map(|account| &account.name),
+            },
+            "user": order.user,
+            "message": message,
+            "amount": {"value": format_price(order.price), "currency": order.currency},
+            "time": song_queue::now(),
+        });
+        tokio::spawn(async move { api.webhooks.deliver(&url, &body).await });
+    }
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(Value::Object(Default::default())),
+    ))
 }
 
 fn verify(
@@ -938,6 +1151,7 @@ mod tests {
             song_requests,
             paypal,
             song_queue: SongQueue::load(None).unwrap(),
+            webhooks: Webhooks::new(reqwest::Client::new(), true),
             auth: Auth::new(
                 reqwest::Client::new(),
                 "http://localhost".to_string(),
@@ -1480,6 +1694,161 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tips_are_posted_to_the_webhook() {
+        let (address, api, paypal_order) = start_paid().await;
+        let client = reqwest::Client::new();
+        let (session, _, id) = streamer(&address, &api).await;
+        let tips_url = format!("http://{address}/remote-control/{id}/tips");
+        let public: Value = client
+            .get(&tips_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(public, json!({"tips": null}));
+        let orders_url = format!("{tips_url}/orders");
+        let response = client
+            .post(&orders_url)
+            .json(&json!({"amount": 500}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let (webhook_sender, mut webhooks) = tokio::sync::mpsc::unbounded_channel::<Value>();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let webhook_url = format!("http://{}/tips?token=x", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let router = Router::new().route(
+                "/tips",
+                post(move |Json(body): Json<Value>| async move {
+                    webhook_sender.send(body).unwrap();
+                    StatusCode::NO_CONTENT
+                }),
+            );
+            axum::serve(listener, router).await
+        });
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null, "tips": {
+                "merchantId": "merchant00001", "currency": "usd", "amounts": [500],
+                "webhookUrl": "ftp://example.com/tips",
+            }}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let settings: Value = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null, "tips": {
+                "merchantId": "merchant00001", "currency": "usd", "amounts": [1000, 200, 500],
+                "webhookUrl": format!(" {webhook_url} "),
+            }}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            settings["tips"],
+            json!({
+                "merchantId": "MERCHANT00001",
+                "currency": "USD",
+                "amounts": [200, 500, 1000],
+                "webhookUrl": webhook_url,
+            })
+        );
+        let public: Value = client
+            .get(&tips_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            public,
+            json!({"tips": {
+                "amounts": [200, 500, 1000],
+                "currency": "USD",
+                "clientId": "id",
+                "merchantId": "MERCHANT00001",
+                "environment": "production",
+            }})
+        );
+        for request in [
+            json!({"amount": 49}),
+            json!({"amount": 700, "message": "a".repeat(201)}),
+        ] {
+            let response = client
+                .post(&orders_url)
+                .json(&request)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        let order: Value = client
+            .post(&orders_url)
+            .json(&json!({"amount": 700, "user": " Viewer ", "message": " Great stream! "}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(order, json!({"orderId": "ORDER1"}));
+        let sent = paypal_order.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            sent["purchase_units"][0]["amount"],
+            json!({"currency_code": "USD", "value": "7.00"})
+        );
+        assert_eq!(
+            sent["purchase_units"][0]["description"],
+            "Tip from Viewer: Great stream!"
+        );
+        let response = client
+            .post(format!(
+                "http://{address}/remote-control/{id}/music/orders/ORDER1/capture"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+        let response = client
+            .post(format!("{orders_url}/ORDER1/capture"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let mut posted = webhooks.recv().await.unwrap();
+        assert!(posted["time"].as_u64().unwrap() >= song_queue::now() - 10);
+        posted["time"] = json!(0);
+        assert_eq!(
+            posted,
+            json!({
+                "type": "tip",
+                "id": "ORDER1",
+                "streamer": {"login": "erik", "name": "Erik"},
+                "user": "Viewer",
+                "message": "Great stream!",
+                "amount": {"value": "7.00", "currency": "USD"},
+                "time": 0,
+            })
+        );
+        let response = client
+            .post(format!("{orders_url}/ORDER1/capture"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+    }
+
+    #[tokio::test]
     async fn songs_are_added_through_the_streamer() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
@@ -1936,6 +2305,27 @@ mod tests {
             api.song_requests.get(&id).paywall.unwrap().merchant_id,
             "MERCHANT00001"
         );
+        let tips = |merchant_id: &str| {
+            json!({"paywall": null, "tips": {
+                "merchantId": merchant_id, "currency": "SEK", "amounts": [500],
+            }})
+        };
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&old)
+            .json(&tips("MERCHANT00002"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&old)
+            .json(&tips("MERCHANT00001"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
         let response = save(old, None).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }

@@ -13,6 +13,8 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paywall: Option<Paywall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tips: Option<Tips>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -26,6 +28,16 @@ pub struct Paywall {
     pub merchant_id: String,
     pub price: u32,
     pub currency: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Tips {
+    #[serde(rename = "merchantId")]
+    pub merchant_id: String,
+    pub currency: String,
+    pub amounts: Vec<u32>,
+    #[serde(default, rename = "webhookUrl")]
+    pub webhook_url: Option<String>,
 }
 
 pub const CURRENCIES: [&str; 16] = [
@@ -51,6 +63,10 @@ impl Settings {
             Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
             None => None,
         };
+        let tips = match self.tips {
+            Some(tips) => Some(tips.normalize().ok_or(SettingsError::InvalidTips)?),
+            None => None,
+        };
         let accent = match self.accent {
             Some(accent) if !ACCENTS.contains(&accent.as_str()) => {
                 return Err(SettingsError::InvalidPage);
@@ -59,6 +75,7 @@ impl Settings {
         };
         Ok(Self {
             paywall,
+            tips,
             title: text(self.title, 60)?,
             message: text(self.message, 300)?,
             accent,
@@ -70,13 +87,20 @@ pub fn format_price(price: u32) -> String {
     format!("{}.{:02}", price / 100, price % 100)
 }
 
+pub fn valid_price(price: u32) -> bool {
+    (50..=100_000).contains(&price)
+}
+
+fn valid_merchant_id(merchant_id: &str) -> bool {
+    merchant_id.len() == 13 && merchant_id.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
 impl Paywall {
     pub fn normalize(self) -> Option<Self> {
         let merchant_id = self.merchant_id.trim().to_uppercase();
         let currency = self.currency.trim().to_uppercase();
-        let valid = merchant_id.len() == 13
-            && merchant_id.chars().all(|c| c.is_ascii_alphanumeric())
-            && (50..=100_000).contains(&self.price)
+        let valid = valid_merchant_id(&merchant_id)
+            && valid_price(self.price)
             && CURRENCIES.contains(&currency.as_str());
         valid.then_some(Self {
             merchant_id,
@@ -86,9 +110,33 @@ impl Paywall {
     }
 }
 
+impl Tips {
+    pub fn normalize(self) -> Option<Self> {
+        let merchant_id = self.merchant_id.trim().to_uppercase();
+        let currency = self.currency.trim().to_uppercase();
+        let mut amounts = self.amounts;
+        amounts.sort_unstable();
+        amounts.dedup();
+        let valid = valid_merchant_id(&merchant_id)
+            && (1..=4).contains(&amounts.len())
+            && amounts.iter().all(|amount| valid_price(*amount))
+            && CURRENCIES.contains(&currency.as_str());
+        valid.then_some(Self {
+            merchant_id,
+            currency,
+            amounts,
+            webhook_url: self
+                .webhook_url
+                .map(|url| url.trim().to_string())
+                .filter(|url| !url.is_empty()),
+        })
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
     InvalidPaywall,
+    InvalidTips,
     InvalidPage,
     Full,
     NotSaved,
@@ -211,6 +259,43 @@ mod tests {
         }
         assert!(song_requests.set("a", Settings::default()).is_ok());
         assert_eq!(song_requests.get("a"), Settings::default());
+    }
+
+    #[test]
+    fn tips_are_validated() {
+        let song_requests = SongRequests::load(None).unwrap();
+        let tips = |merchant_id: &str, currency: &str, amounts: &[u32]| Settings {
+            tips: Some(Tips {
+                merchant_id: merchant_id.to_string(),
+                currency: currency.to_string(),
+                amounts: amounts.to_vec(),
+                webhook_url: None,
+            }),
+            ..Settings::default()
+        };
+        assert_eq!(
+            song_requests
+                .set("a", tips(" abcdefghjklmn ", "usd", &[1000, 200, 500, 200]))
+                .unwrap(),
+            tips("ABCDEFGHJKLMN", "USD", &[200, 500, 1000])
+        );
+        assert_eq!(
+            song_requests.get("a").tips.unwrap().amounts,
+            [200, 500, 1000]
+        );
+        for (merchant_id, currency, amounts) in [
+            ("ABCDEFGHJKLM", "USD", &[200][..]),
+            ("ABCDEFGHJKLMN", "JPY", &[200]),
+            ("ABCDEFGHJKLMN", "USD", &[]),
+            ("ABCDEFGHJKLMN", "USD", &[100, 200, 300, 400, 500]),
+            ("ABCDEFGHJKLMN", "USD", &[49, 200]),
+            ("ABCDEFGHJKLMN", "USD", &[100_001]),
+        ] {
+            assert_eq!(
+                song_requests.set("a", tips(merchant_id, currency, amounts)),
+                Err(SettingsError::InvalidTips)
+            );
+        }
     }
 
     #[test]

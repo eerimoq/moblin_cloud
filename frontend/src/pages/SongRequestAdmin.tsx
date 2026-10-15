@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
 import Icon from "../components/Icon";
@@ -32,6 +32,7 @@ import {
   type Page,
   type Paywall,
   type Settings,
+  type Tips,
 } from "../data/remoteControl";
 
 const pageUrl = (account: Account) =>
@@ -74,11 +75,11 @@ function TwitchSignIn(props: { failed: boolean }) {
 
 const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
 
-function paywallErrorText(error: unknown) {
+function paymentErrorText(error: unknown, invalid: string) {
   if (error instanceof BackendError) {
     switch (error.status) {
       case 400:
-        return "Enter your 13 character PayPal merchant ID and a price from 0.50 to 1000.";
+        return invalid;
       case 403:
         return "To change your PayPal merchant ID, sign in again first.";
       case 422:
@@ -234,7 +235,12 @@ function Payments(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(paywallErrorText(error));
+      setError(
+        paymentErrorText(
+          error,
+          "Enter your 13 character PayPal merchant ID and a price from 0.50 to 1000.",
+        ),
+      );
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -258,25 +264,7 @@ function Payments(props: {
         Viewers pay to add songs
       </label>
       <Show when={required()}>
-        <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">Your PayPal merchant ID</span>
-          <input
-            type="text"
-            required
-            minLength={13}
-            maxLength={13}
-            value={merchantId()}
-            onInput={(event) => setMerchantId(event.currentTarget.value)}
-            placeholder="ABCDEFGHJKLMN"
-            autocomplete="off"
-            autocapitalize="characters"
-            spellcheck={false}
-            class={`${inputClass} font-mono uppercase`}
-          />
-          <span class="text-[15px] text-muted">
-            Find it on PayPal under Account settings, Business information.
-          </span>
-        </label>
+        <MerchantId value={merchantId()} onInput={setMerchantId} />
         <div class="flex flex-wrap gap-4">
           <label class="flex min-w-40 flex-1 flex-col gap-2">
             <span class="text-[15px] font-semibold text-ink-2">Price per song</span>
@@ -292,17 +280,185 @@ function Payments(props: {
               class={inputClass}
             />
           </label>
-          <label class="flex w-32 flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">Currency</span>
-            <select
-              value={currency()}
-              onChange={(event) => setCurrency(event.currentTarget.value)}
-              class={inputClass}
-            >
-              <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
-            </select>
-          </label>
+          <CurrencySelect value={currency()} onChange={setCurrency} />
         </div>
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
+        <Show when={error()}>
+          {(error) => (
+            <p role="status" class="text-amber">
+              {error()}
+            </p>
+          )}
+        </Show>
+        <Show when={signInAgain()}>
+          <a href={signInUrl} class={ghostButtonClass}>
+            Sign in again
+          </a>
+        </Show>
+      </div>
+    </form>
+  );
+}
+
+function MerchantId(props: { value: string; onInput: (value: string) => void }) {
+  return (
+    <label class="flex flex-col gap-2">
+      <span class="text-[15px] font-semibold text-ink-2">Your PayPal merchant ID</span>
+      <input
+        type="text"
+        required
+        minLength={13}
+        maxLength={13}
+        value={props.value}
+        onInput={(event) => props.onInput(event.currentTarget.value)}
+        placeholder="ABCDEFGHJKLMN"
+        autocomplete="off"
+        autocapitalize="characters"
+        spellcheck={false}
+        class={`${inputClass} font-mono uppercase`}
+      />
+      <span class="text-[15px] text-muted">
+        Find it on PayPal under Account settings, Business information.
+      </span>
+    </label>
+  );
+}
+
+function CurrencySelect(props: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label class="flex w-32 flex-col gap-2">
+      <span class="text-[15px] font-semibold text-ink-2">Currency</span>
+      <select
+        value={props.value}
+        onChange={(event) => props.onChange(event.currentTarget.value)}
+        class={inputClass}
+      >
+        <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
+      </select>
+    </label>
+  );
+}
+
+function TipSettings(props: {
+  tips: Tips | null;
+  paywall: Paywall | null;
+  busy: boolean;
+  onSave: (changes: { tips: Tips | null }) => Promise<void>;
+}) {
+  const [enabled, setEnabled] = createSignal(props.tips !== null);
+  const [merchantId, setMerchantId] = createSignal(
+    props.tips?.merchantId ?? props.paywall?.merchantId ?? "",
+  );
+  const [currency, setCurrency] = createSignal(
+    props.tips?.currency ?? props.paywall?.currency ?? "USD",
+  );
+  const [webhookUrl, setWebhookUrl] = createSignal(props.tips?.webhookUrl ?? "");
+  const [amounts, setAmounts] = createSignal(
+    (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
+  );
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [error, setError] = createSignal<string | null>(null);
+  const [signInAgain, setSignInAgain] = createSignal(false);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.busy) {
+      return;
+    }
+    setError(null);
+    setSignInAgain(false);
+    setSaving(true);
+    try {
+      await props.onSave({
+        tips: enabled()
+          ? {
+              merchantId: merchantId().trim(),
+              currency: currency(),
+              amounts: amounts()
+                .filter((amount) => amount.trim())
+                .map((amount) => Math.round(Number.parseFloat(amount) * 100)),
+              webhookUrl: webhookUrl().trim() || null,
+            }
+          : null,
+      });
+      flashSaved();
+    } catch (error) {
+      setError(
+        paymentErrorText(
+          error,
+          "Enter your 13 character PayPal merchant ID, amounts from 0.50 to 1000 and a webhook URL starting with https://.",
+        ),
+      );
+      setSignInAgain(error instanceof BackendError && error.status === 403);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">Tips</h2>
+      <p class="text-ink-2">
+        Let viewers tip you with PayPal. Viewers pick one of your amounts or enter their own, and
+        can add a message. The money goes straight to your PayPal account.
+      </p>
+      <label class="flex items-center gap-3 text-ink-2">
+        <input
+          type="checkbox"
+          checked={enabled()}
+          onChange={(event) => setEnabled(event.currentTarget.checked)}
+          class="size-5 accent-moss"
+        />
+        Viewers can send tips
+      </label>
+      <Show when={enabled()}>
+        <MerchantId value={merchantId()} onInput={setMerchantId} />
+        <fieldset class="flex flex-col gap-2">
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Suggested amounts</legend>
+          <div class="flex flex-wrap items-end gap-4">
+            <Index each={amounts()}>
+              {(amount, index) => (
+                <input
+                  type="number"
+                  required={index === 0}
+                  min="0.5"
+                  max="1000"
+                  step="0.01"
+                  inputmode="decimal"
+                  aria-label={`Amount ${index + 1}`}
+                  value={amount()}
+                  onInput={(event) =>
+                    setAmounts(
+                      amounts().map((old, at) => (at === index ? event.currentTarget.value : old)),
+                    )
+                  }
+                  class={`${inputClass} max-w-32`}
+                />
+              )}
+            </Index>
+            <CurrencySelect value={currency()} onChange={setCurrency} />
+          </div>
+        </fieldset>
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">Webhook URL (optional)</span>
+          <input
+            type="url"
+            maxLength={500}
+            value={webhookUrl()}
+            onInput={(event) => setWebhookUrl(event.currentTarget.value)}
+            placeholder="https://example.com/tips?token=…"
+            autocomplete="off"
+            spellcheck={false}
+            class={inputClass}
+          />
+          <span class="text-[15px] text-muted">
+            Every tip is posted to this URL as JSON, with the name, message and amount. Put a secret
+            in the URL so nobody else can post fake tips to it.
+          </span>
+        </label>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
@@ -393,6 +549,14 @@ function Admin(props: {
       <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
       <Show when={settings().paypal || settings().paywall}>
         <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
+      </Show>
+      <Show when={settings().paypal || settings().tips}>
+        <TipSettings
+          tips={settings().tips}
+          paywall={settings().paywall}
+          busy={busy()}
+          onSave={save}
+        />
       </Show>
       <div class={cardClass}>
         <h2 class="text-[23px] font-semibold">Connect Moblin</h2>
@@ -531,7 +695,7 @@ export default function SongRequestAdmin() {
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
           Sign in with Twitch to get your own song request page at moblin.app/twitch/your-name.
           Viewers add songs from Apple Music to the queue of Moblin's music player, for free or for
-          a price you set.
+          a price you set, and can send you tips with a message.
         </p>
       </Hero>
       <Band>

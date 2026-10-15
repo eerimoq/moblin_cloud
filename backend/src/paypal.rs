@@ -16,10 +16,15 @@ pub const LIVE_URL: &str = "https://api-m.paypal.com";
 pub const SANDBOX_URL: &str = "https://api-m.sandbox.paypal.com";
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Item {
+    Song { link: String, name: String },
+    Tip { message: Option<String> },
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Order {
     pub streamer: String,
-    pub link: String,
-    pub song: String,
+    pub item: Item,
     pub user: String,
     pub merchant_id: String,
     pub price: u32,
@@ -28,10 +33,14 @@ pub struct Order {
 
 impl Order {
     fn body(&self) -> Value {
-        let description: String = format!("Song request: {}", self.song)
-            .chars()
-            .take(127)
-            .collect();
+        let description = match &self.item {
+            Item::Song { name, .. } => format!("Song request: {name}"),
+            Item::Tip { message: None } => format!("Tip from {}", self.user),
+            Item::Tip {
+                message: Some(message),
+            } => format!("Tip from {}: {message}", self.user),
+        };
+        let description: String = description.chars().take(127).collect();
         json!({
             "intent": "CAPTURE",
             "purchase_units": [{
@@ -107,8 +116,10 @@ impl PayPal {
     ) -> Result<(), PayeeError> {
         let order = Order {
             streamer: String::new(),
-            link: String::new(),
-            song: "Check".to_string(),
+            item: Item::Song {
+                link: String::new(),
+                name: "Check".to_string(),
+            },
             user: String::new(),
             merchant_id: merchant_id.to_string(),
             price,

@@ -14,6 +14,7 @@ mod song_queue;
 mod song_requests;
 mod store;
 mod twitch;
+mod webhooks;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -40,6 +41,7 @@ use crate::song_queue::SongQueue;
 use crate::song_requests::SongRequests;
 use crate::store::Store;
 use crate::twitch::Twitch;
+use crate::webhooks::Webhooks;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -141,9 +143,18 @@ struct Cli {
     /// query parameter of the sign in URL.
     #[arg(long)]
     fake_twitch_sign_in: bool,
+    /// Lets tip webhooks use http and local hosts, for local development only.
+    #[arg(long)]
+    allow_local_webhooks: bool,
 }
 
 fn http_client() -> Client {
+    http_client_builder()
+        .build()
+        .expect("a client without a proxy or TLS config always builds")
+}
+
+fn http_client_builder() -> reqwest::ClientBuilder {
     Client::builder()
         .user_agent(concat!(
             env!("CARGO_PKG_NAME"),
@@ -152,8 +163,6 @@ fn http_client() -> Client {
             " (+https://moblin.app)"
         ))
         .timeout(TIMEOUT)
-        .build()
-        .expect("a client without a proxy or TLS config always builds")
 }
 
 #[tokio::main]
@@ -264,6 +273,13 @@ async fn main() -> Result<()> {
         song_queue,
         auth,
         accounts,
+        webhooks: Webhooks::new(
+            http_client_builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("a client without a proxy or TLS config always builds"),
+            cli.allow_local_webhooks,
+        ),
     });
     tokio::spawn({
         let api = api.clone();

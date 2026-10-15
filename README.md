@@ -250,6 +250,52 @@ and `PAYPAL_CLIENT_SECRET`). `--paypal-sandbox` (or `PAYPAL_SANDBOX=true`)
 uses the PayPal sandbox instead. Without credentials streamers can't turn
 paid requests on, and paywalled pages answer 503 when a viewer tries to pay.
 
+### Tips
+
+Viewers can also tip a streamer with PayPal from the same page, picking one
+of the streamer's suggested amounts or entering their own (0.50 to 1000),
+with an optional name and a message of at most 200 characters. Streamers turn
+tips on with `"tips": {"merchantId", "currency", "amounts", "webhookUrl"}` in
+`POST /account/settings` (one to four amounts in hundredths and an optional
+webhook URL, or `null` to turn them off). The merchant ID is checked with PayPal and needs a recent sign
+in just like the paywall's, unless it is already the paywall's or the tips'
+merchant ID.
+
+`GET /remote-control/<id>/tips` answers `{"tips": {"amounts", "currency",
+"clientId", "merchantId", "environment"}}` or `{"tips": null}`. The page
+creates the order with `POST /remote-control/<id>/tips/orders` and
+`{"amount", "user", "message"}` and captures it with
+`POST /remote-control/<id>/tips/orders/<order id>/capture`, answering 202.
+Unlike songs, tips don't need the streamer to be connected. Song orders can't
+be captured as tips and the other way around. The PayPal order description is
+`Tip from <user>: <message>`, cut at PayPal's 127 characters.
+
+After a completed capture the backend posts the tip to the streamer's webhook
+URL, if they set one:
+
+```
+{
+  "type": "tip",
+  "id": "<PayPal order id>",
+  "streamer": {"login": "erik", "name": "Erik"},
+  "user": "Viewer",
+  "message": "Great stream!",
+  "amount": {"value": "7.00", "currency": "USD"},
+  "time": 1792082549
+}
+```
+
+`user` is `Someone` when the viewer gave no name and `message` is `null`
+without one. `time` is in seconds since 1970. Any 2xx answer counts as
+delivered; otherwise it is retried every 10 seconds, six times in all, and
+then forgotten (also on restart). The id is the same in every retry, so
+receivers can drop duplicates. Webhook posts are not signed, so streamers
+should put a secret in the URL. Webhook URLs must be `https` URLs of a public
+host name (no IP addresses, `localhost`, `.local` or `.internal`, at most 500
+characters), and redirects are not followed, so the backend can't be pointed
+at internal services. `--allow-local-webhooks` allows any `http` or `https`
+URL, for local development only (`just backend-run` passes it).
+
 To try song requests locally without Twitch or a phone:
 
 1. `just backend-run` and `just frontend-run`.
