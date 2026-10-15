@@ -15,6 +15,8 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tips: Option<Tips>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spin: Option<Spin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -38,6 +40,22 @@ pub struct Tips {
     pub amounts: Vec<u32>,
     #[serde(default, rename = "webhookUrl")]
     pub webhook_url: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Spin {
+    #[serde(rename = "merchantId")]
+    pub merchant_id: String,
+    pub options: Vec<SpinOption>,
+    pub currency: String,
+    #[serde(rename = "webhookUrl")]
+    pub webhook_url: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SpinOption {
+    pub spins: u32,
+    pub price: u32,
 }
 
 pub const CURRENCIES: [&str; 16] = [
@@ -67,6 +85,10 @@ impl Settings {
             Some(tips) => Some(tips.normalize().ok_or(SettingsError::InvalidTips)?),
             None => None,
         };
+        let spin = match self.spin {
+            Some(spin) => Some(spin.normalize().ok_or(SettingsError::InvalidSpin)?),
+            None => None,
+        };
         let accent = match self.accent {
             Some(accent) if !ACCENTS.contains(&accent.as_str()) => {
                 return Err(SettingsError::InvalidPage);
@@ -76,6 +98,7 @@ impl Settings {
         Ok(Self {
             paywall,
             tips,
+            spin,
             title: text(self.title, 60)?,
             message: text(self.message, 300)?,
             accent,
@@ -133,10 +156,37 @@ impl Tips {
     }
 }
 
+impl Spin {
+    pub fn normalize(self) -> Option<Self> {
+        let merchant_id = self.merchant_id.trim().to_uppercase();
+        let currency = self.currency.trim().to_uppercase();
+        let webhook_url = self.webhook_url.trim().to_string();
+        let mut options = self.options;
+        options.sort_unstable_by_key(|option| option.spins);
+        let valid = valid_merchant_id(&merchant_id)
+            && (1..=4).contains(&options.len())
+            && options
+                .iter()
+                .all(|option| (1..=100).contains(&option.spins) && valid_price(option.price))
+            && options
+                .windows(2)
+                .all(|pair| pair[0].spins != pair[1].spins)
+            && CURRENCIES.contains(&currency.as_str())
+            && !webhook_url.is_empty();
+        valid.then_some(Self {
+            merchant_id,
+            options,
+            currency,
+            webhook_url,
+        })
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
     InvalidPaywall,
     InvalidTips,
+    InvalidSpin,
     InvalidPage,
     Full,
     NotSaved,
@@ -294,6 +344,58 @@ mod tests {
             assert_eq!(
                 song_requests.set("a", tips(merchant_id, currency, amounts)),
                 Err(SettingsError::InvalidTips)
+            );
+        }
+    }
+
+    #[test]
+    fn spins_are_validated() {
+        let song_requests = SongRequests::load(None).unwrap();
+        let spin =
+            |merchant_id: &str, options: &[(u32, u32)], currency: &str, webhook_url: &str| {
+                Settings {
+                    spin: Some(Spin {
+                        merchant_id: merchant_id.to_string(),
+                        options: options
+                            .iter()
+                            .map(|(spins, price)| SpinOption {
+                                spins: *spins,
+                                price: *price,
+                            })
+                            .collect(),
+                        currency: currency.to_string(),
+                        webhook_url: webhook_url.to_string(),
+                    }),
+                    ..Settings::default()
+                }
+            };
+        let url = "https://example.com/spin";
+        assert_eq!(
+            song_requests.set(
+                "a",
+                spin(" abcdefghjklmn ", &[(2, 800), (1, 500)], "eur", url)
+            ),
+            Ok(spin("ABCDEFGHJKLMN", &[(1, 500), (2, 800)], "EUR", url))
+        );
+        for (merchant_id, options, currency, webhook_url) in [
+            ("ABCDEFGHJKLM", &[(1, 500)][..], "EUR", url),
+            ("ABCDEFGHJKLMN", &[(1, 49)], "EUR", url),
+            ("ABCDEFGHJKLMN", &[(0, 500)], "EUR", url),
+            ("ABCDEFGHJKLMN", &[(101, 500)], "EUR", url),
+            ("ABCDEFGHJKLMN", &[(1, 500), (1, 800)], "EUR", url),
+            ("ABCDEFGHJKLMN", &[], "EUR", url),
+            (
+                "ABCDEFGHJKLMN",
+                &[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)],
+                "EUR",
+                url,
+            ),
+            ("ABCDEFGHJKLMN", &[(1, 500)], "JPY", url),
+            ("ABCDEFGHJKLMN", &[(1, 500)], "EUR", " "),
+        ] {
+            assert_eq!(
+                song_requests.set("a", spin(merchant_id, options, currency, webhook_url)),
+                Err(SettingsError::InvalidSpin)
             );
         }
     }

@@ -32,6 +32,7 @@ import {
   type Page,
   type Paywall,
   type Settings,
+  type Spin,
   type Tips,
 } from "../data/remoteControl";
 
@@ -341,6 +342,36 @@ function CurrencySelect(props: { value: string; onChange: (value: string) => voi
   );
 }
 
+function AmountInputs(props: { amounts: string[]; onAmounts: (amounts: string[]) => void }) {
+  return (
+    <Index each={props.amounts}>
+      {(amount, index) => (
+        <input
+          type="number"
+          required={index === 0}
+          min="0.5"
+          max="1000"
+          step="0.01"
+          inputmode="decimal"
+          aria-label={`Amount ${index + 1}`}
+          value={amount()}
+          onInput={(event) =>
+            props.onAmounts(
+              props.amounts.map((old, at) => (at === index ? event.currentTarget.value : old)),
+            )
+          }
+          class={`${inputClass} max-w-32`}
+        />
+      )}
+    </Index>
+  );
+}
+
+const amountsOf = (amounts: string[]) =>
+  amounts
+    .filter((amount) => amount.trim())
+    .map((amount) => Math.round(Number.parseFloat(amount) * 100));
+
 function TipSettings(props: {
   tips: Tips | null;
   paywall: Paywall | null;
@@ -377,9 +408,7 @@ function TipSettings(props: {
           ? {
               merchantId: merchantId().trim(),
               currency: currency(),
-              amounts: amounts()
-                .filter((amount) => amount.trim())
-                .map((amount) => Math.round(Number.parseFloat(amount) * 100)),
+              amounts: amountsOf(amounts()),
               webhookUrl: webhookUrl().trim() || null,
             }
           : null,
@@ -419,26 +448,7 @@ function TipSettings(props: {
         <fieldset class="flex flex-col gap-2">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">Suggested amounts</legend>
           <div class="flex flex-wrap items-end gap-4">
-            <Index each={amounts()}>
-              {(amount, index) => (
-                <input
-                  type="number"
-                  required={index === 0}
-                  min="0.5"
-                  max="1000"
-                  step="0.01"
-                  inputmode="decimal"
-                  aria-label={`Amount ${index + 1}`}
-                  value={amount()}
-                  onInput={(event) =>
-                    setAmounts(
-                      amounts().map((old, at) => (at === index ? event.currentTarget.value : old)),
-                    )
-                  }
-                  class={`${inputClass} max-w-32`}
-                />
-              )}
-            </Index>
+            <AmountInputs amounts={amounts()} onAmounts={setAmounts} />
             <CurrencySelect value={currency()} onChange={setCurrency} />
           </div>
         </fieldset>
@@ -457,6 +467,166 @@ function TipSettings(props: {
           <span class="text-[15px] text-muted">
             Every tip is posted to this URL as JSON, with the name, message and amount. Put a secret
             in the URL so nobody else can post fake tips to it.
+          </span>
+        </label>
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
+        <Show when={error()}>
+          {(error) => (
+            <p role="status" class="text-amber">
+              {error()}
+            </p>
+          )}
+        </Show>
+        <Show when={signInAgain()}>
+          <a href={signInUrl} class={ghostButtonClass}>
+            Sign in again
+          </a>
+        </Show>
+      </div>
+    </form>
+  );
+}
+
+function SpinSettings(props: {
+  spin: Spin | null;
+  merchantId: string;
+  currency: string;
+  busy: boolean;
+  onSave: (changes: { spin: Spin | null }) => Promise<void>;
+}) {
+  const [enabled, setEnabled] = createSignal(props.spin !== null);
+  const [merchantId, setMerchantId] = createSignal(props.spin?.merchantId ?? props.merchantId);
+  const [options, setOptions] = createSignal(
+    (
+      props.spin?.options ?? [
+        { spins: 1, price: 500 },
+        { spins: 2, price: 800 },
+        { spins: 5, price: 1500 },
+      ]
+    ).map((option) => ({ spins: String(option.spins), price: (option.price / 100).toFixed(2) })),
+  );
+  const [currency, setCurrency] = createSignal(props.spin?.currency ?? props.currency);
+
+  const changeOption = (index: number, change: Partial<{ spins: string; price: string }>) =>
+    setOptions(options().map((old, at) => (at === index ? { ...old, ...change } : old)));
+  const [webhookUrl, setWebhookUrl] = createSignal(props.spin?.webhookUrl ?? "");
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [error, setError] = createSignal<string | null>(null);
+  const [signInAgain, setSignInAgain] = createSignal(false);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.busy) {
+      return;
+    }
+    setError(null);
+    setSignInAgain(false);
+    setSaving(true);
+    try {
+      await props.onSave({
+        spin: enabled()
+          ? {
+              merchantId: merchantId().trim(),
+              options: options()
+                .filter((option) => option.spins.trim() && option.price.trim())
+                .map((option) => ({
+                  spins: Number.parseInt(option.spins),
+                  price: Math.round(Number.parseFloat(option.price) * 100),
+                })),
+              currency: currency(),
+              webhookUrl: webhookUrl().trim(),
+            }
+          : null,
+      });
+      flashSaved();
+    } catch (error) {
+      setError(
+        paymentErrorText(
+          error,
+          "Enter your 13 character PayPal merchant ID, 1 to 100 spins for 0.50 to 1000 per price and a webhook URL starting with https://.",
+        ),
+      );
+      setSignInAgain(error instanceof BackendError && error.status === 403);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">Spin the wheel</h2>
+      <p class="text-ink-2">
+        Let viewers pay with PayPal to spin your wheel, with a lower price per spin when they buy
+        more. Every purchase is posted to your webhook with the number of spins. The money goes
+        straight to your PayPal account.
+      </p>
+      <label class="flex items-center gap-3 text-ink-2">
+        <input
+          type="checkbox"
+          checked={enabled()}
+          onChange={(event) => setEnabled(event.currentTarget.checked)}
+          class="size-5 accent-moss"
+        />
+        Viewers can spin the wheel
+      </label>
+      <Show when={enabled()}>
+        <MerchantId value={merchantId()} onInput={setMerchantId} />
+        <fieldset class="flex flex-col gap-2">
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Prices</legend>
+          <div class="flex flex-col gap-3">
+            <Index each={options()}>
+              {(option, index) => (
+                <div class="flex items-center gap-3 text-ink-2">
+                  <input
+                    type="number"
+                    required={index === 0}
+                    min="1"
+                    max="100"
+                    step="1"
+                    inputmode="numeric"
+                    aria-label={`Spins ${index + 1}`}
+                    value={option().spins}
+                    onInput={(event) => changeOption(index, { spins: event.currentTarget.value })}
+                    class={`${inputClass} max-w-20`}
+                  />
+                  <span class="shrink-0">spins for</span>
+                  <input
+                    type="number"
+                    required={index === 0}
+                    min="0.5"
+                    max="1000"
+                    step="0.01"
+                    inputmode="decimal"
+                    aria-label={`Price ${index + 1}`}
+                    value={option().price}
+                    onInput={(event) => changeOption(index, { price: event.currentTarget.value })}
+                    class={`${inputClass} max-w-32`}
+                  />
+                </div>
+              )}
+            </Index>
+          </div>
+        </fieldset>
+        <CurrencySelect value={currency()} onChange={setCurrency} />
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">Webhook URL</span>
+          <input
+            type="url"
+            required
+            maxLength={500}
+            value={webhookUrl()}
+            onInput={(event) => setWebhookUrl(event.currentTarget.value)}
+            placeholder="https://example.com/spin?token=…"
+            autocomplete="off"
+            spellcheck={false}
+            class={inputClass}
+          />
+          <span class="text-[15px] text-muted">
+            Every spin is posted to this URL as JSON, with the name, amount, number of spins and
+            message. Put a secret in the URL so nobody else can post fake spins to it.
           </span>
         </label>
       </Show>
@@ -554,6 +724,15 @@ function Admin(props: {
         <TipSettings
           tips={settings().tips}
           paywall={settings().paywall}
+          busy={busy()}
+          onSave={save}
+        />
+      </Show>
+      <Show when={settings().paypal || settings().spin}>
+        <SpinSettings
+          spin={settings().spin}
+          merchantId={settings().tips?.merchantId ?? settings().paywall?.merchantId ?? ""}
+          currency={settings().tips?.currency ?? settings().paywall?.currency ?? "USD"}
           busy={busy()}
           onSave={save}
         />
@@ -695,7 +874,7 @@ export default function SongRequestAdmin() {
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
           Sign in with Twitch to get your own song request page at moblin.app/twitch/your-name.
           Viewers add songs from Apple Music to the queue of Moblin's music player, for free or for
-          a price you set, and can send you tips with a message.
+          a price you set, and can send you tips or pay to spin your wheel.
         </p>
       </Hero>
       <Band>

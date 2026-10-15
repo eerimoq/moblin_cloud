@@ -40,32 +40,32 @@ impl Webhooks {
             && !host.ends_with(".internal")
     }
 
-    pub async fn deliver(&self, url: &str, body: &Value) {
+    pub async fn deliver(&self, url: &str, id: &str, body: &Value) {
         for attempt in 1..=6 {
             if attempt > 1 {
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
             match self.client.post(url).json(body).send().await {
                 Ok(response) if response.status().is_success() => {
-                    info!("posted {} to webhook {url}", body["id"]);
+                    info!("posted {} to webhook {url}", id);
                     return;
                 }
                 Ok(response) => {
                     info!(
                         "webhook {url} answered {} to {} (attempt {attempt})",
                         response.status(),
-                        body["id"]
+                        id
                     );
                 }
                 Err(error) => {
                     info!(
                         "posting {} to webhook {url} failed (attempt {attempt}): {error:#}",
-                        body["id"]
+                        id
                     );
                 }
             }
         }
-        warn!("giving up posting {} to webhook {url}", body["id"]);
+        warn!("giving up posting {} to webhook {url}", id);
     }
 }
 

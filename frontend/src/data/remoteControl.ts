@@ -37,6 +37,18 @@ export type Tips = {
   webhookUrl: string | null;
 };
 
+export type SpinOption = {
+  spins: number;
+  price: number;
+};
+
+export type Spin = {
+  merchantId: string;
+  options: SpinOption[];
+  currency: string;
+  webhookUrl: string;
+};
+
 export type Page = {
   title: string | null;
   message: string | null;
@@ -48,6 +60,7 @@ export type Settings = Page & {
   connected: boolean;
   paywall: Paywall | null;
   tips: Tips | null;
+  spin: Spin | null;
   paypal: boolean;
 };
 
@@ -74,6 +87,14 @@ export type PayPalConfig = {
 
 export type PublicTips = {
   amounts: number[];
+  currency: string;
+  clientId: string | null;
+  merchantId: string;
+  environment: "production" | "sandbox" | null;
+};
+
+export type PublicSpin = {
+  options: SpinOption[];
   currency: string;
   clientId: string | null;
   merchantId: string;
@@ -170,6 +191,23 @@ export const orderTip = async (id: string, amount: number, user: string, message
 
 export const captureTip = (id: string, orderId: string) =>
   call<object>(`/${encodeURIComponent(id)}/tips/orders/${encodeURIComponent(orderId)}/capture`, {
+    method: "POST",
+  });
+
+export const streamerSpin = async (id: string) =>
+  (await call<{ spin: PublicSpin | null }>(`/${encodeURIComponent(id)}/spin`)).spin;
+
+export const orderSpin = async (id: string, spins: number, user: string, message: string) =>
+  (
+    await call<{ orderId: string }>(`/${encodeURIComponent(id)}/spin/orders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spins, user: user || null, message: message || null }),
+    })
+  ).orderId;
+
+export const captureSpin = (id: string, orderId: string) =>
+  call<object>(`/${encodeURIComponent(id)}/spin/orders/${encodeURIComponent(orderId)}/capture`, {
     method: "POST",
   });
 

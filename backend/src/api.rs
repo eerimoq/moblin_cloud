@@ -24,7 +24,8 @@ use crate::paypal::{CaptureError, Item, Order, PayPal, PayeeError};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers};
 use crate::song_queue::{self, QueuedSong, SongQueue};
 use crate::song_requests::{
-    Paywall, Settings, SettingsError, SongRequests, Tips, format_price, valid_price,
+    Paywall, Settings, SettingsError, SongRequests, Spin, SpinOption, Tips, format_price,
+    valid_price,
 };
 use crate::store::{Channel, Store, Streamer};
 use crate::webhooks::Webhooks;
@@ -86,6 +87,12 @@ pub fn router(api: Arc<Api>) -> Router {
         .route(
             "/remote-control/{id}/tips/orders/{order_id}/capture",
             post(handle_tip_capture),
+        )
+        .route("/remote-control/{id}/spin", get(handle_spin))
+        .route("/remote-control/{id}/spin/orders", post(handle_spin_order))
+        .route(
+            "/remote-control/{id}/spin/orders/{order_id}/capture",
+            post(handle_spin_capture),
         )
         .layer(cors)
         .with_state(api)
@@ -200,6 +207,7 @@ struct SettingsResponse {
     connected: bool,
     paywall: Option<Paywall>,
     tips: Option<Tips>,
+    spin: Option<Spin>,
     paypal: bool,
     title: Option<String>,
     message: Option<String>,
@@ -212,6 +220,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         id,
         paywall: settings.paywall,
         tips: settings.tips,
+        spin: settings.spin,
         paypal: api.paypal.is_some(),
         title: settings.title,
         message: settings.message,
@@ -224,6 +233,8 @@ struct SettingsRequest {
     paywall: Option<Paywall>,
     #[serde(default)]
     tips: Option<Tips>,
+    #[serde(default)]
+    spin: Option<Spin>,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -255,16 +266,27 @@ async fn update_settings(
     let tips = match request.tips {
         Some(tips) => {
             let tips = tips.normalize().ok_or_else(invalid_tips)?;
-            if let Some(url) = &tips.webhook_url
-                && !api.webhooks.allows(url)
-            {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "the webhook URL must be an https URL of a public host".to_string(),
-                ));
+            if let Some(url) = &tips.webhook_url {
+                check_webhook(api, url)?;
             }
             check_merchant(api, &id, &tips.merchant_id, tips.amounts[0], &tips.currency).await?;
             Some(tips)
+        }
+        None => None,
+    };
+    let spin = match request.spin {
+        Some(spin) => {
+            let spin = spin.normalize().ok_or_else(invalid_spin)?;
+            check_webhook(api, &spin.webhook_url)?;
+            check_merchant(
+                api,
+                &id,
+                &spin.merchant_id,
+                spin.options[0].price,
+                &spin.currency,
+            )
+            .await?;
+            Some(spin)
         }
         None => None,
     };
@@ -275,6 +297,7 @@ async fn update_settings(
             Settings {
                 paywall,
                 tips,
+                spin,
                 title: request.title,
                 message: request.message,
                 accent: request.accent,
@@ -283,6 +306,7 @@ async fn update_settings(
         .map_err(|error| match error {
             SettingsError::InvalidPaywall => invalid_paywall(),
             SettingsError::InvalidTips => invalid_tips(),
+            SettingsError::InvalidSpin => invalid_spin(),
             SettingsError::InvalidPage => (
                 StatusCode::BAD_REQUEST,
                 "the title can be at most 60 characters, the message at most 300 and the accent one of the supported colors".to_string(),
@@ -297,8 +321,13 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set paywall {:?}, tips {:?}, title {:?}, message {:?} and accent {:?}",
-        settings.paywall, settings.tips, settings.title, settings.message, settings.accent
+        "remote control streamer {id} set paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
+        settings.paywall,
+        settings.tips,
+        settings.spin,
+        settings.title,
+        settings.message,
+        settings.accent
     );
     Ok(settings_response(api, id, settings))
 }
@@ -511,6 +540,7 @@ async fn handle_account_settings(
     let new_merchant_ids = merchant_ids(&Settings {
         paywall: request.paywall.clone().and_then(Paywall::normalize),
         tips: request.tips.clone().and_then(Tips::normalize),
+        spin: request.spin.clone().and_then(Spin::normalize),
         ..Settings::default()
     });
     if new_merchant_ids
@@ -542,12 +572,33 @@ fn merchant_ids(settings: &Settings) -> Vec<String> {
         .as_ref()
         .map(|paywall| &paywall.merchant_id);
     let tips = settings.tips.as_ref().map(|tips| &tips.merchant_id);
+    let spin = settings.spin.as_ref().map(|spin| &spin.merchant_id);
     paywall
         .into_iter()
         .chain(tips)
+        .chain(spin)
         .filter(|merchant_id| !merchant_id.is_empty())
         .cloned()
         .collect()
+}
+
+fn invalid_spin() -> (StatusCode, String) {
+    (
+        StatusCode::BAD_REQUEST,
+        "the spin wheel needs a PayPal merchant ID, one to four options of 1 to 100 spins for 0.50 to 1000, a supported currency and a webhook URL"
+            .to_string(),
+    )
+}
+
+fn check_webhook(api: &Api, url: &str) -> Result<(), (StatusCode, String)> {
+    if api.webhooks.allows(url) {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::BAD_REQUEST,
+            "the webhook URL must be an https URL of a public host".to_string(),
+        ))
+    }
 }
 
 fn invalid_tips() -> (StatusCode, String) {
@@ -703,6 +754,36 @@ async fn handle_tips(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
                 .as_ref()
                 .map(|paypal| paypal.client_id().to_string()),
             merchant_id: tips.merchant_id,
+            environment: api.paypal.as_ref().map(PayPal::environment),
+        }),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicSpin {
+    options: Vec<SpinOption>,
+    currency: String,
+    client_id: Option<String>,
+    merchant_id: String,
+    environment: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct SpinResponse {
+    spin: Option<PublicSpin>,
+}
+
+async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SpinResponse> {
+    Json(SpinResponse {
+        spin: api.song_requests.get(&id).spin.map(|spin| PublicSpin {
+            options: spin.options,
+            currency: spin.currency,
+            client_id: api
+                .paypal
+                .as_ref()
+                .map(|paypal| paypal.client_id().to_string()),
+            merchant_id: spin.merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
         }),
     })
@@ -905,16 +986,16 @@ fn paypal_unavailable() -> Failure {
     )
 }
 
-async fn capture(api: &Api, id: &str, order_id: &str, tip: bool) -> Result<Order, Failure> {
+async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Order, Failure> {
     let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
     let order = paypal
         .order(order_id)
-        .filter(|order| order.streamer == id && matches!(order.item, Item::Tip { .. }) == tip)
+        .filter(|order| order.streamer == id && order.item.kind() == kind)
         .ok_or(failure(
             StatusCode::GONE,
             "This payment is unknown or expired, so no money was taken.",
         ))?;
-    if !tip && !api.remote_control.is_connected(id) {
+    if kind == "song" && !api.remote_control.is_connected(id) {
         return Err(failure(
             StatusCode::NOT_FOUND,
             "The streamer went offline, so your payment was not taken.",
@@ -924,18 +1005,22 @@ async fn capture(api: &Api, id: &str, order_id: &str, tip: bool) -> Result<Order
         .capture(order_id, &order)
         .await
         .map_err(|error| match error {
-            CaptureError::NotApproved if tip => failure(
+            CaptureError::NotApproved if kind == "song" => failure(
                 StatusCode::PAYMENT_REQUIRED,
-                "The payment was not completed.",
+                "The payment was not completed. No song was added.",
             ),
             CaptureError::NotApproved => failure(
                 StatusCode::PAYMENT_REQUIRED,
-                "The payment was not completed. No song was added.",
+                "The payment was not completed.",
             ),
             CaptureError::AlreadyCaptured => {
                 failure(StatusCode::CONFLICT, "This payment was already used.")
             }
-            CaptureError::Pending if tip => failure(
+            CaptureError::Pending if kind == "spin" => failure(
+                StatusCode::PAYMENT_REQUIRED,
+                "PayPal is still reviewing the payment, so the wheel was not spun. If the money is taken, ask the streamer for a refund.",
+            ),
+            CaptureError::Pending if kind == "tip" => failure(
                 StatusCode::PAYMENT_REQUIRED,
                 "PayPal is still reviewing the payment. Your tip reaches the streamer once PayPal approves it.",
             ),
@@ -962,7 +1047,7 @@ async fn capture_song(
     id: String,
     order_id: String,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let order = capture(&api, &id, &order_id, false).await?;
+    let order = capture(&api, &id, &order_id, "song").await?;
     let Item::Song { link, name } = order.item else {
         return Err(capture_crashed());
     };
@@ -972,6 +1057,22 @@ async fn capture_song(
         name,
     };
     Ok(queue(&api, id, order_id, song))
+}
+
+fn viewer_message(message: Option<String>) -> Result<Option<String>, Failure> {
+    let message = message
+        .map(|message| message.trim().to_string())
+        .filter(|message| !message.is_empty());
+    if message
+        .as_ref()
+        .is_some_and(|message| message.chars().count() > 200)
+    {
+        return Err(failure(
+            StatusCode::BAD_REQUEST,
+            "The message can be at most 200 characters.",
+        ));
+    }
+    Ok(message)
 }
 
 #[derive(Deserialize)]
@@ -994,19 +1095,7 @@ async fn handle_tip_order(
     if !valid_price(request.amount) {
         return Err(failure(StatusCode::BAD_REQUEST, "Tip from 0.50 to 1000."));
     }
-    let message = request
-        .message
-        .map(|message| message.trim().to_string())
-        .filter(|message| !message.is_empty());
-    if message
-        .as_ref()
-        .is_some_and(|message| message.chars().count() > 200)
-    {
-        return Err(failure(
-            StatusCode::BAD_REQUEST,
-            "The message can be at most 200 characters.",
-        ));
-    }
+    let message = viewer_message(request.message)?;
     let order = Order {
         streamer: id.clone(),
         item: Item::Tip { message },
@@ -1039,36 +1128,118 @@ async fn capture_tip(
     id: String,
     order_id: String,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let order = capture(&api, &id, &order_id, true).await?;
-    let Item::Tip { message } = order.item else {
-        return Err(capture_crashed());
-    };
-    info!("remote control streamer {id} got tip {order_id}");
-    if let Some(url) = api
+    let order = capture(&api, &id, &order_id, "tip").await?;
+    let url = api
         .song_requests
         .get(&id)
         .tips
-        .and_then(|tips| tips.webhook_url)
-    {
-        let account = api.accounts.of_page(&id);
-        let body = json!({
-            "type": "tip",
-            "id": order_id,
-            "streamer": {
-                "login": account.as_ref().map(|account| &account.login),
-                "name": account.as_ref().map(|account| &account.name),
-            },
-            "user": order.user,
-            "message": message,
-            "amount": {"value": format_price(order.price), "currency": order.currency},
-            "time": song_queue::now(),
-        });
-        tokio::spawn(async move { api.webhooks.deliver(&url, &body).await });
+        .and_then(|tips| tips.webhook_url);
+    let mut body = webhook_body(&api, &id, &order);
+    if let Item::Tip { message } = order.item {
+        body["message"] = json!(message);
     }
-    Ok((
+    if let Some(url) = url {
+        tokio::spawn(async move { api.webhooks.deliver(&url, &order_id, &body).await });
+    }
+    Ok(accepted())
+}
+
+fn webhook_body(api: &Api, id: &str, order: &Order) -> Value {
+    let account = api.accounts.of_page(id);
+    json!({
+        "type": order.item.kind(),
+        "id": api.remote_control.new_request_id().unwrap_or_default(),
+        "streamer": {
+            "login": account.as_ref().map(|account| &account.login),
+            "name": account.as_ref().map(|account| &account.name),
+        },
+        "user": order.user,
+        "amount": {"value": format_price(order.price), "currency": order.currency},
+        "time": song_queue::now(),
+    })
+}
+
+fn accepted() -> (StatusCode, Json<Value>) {
+    (
         StatusCode::ACCEPTED,
         Json(Value::Object(Default::default())),
-    ))
+    )
+}
+
+#[derive(Deserialize)]
+struct SpinRequest {
+    spins: u32,
+    user: Option<String>,
+    message: Option<String>,
+}
+
+async fn handle_spin_order(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    Json(request): Json<SpinRequest>,
+) -> Result<Json<OrderResponse>, Failure> {
+    let spin = api.song_requests.get(&id).spin.ok_or(failure(
+        StatusCode::BAD_REQUEST,
+        "The streamer turned the wheel off. Reload the page.",
+    ))?;
+    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
+    let option = spin
+        .options
+        .iter()
+        .find(|option| option.spins == request.spins)
+        .ok_or(failure(
+            StatusCode::BAD_REQUEST,
+            "The streamer changed the prices. Reload the page.",
+        ))?;
+    let order = Order {
+        streamer: id.clone(),
+        item: Item::Spin {
+            spins: option.spins,
+            message: viewer_message(request.message)?,
+        },
+        user: user_name(request.user, "Someone"),
+        merchant_id: spin.merchant_id,
+        price: option.price,
+        currency: spin.currency,
+    };
+    let order_id = paypal.create_order(order).await.map_err(|error| {
+        warn!("creating a PayPal spin order for remote control streamer {id} failed: {error:#}");
+        failure(
+            StatusCode::BAD_GATEWAY,
+            "PayPal could not start the payment. Try again.",
+        )
+    })?;
+    Ok(Json(OrderResponse { order_id }))
+}
+
+async fn handle_spin_capture(
+    State(api): State<Arc<Api>>,
+    Path((id, order_id)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    tokio::spawn(capture_spin(api, id, order_id))
+        .await
+        .unwrap_or_else(|_| Err(capture_crashed()))
+}
+
+async fn capture_spin(
+    api: Arc<Api>,
+    id: String,
+    order_id: String,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let order = capture(&api, &id, &order_id, "spin").await?;
+    if let Some(spin) = api.song_requests.get(&id).spin {
+        let mut body = webhook_body(&api, &id, &order);
+        if let Item::Spin { spins, message } = order.item {
+            body["spins"] = json!(spins);
+            body["message"] = json!(message);
+        }
+        tokio::spawn(async move {
+            api.webhooks
+                .deliver(&spin.webhook_url, &order_id, &body)
+                .await
+        });
+    }
+    Ok(accepted())
 }
 
 fn verify(
@@ -1693,6 +1864,160 @@ mod tests {
         );
     }
 
+    async fn start_webhook() -> (String, tokio::sync::mpsc::UnboundedReceiver<Value>) {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Value>();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/hook?token=x", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let router = Router::new().route(
+                "/hook",
+                post(move |Json(body): Json<Value>| async move {
+                    sender.send(body).unwrap();
+                    StatusCode::NO_CONTENT
+                }),
+            );
+            axum::serve(listener, router).await
+        });
+        (url, receiver)
+    }
+
+    #[tokio::test]
+    async fn spins_are_posted_to_the_webhook() {
+        let (address, api, paypal_order) = start_paid().await;
+        let client = reqwest::Client::new();
+        let (session, _, id) = streamer(&address, &api).await;
+        let (webhook_url, mut webhooks) = start_webhook().await;
+        let spin_url = format!("http://{address}/remote-control/{id}/spin");
+        let public: Value = client
+            .get(&spin_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(public, json!({"spin": null}));
+        let settings_url = format!("http://{address}/account/settings");
+        for webhook in [" ", "ftp://example.com/spin"] {
+            let response = client
+                .post(&settings_url)
+                .bearer_auth(&session)
+                .json(&json!({"paywall": null, "spin": {
+                    "merchantId": "merchant00001", "options": [{"spins": 1, "price": 500}],
+                    "currency": "usd", "webhookUrl": webhook,
+                }}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        let settings: Value = client
+            .post(&settings_url)
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null, "spin": {
+                "merchantId": "merchant00001",
+                "options": [{"spins": 2, "price": 800}, {"spins": 1, "price": 500}],
+                "currency": "usd",
+                "webhookUrl": webhook_url,
+            }}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            settings["spin"],
+            json!({
+                "merchantId": "MERCHANT00001",
+                "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}],
+                "currency": "USD",
+                "webhookUrl": webhook_url,
+            })
+        );
+        let public: Value = client
+            .get(&spin_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            public,
+            json!({"spin": {
+                "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}],
+                "currency": "USD",
+                "clientId": "id",
+                "merchantId": "MERCHANT00001",
+                "environment": "production",
+            }})
+        );
+        let orders_url = format!("{spin_url}/orders");
+        for request in [
+            json!({"user": "Viewer", "spins": 3}),
+            json!({"user": "Viewer", "spins": 2, "message": "a".repeat(201)}),
+        ] {
+            let response = client
+                .post(&orders_url)
+                .json(&request)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        let order: Value = client
+            .post(&orders_url)
+            .json(&json!({"user": "Viewer", "spins": 2, "message": " Go big! "}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(order, json!({"orderId": "ORDER1"}));
+        let sent = paypal_order.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            sent["purchase_units"][0]["amount"],
+            json!({"currency_code": "USD", "value": "8.00"})
+        );
+        assert_eq!(
+            sent["purchase_units"][0]["description"],
+            "2 wheel spins by Viewer: Go big!"
+        );
+        let response = client
+            .post(format!(
+                "http://{address}/remote-control/{id}/tips/orders/ORDER1/capture"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+        let response = client
+            .post(format!("{orders_url}/ORDER1/capture"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let mut posted = webhooks.recv().await.unwrap();
+        assert_eq!(posted["id"].as_str().unwrap().len(), 22);
+        posted["id"] = json!("x");
+        posted["time"] = json!(0);
+        assert_eq!(
+            posted,
+            json!({
+                "type": "spin",
+                "id": "x",
+                "streamer": {"login": "erik", "name": "Erik"},
+                "user": "Viewer",
+                "amount": {"value": "8.00", "currency": "USD"},
+                "spins": 2,
+                "message": "Go big!",
+                "time": 0,
+            })
+        );
+    }
+
     #[tokio::test]
     async fn tips_are_posted_to_the_webhook() {
         let (address, api, paypal_order) = start_paid().await;
@@ -1716,19 +2041,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let (webhook_sender, mut webhooks) = tokio::sync::mpsc::unbounded_channel::<Value>();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let webhook_url = format!("http://{}/tips?token=x", listener.local_addr().unwrap());
-        tokio::spawn(async move {
-            let router = Router::new().route(
-                "/tips",
-                post(move |Json(body): Json<Value>| async move {
-                    webhook_sender.send(body).unwrap();
-                    StatusCode::NO_CONTENT
-                }),
-            );
-            axum::serve(listener, router).await
-        });
+        let (webhook_url, mut webhooks) = start_webhook().await;
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
@@ -1826,13 +2139,15 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let mut posted = webhooks.recv().await.unwrap();
+        assert_eq!(posted["id"].as_str().unwrap().len(), 22);
+        posted["id"] = json!("x");
         assert!(posted["time"].as_u64().unwrap() >= song_queue::now() - 10);
         posted["time"] = json!(0);
         assert_eq!(
             posted,
             json!({
                 "type": "tip",
-                "id": "ORDER1",
+                "id": "x",
                 "streamer": {"login": "erik", "name": "Erik"},
                 "user": "Viewer",
                 "message": "Great stream!",

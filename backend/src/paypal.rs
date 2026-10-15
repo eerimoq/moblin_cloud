@@ -19,6 +19,17 @@ pub const SANDBOX_URL: &str = "https://api-m.sandbox.paypal.com";
 pub enum Item {
     Song { link: String, name: String },
     Tip { message: Option<String> },
+    Spin { spins: u32, message: Option<String> },
+}
+
+impl Item {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Item::Song { .. } => "song",
+            Item::Tip { .. } => "tip",
+            Item::Spin { .. } => "spin",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,12 +44,20 @@ pub struct Order {
 
 impl Order {
     fn body(&self) -> Value {
-        let description = match &self.item {
-            Item::Song { name, .. } => format!("Song request: {name}"),
-            Item::Tip { message: None } => format!("Tip from {}", self.user),
-            Item::Tip {
-                message: Some(message),
-            } => format!("Tip from {}: {message}", self.user),
+        let (description, message) = match &self.item {
+            Item::Song { name, .. } => (format!("Song request: {name}"), None),
+            Item::Tip { message } => (format!("Tip from {}", self.user), message.as_ref()),
+            Item::Spin { spins: 1, message } => {
+                (format!("Wheel spin by {}", self.user), message.as_ref())
+            }
+            Item::Spin { spins, message } => (
+                format!("{spins} wheel spins by {}", self.user),
+                message.as_ref(),
+            ),
+        };
+        let description = match message {
+            Some(message) => format!("{description}: {message}"),
+            None => description,
         };
         let description: String = description.chars().take(127).collect();
         json!({

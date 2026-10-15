@@ -276,7 +276,7 @@ URL, if they set one:
 ```
 {
   "type": "tip",
-  "id": "<PayPal order id>",
+  "id": "Xq3v0YdKQ9u2c1mB7pTn4A",
   "streamer": {"login": "erik", "name": "Erik"},
   "user": "Viewer",
   "message": "Great stream!",
@@ -288,13 +288,36 @@ URL, if they set one:
 `user` is `Someone` when the viewer gave no name and `message` is `null`
 without one. `time` is in seconds since 1970. Any 2xx answer counts as
 delivered; otherwise it is retried every 10 seconds, six times in all, and
-then forgotten (also on restart). The id is the same in every retry, so
-receivers can drop duplicates. Webhook posts are not signed, so streamers
+then forgotten (also on restart). `id` is random, made once per payment and
+the same in every retry, so receivers can drop a post they already got (a
+post whose answer got lost is retried too). It is not the PayPal order id.
+Webhook posts are not signed, so streamers
 should put a secret in the URL. Webhook URLs must be `https` URLs of a public
 host name (no IP addresses, `localhost`, `.local` or `.internal`, at most 500
 characters), and redirects are not followed, so the backend can't be pointed
 at internal services. `--allow-local-webhooks` allows any `http` or `https`
 URL, for local development only (`just backend-run` passes it).
+
+### Spin the wheel
+
+Viewers can also pay to spin the streamer's wheel, picking one of one to four
+options of a number of spins and its price (say 1 spin for 5.00 and 2 for
+8.00). For now a purchase only posts to the streamer's webhook, which decides
+what happens. It works like tips: `"spin": {"merchantId", "options": [{"spins",
+"price"}], "currency", "webhookUrl"}` in `POST /account/settings` (1 to 100
+spins, prices in hundredths from 0.50 to 1000, each number of spins once; the
+webhook URL is required), `GET /remote-control/<id>/spin` answers `{"spin":
+{"options", "currency", "clientId", "merchantId", "environment"}}` or
+`{"spin": null}`, and the page pays with `POST
+/remote-control/<id>/spin/orders` and `{"spins", "user", "message"}` (the
+backend looks the price up; the message is optional and at most 200
+characters, as for tips) and `POST
+/remote-control/<id>/spin/orders/<order id>/capture`. Each purchase is posted
+like a tip, with `"type": "spin"` and `"spins"`.
+
+The viewer page shows tips, the wheel and song requests one at a time, with
+Tip, Spin and Songs tabs for the ones the streamer turned on. `#tip` and
+`#spin` at the end of the page address open those tabs.
 
 To try song requests locally without Twitch or a phone:
 

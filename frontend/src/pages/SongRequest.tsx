@@ -23,6 +23,7 @@ import { links, pages } from "../data/links";
 import {
   BackendError,
   captureSong,
+  captureSpin,
   captureTip,
   defaultTitle,
   formatDuration,
@@ -30,15 +31,18 @@ import {
   idOfTwitchLogin,
   musicStatus,
   orderSong,
+  orderSpin,
   orderTip,
   requestSong,
   streamerPaywall,
   streamerProfile,
+  streamerSpin,
   streamerTips,
   type MusicStatus,
   type PayPalConfig,
   type Profile,
   type PublicPaywall,
+  type PublicSpin,
   type PublicTips,
 } from "../data/remoteControl";
 import SongRequestAdmin from "./SongRequestAdmin";
@@ -176,6 +180,74 @@ const formatTip = (amount: number, currency: string) =>
     minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
   }).format(amount / 100);
 
+const chipClass =
+  "relative inline-flex h-12 min-w-20 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-line bg-well px-5 font-display text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink";
+
+function AmountChips(props: {
+  group: string;
+  amounts: number[];
+  currency: string;
+  choice: number | "other";
+  onChoice: (choice: number | "other") => void;
+  other?: boolean;
+}) {
+  return (
+    <div class="flex flex-wrap gap-3">
+      <For each={props.amounts}>
+        {(amount) => (
+          <label class={chipClass}>
+            <input
+              type="radio"
+              name={props.group}
+              checked={props.choice === amount}
+              onChange={() => props.onChoice(amount)}
+              class="sr-only"
+            />
+            {formatTip(amount, props.currency)}
+          </label>
+        )}
+      </For>
+      <Show when={props.other}>
+        <label class={chipClass}>
+          <input
+            type="radio"
+            name={props.group}
+            checked={props.choice === "other"}
+            onChange={() => props.onChoice("other")}
+            class="sr-only"
+          />
+          Other
+        </label>
+      </Show>
+    </div>
+  );
+}
+
+function MessageField(props: {
+  message: string;
+  onMessage: (message: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label class="flex flex-col gap-2">
+      <span class="flex items-baseline justify-between gap-4 text-[15px] font-semibold text-ink-2">
+        Message (optional)
+        <span class="font-mono text-sm font-normal text-muted tabular-nums">
+          {props.message.length}/200
+        </span>
+      </span>
+      <textarea
+        maxLength={200}
+        rows={3}
+        value={props.message}
+        onInput={(event) => props.onMessage(event.currentTarget.value)}
+        placeholder={props.placeholder}
+        class={`${inputClass} h-auto resize-y py-3`}
+      />
+    </label>
+  );
+}
+
 function TipJar(props: {
   id: string;
   tips: PublicTips & PayPalConfig;
@@ -253,9 +325,6 @@ function TipJar(props: {
     },
   };
 
-  const chipClass =
-    "relative inline-flex h-12 min-w-20 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-line bg-well px-5 font-display text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink";
-
   return (
     <form
       ref={(element) => (form = element)}
@@ -270,32 +339,14 @@ function TipJar(props: {
       </div>
       <fieldset class="flex flex-col gap-3">
         <legend class="mb-2 text-[15px] font-semibold text-ink-2">Amount</legend>
-        <div class="flex flex-wrap gap-3">
-          <For each={props.tips.amounts}>
-            {(preset) => (
-              <label class={chipClass}>
-                <input
-                  type="radio"
-                  name="tip"
-                  checked={choice() === preset}
-                  onChange={() => setChoice(preset)}
-                  class="sr-only"
-                />
-                {formatTip(preset, props.tips.currency)}
-              </label>
-            )}
-          </For>
-          <label class={chipClass}>
-            <input
-              type="radio"
-              name="tip"
-              checked={choice() === "other"}
-              onChange={() => setChoice("other")}
-              class="sr-only"
-            />
-            Other
-          </label>
-        </div>
+        <AmountChips
+          group="tip"
+          amounts={props.tips.amounts}
+          currency={props.tips.currency}
+          choice={choice()}
+          onChoice={setChoice}
+          other
+        />
         <Show when={choice() === "other"}>
           <label class="flex max-w-60 flex-col gap-2">
             <span class="text-[15px] font-semibold text-ink-2">
@@ -328,22 +379,7 @@ function TipJar(props: {
           class={inputClass}
         />
       </label>
-      <label class="flex flex-col gap-2">
-        <span class="flex items-baseline justify-between gap-4 text-[15px] font-semibold text-ink-2">
-          Message (optional)
-          <span class="font-mono text-sm font-normal text-muted tabular-nums">
-            {message().length}/200
-          </span>
-        </span>
-        <textarea
-          maxLength={200}
-          rows={3}
-          value={message()}
-          onInput={(event) => setMessage(event.currentTarget.value)}
-          placeholder="Love the stream!"
-          class={`${inputClass} h-auto resize-y py-3`}
-        />
-      </label>
+      <MessageField message={message()} onMessage={setMessage} placeholder="Love the stream!" />
       <div class="flex w-full max-w-sm flex-col gap-3">
         <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
           <span class="text-ink-2">Your tip</span>
@@ -509,10 +545,146 @@ function PoweredBy() {
   );
 }
 
-type Section = "songs" | "tip";
+const spinsText = (spins: number) => (spins === 1 ? "1 spin" : `${spins} spins`);
 
-function SectionSwitch(props: { section: Section; onSection: (section: Section) => void }) {
-  const tab = (section: Section, icon: "music" | "heart", label: string) => (
+function SpinWheel(props: {
+  id: string;
+  spin: PublicSpin & PayPalConfig;
+  streamer: string | undefined;
+  name: string;
+  onName: (name: string) => void;
+  onError: (error: unknown) => void;
+}) {
+  const [choice, setChoice] = createSignal(props.spin.options[0]);
+  const [message, setMessage] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [result, setResult] = createSignal<Result | null>(null);
+  let orderError: unknown = null;
+
+  const showError = (error: unknown) => {
+    setResult({ ok: false, text: errorText(error) });
+    props.onError(error);
+  };
+
+  const options: PayPalOptions = {
+    start: () => {
+      setResult(null);
+      if (busy()) {
+        return false;
+      }
+      saveName(props.name.trim());
+      return true;
+    },
+    createOrder: async () => {
+      orderError = null;
+      try {
+        return {
+          orderId: await orderSpin(props.id, choice().spins, props.name.trim(), message().trim()),
+        };
+      } catch (error) {
+        orderError = error;
+        throw error;
+      }
+    },
+    onApprove: async (data) => {
+      setBusy(true);
+      setResult({ ok: true, text: "Payment approved. Completing it…" });
+      try {
+        await captureSpin(props.id, data.orderId);
+        setResult({
+          ok: true,
+          text: `Thanks! ${choice().spins === 1 ? "Your spin starts" : "Your spins start"} in a moment.`,
+        });
+        setMessage("");
+      } catch (error) {
+        showError(error);
+      } finally {
+        setBusy(false);
+      }
+    },
+    onCancel: () => {
+      setResult({ ok: false, text: "Payment cancelled. The wheel was not spun." });
+    },
+    onError: () => {
+      if (orderError) {
+        showError(orderError);
+      } else {
+        setResult({ ok: false, text: "PayPal could not complete the payment. Try again." });
+      }
+    },
+  };
+
+  return (
+    <form class={cardClass} onSubmit={(event) => event.preventDefault()}>
+      <div class="flex flex-col gap-1">
+        <h2 class="text-[28px] leading-tight font-semibold text-balance">
+          Spin {props.streamer ? `${props.streamer}'s` : "the"} wheel.
+        </h2>
+        <p class="text-ink-2">Pick how many spins you want and add a message if you like.</p>
+      </div>
+      <Show when={props.spin.options.length > 1}>
+        <fieldset class="flex flex-col gap-3">
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Spins</legend>
+          <div class="flex flex-wrap gap-3">
+            <For each={props.spin.options}>
+              {(option) => (
+                <label class={chipClass}>
+                  <input
+                    type="radio"
+                    name="spin"
+                    checked={choice().spins === option.spins}
+                    onChange={() => setChoice(option)}
+                    class="sr-only"
+                  />
+                  {spinsText(option.spins)} · {formatTip(option.price, props.spin.currency)}
+                </label>
+              )}
+            </For>
+          </div>
+        </fieldset>
+      </Show>
+      <label class="flex flex-col gap-2">
+        <span class="text-[15px] font-semibold text-ink-2">Your name (optional)</span>
+        <input
+          type="text"
+          maxLength={25}
+          value={props.name}
+          onInput={(event) => props.onName(event.currentTarget.value)}
+          placeholder="Shown with your spin"
+          autocomplete="nickname"
+          class={inputClass}
+        />
+      </label>
+      <MessageField message={message()} onMessage={setMessage} placeholder="Land on the big one!" />
+      <div class="flex w-full max-w-sm flex-col gap-3">
+        <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
+          <span class="text-ink-2">{spinsText(choice().spins)}</span>
+          <span class="font-display text-2xl font-semibold">
+            {formatPrice({ price: choice().price, currency: props.spin.currency })}
+          </span>
+        </p>
+        <PayPalButton config={props.spin} options={options} disabled={busy()} />
+        <p class="text-[15px] text-muted">Your payment goes straight to the streamer.</p>
+      </div>
+      <ResultLine result={result()} />
+    </form>
+  );
+}
+
+type Section = "tip" | "spin" | "songs";
+
+const sectionTabs: { section: Section; icon: "heart" | "wheel" | "music"; label: string }[] = [
+  { section: "tip", icon: "heart", label: "Tip" },
+  { section: "spin", icon: "wheel", label: "Spin" },
+  { section: "songs", icon: "music", label: "Songs" },
+];
+
+function SectionSwitch(props: {
+  sections: Section[];
+  section: Section;
+  onSection: (section: Section) => void;
+}) {
+  const tab = (section: Section, icon: "music" | "heart" | "wheel", label: string) => (
     <button
       type="button"
       role="tab"
@@ -532,8 +704,9 @@ function SectionSwitch(props: { section: Section; onSection: (section: Section) 
       role="tablist"
       class="mx-auto flex w-full max-w-sm gap-1 rounded-full border-[1.5px] border-line bg-card p-1"
     >
-      {tab("tip", "heart", "Tip")}
-      {tab("songs", "music", "Songs")}
+      <For each={sectionTabs.filter((tab) => props.sections.includes(tab.section))}>
+        {(current) => tab(current.section, current.icon, current.label)}
+      </For>
     </div>
   );
 }
@@ -547,17 +720,25 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [result, setResult] = createSignal<Result | null>(null);
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
+  const [spin, setSpin] = createSignal<PublicSpin | null>(null);
   const [profile, setProfile] = createSignal<Profile | null>(null);
   const [styled, setStyled] = createSignal(false);
-  const [section, setSection] = createSignal<Section>(location.hash === "#tip" ? "tip" : "songs");
-  const showingTip = () => tipJar() !== null && section() === "tip";
+  const [section, setSection] = createSignal<Section>(
+    location.hash === "#tip" ? "tip" : location.hash === "#spin" ? "spin" : "songs",
+  );
+  const sections = (): Section[] => [
+    ...(tipJar() ? (["tip"] as const) : []),
+    ...(wheel() ? (["spin"] as const) : []),
+    "songs",
+  ];
+  const shown = () => (sections().includes(section()) ? section() : "songs");
 
   const changeSection = (next: Section) => {
     setSection(next);
     history.replaceState(
       null,
       "",
-      location.pathname + location.search + (next === "tip" ? "#tip" : ""),
+      location.pathname + location.search + (next === "songs" ? "" : `#${next}`),
     );
   };
   let form: HTMLFormElement | undefined;
@@ -603,6 +784,23 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         a?.amounts.join() === b?.amounts.join(),
     },
   );
+  const wheel = createMemo(
+    () => {
+      const current = spin();
+      return current?.clientId && current.environment
+        ? { ...current, clientId: current.clientId, environment: current.environment }
+        : null;
+    },
+    null,
+    {
+      equals: (a, b) =>
+        a?.clientId === b?.clientId &&
+        a?.merchantId === b?.merchantId &&
+        a?.environment === b?.environment &&
+        a?.currency === b?.currency &&
+        JSON.stringify(a?.options) === JSON.stringify(b?.options),
+    },
+  );
   let orderError: unknown = null;
 
   const refreshPaywall = async () => {
@@ -626,6 +824,21 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const tipError = (error: unknown) => {
     if (error instanceof BackendError && error.status === 400) {
       void refreshTips();
+    }
+  };
+
+  const refreshSpin = async () => {
+    const current = id();
+    if (current) {
+      try {
+        setSpin(await streamerSpin(current));
+      } catch {}
+    }
+  };
+
+  const spinError = (error: unknown) => {
+    if (error instanceof BackendError && error.status === 400) {
+      void refreshSpin();
     }
   };
 
@@ -722,6 +935,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
     void refreshPaywall();
     void refreshTips();
+    void refreshSpin();
     void refresh();
     const timer = setInterval(refresh, 30_000);
     onCleanup(() => clearInterval(timer));
@@ -758,12 +972,12 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
           <div
             class={`mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8 ${styled() ? "" : "invisible"}`}
           >
-            <Show when={tipJar()}>
-              <SectionSwitch section={section()} onSection={changeSection} />
+            <Show when={sections().length > 1}>
+              <SectionSwitch sections={sections()} section={shown()} onSection={changeSection} />
             </Show>
             <form
               ref={(element) => (form = element)}
-              class={`${cardClass} ${showingTip() ? "hidden" : ""}`}
+              class={`${cardClass} ${shown() === "songs" ? "" : "hidden"}`}
               onSubmit={submit}
             >
               <div class="flex flex-col gap-1">
@@ -851,7 +1065,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
             </form>
             <Show when={tipJar()} keyed>
               {(current) => (
-                <div class={showingTip() ? "" : "hidden"}>
+                <div class={shown() === "tip" ? "" : "hidden"}>
                   <TipJar
                     id={id() ?? ""}
                     tips={current}
@@ -863,7 +1077,21 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                 </div>
               )}
             </Show>
-            <div class={showingTip() ? "hidden" : ""}>
+            <Show when={wheel()} keyed>
+              {(current) => (
+                <div class={shown() === "spin" ? "" : "hidden"}>
+                  <SpinWheel
+                    id={id() ?? ""}
+                    spin={current}
+                    streamer={profile()?.name}
+                    name={name()}
+                    onName={setName}
+                    onError={spinError}
+                  />
+                </div>
+              )}
+            </Show>
+            <div class={shown() === "songs" ? "" : "hidden"}>
               <Queue status={status()} name={profile()?.name} />
             </div>
           </div>

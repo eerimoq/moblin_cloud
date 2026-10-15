@@ -73,7 +73,7 @@ export const createStreamer = (session: string) =>
 export const newStreamerUrl = (session: string) =>
   call<Account>(session, "/account/streamer-url", { method: "POST" });
 
-export type SettingsChanges = Page & Pick<Settings, "paywall" | "tips">;
+export type SettingsChanges = Page & Pick<Settings, "paywall" | "tips" | "spin">;
 
 export const saveAccountSettings = (session: string, settings: SettingsChanges) =>
   call<Settings>(
@@ -82,6 +82,7 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges) 
     post({
       paywall: settings.paywall,
       tips: settings.tips,
+      spin: settings.spin,
       title: settings.title,
       message: settings.message,
       accent: settings.accent,
