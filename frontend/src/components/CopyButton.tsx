@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createFlash } from "../flash";
 import Icon from "./Icon";
 
 function copyWithExecCommand(text: string): boolean {
@@ -30,16 +30,13 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 export default function CopyButton(props: { text: string; label?: string }) {
-  const [copied, setCopied] = createSignal(false);
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  const [copied, flashCopied] = createFlash(1500);
 
   const copy = async () => {
     if (!(await copyText(props.text))) {
       return;
     }
-    setCopied(true);
-    clearTimeout(timer);
-    timer = setTimeout(() => setCopied(false), 1500);
+    flashCopied();
   };
 
   return (

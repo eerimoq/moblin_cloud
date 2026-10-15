@@ -14,6 +14,17 @@ export const ghostButtonClass =
 export const cardClass =
   "flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8";
 
+export function SaveButton(props: { saving: boolean; saved: boolean; disabled: boolean }) {
+  return (
+    <button type="submit" class={buttonClass} disabled={props.disabled || props.saving}>
+      <Show when={props.saved}>
+        <Icon name="check" class="size-5" />
+      </Show>
+      <span aria-live="polite">{props.saving ? "Saving…" : props.saved ? "Saved" : "Save"}</span>
+    </button>
+  );
+}
+
 export function Hero(props: {
   eyebrow?: string;
   top?: JSX.Element;

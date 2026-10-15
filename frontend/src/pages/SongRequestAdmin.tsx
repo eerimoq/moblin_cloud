@@ -1,13 +1,14 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { asset } from "../asset";
+import { createFlash } from "../flash";
 import Icon from "../components/Icon";
 import {
   Band,
-  buttonClass,
   cardClass,
   ghostButtonClass,
   Hero,
   inputClass,
+  SaveButton,
   Value,
 } from "../components/SongRequestParts";
 import {
@@ -97,19 +98,24 @@ function YourPage(props: {
   const [title, setTitle] = createSignal(props.page.title ?? "");
   const [message, setMessage] = createSignal(props.page.message ?? "");
   const [accent, setAccent] = createSignal(props.page.accent ?? accents[0]);
-  const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [error, setError] = createSignal<string | null>(null);
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
     if (props.busy) {
       return;
     }
-    setResult(null);
+    setError(null);
+    setSaving(true);
     try {
       await props.onSave({ title: title(), message: message(), accent: accent() });
-      setResult({ ok: true, text: "Saved." });
+      flashSaved();
     } catch {
-      setResult({ ok: false, text: "Something went wrong. Try again." });
+      setError("Something went wrong. Try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -173,16 +179,14 @@ function YourPage(props: {
         </div>
       </fieldset>
       <div class="flex flex-wrap items-center gap-4">
-        <button type="submit" class={buttonClass} disabled={props.busy}>
-          Save
-        </button>
+        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
         <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
           Open your page
         </a>
-        <Show when={result()}>
-          {(result) => (
-            <p role="status" class={result().ok ? "text-leaf" : "text-amber"}>
-              {result().text}
+        <Show when={error()}>
+          {(error) => (
+            <p role="status" class="text-amber">
+              {error()}
             </p>
           )}
         </Show>
@@ -202,14 +206,17 @@ function Payments(props: {
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
   );
   const [currency, setCurrency] = createSignal(props.paywall?.currency ?? "USD");
-  const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [error, setError] = createSignal<string | null>(null);
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
     if (props.busy) {
       return;
     }
-    setResult(null);
+    setError(null);
+    setSaving(true);
     try {
       await props.onSave({
         paywall: required()
@@ -220,12 +227,11 @@ function Payments(props: {
             }
           : null,
       });
-      setResult({
-        ok: true,
-        text: required() ? "Saved. Viewers now pay to add songs." : "Song requests are free.",
-      });
+      flashSaved();
     } catch (error) {
-      setResult({ ok: false, text: paywallErrorText(error) });
+      setError(paywallErrorText(error));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -288,13 +294,11 @@ function Payments(props: {
         </div>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
-        <button type="submit" class={buttonClass} disabled={props.busy}>
-          Save
-        </button>
-        <Show when={result()}>
-          {(result) => (
-            <p role="status" class={result().ok ? "text-leaf" : "text-amber"}>
-              {result().text}
+        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
+        <Show when={error()}>
+          {(error) => (
+            <p role="status" class="text-amber">
+              {error()}
             </p>
           )}
         </Show>
