@@ -1610,4 +1610,48 @@ mod tests {
             .unwrap();
         assert_eq!(name["id"], id);
     }
+
+    #[tokio::test]
+    async fn account_routes_need_a_session() {
+        let (address, api) = start_api(None).await;
+        let (session, _, _) = streamer(&address, &api).await;
+        let unknown = api.auth.session("2");
+        let (payload, _) = session.split_once('.').unwrap();
+        let forged = format!("{payload}.AAAA");
+        let client = reqwest::Client::new();
+        for (method, path) in [
+            ("GET", "/account"),
+            ("POST", "/account/streamer"),
+            ("POST", "/account/streamer-url"),
+            ("POST", "/account/settings"),
+        ] {
+            for token in [
+                None,
+                Some("garbage"),
+                Some(forged.as_str()),
+                Some(unknown.as_str()),
+            ] {
+                let mut request = client
+                    .request(method.parse().unwrap(), format!("http://{address}{path}"))
+                    .json(&json!({"paywall": null}));
+                if let Some(token) = token {
+                    request = request.bearer_auth(token);
+                }
+                let response = request.send().await.unwrap();
+                assert_eq!(
+                    response.status(),
+                    StatusCode::UNAUTHORIZED,
+                    "{method} {path} with {token:?}"
+                );
+            }
+        }
+        let (unknown_key, _) = api.remote_control.new_key().unwrap();
+        assert!(
+            tokio_tungstenite::connect_async(format!(
+                "ws://{address}/remote-control/streamer/{unknown_key}"
+            ))
+            .await
+            .is_err()
+        );
+    }
 }

@@ -61,6 +61,8 @@ function TwitchSignIn(props: { failed: boolean }) {
   );
 }
 
+const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
+
 function paywallErrorText(error: unknown) {
   if (error instanceof BackendError) {
     switch (error.status) {
@@ -213,8 +215,12 @@ function Admin(props: {
     setNewUrlFailed(false);
     try {
       props.onAccount(await newStreamerUrl(props.session));
-    } catch {
-      setNewUrlFailed(true);
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      } else {
+        setNewUrlFailed(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -227,7 +233,11 @@ function Admin(props: {
         if (account.settings) {
           setSettings(account.settings);
         }
-      } catch {}
+      } catch (error) {
+        if (signedOut(error)) {
+          props.onSignOut();
+        }
+      }
     }, 10_000);
     onCleanup(() => clearInterval(timer));
   });
@@ -236,6 +246,11 @@ function Admin(props: {
     setBusy(true);
     try {
       setSettings(await saveAccountSettings(props.session, { ...settings(), ...changes }));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -303,8 +318,12 @@ function SignedIn(props: {
     setFailed(false);
     try {
       props.onAccount(await createStreamer(props.session));
-    } catch {
-      setFailed(true);
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      } else {
+        setFailed(true);
+      }
     }
   };
 
@@ -361,7 +380,7 @@ export default function SongRequestAdmin() {
       try {
         setSession({ session: stored, account: await fetchAccount(stored) });
       } catch (error) {
-        if (error instanceof BackendError && error.status === 401) {
+        if (signedOut(error)) {
           saveSession(null);
         }
       }
