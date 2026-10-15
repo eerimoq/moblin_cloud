@@ -138,9 +138,7 @@ function PayPalButtons(props: {
             props.disabled ? "pointer-events-none opacity-40" : ""
           }`}
         />
-        <p class="text-center text-[15px] text-muted">
-          Your payment goes straight to the streamer.
-        </p>
+        <p class="text-[15px] text-muted">Your payment goes straight to the streamer.</p>
       </div>
       <Show when={failed()}>
         <p role="status" class="text-amber">
