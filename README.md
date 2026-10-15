@@ -101,8 +101,8 @@ file exists the build switches to `/` automatically (see
 ## Song requests
 
 The backend also acts as a Moblin remote control assistant, so that viewers
-can add songs to a streamer's music queue from `/song-requests/?streamer=<id>`
-on the website.
+can add songs to a streamer's music queue from `/song-requests/<name>` on the
+website.
 
 A streamer creates their page at `/song-requests/`, which asks
 `POST /remote-control/streamers` for a random secret key and the public id
@@ -138,9 +138,9 @@ given by `--song-queue-file` (or `SONG_QUEUE_FILE`), which needs a volume in
 Docker; without one they are forgotten on restart.
 
 Streamers manage their page at `/song-requests/`, which shows the viewer page
-only when given a name or `?streamer=<id>`. The secret key authenticates them: `GET /remote-control/streamer/<key>/settings` answers
+only when given a name. The secret key authenticates them: `GET /remote-control/streamer/<key>/settings` answers
 `{"id", "connected", "name"}` and `POST` with `{"name"}` changes them. A
-name is 3 to 25 lowercase letters, digits and dashes, unique, and gives the page a second address, `/song-requests/<name>`. GitHub
+name is required: 3 to 25 lowercase letters, digits and dashes, unique, and it is the page's address, `/song-requests/<name>`. GitHub
 Pages has no such file, so it serves `404.html`, which renders the song request
 page for those paths and resolves the name with
 `GET /remote-control/names/<name>`, answering `{"id"}`. The dev server

@@ -236,7 +236,7 @@ async fn handle_settings_update(
     };
     let settings = api
         .song_requests
-        .set(&id, request.name.as_deref(), paywall)
+        .set(&id, request.name.as_deref().unwrap_or(""), paywall)
         .map_err(|error| match error {
             SettingsError::InvalidName => (
                 StatusCode::BAD_REQUEST,
@@ -845,7 +845,7 @@ mod tests {
             .post(format!(
                 "http://{address}/remote-control/streamer/{key}/settings"
             ))
-            .json(&json!({"name": null, "paywall": {
+            .json(&json!({"name": "erik", "paywall": {
                 "email": "erik@example.com", "price": 250, "currency": "SEK", "merchantId": "FAKE",
             }}))
             .send()
@@ -917,7 +917,7 @@ mod tests {
         let settings_url = format!("http://{address}/remote-control/streamer/{key}/settings");
         let response = client
             .post(&settings_url)
-            .json(&json!({"name": null, "paywall": {
+            .json(&json!({"name": "erik", "paywall": {
                 "email": "nobody@example.com", "price": 250, "currency": "SEK",
             }}))
             .send()
@@ -926,7 +926,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let settings: Value = client
             .post(&settings_url)
-            .json(&json!({"name": null, "paywall": {
+            .json(&json!({"name": "erik", "paywall": {
                 "email": "erik@example.com", "price": 250, "currency": "SEK", "merchantId": "FAKE",
             }}))
             .send()
@@ -1237,6 +1237,13 @@ mod tests {
             settings,
             json!({"id": id, "connected": false, "name": null, "paywall": null, "paypal": false})
         );
+        let response = client
+            .post(&settings_url)
+            .json(&json!({"name": null}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let settings: Value = client
             .post(&settings_url)
             .json(&json!({"name": "Erik"}))

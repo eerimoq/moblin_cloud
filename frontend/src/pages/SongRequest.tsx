@@ -199,8 +199,8 @@ function Queue(props: { status: Status }) {
   );
 }
 
-function Viewer(props: { id: string | null; name: string | null }) {
-  const [id, setId] = createSignal(props.id);
+function Viewer(props: { name: string }) {
+  const [id, setId] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<Status>("loading");
   const [song, setSong] = createSignal("");
   const [name, setName] = createSignal(readName());
@@ -314,12 +314,10 @@ function Viewer(props: { id: string | null; name: string | null }) {
   };
 
   onMount(async () => {
-    if (props.name) {
-      try {
-        setId(await idOfName(props.name));
-      } catch {
-        setStatus("unknown");
-      }
+    try {
+      setId(await idOfName(props.name));
+    } catch {
+      setStatus("unknown");
     }
     void refreshPaywall();
     void refresh();
@@ -443,15 +441,12 @@ function Viewer(props: { id: string | null; name: string | null }) {
 }
 
 export default function SongRequest(props: { name?: string }) {
-  const id = new URLSearchParams(location.search).get("streamer");
-  const name = props.name ?? null;
-
   return (
     <>
       <Nav />
       <main>
-        <Show when={id || name} fallback={<SongRequestAdmin />}>
-          <Viewer id={id} name={name} />
+        <Show when={props.name} fallback={<SongRequestAdmin />}>
+          {(name) => <Viewer name={name()} />}
         </Show>
       </main>
       <Footer />

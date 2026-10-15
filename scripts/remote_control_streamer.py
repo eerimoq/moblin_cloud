@@ -104,8 +104,7 @@ def main():
         streamer = create_streamer()
         key = streamer["key"]
         print(f"Key: {key}")
-        print(f"Page: http://localhost:5173/song-requests/?streamer={streamer['id']}")
-        print("Admin: http://localhost:5173/song-requests/ (paste the key)")
+        print("Admin: http://localhost:5173/song-requests/ (paste the key and pick a page name)")
         print("Songs with the id 404 are not found.")
     asyncio.run(run(key))
 

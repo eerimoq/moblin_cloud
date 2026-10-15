@@ -111,34 +111,26 @@ impl SongRequests {
     pub fn set(
         &self,
         id: &str,
-        name: Option<&str>,
+        name: &str,
         paywall: Option<Paywall>,
     ) -> Result<Settings, SettingsError> {
-        let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
-            Some(name) => Some(normalize_name(name).ok_or(SettingsError::InvalidName)?),
-            None => None,
-        };
+        let name = Some(normalize_name(name).ok_or(SettingsError::InvalidName)?);
         let paywall = match paywall {
             Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
             None => None,
         };
         let new = Settings { name, paywall };
         let mut settings = self.settings.lock().unwrap();
-        if new.name.is_some()
-            && settings
-                .iter()
-                .any(|(other_id, other)| other_id != id && other.name == new.name)
+        if settings
+            .iter()
+            .any(|(other_id, other)| other_id != id && other.name == new.name)
         {
             return Err(SettingsError::NameTaken);
         }
         if !settings.contains_key(id) && settings.len() >= 10000 {
             return Err(SettingsError::Full);
         }
-        let old = if new == Settings::default() {
-            settings.remove(id)
-        } else {
-            settings.insert(id.to_string(), new.clone())
-        };
+        let old = settings.insert(id.to_string(), new.clone());
         if let Err(error) = json_file::save(self.path.as_deref(), &*settings) {
             warn!("failed to save song request settings: {error:#}");
             match old {
@@ -172,7 +164,7 @@ mod tests {
         let song_requests = SongRequests::load(None).unwrap();
         assert_eq!(song_requests.get("a"), Settings::default());
         assert_eq!(
-            song_requests.set("a", Some("Erik"), None),
+            song_requests.set("a", "Erik", None),
             Ok(Settings {
                 name: Some("erik".to_string()),
                 paywall: None,
@@ -180,17 +172,21 @@ mod tests {
         );
         assert_eq!(song_requests.id_of_name("ERIK").as_deref(), Some("a"));
         assert_eq!(
-            song_requests.set("b", Some("erik"), None),
+            song_requests.set("b", "erik", None),
             Err(SettingsError::NameTaken)
         );
         assert_eq!(
-            song_requests.set("b", Some("e r"), None),
+            song_requests.set("b", "e r", None),
             Err(SettingsError::InvalidName)
         );
-        assert!(song_requests.set("a", Some("erik"), None).is_ok());
-        assert!(song_requests.set("a", Some(" "), None).is_ok());
+        assert_eq!(
+            song_requests.set("a", " ", None),
+            Err(SettingsError::InvalidName)
+        );
+        assert!(song_requests.set("a", "erik", None).is_ok());
+        assert!(song_requests.set("a", "other", None).is_ok());
         assert_eq!(song_requests.id_of_name("erik"), None);
-        assert!(song_requests.set("b", Some("erik"), None).is_ok());
+        assert!(song_requests.set("b", "erik", None).is_ok());
         assert_eq!(song_requests.id_of_name("erik").as_deref(), Some("b"));
     }
 
@@ -203,13 +199,13 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
-        song_requests.set("a", Some("erik"), None).unwrap();
-        song_requests.set("b", Some("other"), None).unwrap();
-        song_requests.set("b", None, None).unwrap();
+        song_requests.set("a", "erik", None).unwrap();
+        song_requests.set("b", "other", None).unwrap();
+        song_requests.set("b", "third", None).unwrap();
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
         assert_eq!(song_requests.id_of_name("erik").as_deref(), Some("a"));
-        assert_eq!(song_requests.get("b"), Settings::default());
-        assert_eq!(song_requests.settings.lock().unwrap().len(), 1);
+        assert_eq!(song_requests.id_of_name("third").as_deref(), Some("b"));
+        assert_eq!(song_requests.id_of_name("other"), None);
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -226,7 +222,7 @@ mod tests {
         };
         assert_eq!(
             song_requests
-                .set("a", None, paywall(" erik@example.com ", 250, "sek"))
+                .set("a", "erik", paywall(" erik@example.com ", 250, "sek"))
                 .unwrap()
                 .paywall,
             paywall("erik@example.com", 250, "SEK")
@@ -240,12 +236,12 @@ mod tests {
             ("erik@example.com", 250, "JPY"),
         ] {
             assert_eq!(
-                song_requests.set("a", None, paywall(email, price, currency)),
+                song_requests.set("a", "erik", paywall(email, price, currency)),
                 Err(SettingsError::InvalidPaywall)
             );
         }
-        assert!(song_requests.set("a", None, None).is_ok());
-        assert_eq!(song_requests.get("a"), Settings::default());
+        assert!(song_requests.set("a", "erik", None).is_ok());
+        assert_eq!(song_requests.get("a").paywall, None);
     }
 
     #[test]

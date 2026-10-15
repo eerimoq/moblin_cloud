@@ -55,13 +55,8 @@ function errorText(error: unknown) {
   return "Something went wrong. Try again.";
 }
 
-const pageUrl = (settings: Settings) =>
-  new URL(
-    settings.name
-      ? `${asset(pages.songRequests)}${settings.name}`
-      : `${asset(pages.songRequests)}?streamer=${encodeURIComponent(settings.id)}`,
-    location.origin,
-  ).href;
+const pageUrl = (name: string) =>
+  new URL(`${asset(pages.songRequests)}${name}`, location.origin).href;
 
 function Steps() {
   return (
@@ -333,9 +328,9 @@ function Admin(props: {
     }
     setResult(null);
     try {
-      await save({ name: name().trim() || null });
+      await save({ name: name().trim() });
       setName(settings().name ?? "");
-      setResult({ ok: true, text: settings().name ? "Saved." : "Name removed." });
+      setResult({ ok: true, text: "Saved." });
     } catch (error) {
       setResult({ ok: false, text: errorText(error) });
     }
@@ -343,23 +338,25 @@ function Admin(props: {
 
   return (
     <>
-      <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Song requests</h2>
-        <p class="flex items-center gap-2.5 text-[15px] text-muted">
-          <span
-            class={`size-2.5 shrink-0 rounded-full ${settings().connected ? "bg-leaf" : "bg-muted"}`}
-          />
-          {settings().connected ? "Moblin is connected." : "Moblin is not connected right now."}
-        </p>
-      </div>
       <form class={cardClass} onSubmit={saveName}>
-        <h2 class="text-[23px] font-semibold">Page name</h2>
+        <h2 class="text-[23px] font-semibold">Your song request link</h2>
+        <p class="text-ink-2">
+          Viewers open this link to request songs. Share it in your chat, bio or stream overlay.
+        </p>
+        <Show when={settings().name}>
+          {(name) => (
+            <Value
+              label="Link for viewers to request songs"
+              text={pageUrl(name())}
+              href={pageUrl(name())}
+            />
+          )}
+        </Show>
         <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">
-            A short name for your page link, easy to remember
-          </span>
+          <span class="text-[15px] font-semibold text-ink-2">Name in the link</span>
           <input
             type="text"
+            required
             minLength={3}
             maxLength={25}
             pattern="[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?"
@@ -371,7 +368,7 @@ function Admin(props: {
             class={`${inputClass} font-mono`}
           />
           <span class="text-[15px] text-muted">
-            Letters, digits and dashes. Leave it empty to only use the random link.
+            Short and easy to remember, like your channel name. Letters, digits and dashes.
           </span>
         </label>
         <div class="flex flex-wrap items-center gap-4">
@@ -386,17 +383,18 @@ function Admin(props: {
             )}
           </Show>
         </div>
-        <Value
-          label="Your page, for viewers"
-          text={pageUrl(settings())}
-          href={pageUrl(settings())}
-        />
       </form>
-      <Show when={settings().paypal || settings().paywall}>
+      <Show when={settings().name && (settings().paypal || settings().paywall)}>
         <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
       </Show>
       <div class={cardClass}>
         <h2 class="text-[23px] font-semibold">Connect Moblin</h2>
+        <p class="flex items-center gap-2.5 text-[15px] text-muted">
+          <span
+            class={`size-2.5 shrink-0 rounded-full ${settings().connected ? "bg-leaf" : "bg-muted"}`}
+          />
+          {settings().connected ? "Moblin is connected." : "Moblin is not connected right now."}
+        </p>
         <Steps />
         <Value label="Streamer URL for Moblin" text={streamerUrl(props.streamerKey)} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
