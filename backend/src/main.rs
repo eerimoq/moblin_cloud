@@ -7,11 +7,11 @@ mod json_file;
 mod kick;
 mod live;
 mod live_status;
+mod pages;
 mod paypal;
 mod profiles;
 mod remote_control;
 mod song_queue;
-mod song_requests;
 mod store;
 mod twitch;
 mod webhooks;
@@ -34,11 +34,11 @@ use crate::challenges::Challenges;
 use crate::kick::Kick;
 use crate::live::Live;
 use crate::live_status::LiveStatus;
+use crate::pages::Pages;
 use crate::paypal::PayPal;
 use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
 use crate::song_queue::SongQueue;
-use crate::song_requests::SongRequests;
 use crate::store::Store;
 use crate::twitch::Twitch;
 use crate::webhooks::Webhooks;
@@ -90,20 +90,20 @@ struct Cli {
     /// use the development environment, distributed apps the production one.
     #[arg(long, env = "APP_ATTEST_ENVIRONMENT", value_enum, default_value_t = Environment::Production)]
     app_attest_environment: Environment,
-    /// The file the song request settings of streamers, whether song
-    /// requests are on and the name of their page, are saved in. Without
-    /// one they are forgotten when the backend restarts.
-    #[arg(long, env = "SONG_REQUESTS_FILE")]
-    song_requests_file: Option<PathBuf>,
+    /// The file the page settings of streamers (song requests, tips, the
+    /// wheel and the look of the page) are saved in. Without one they are
+    /// forgotten when the backend restarts.
+    #[arg(long, env = "PAGES_FILE")]
+    pages_file: Option<PathBuf>,
     /// The file song requests are saved in until they are in the streamer's
     /// queue. Without one requested songs not yet added are forgotten when
     /// the backend restarts.
     #[arg(long, env = "SONG_QUEUE_FILE")]
     song_queue_file: Option<PathBuf>,
     /// The client ID of a PayPal REST app, used together with its secret to
-    /// let streamers ask viewers to pay for song requests. The money goes
-    /// straight to the streamer's PayPal account. Without one paid song
-    /// requests are unavailable.
+    /// let streamers ask viewers to pay for songs, tips and wheel spins. The
+    /// money goes straight to the streamer's PayPal account. Without one
+    /// payments are unavailable.
     #[arg(long, env = "PAYPAL_CLIENT_ID", requires = "paypal_client_secret")]
     paypal_client_id: Option<String>,
     /// The client secret of the PayPal REST app.
@@ -122,7 +122,7 @@ struct Cli {
     /// backend restarts.
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
-    /// The file streamer accounts, and the song request page each one
+    /// The file streamer accounts, and the page each one
     /// manages, are saved in. Without one they are forgotten when the
     /// backend restarts.
     #[arg(long, env = "ACCOUNTS_FILE")]
@@ -234,10 +234,10 @@ async fn main() -> Result<()> {
         );
         Some(AppAttest::new(&cli.app_id, cli.app_attest_environment))
     };
-    if cli.song_requests_file.is_none() {
-        warn!("no song requests file, forgetting song request settings on restart");
+    if cli.pages_file.is_none() {
+        warn!("no pages file, forgetting page settings on restart");
     }
-    let song_requests = SongRequests::load(cli.song_requests_file)?;
+    let pages = Pages::load(cli.pages_file)?;
     if cli.song_queue_file.is_none() {
         warn!("no song queue file, forgetting requested songs not yet added on restart");
     }
@@ -249,7 +249,7 @@ async fn main() -> Result<()> {
             } else {
                 paypal::LIVE_URL
             };
-            info!("taking payments for song requests through {url}");
+            info!("taking payments through {url}");
             Some(PayPal::new(
                 http_client(),
                 url.to_string(),
@@ -258,7 +258,7 @@ async fn main() -> Result<()> {
             ))
         }
         _ => {
-            warn!("no PayPal client ID and secret, paid song requests are unavailable");
+            warn!("no PayPal client ID and secret, payments are unavailable");
             None
         }
     };
@@ -268,7 +268,7 @@ async fn main() -> Result<()> {
         app_attest,
         live: twitch.map(|twitch| Live::new(twitch, cli.twitch_live_channel)),
         remote_control: Streamers::new(),
-        song_requests,
+        pages,
         paypal,
         song_queue,
         auth,

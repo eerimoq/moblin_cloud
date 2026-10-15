@@ -20,13 +20,12 @@ use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
 use crate::live::Live;
+use crate::pages::{
+    Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price, valid_price,
+};
 use crate::paypal::{CaptureError, Item, Order, PayPal, PayeeError};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers};
 use crate::song_queue::{self, QueuedSong, SongQueue};
-use crate::song_requests::{
-    Paywall, Settings, SettingsError, SongRequests, Spin, SpinOption, Tips, format_price,
-    valid_price,
-};
 use crate::store::{Channel, Store, Streamer};
 use crate::webhooks::Webhooks;
 
@@ -38,7 +37,7 @@ pub struct Api {
     pub app_attest: Option<AppAttest>,
     pub live: Option<Live>,
     pub remote_control: Streamers,
-    pub song_requests: SongRequests,
+    pub pages: Pages,
     pub paypal: Option<PayPal>,
     pub song_queue: SongQueue,
     pub auth: Auth,
@@ -291,7 +290,7 @@ async fn update_settings(
         None => None,
     };
     let settings = api
-        .song_requests
+        .pages
         .set(
             &id,
             Settings {
@@ -384,7 +383,7 @@ async fn signed_in_redirect(
     query: CallbackQuery,
     browser_state: Option<&str>,
 ) -> Redirect {
-    let page = format!("{}/song-requests/", api.auth.frontend_url);
+    let page = format!("{}/page/", api.auth.frontend_url);
     let (Some(code), Some(state)) = (query.code, query.state) else {
         return Redirect::to(&format!("{page}#signInFailed"));
     };
@@ -453,7 +452,7 @@ fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, St
 
 fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
     let settings = account.page.as_ref().map(|page| {
-        let settings = api.song_requests.get(&page.id);
+        let settings = api.pages.get(&page.id);
         settings_response(api, page.id.clone(), settings).0
     });
     Json(AccountResponse {
@@ -480,7 +479,7 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
 }
 
 fn no_page() -> (StatusCode, String) {
-    (StatusCode::NOT_FOUND, "no song request page".to_string())
+    (StatusCode::NOT_FOUND, "no page".to_string())
 }
 
 fn new_key(api: &Api) -> Result<(String, String), (StatusCode, String)> {
@@ -511,7 +510,7 @@ async fn handle_account_streamer(
         .accounts
         .give_page(&id, Page { id: page, key })
         .map_err(account_error)?;
-    info!("{id} got a song request page");
+    info!("{id} got a page");
     Ok(account_response(&api, account))
 }
 
@@ -536,7 +535,7 @@ async fn handle_account_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let signed_in = signed_in(&api, &headers)?;
     let id = signed_in.account.page.ok_or_else(no_page)?.id;
-    let current_merchant_ids = merchant_ids(&api.song_requests.get(&id));
+    let current_merchant_ids = merchant_ids(&api.pages.get(&id));
     let new_merchant_ids = merchant_ids(&Settings {
         paywall: request.paywall.clone().and_then(Paywall::normalize),
         tips: request.tips.clone().and_then(Tips::normalize),
@@ -628,7 +627,7 @@ async fn check_merchant(
         StatusCode::SERVICE_UNAVAILABLE,
         "payments are unavailable".to_string(),
     ))?;
-    let checked = merchant_ids(&api.song_requests.get(id))
+    let checked = merchant_ids(&api.pages.get(id))
         .iter()
         .any(|current| current == merchant_id);
     if !checked {
@@ -669,7 +668,7 @@ async fn handle_profile(
     Path(id): Path<String>,
 ) -> Result<Json<ProfileResponse>, StatusCode> {
     let account = api.accounts.of_page(&id).ok_or(StatusCode::NOT_FOUND)?;
-    let settings = api.song_requests.get(&id);
+    let settings = api.pages.get(&id);
     Ok(Json(ProfileResponse {
         name: account.name,
         login: account.login,
@@ -711,21 +710,17 @@ async fn handle_paywall(
     Path(id): Path<String>,
 ) -> Json<PaywallResponse> {
     Json(PaywallResponse {
-        paywall: api
-            .song_requests
-            .get(&id)
-            .paywall
-            .map(|paywall| PublicPaywall {
-                price: paywall.price,
-                currency: paywall.currency,
-                client_id: api
-                    .paypal
-                    .as_ref()
-                    .filter(|_| !paywall.merchant_id.is_empty())
-                    .map(|paypal| paypal.client_id().to_string()),
-                merchant_id: Some(paywall.merchant_id).filter(|id| !id.is_empty()),
-                environment: api.paypal.as_ref().map(PayPal::environment),
-            }),
+        paywall: api.pages.get(&id).paywall.map(|paywall| PublicPaywall {
+            price: paywall.price,
+            currency: paywall.currency,
+            client_id: api
+                .paypal
+                .as_ref()
+                .filter(|_| !paywall.merchant_id.is_empty())
+                .map(|paypal| paypal.client_id().to_string()),
+            merchant_id: Some(paywall.merchant_id).filter(|id| !id.is_empty()),
+            environment: api.paypal.as_ref().map(PayPal::environment),
+        }),
     })
 }
 
@@ -746,7 +741,7 @@ struct TipsResponse {
 
 async fn handle_tips(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<TipsResponse> {
     Json(TipsResponse {
-        tips: api.song_requests.get(&id).tips.map(|tips| PublicTips {
+        tips: api.pages.get(&id).tips.map(|tips| PublicTips {
             amounts: tips.amounts,
             currency: tips.currency,
             client_id: api
@@ -776,7 +771,7 @@ struct SpinResponse {
 
 async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SpinResponse> {
     Json(SpinResponse {
-        spin: api.song_requests.get(&id).spin.map(|spin| PublicSpin {
+        spin: api.pages.get(&id).spin.map(|spin| PublicSpin {
             options: spin.options,
             currency: spin.currency,
             client_id: api
@@ -903,7 +898,7 @@ async fn handle_music_add(
     Path(id): Path<String>,
     Json(request): Json<SongRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    if api.song_requests.get(&id).paywall.is_some() {
+    if api.pages.get(&id).paywall.is_some() {
         return Err(failure(
             StatusCode::PAYMENT_REQUIRED,
             "The streamer now asks for a payment. Try again.",
@@ -932,7 +927,7 @@ async fn handle_order(
     Path(id): Path<String>,
     Json(request): Json<SongRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let paywall = api.song_requests.get(&id).paywall.ok_or(failure(
+    let paywall = api.pages.get(&id).paywall.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer no longer asks for a payment. Reload the page.",
     ))?;
@@ -1087,7 +1082,7 @@ async fn handle_tip_order(
     Path(id): Path<String>,
     Json(request): Json<TipRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let tips = api.song_requests.get(&id).tips.ok_or(failure(
+    let tips = api.pages.get(&id).tips.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
     ))?;
@@ -1129,11 +1124,7 @@ async fn capture_tip(
     order_id: String,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let order = capture(&api, &id, &order_id, "tip").await?;
-    let url = api
-        .song_requests
-        .get(&id)
-        .tips
-        .and_then(|tips| tips.webhook_url);
+    let url = api.pages.get(&id).tips.and_then(|tips| tips.webhook_url);
     let mut body = webhook_body(&api, &id, &order);
     if let Item::Tip { message } = order.item {
         body["message"] = json!(message);
@@ -1178,7 +1169,7 @@ async fn handle_spin_order(
     Path(id): Path<String>,
     Json(request): Json<SpinRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let spin = api.song_requests.get(&id).spin.ok_or(failure(
+    let spin = api.pages.get(&id).spin.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
@@ -1227,7 +1218,7 @@ async fn capture_spin(
     order_id: String,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let order = capture(&api, &id, &order_id, "spin").await?;
-    if let Some(spin) = api.song_requests.get(&id).spin {
+    if let Some(spin) = api.pages.get(&id).spin {
         let mut body = webhook_body(&api, &id, &order);
         if let Item::Spin { spins, message } = order.item {
             body["spins"] = json!(spins);
@@ -1305,13 +1296,13 @@ mod tests {
     }
 
     async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
-        start_api_with(paypal, None, SongRequests::load(None).unwrap()).await
+        start_api_with(paypal, None, Pages::load(None).unwrap()).await
     }
 
     async fn start_api_with(
         paypal: Option<PayPal>,
         twitch: Option<OAuthApp>,
-        song_requests: SongRequests,
+        pages: Pages,
     ) -> (String, Arc<Api>) {
         let api = Arc::new(Api {
             store: Arc::new(Store::new(6)),
@@ -1319,7 +1310,7 @@ mod tests {
             app_attest: None,
             live: None,
             remote_control: Streamers::new(),
-            song_requests,
+            pages,
             paypal,
             song_queue: SongQueue::load(None).unwrap(),
             webhooks: Webhooks::new(reqwest::Client::new(), true),
@@ -1511,7 +1502,7 @@ mod tests {
             r#"{"p": {"paywall": {"email": "erik@example.com", "price": 250, "currency": "SEK"}}}"#,
         )
         .unwrap();
-        let song_requests = SongRequests::load(Some(path.clone())).unwrap();
+        let pages = Pages::load(Some(path.clone())).unwrap();
         std::fs::remove_file(&path).unwrap();
         let (paypal_url, _) = start_paypal().await;
         let paypal = PayPal::new(
@@ -1520,7 +1511,7 @@ mod tests {
             "id".to_string(),
             "secret".to_string(),
         );
-        let (address, _) = start_api_with(Some(paypal), None, song_requests).await;
+        let (address, _) = start_api_with(Some(paypal), None, pages).await;
         let client = reqwest::Client::new();
         let public: Value = client
             .get(format!("http://{address}/remote-control/p/paywall"))
@@ -2295,7 +2286,7 @@ mod tests {
                 token_url: format!("{twitch}/token"),
                 users_url: format!("{twitch}/users"),
             }),
-            SongRequests::load(None).unwrap(),
+            Pages::load(None).unwrap(),
         )
         .await;
         let client = reqwest::Client::builder()
@@ -2341,7 +2332,7 @@ mod tests {
                 .unwrap(),
         );
         let session = page
-            .strip_prefix("https://moblin.app/song-requests/#session=")
+            .strip_prefix("https://moblin.app/page/#session=")
             .unwrap()
             .to_string();
         assert_eq!(
@@ -2353,7 +2344,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/song-requests/#signInFailed"
+            "https://moblin.app/page/#signInFailed"
         );
         let response = client
             .get(format!("http://{address}/auth/twitch/login"))
@@ -2378,7 +2369,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/song-requests/#signInFailed"
+            "https://moblin.app/page/#signInFailed"
         );
         let response = client
             .get(format!("http://{address}/account"))
@@ -2607,7 +2598,7 @@ mod tests {
         };
         let response = save(old.clone(), Some("MERCHANT00001")).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        assert_eq!(api.song_requests.get(&id).paywall, None);
+        assert_eq!(api.pages.get(&id).paywall, None);
         let response = save(api.auth.session("1", 0), Some("MERCHANT00001"))
             .await
             .unwrap();
@@ -2617,7 +2608,7 @@ mod tests {
         let response = save(old.clone(), Some("MERCHANT00002")).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         assert_eq!(
-            api.song_requests.get(&id).paywall.unwrap().merchant_id,
+            api.pages.get(&id).paywall.unwrap().merchant_id,
             "MERCHANT00001"
         );
         let tips = |merchant_id: &str| {

@@ -18,7 +18,7 @@ import { asset } from "../asset";
 import Footer from "../components/Footer";
 import Icon from "../components/Icon";
 import Nav from "../components/Nav";
-import { buttonClass, cardClass, inputClass } from "../components/SongRequestParts";
+import { buttonClass, cardClass, inputClass } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
   BackendError,
@@ -45,7 +45,7 @@ import {
   type PublicSpin,
   type PublicTips,
 } from "../data/remoteControl";
-import SongRequestAdmin from "./SongRequestAdmin";
+import PageAdmin from "./PageAdmin";
 
 type Status = MusicStatus | "loading" | "offline" | "unknown";
 
@@ -535,11 +535,11 @@ function PoweredBy() {
   return (
     <footer class="py-10">
       <a
-        href={asset(pages.songRequests)}
+        href={asset(pages.page)}
         class="mx-auto flex w-fit items-center gap-2 text-[15px] font-semibold text-muted transition-colors hover:text-ink"
       >
         <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto" />
-        Song requests by Moblin
+        Made with Moblin
       </a>
     </footer>
   );
@@ -928,7 +928,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       streamerProfile(current)
         .then((found) => {
           setProfile(found);
-          document.title = `${found.name} song requests`;
+          document.title = `${found.name} – Moblin`;
         })
         .catch(() => {})
         .finally(() => setStyled(true));
@@ -965,7 +965,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
           when={status() !== "unknown"}
           fallback={
             <p class="mx-auto max-w-[720px] px-5 text-center text-lg text-ink-2 sm:px-8">
-              There is no song request page with this name.
+              There is no page with this name.
             </p>
           }
         >
@@ -1102,7 +1102,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   );
 }
 
-export default function SongRequest(props: { twitch?: string }) {
+export default function Page(props: { twitch?: string }) {
   const id = new URLSearchParams(location.search).get("streamer");
   const twitch = props.twitch ?? null;
 
@@ -1113,7 +1113,7 @@ export default function SongRequest(props: { twitch?: string }) {
         <>
           <Nav />
           <main>
-            <SongRequestAdmin />
+            <PageAdmin />
           </main>
           <Footer />
         </>

@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
-use crate::song_requests::format_price;
+use crate::pages::format_price;
 
 pub const LIVE_URL: &str = "https://api-m.paypal.com";
 pub const SANDBOX_URL: &str = "https://api-m.sandbox.paypal.com";

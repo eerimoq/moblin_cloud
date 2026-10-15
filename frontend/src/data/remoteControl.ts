@@ -66,7 +66,7 @@ export type Settings = Page & {
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];
 
-export const defaultTitle = "Pick the next song.";
+export const defaultTitle = "Thanks for watching!";
 
 export type Price = {
   price: number;

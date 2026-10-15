@@ -2,7 +2,7 @@ import { asset } from "../asset";
 import Footer from "../components/Footer";
 import Mascot from "../components/Mascot";
 import Nav from "../components/Nav";
-import { buttonClass } from "../components/SongRequestParts";
+import { buttonClass } from "../components/PageParts";
 
 export default function NotFound() {
   return (

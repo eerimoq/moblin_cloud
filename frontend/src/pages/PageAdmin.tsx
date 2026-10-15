@@ -10,7 +10,7 @@ import {
   inputClass,
   SaveButton,
   Value,
-} from "../components/SongRequestParts";
+} from "../components/PageParts";
 import {
   fetchAccount,
   createStreamer,
@@ -55,7 +55,7 @@ function TwitchSignIn(props: { failed: boolean }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Sign in</h2>
-      <p class="text-ink-2">Sign in with Twitch to create or manage your song request page.</p>
+      <p class="text-ink-2">Sign in with Twitch to create or manage your page.</p>
       <div>
         <a
           href={signInUrl}
@@ -127,7 +127,9 @@ function YourPage(props: {
   return (
     <form class={cardClass} onSubmit={submit}>
       <h2 class="text-[23px] font-semibold">Your page</h2>
-      <p class="text-ink-2">Share it with your viewers so they can request songs.</p>
+      <p class="text-ink-2">
+        Share it with your viewers so they can tip you, spin your wheel and request songs.
+      </p>
       <Value
         label="Your page"
         text={pageUrl(props.account)}
@@ -152,7 +154,7 @@ function YourPage(props: {
           rows={3}
           value={message()}
           onInput={(event) => setMessage(event.currentTarget.value)}
-          placeholder="Thanks for hanging out! Keep it chill, no explicit songs please."
+          placeholder="Thanks for hanging out! Say hi in chat!"
           class={`${inputClass} h-auto resize-y py-3`}
         />
       </label>
@@ -250,7 +252,7 @@ function Payments(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Paid requests</h2>
+      <h2 class="text-[23px] font-semibold">Paid song requests</h2>
       <p class="text-ink-2">
         Let viewers pay with PayPal to add a song. The money goes straight to your PayPal account.
         Moblin takes nothing, PayPal charges its usual fees.
@@ -738,7 +740,7 @@ function Admin(props: {
         />
       </Show>
       <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Connect Moblin</h2>
+        <h2 class="text-[23px] font-semibold">Connect Moblin for song requests</h2>
         <p class="flex items-center gap-2.5 text-[15px] text-muted">
           <span
             class={`size-2.5 shrink-0 rounded-full ${settings().connected ? "bg-leaf" : "bg-muted"}`}
@@ -839,7 +841,7 @@ function SignedIn(props: {
   );
 }
 
-export default function SongRequestAdmin() {
+export default function PageAdmin() {
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [signInFailed, setSignInFailed] = createSignal(false);
@@ -870,11 +872,11 @@ export default function SongRequestAdmin() {
 
   return (
     <>
-      <Hero title="Let viewers pick the music.">
+      <Hero title="Let viewers tip, spin and pick the music.">
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Sign in with Twitch to get your own song request page at moblin.app/twitch/your-name.
-          Viewers add songs from Apple Music to the queue of Moblin's music player, for free or for
-          a price you set, and can send you tips or pay to spin your wheel.
+          Sign in with Twitch to get your own page at moblin.app/twitch/your-name. Viewers add songs
+          from Apple Music to the queue of Moblin's music player, for free or for a price you set,
+          and can send you tips or pay to spin your wheel.
         </p>
       </Hero>
       <Band>

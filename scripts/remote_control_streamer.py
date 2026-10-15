@@ -107,7 +107,7 @@ def main():
     args = parser.parse_args()
     key = (args.url or base64url(secrets.token_bytes(32))).rstrip("/").split("/")[-1]
     print(f"Streamer URL: ws://{BACKEND}/remote-control/streamer/{key}")
-    print(f"Page: http://localhost:5173/song-requests/?streamer={id_of(key)}")
+    print(f"Page: http://localhost:5173/page/?streamer={id_of(key)}")
     print("Songs with the id 404 are not found.")
     asyncio.run(run(key))
 

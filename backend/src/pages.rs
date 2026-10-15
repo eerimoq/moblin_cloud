@@ -192,12 +192,12 @@ pub enum SettingsError {
     NotSaved,
 }
 
-pub struct SongRequests {
+pub struct Pages {
     path: Option<PathBuf>,
     settings: Mutex<HashMap<String, Settings>>,
 }
 
-impl SongRequests {
+impl Pages {
     pub fn load(path: Option<PathBuf>) -> Result<Self> {
         let settings = json_file::load(path.as_deref())?;
         Ok(Self {
@@ -227,7 +227,7 @@ impl SongRequests {
             settings.insert(id.to_string(), new.clone())
         };
         if let Err(error) = json_file::save(self.path.as_deref(), &*settings) {
-            warn!("failed to save song request settings: {error:#}");
+            warn!("failed to save page settings: {error:#}");
             match old {
                 Some(old) => settings.insert(id.to_string(), old),
                 None => settings.remove(id),
@@ -245,12 +245,12 @@ mod tests {
     #[test]
     fn settings_are_saved() {
         let path = std::env::temp_dir().join(format!(
-            "song-requests-{}-{:?}.json",
+            "pages-{}-{:?}.json",
             std::process::id(),
             std::thread::current().id()
         ));
         let _ = std::fs::remove_file(&path);
-        let song_requests = SongRequests::load(Some(path.clone())).unwrap();
+        let pages = Pages::load(Some(path.clone())).unwrap();
         let paywall = Paywall {
             merchant_id: "ABCDEFGHJKLMN".to_string(),
             price: 250,
@@ -261,20 +261,20 @@ mod tests {
             title: Some("Hi".to_string()),
             ..Settings::default()
         };
-        song_requests.set("a", settings.clone()).unwrap();
-        song_requests.set("b", settings).unwrap();
-        song_requests.set("b", Settings::default()).unwrap();
-        let song_requests = SongRequests::load(Some(path.clone())).unwrap();
-        assert_eq!(song_requests.get("a").paywall, Some(paywall));
-        assert_eq!(song_requests.get("a").title.as_deref(), Some("Hi"));
-        assert_eq!(song_requests.get("b"), Settings::default());
-        assert_eq!(song_requests.settings.lock().unwrap().len(), 1);
+        pages.set("a", settings.clone()).unwrap();
+        pages.set("b", settings).unwrap();
+        pages.set("b", Settings::default()).unwrap();
+        let pages = Pages::load(Some(path.clone())).unwrap();
+        assert_eq!(pages.get("a").paywall, Some(paywall));
+        assert_eq!(pages.get("a").title.as_deref(), Some("Hi"));
+        assert_eq!(pages.get("b"), Settings::default());
+        assert_eq!(pages.settings.lock().unwrap().len(), 1);
         std::fs::remove_file(&path).unwrap();
     }
 
     #[test]
     fn paywalls_are_validated() {
-        let song_requests = SongRequests::load(None).unwrap();
+        let pages = Pages::load(None).unwrap();
         let paywall = |merchant_id: &str, price, currency: &str| {
             Some(Paywall {
                 merchant_id: merchant_id.to_string(),
@@ -287,13 +287,13 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(
-            song_requests
+            pages
                 .set("a", settings(paywall(" abcdefghjklmn ", 250, "sek")))
                 .unwrap()
                 .paywall,
             paywall("ABCDEFGHJKLMN", 250, "SEK")
         );
-        assert_eq!(song_requests.get("a").paywall.unwrap().price, 250);
+        assert_eq!(pages.get("a").paywall.unwrap().price, 250);
         for (merchant_id, price, currency) in [
             ("ABCDEFGHJKLM", 250, "SEK"),
             ("erik@example.com", 250, "SEK"),
@@ -303,17 +303,17 @@ mod tests {
             ("ABCDEFGHJKLMN", 250, "JPY"),
         ] {
             assert_eq!(
-                song_requests.set("a", settings(paywall(merchant_id, price, currency))),
+                pages.set("a", settings(paywall(merchant_id, price, currency))),
                 Err(SettingsError::InvalidPaywall)
             );
         }
-        assert!(song_requests.set("a", Settings::default()).is_ok());
-        assert_eq!(song_requests.get("a"), Settings::default());
+        assert!(pages.set("a", Settings::default()).is_ok());
+        assert_eq!(pages.get("a"), Settings::default());
     }
 
     #[test]
     fn tips_are_validated() {
-        let song_requests = SongRequests::load(None).unwrap();
+        let pages = Pages::load(None).unwrap();
         let tips = |merchant_id: &str, currency: &str, amounts: &[u32]| Settings {
             tips: Some(Tips {
                 merchant_id: merchant_id.to_string(),
@@ -324,15 +324,12 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(
-            song_requests
+            pages
                 .set("a", tips(" abcdefghjklmn ", "usd", &[1000, 200, 500, 200]))
                 .unwrap(),
             tips("ABCDEFGHJKLMN", "USD", &[200, 500, 1000])
         );
-        assert_eq!(
-            song_requests.get("a").tips.unwrap().amounts,
-            [200, 500, 1000]
-        );
+        assert_eq!(pages.get("a").tips.unwrap().amounts, [200, 500, 1000]);
         for (merchant_id, currency, amounts) in [
             ("ABCDEFGHJKLM", "USD", &[200][..]),
             ("ABCDEFGHJKLMN", "JPY", &[200]),
@@ -342,7 +339,7 @@ mod tests {
             ("ABCDEFGHJKLMN", "USD", &[100_001]),
         ] {
             assert_eq!(
-                song_requests.set("a", tips(merchant_id, currency, amounts)),
+                pages.set("a", tips(merchant_id, currency, amounts)),
                 Err(SettingsError::InvalidTips)
             );
         }
@@ -350,7 +347,7 @@ mod tests {
 
     #[test]
     fn spins_are_validated() {
-        let song_requests = SongRequests::load(None).unwrap();
+        let pages = Pages::load(None).unwrap();
         let spin =
             |merchant_id: &str, options: &[(u32, u32)], currency: &str, webhook_url: &str| {
                 Settings {
@@ -371,7 +368,7 @@ mod tests {
             };
         let url = "https://example.com/spin";
         assert_eq!(
-            song_requests.set(
+            pages.set(
                 "a",
                 spin(" abcdefghjklmn ", &[(2, 800), (1, 500)], "eur", url)
             ),
@@ -394,7 +391,7 @@ mod tests {
             ("ABCDEFGHJKLMN", &[(1, 500)], "EUR", " "),
         ] {
             assert_eq!(
-                song_requests.set("a", spin(merchant_id, options, currency, webhook_url)),
+                pages.set("a", spin(merchant_id, options, currency, webhook_url)),
                 Err(SettingsError::InvalidSpin)
             );
         }
@@ -411,7 +408,7 @@ mod tests {
 
     #[test]
     fn pages_are_validated() {
-        let song_requests = SongRequests::load(None).unwrap();
+        let pages = Pages::load(None).unwrap();
         let page = |title: &str, message: &str, accent: &str| Settings {
             title: Some(title.to_string()),
             message: Some(message.to_string()),
@@ -419,7 +416,7 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(
-            song_requests.set("a", page(" Hi! ", "  ", "purple")),
+            pages.set("a", page(" Hi! ", "  ", "purple")),
             Ok(Settings {
                 title: Some("Hi!".to_string()),
                 accent: Some("purple".to_string()),
@@ -427,12 +424,12 @@ mod tests {
             })
         );
         assert_eq!(
-            song_requests.set("a", page("", "", "green")),
+            pages.set("a", page("", "", "green")),
             Ok(Settings::default())
         );
-        assert_eq!(song_requests.get("a"), Settings::default());
+        assert_eq!(pages.get("a"), Settings::default());
         assert!(
-            song_requests
+            pages
                 .set("a", page(&"å".repeat(60), &"å".repeat(300), "red"))
                 .is_ok()
         );
@@ -442,7 +439,7 @@ mod tests {
             (String::new(), String::new(), "teal"),
         ] {
             assert_eq!(
-                song_requests.set("a", page(&title, &message, accent)),
+                pages.set("a", page(&title, &message, accent)),
                 Err(SettingsError::InvalidPage)
             );
         }

@@ -98,13 +98,15 @@ containing the domain and point the domain's DNS at GitHub Pages. When that
 file exists the build switches to `/` automatically (see
 `frontend/vite.config.ts`).
 
-## Song requests
+## Pages
 
-The backend also acts as a Moblin remote control assistant, so that viewers
-can add songs to a streamer's music queue from `/twitch/<login>` (or
-`/song-requests/?streamer=<id>`) on the website.
+Every signed in streamer gets a page at `/twitch/<login>` (or
+`/page/?streamer=<id>`) on the website, where viewers can tip, spin the
+streamer's wheel and request songs. Old `/song-requests/` links redirect to
+`/page/`. For song requests the backend acts as a Moblin remote control
+assistant, so that viewers can add songs to the streamer's music queue.
 
-A streamer signs in with Twitch at `/song-requests/` (see Signing in) and gets
+A streamer signs in with Twitch at `/page/` (see Signing in) and gets
 their page right away, with a random secret key and a public id (the first
 12 bytes of the key's SHA-256, base64url). The id stays when the streamer gets
 a new key, so it is stored with the account rather than derived again. They
@@ -140,16 +142,16 @@ The task drops a song Moblin can't find and gives up after 7 days. The songs not
 given by `--song-queue-file` (or `SONG_QUEUE_FILE`), which needs a volume in
 Docker; without one they are forgotten on restart.
 
-Streamers manage their page at `/song-requests/`, which shows the viewer page
+Streamers manage their page at `/page/`, which shows the page itself
 only when given `?streamer=<id>`. The settings of a page are
 `{"id", "connected", "paywall", "paypal", "title", "message", "accent"}`, read
 and changed through the account endpoints below. `title` (at most 60
-characters) and `message` (at most 300) are shown on the viewer page, and
+characters) and `message` (at most 300) are shown on the page, and
 `accent` is one of `green`, `purple`, `blue`, `pink`, `orange` and `red`; all
 three are `null` when unset. `GET /remote-control/<id>/profile` answers
-`{"name", "login", "avatar", "title", "message", "accent"}` for the viewer
+`{"name", "login", "avatar", "title", "message", "accent"}` for the
 page. Settings are saved in the JSON file
-given by `--song-requests-file` (or `SONG_REQUESTS_FILE`), which needs a
+given by `--pages-file` (or `PAGES_FILE`), which needs a
 volume when running in Docker; without one they are forgotten on restart.
 
 ### Signing in
@@ -164,7 +166,7 @@ that lives 10 minutes and is also set as the `moblin_sign_in_state` cookie.
 Twitch redirects back to `GET /auth/twitch/callback`, which refuses a state
 that doesn't match the cookie (so a callback URL can't sign in another
 browser), exchanges the code, looks the user up and redirects to
-`<frontend url>/song-requests/#session=<session>` (or `#signInFailed`). A
+`<frontend url>/page/#session=<session>` (or `#signInFailed`). A
 session is the Twitch user id, the account's session generation and the time
 it was issued, signed with HMAC-SHA256. It lasts 30 days and is sent as
 `Authorization: Bearer <session>`. `POST /account/sign-out` signs the account
@@ -186,13 +188,13 @@ last 10 minutes and answers 403 otherwise, so a stolen session can't redirect
 payments.
 
 GitHub Pages has no file for `/twitch/<login>`, so it serves `404.html`,
-which renders the song request page for those paths (the dev server rewrites
+which renders the page for those paths (the dev server rewrites
 them to `404.html` too) and resolves the login with `GET
 /remote-control/names/twitch/<login>`, answering `{"id"}`. The `twitch`
 prefix leaves room for other platforms later. `GET
 /remote-control/<id>/profile` answers `{"name", "login", "avatar"}`, the
 Twitch display name, login and profile image saved at the streamer's last sign
-in (or 404), which the song request page shows at the top so viewers know
+in (or 404), which the page shows at the top so viewers know
 whose page it is. Logins match
 case-insensitively. Each sign in records the login, and takes it from any other
 account that still has it after a rename. Accounts are saved in the JSON file
@@ -221,7 +223,7 @@ information on PayPal), a price of 0.50 to 1000 and a currency on their page,
 which the settings endpoint takes as `"paywall": {"merchantId", "price",
 "currency"}` (`price` in hundredths) or `null`. Streamers enter the merchant
 ID rather than their email because PayPal no longer accepts emails as the
-JavaScript SDK's `merchant-id`, and the viewer page must not show anyone's
+JavaScript SDK's `merchant-id`, and the page must not show anyone's
 email. Saving checks the merchant ID with a PayPal order that is never paid,
 and answers 422 when PayPal can't send payments to it. The money goes straight to the streamer:
 every PayPal order names the streamer as payee, so the backend never holds
@@ -315,18 +317,18 @@ characters, as for tips) and `POST
 /remote-control/<id>/spin/orders/<order id>/capture`. Each purchase is posted
 like a tip, with `"type": "spin"` and `"spins"`.
 
-The viewer page shows tips, the wheel and song requests one at a time, with
+The page shows tips, the wheel and song requests one at a time, with
 Tip, Spin and Songs tabs for the ones the streamer turned on. `#tip` and
 `#spin` at the end of the page address open those tabs.
 
-To try song requests locally without Twitch or a phone:
+To try a page locally without Twitch or a phone:
 
 1. `just backend-run` and `just frontend-run`.
-2. Open `http://localhost:5173/song-requests/`, sign in with Twitch (faked)
+2. Open `http://localhost:5173/page/`, sign in with Twitch (faked)
    and your page is created.
 3. Copy the streamer URL from the page and run
    `just backend-fake-streamer <streamer URL>`, which connects a
    made-up Moblin to the backend. Without a key it makes up a new one, only
-   reachable at `/song-requests/?streamer=<id>` and not manageable.
+   reachable at `/page/?streamer=<id>` and not manageable.
 4. Request songs at `http://localhost:5173/twitch/streamer`. Songs with the id
    404 are not found.

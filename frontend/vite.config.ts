@@ -13,7 +13,7 @@ export default defineConfig({
     solid(),
     tailwindcss(),
     {
-      name: "twitch-song-requests",
+      name: "twitch-pages",
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
           if (req.url && new RegExp(`^${base}twitch/[^/?.]+/?(\\?.*)?$`).test(req.url)) {
@@ -86,6 +86,7 @@ export default defineConfig({
         "chat-bot/index.html",
         "docs/index.html",
         "cards/index.html",
+        "page/index.html",
         "song-requests/index.html",
         "404.html",
       ],
