@@ -57,6 +57,7 @@ pub enum PayeeError {
 pub enum CaptureError {
     NotApproved,
     AlreadyCaptured,
+    Pending,
     Failed,
 }
 
@@ -202,16 +203,23 @@ impl PayPal {
             });
         }
         let capture = &body["purchase_units"][0]["payments"]["captures"][0];
-        let paid = body["status"] == "COMPLETED"
-            && matches!(capture["status"].as_str(), Some("COMPLETED" | "PENDING"))
-            && capture["amount"]["currency_code"] == order.currency.as_str()
+        let amount_matches = capture["amount"]["currency_code"] == order.currency.as_str()
             && capture["amount"]["value"] == format_price(order.price).as_str();
         self.orders.lock().unwrap().remove(order_id);
-        if !paid {
-            info!("unexpected capture of PayPal order {order_id}: {body}");
-            return Err(CaptureError::Failed);
+        match capture["status"].as_str() {
+            Some("COMPLETED") if body["status"] == "COMPLETED" && amount_matches => Ok(()),
+            Some("PENDING") if amount_matches => {
+                info!(
+                    "capture of PayPal order {order_id} is pending: {}",
+                    capture["status_details"]["reason"]
+                );
+                Err(CaptureError::Pending)
+            }
+            _ => {
+                info!("unexpected capture of PayPal order {order_id}: {body}");
+                Err(CaptureError::Failed)
+            }
         }
-        Ok(())
     }
 
     async fn post_capture(&self, order_id: &str) -> Result<reqwest::Response> {

@@ -160,8 +160,10 @@ browser. Pages made before signing in was required can't be added to an
 account; those streamers get a new page and streamer URL. The sign in button
 links to
 `GET /auth/twitch/login`, which redirects to Twitch with a one-time `state`
-that lives 10 minutes. Twitch redirects back to `GET /auth/twitch/callback`,
-which exchanges the code, looks the user up and redirects to
+that lives 10 minutes and is also set as the `moblin_sign_in_state` cookie.
+Twitch redirects back to `GET /auth/twitch/callback`, which refuses a state
+that doesn't match the cookie (so a callback URL can't sign in another
+browser), exchanges the code, looks the user up and redirects to
 `<frontend url>/song-requests/#session=<session>` (or `#signInFailed`). A
 session is the Twitch user id, the account's session generation and the time
 it was issued, signed with HMAC-SHA256. It lasts 30 days and is sent as

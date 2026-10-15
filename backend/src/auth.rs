@@ -13,6 +13,7 @@ use serde::Deserialize;
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
 const SESSION_LIFETIME: u64 = 30 * 24 * 60 * 60;
+pub const STATE_COOKIE: &str = "moblin_sign_in_state";
 
 pub struct OAuthApp {
     pub client_id: String,
@@ -106,7 +107,7 @@ impl Auth {
         format!("{}/auth/twitch/callback", self.public_url)
     }
 
-    pub fn login_url(&self, fake_login: Option<&str>) -> Option<String> {
+    pub fn login_url(&self, fake_login: Option<&str>) -> Option<(String, String)> {
         if self.fake {
             let login = fake_login.unwrap_or("streamer").to_lowercase();
             let valid = (1..=25).contains(&login.len())
@@ -120,7 +121,7 @@ impl Auth {
                 [("code", login.as_str()), ("state", state.as_str())],
             )
             .ok()
-            .map(String::from);
+            .map(|url| (url.into(), state));
         }
         let app = self.twitch.as_ref()?;
         let state = self.new_state()?;
@@ -135,7 +136,20 @@ impl Auth {
             ],
         )
         .ok()
-        .map(String::from)
+        .map(|url| (url.into(), state))
+    }
+
+    pub fn state_cookie(&self, state: &str) -> String {
+        let secure = if self.public_url.starts_with("https://") {
+            "; Secure"
+        } else {
+            ""
+        };
+        format!("{STATE_COOKIE}={state}; Max-Age=600; HttpOnly; SameSite=Lax{secure}")
+    }
+
+    pub fn cleared_state_cookie(&self) -> String {
+        self.state_cookie("").replace("Max-Age=600", "Max-Age=0")
     }
 
     fn new_state(&self) -> Option<String> {
@@ -160,9 +174,17 @@ impl Auth {
         created.is_some_and(|created| created.elapsed() < STATE_LIFETIME)
     }
 
-    pub async fn callback(&self, code: &str, state: &str) -> Result<User> {
+    pub async fn callback(
+        &self,
+        code: &str,
+        state: &str,
+        browser_state: Option<&str>,
+    ) -> Result<User> {
         if !self.consume_state(state) {
             bail!("unknown or expired state");
+        }
+        if browser_state != Some(state) {
+            bail!("the state is from another browser");
         }
         if self.fake {
             return Ok(User {
@@ -322,13 +344,15 @@ mod tests {
     #[test]
     fn states_are_single_use() {
         let auth = new_auth("secret");
-        let url = Url::parse(&auth.login_url(Some("other")).unwrap()).unwrap();
+        let (url, state) = auth.login_url(Some("other")).unwrap();
+        let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(url.host_str(), Some("id.twitch.tv"));
         assert_eq!(
             query["redirect_uri"],
             "https://api.example.com/auth/twitch/callback"
         );
+        assert_eq!(query["state"], state);
         assert!(auth.consume_state(&query["state"]));
         assert!(!auth.consume_state(&query["state"]));
         auth.pending
@@ -349,11 +373,18 @@ mod tests {
             None,
         )
         .unwrap();
-        let url = Url::parse(&auth.login_url(Some("Erik")).unwrap()).unwrap();
+        let url = Url::parse(&auth.login_url(Some("Erik")).unwrap().0).unwrap();
         assert_eq!(url.path(), "/api/auth/twitch/callback");
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+        let state = query["state"].as_str();
+        let (_, other) = auth.login_url(None).unwrap();
+        assert!(
+            auth.callback(&query["code"], &other, Some(state))
+                .await
+                .is_err()
+        );
         assert_eq!(
-            auth.callback(&query["code"], &query["state"])
+            auth.callback(&query["code"], state, Some(state))
                 .await
                 .unwrap(),
             User {
@@ -363,8 +394,12 @@ mod tests {
                 avatar: None,
             }
         );
-        assert!(auth.callback("erik", &query["state"]).await.is_err());
+        assert!(auth.callback("erik", state, Some(state)).await.is_err());
         assert_eq!(auth.login_url(Some("bad login")), None);
-        assert!(auth.login_url(None).unwrap().contains("code=streamer"));
+        assert!(auth.login_url(None).unwrap().0.contains("code=streamer"));
+        assert_eq!(
+            auth.state_cookie("s"),
+            "moblin_sign_in_state=s; Max-Age=600; HttpOnly; SameSite=Lax"
+        );
     }
 }

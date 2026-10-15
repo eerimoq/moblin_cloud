@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
-use axum::http::header::AUTHORIZATION;
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
+use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -17,7 +17,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{Account, AccountError, Accounts, Page};
 use crate::app_attest::AppAttest;
-use crate::auth::Auth;
+use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
 use crate::live::Live;
 use crate::paypal::{CaptureError, Order, PayPal, PayeeError};
@@ -268,12 +268,26 @@ struct LoginQuery {
 async fn handle_login(
     State(api): State<Arc<Api>>,
     Query(query): Query<LoginQuery>,
-) -> Result<Redirect, StatusCode> {
-    let url = api
+) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
+    let (url, state) = api
         .auth
         .login_url(query.login.as_deref())
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    Ok(Redirect::to(&url))
+    Ok((
+        [(SET_COOKIE, api.auth.state_cookie(&state))],
+        Redirect::to(&url),
+    ))
+}
+
+fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers
+        .get_all(COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| value)
 }
 
 #[derive(Deserialize)]
@@ -285,16 +299,28 @@ struct CallbackQuery {
 async fn handle_callback(
     State(api): State<Arc<Api>>,
     Query(query): Query<CallbackQuery>,
-) -> Result<Redirect, StatusCode> {
+    headers: HeaderMap,
+) -> ([(HeaderName, String); 1], Redirect) {
+    (
+        [(SET_COOKIE, api.auth.cleared_state_cookie())],
+        signed_in_redirect(&api, query, cookie(&headers, STATE_COOKIE)).await,
+    )
+}
+
+async fn signed_in_redirect(
+    api: &Api,
+    query: CallbackQuery,
+    browser_state: Option<&str>,
+) -> Redirect {
     let page = format!("{}/song-requests/", api.auth.frontend_url);
     let (Some(code), Some(state)) = (query.code, query.state) else {
-        return Ok(Redirect::to(&format!("{page}#signInFailed")));
+        return Redirect::to(&format!("{page}#signInFailed"));
     };
-    let user = match api.auth.callback(&code, &state).await {
+    let user = match api.auth.callback(&code, &state, browser_state).await {
         Ok(user) => user,
         Err(error) => {
             warn!("signing in with Twitch failed: {error:#}");
-            return Ok(Redirect::to(&format!("{page}#signInFailed")));
+            return Redirect::to(&format!("{page}#signInFailed"));
         }
     };
     let account =
@@ -305,14 +331,14 @@ async fn handle_callback(
             Ok(account) => account,
             Err(error) => {
                 warn!("saving account {} failed: {error:?}", user.id);
-                return Ok(Redirect::to(&format!("{page}#signInFailed")));
+                return Redirect::to(&format!("{page}#signInFailed"));
             }
         };
     info!("Twitch user {} ({}) signed in", user.id, user.login);
-    Ok(Redirect::to(&format!(
+    Redirect::to(&format!(
         "{page}#session={}",
         api.auth.session(&user.id, account.sessions)
-    )))
+    ))
 }
 
 #[derive(Serialize)]
@@ -809,6 +835,10 @@ async fn capture(
             CaptureError::AlreadyCaptured => {
                 failure(StatusCode::CONFLICT, "This payment was already used.")
             }
+            CaptureError::Pending => failure(
+                StatusCode::PAYMENT_REQUIRED,
+                "PayPal is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund.",
+            ),
             CaptureError::Failed => failure(
                 StatusCode::BAD_GATEWAY,
                 "PayPal could not complete the payment.",
@@ -1009,13 +1039,18 @@ mod tests {
                                 Json(json!({"details": [{"issue": "ORDER_NOT_APPROVED"}]})),
                             );
                         }
+                        let status = if amount["currency_code"] == "EUR" {
+                            "PENDING"
+                        } else {
+                            "COMPLETED"
+                        };
                         (
                             StatusCode::CREATED,
                             Json(json!({
                                 "id": id,
                                 "status": "COMPLETED",
                                 "purchase_units": [{"payments": {"captures": [
-                                    {"status": "COMPLETED", "amount": amount},
+                                    {"status": status, "amount": amount},
                                 ]}}],
                             })),
                         )
@@ -1362,6 +1397,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pending_captures_add_no_song() {
+        let (address, api, _) = start_paid().await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": {
+                "merchantId": "merchant00001", "price": 250, "currency": "EUR",
+            }}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut socket = connect(&address, &key).await;
+        let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
+        assert_eq!(
+            request_song(&mut socket, &orders_url).await,
+            json!({"orderId": "ORDER1"})
+        );
+        let response = client
+            .post(format!("{orders_url}/ORDER1/capture"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        assert!(api.song_queue.pending().is_empty());
+    }
+
+    #[tokio::test]
     async fn paid_songs_are_retried_until_added_once() {
         let (address, api, _) = start_paid().await;
         let (key, id) = paid_streamer(&address, &api).await;
@@ -1560,13 +1625,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        let login = location(
-            &client
-                .get(format!("http://{address}/auth/twitch/login"))
-                .send()
-                .await
-                .unwrap(),
-        );
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login"))
+            .send()
+            .await
+            .unwrap();
+        let login = location(&response);
+        let cookie = response.headers()["set-cookie"]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
         assert!(login.starts_with(&format!("{twitch}/authorize?")));
         let state = reqwest::Url::parse(&login)
             .unwrap()
@@ -1575,14 +1646,54 @@ mod tests {
             .unwrap()
             .1
             .into_owned();
+        assert_eq!(cookie, format!("moblin_sign_in_state={state}"));
         let callback = format!("http://{address}/auth/twitch/callback?code=c&state={state}");
-        let page = location(&client.get(&callback).send().await.unwrap());
+        let page = location(
+            &client
+                .get(&callback)
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap(),
+        );
         let session = page
             .strip_prefix("https://moblin.app/song-requests/#session=")
             .unwrap()
             .to_string();
         assert_eq!(
-            location(&client.get(&callback).send().await.unwrap()),
+            location(
+                &client
+                    .get(&callback)
+                    .header("cookie", &cookie)
+                    .send()
+                    .await
+                    .unwrap()
+            ),
+            "https://moblin.app/song-requests/#signInFailed"
+        );
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login"))
+            .send()
+            .await
+            .unwrap();
+        let state = reqwest::Url::parse(&location(&response))
+            .unwrap()
+            .query_pairs()
+            .find(|(name, _)| name == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        assert_eq!(
+            location(
+                &client
+                    .get(format!(
+                        "http://{address}/auth/twitch/callback?code=c&state={state}"
+                    ))
+                    .header("cookie", "moblin_sign_in_state=other")
+                    .send()
+                    .await
+                    .unwrap()
+            ),
             "https://moblin.app/song-requests/#signInFailed"
         );
         let response = client
