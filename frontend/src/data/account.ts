@@ -1,0 +1,70 @@
+import { backendUrl } from "./backend";
+import { BackendError, type Settings } from "./remoteControl";
+
+export type Account = {
+  name: string;
+  login: string;
+  streamerUrl: string | null;
+  settings: Settings | null;
+};
+
+const sessionKey = "songRequestSession";
+
+export function readSession() {
+  try {
+    return localStorage.getItem(sessionKey);
+  } catch {
+    return null;
+  }
+}
+
+export function saveSession(session: string | null) {
+  try {
+    if (session) {
+      localStorage.setItem(sessionKey, session);
+    } else {
+      localStorage.removeItem(sessionKey);
+    }
+  } catch {}
+}
+
+export function takeSignInResult(): { session: string | null; failed: boolean } {
+  const hash = location.hash.slice(1);
+  const session = new URLSearchParams(hash).get("session");
+  const failed = hash === "signInFailed";
+  if (session || failed) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+  return { session, failed };
+}
+
+export const signInUrl = `${backendUrl}/auth/twitch/login`;
+
+async function call<T>(session: string | null, path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (session) {
+    headers.set("authorization", `Bearer ${session}`);
+  }
+  const response = await fetch(`${backendUrl}${path}`, { ...init, headers });
+  if (!response.ok) {
+    throw new BackendError(response.status, await response.text());
+  }
+  return response.json();
+}
+
+const post = (body: unknown) => ({
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export const fetchAccount = (session: string) => call<Account>(session, "/account");
+
+export const createStreamer = (session: string) =>
+  call<Account>(session, "/account/streamer", { method: "POST" });
+
+export const newStreamerUrl = (session: string) =>
+  call<Account>(session, "/account/streamer-url", { method: "POST" });
+
+export const saveAccountSettings = (session: string, settings: Pick<Settings, "paywall">) =>
+  call<Settings>(session, "/account/settings", post({ paywall: settings.paywall }));

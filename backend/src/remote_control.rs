@@ -230,6 +230,10 @@ impl Streamers {
         Ok(())
     }
 
+    pub fn disconnect(&self, id: &str) {
+        self.sessions.lock().unwrap().by_id.remove(id);
+    }
+
     pub fn is_connected(&self, id: &str) -> bool {
         self.sessions.lock().unwrap().by_id.contains_key(id)
     }

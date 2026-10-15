@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::body::Bytes;
-use axum::extract::{Path, State, WebSocketUpgrade};
+use axum::extract::{Path, Query, State, WebSocketUpgrade};
+use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
-use axum::response::Response;
+use axum::response::{Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine;
@@ -14,7 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::accounts::{Account, AccountError, Accounts, Page};
 use crate::app_attest::AppAttest;
+use crate::auth::Auth;
 use crate::challenges::Challenges;
 use crate::live::Live;
 use crate::paypal::{CaptureError, Order, PayPal, PayeeError};
@@ -34,6 +37,8 @@ pub struct Api {
     pub song_requests: SongRequests,
     pub paypal: Option<PayPal>,
     pub song_queue: SongQueue,
+    pub auth: Auth,
+    pub accounts: Accounts,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -47,19 +52,21 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/streamers/live", post(handle_streamers_live))
         .route("/twitch/live", get(handle_twitch_live))
         .route(
-            "/remote-control/streamers",
-            post(handle_remote_control_streamers),
-        )
-        .route(
             "/remote-control/streamer/{key}",
             get(handle_remote_control_streamer),
         )
         .route(
-            "/remote-control/streamer/{key}/settings",
-            get(handle_settings).post(handle_settings_update),
+            "/remote-control/names/twitch/{login}",
+            get(handle_twitch_name),
         )
-        .route("/remote-control/names/{name}", get(handle_name))
+        .route("/auth/twitch/login", get(handle_login))
+        .route("/auth/twitch/callback", get(handle_callback))
+        .route("/account", get(handle_account))
+        .route("/account/streamer", post(handle_account_streamer))
+        .route("/account/streamer-url", post(handle_account_streamer_url))
+        .route("/account/settings", post(handle_account_settings))
         .route("/remote-control/{id}/paywall", get(handle_paywall))
+        .route("/remote-control/{id}/profile", get(handle_profile))
         .route(
             "/remote-control/{id}/music",
             get(handle_music_status).post(handle_music_add),
@@ -164,28 +171,15 @@ async fn handle_streamers_live(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Serialize)]
-struct RemoteControlStreamerResponse {
-    key: String,
-    id: String,
-}
-
-async fn handle_remote_control_streamers(
-    State(api): State<Arc<Api>>,
-) -> Result<Json<RemoteControlStreamerResponse>, StatusCode> {
-    let (key, id) = api
-        .remote_control
-        .new_key()
-        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    Ok(Json(RemoteControlStreamerResponse { key, id }))
-}
-
 async fn handle_remote_control_streamer(
     State(api): State<Arc<Api>>,
     Path(key): Path<String>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    let id = remote_control::id_of(&key).ok_or(StatusCode::NOT_FOUND)?;
+    let id = api
+        .accounts
+        .page_of_key(&key)
+        .ok_or(StatusCode::NOT_FOUND)?;
     Ok(upgrade.on_upgrade(move |socket| async move { api.remote_control.serve(id, socket).await }))
 }
 
@@ -193,7 +187,6 @@ async fn handle_remote_control_streamer(
 struct SettingsResponse {
     id: String,
     connected: bool,
-    name: Option<String>,
     paywall: Option<Paywall>,
     paypal: bool,
 }
@@ -202,48 +195,30 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
         id,
-        name: settings.name,
         paywall: settings.paywall,
         paypal: api.paypal.is_some(),
     })
 }
 
-async fn handle_settings(
-    State(api): State<Arc<Api>>,
-    Path(key): Path<String>,
-) -> Result<Json<SettingsResponse>, StatusCode> {
-    let id = remote_control::id_of(&key).ok_or(StatusCode::NOT_FOUND)?;
-    let settings = api.song_requests.get(&id);
-    Ok(settings_response(&api, id, settings))
-}
-
 #[derive(Deserialize)]
 struct SettingsRequest {
-    name: Option<String>,
     paywall: Option<Paywall>,
 }
 
-async fn handle_settings_update(
-    State(api): State<Arc<Api>>,
-    Path(key): Path<String>,
-    Json(request): Json<SettingsRequest>,
+async fn update_settings(
+    api: &Api,
+    id: String,
+    request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let id = remote_control::id_of(&key)
-        .ok_or((StatusCode::NOT_FOUND, "unknown streamer".to_string()))?;
     let paywall = match request.paywall {
-        Some(paywall) => Some(paywall_with_merchant_id(&api, &id, paywall).await?),
+        Some(paywall) => Some(paywall_with_merchant_id(api, &id, paywall).await?),
         None => None,
     };
     let settings = api
         .song_requests
-        .set(&id, request.name.as_deref().unwrap_or(""), paywall)
+        .set(&id, paywall)
         .map_err(|error| match error {
-            SettingsError::InvalidName => (
-                StatusCode::BAD_REQUEST,
-                "the name must be 3 to 25 letters, digits and dashes".to_string(),
-            ),
             SettingsError::InvalidPaywall => invalid_paywall(),
-            SettingsError::NameTaken => (StatusCode::CONFLICT, "the name is taken".to_string()),
             SettingsError::Full => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "too many streamers".to_string(),
@@ -254,10 +229,173 @@ async fn handle_settings_update(
             ),
         })?;
     info!(
-        "remote control streamer {id} set name {:?} and paywall {:?}",
-        settings.name, settings.paywall
+        "remote control streamer {id} set paywall {:?}",
+        settings.paywall
     );
-    Ok(settings_response(&api, id, settings))
+    Ok(settings_response(api, id, settings))
+}
+
+#[derive(Deserialize)]
+struct LoginQuery {
+    login: Option<String>,
+}
+
+async fn handle_login(
+    State(api): State<Arc<Api>>,
+    Query(query): Query<LoginQuery>,
+) -> Result<Redirect, StatusCode> {
+    let url = api
+        .auth
+        .login_url(query.login.as_deref())
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(Redirect::to(&url))
+}
+
+#[derive(Deserialize)]
+struct CallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+}
+
+async fn handle_callback(
+    State(api): State<Arc<Api>>,
+    Query(query): Query<CallbackQuery>,
+) -> Result<Redirect, StatusCode> {
+    let page = format!("{}/song-requests/", api.auth.frontend_url);
+    let (Some(code), Some(state)) = (query.code, query.state) else {
+        return Ok(Redirect::to(&format!("{page}#signInFailed")));
+    };
+    let user = match api.auth.callback(&code, &state).await {
+        Ok(user) => user,
+        Err(error) => {
+            warn!("signing in with Twitch failed: {error:#}");
+            return Ok(Redirect::to(&format!("{page}#signInFailed")));
+        }
+    };
+    if let Err(error) =
+        api.accounts
+            .signed_in(&user.id, &user.name, &user.login, user.avatar.as_deref())
+    {
+        warn!("saving account {} failed: {error:?}", user.id);
+        return Ok(Redirect::to(&format!("{page}#signInFailed")));
+    }
+    info!("Twitch user {} ({}) signed in", user.id, user.login);
+    Ok(Redirect::to(&format!(
+        "{page}#session={}",
+        api.auth.session(&user.id)
+    )))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountResponse {
+    name: String,
+    login: String,
+    streamer_url: Option<String>,
+    settings: Option<SettingsResponse>,
+}
+
+fn not_signed_in() -> (StatusCode, String) {
+    (StatusCode::UNAUTHORIZED, "not signed in".to_string())
+}
+
+fn signed_in(api: &Api, headers: &HeaderMap) -> Result<(String, Account), (StatusCode, String)> {
+    let id = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(|session| api.auth.account_of(session))
+        .ok_or_else(not_signed_in)?;
+    let account = api.accounts.get(&id).ok_or_else(not_signed_in)?;
+    Ok((id, account))
+}
+
+fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
+    let settings = account.page.as_ref().map(|page| {
+        let settings = api.song_requests.get(&page.id);
+        settings_response(api, page.id.clone(), settings).0
+    });
+    Json(AccountResponse {
+        name: account.name,
+        login: account.login,
+        streamer_url: account.page.map(|page| api.auth.streamer_url(&page.key)),
+        settings,
+    })
+}
+
+fn account_error(error: AccountError) -> (StatusCode, String) {
+    match error {
+        AccountError::Unknown => not_signed_in(),
+        AccountError::NoPage => no_page(),
+        AccountError::Full => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "too many accounts".to_string(),
+        ),
+        AccountError::NotSaved => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "the account could not be saved".to_string(),
+        ),
+    }
+}
+
+fn no_page() -> (StatusCode, String) {
+    (StatusCode::NOT_FOUND, "no song request page".to_string())
+}
+
+fn new_key(api: &Api) -> Result<(String, String), (StatusCode, String)> {
+    api.remote_control.new_key().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no streamer could be created".to_string(),
+    ))
+}
+
+async fn handle_account(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let (_, account) = signed_in(&api, &headers)?;
+    Ok(account_response(&api, account))
+}
+
+async fn handle_account_streamer(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let (id, account) = signed_in(&api, &headers)?;
+    if account.page.is_some() {
+        return Ok(account_response(&api, account));
+    }
+    let (key, page) = new_key(&api)?;
+    let account = api
+        .accounts
+        .give_page(&id, Page { id: page, key })
+        .map_err(account_error)?;
+    info!("{id} got a song request page");
+    Ok(account_response(&api, account))
+}
+
+async fn handle_account_streamer_url(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let (id, _) = signed_in(&api, &headers)?;
+    let (key, _) = new_key(&api)?;
+    let account = api.accounts.replace_key(&id, key).map_err(account_error)?;
+    if let Some(page) = &account.page {
+        api.remote_control.disconnect(&page.id);
+        info!("{id} got a new streamer URL for page {}", page.id);
+    }
+    Ok(account_response(&api, account))
+}
+
+async fn handle_account_settings(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<SettingsRequest>,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let (_, account) = signed_in(&api, &headers)?;
+    let id = account.page.ok_or_else(no_page)?.id;
+    update_settings(&api, id, request).await
 }
 
 fn invalid_paywall() -> (StatusCode, String) {
@@ -308,13 +446,32 @@ struct NameResponse {
     id: String,
 }
 
-async fn handle_name(
+#[derive(Serialize)]
+struct ProfileResponse {
+    name: String,
+    login: String,
+    avatar: Option<String>,
+}
+
+async fn handle_profile(
     State(api): State<Arc<Api>>,
-    Path(name): Path<String>,
+    Path(id): Path<String>,
+) -> Result<Json<ProfileResponse>, StatusCode> {
+    let account = api.accounts.of_page(&id).ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(ProfileResponse {
+        name: account.name,
+        login: account.login,
+        avatar: account.avatar,
+    }))
+}
+
+async fn handle_twitch_name(
+    State(api): State<Arc<Api>>,
+    Path(login): Path<String>,
 ) -> Result<Json<NameResponse>, StatusCode> {
     let id = api
-        .song_requests
-        .id_of_name(&name)
+        .accounts
+        .page_of_login(&login)
         .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(NameResponse { id }))
 }
@@ -643,6 +800,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
 
     use super::*;
+    use crate::auth::OAuthApp;
 
     async fn start() -> String {
         start_with(None).await
@@ -653,6 +811,13 @@ mod tests {
     }
 
     async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
+        start_api_with(paypal, None).await
+    }
+
+    async fn start_api_with(
+        paypal: Option<PayPal>,
+        twitch: Option<OAuthApp>,
+    ) -> (String, Arc<Api>) {
         let api = Arc::new(Api {
             store: Arc::new(Store::new(6)),
             challenges: Challenges::new(),
@@ -662,6 +827,16 @@ mod tests {
             song_requests: SongRequests::load(None).unwrap(),
             paypal,
             song_queue: SongQueue::load(None).unwrap(),
+            auth: Auth::new(
+                reqwest::Client::new(),
+                "http://localhost".to_string(),
+                "https://moblin.app".to_string(),
+                twitch,
+                false,
+                Some("secret"),
+            )
+            .unwrap(),
+            accounts: Accounts::load(None).unwrap(),
         });
         tokio::spawn({
             let api = api.clone();
@@ -830,29 +1005,44 @@ mod tests {
         (address, api, paypal_order)
     }
 
-    async fn paid_streamer(address: &str) -> (String, String) {
-        let client = reqwest::Client::new();
-        let streamer: Value = client
-            .post(format!("http://{address}/remote-control/streamers"))
+    fn key_of(account: &Value) -> String {
+        let url = account["streamerUrl"].as_str().unwrap();
+        assert!(url.starts_with("ws://localhost/remote-control/streamer/"));
+        url.rsplit('/').next().unwrap().to_string()
+    }
+
+    async fn streamer(address: &str, api: &Api) -> (String, String, String) {
+        api.accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        let session = api.auth.session("1");
+        let account: Value = reqwest::Client::new()
+            .post(format!("http://{address}/account/streamer"))
+            .bearer_auth(&session)
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        let key = streamer["key"].as_str().unwrap().to_string();
-        let response = client
-            .post(format!(
-                "http://{address}/remote-control/streamer/{key}/settings"
-            ))
-            .json(&json!({"name": "erik", "paywall": {
+        (
+            session,
+            key_of(&account),
+            account["settings"]["id"].as_str().unwrap().to_string(),
+        )
+    }
+
+    async fn paid_streamer(address: &str, api: &Api) -> (String, String) {
+        let (session, key, id) = streamer(address, api).await;
+        let response = reqwest::Client::new()
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": {
                 "email": "erik@example.com", "price": 250, "currency": "SEK", "merchantId": "FAKE",
             }}))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        (key, streamer["id"].as_str().unwrap().to_string())
+        (key, id)
     }
 
     async fn request_song<S>(socket: &mut S, url: &str) -> Value
@@ -904,20 +1094,13 @@ mod tests {
     async fn paid_songs_are_added_after_capture() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let streamer: Value = client
-            .post(format!("http://{address}/remote-control/streamers"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let key = streamer["key"].as_str().unwrap();
-        let id = streamer["id"].as_str().unwrap();
-        let settings_url = format!("http://{address}/remote-control/streamer/{key}/settings");
+        let (session, key, id) = streamer(&address, &api).await;
+        let (key, id) = (key.as_str(), id.as_str());
+        let settings_url = format!("http://{address}/account/settings");
         let response = client
             .post(&settings_url)
-            .json(&json!({"name": "erik", "paywall": {
+            .bearer_auth(&session)
+            .json(&json!({"paywall": {
                 "email": "nobody@example.com", "price": 250, "currency": "SEK",
             }}))
             .send()
@@ -926,7 +1109,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let settings: Value = client
             .post(&settings_url)
-            .json(&json!({"name": "erik", "paywall": {
+            .bearer_auth(&session)
+            .json(&json!({"paywall": {
                 "email": "erik@example.com", "price": 250, "currency": "SEK", "merchantId": "FAKE",
             }}))
             .send()
@@ -1056,7 +1240,7 @@ mod tests {
     #[tokio::test]
     async fn paid_songs_are_retried_until_added_once() {
         let (address, api, _) = start_paid().await;
-        let (key, id) = paid_streamer(&address).await;
+        let (key, id) = paid_streamer(&address, &api).await;
         let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
         let mut socket = connect(&address, &key).await;
         assert_eq!(
@@ -1110,16 +1294,8 @@ mod tests {
     async fn songs_are_added_through_the_streamer() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let streamer: Value = client
-            .post(format!("http://{address}/remote-control/streamers"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let key = streamer["key"].as_str().unwrap();
-        let id = streamer["id"].as_str().unwrap().to_string();
+        let (_, key, id) = streamer(&address, &api).await;
+        let key = key.as_str();
         let music_url = format!("http://{address}/remote-control/{id}/music");
         let response = client.get(&music_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -1189,17 +1365,8 @@ mod tests {
     #[tokio::test]
     async fn songs_not_found_are_dropped() {
         let (address, api) = start_api(None).await;
-        let client = reqwest::Client::new();
-        let streamer: Value = client
-            .post(format!("http://{address}/remote-control/streamers"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let key = streamer["key"].as_str().unwrap();
-        let id = streamer["id"].as_str().unwrap();
+        let (_, key, id) = streamer(&address, &api).await;
+        let key = key.as_str();
         let music_url = format!("http://{address}/remote-control/{id}/music");
         let mut socket = connect(&address, key).await;
         assert_eq!(request_song(&mut socket, &music_url).await, json!({}));
@@ -1210,23 +1377,98 @@ mod tests {
         wait_until_added(&api).await;
     }
 
+    async fn start_twitch() -> String {
+        let router = Router::new()
+            .route(
+                "/token",
+                post(|body: String| async move {
+                    assert!(body.contains("code=c"));
+                    Json(json!({"access_token": "u", "token_type": "bearer"}))
+                }),
+            )
+            .route(
+                "/users",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers[AUTHORIZATION], "Bearer u");
+                    assert_eq!(headers["client-id"], "id");
+                    Json(json!({"data": [{
+                        "id": "42",
+                        "login": "erik",
+                        "display_name": "Erik",
+                        "profile_image_url": "https://static-cdn.jtvnw.net/erik.png",
+                    }]}))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        format!("http://{address}")
+    }
+
+    fn location(response: &reqwest::Response) -> String {
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        response.headers()["location"].to_str().unwrap().to_string()
+    }
+
     #[tokio::test]
-    async fn settings_are_changed_with_the_key() {
-        let address = start().await;
-        let client = reqwest::Client::new();
-        let streamer: Value = client
-            .post(format!("http://{address}/remote-control/streamers"))
+    async fn streamers_sign_in_and_manage_their_page() {
+        let twitch = start_twitch().await;
+        let (address, _) = start_api_with(
+            None,
+            Some(OAuthApp {
+                client_id: "id".to_string(),
+                client_secret: "secret".to_string(),
+                authorize_url: format!("{twitch}/authorize"),
+                token_url: format!("{twitch}/token"),
+                users_url: format!("{twitch}/users"),
+            }),
+        )
+        .await;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let unconfigured = start().await;
+        let response = client
+            .get(format!("http://{unconfigured}/auth/twitch/login"))
             .send()
             .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let login = location(
+            &client
+                .get(format!("http://{address}/auth/twitch/login"))
+                .send()
+                .await
+                .unwrap(),
+        );
+        assert!(login.starts_with(&format!("{twitch}/authorize?")));
+        let state = reqwest::Url::parse(&login)
             .unwrap()
-            .json()
+            .query_pairs()
+            .find(|(name, _)| name == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let callback = format!("http://{address}/auth/twitch/callback?code=c&state={state}");
+        let page = location(&client.get(&callback).send().await.unwrap());
+        let session = page
+            .strip_prefix("https://moblin.app/song-requests/#session=")
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            location(&client.get(&callback).send().await.unwrap()),
+            "https://moblin.app/song-requests/#signInFailed"
+        );
+        let response = client
+            .get(format!("http://{address}/account"))
+            .send()
             .await
             .unwrap();
-        let key = streamer["key"].as_str().unwrap();
-        let id = streamer["id"].as_str().unwrap();
-        let settings_url = format!("http://{address}/remote-control/streamer/{key}/settings");
-        let settings: Value = client
-            .get(&settings_url)
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let account: Value = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(&session)
             .send()
             .await
             .unwrap()
@@ -1234,69 +1476,138 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            settings,
-            json!({"id": id, "connected": false, "name": null, "paywall": null, "paypal": false})
+            account,
+            json!({"name": "Erik", "login": "erik", "streamerUrl": null, "settings": null})
         );
         let response = client
-            .post(&settings_url)
-            .json(&json!({"name": null}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let settings: Value = client
-            .post(&settings_url)
-            .json(&json!({"name": "Erik"}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(
-            settings,
-            json!({"id": id, "connected": false, "name": "erik", "paywall": null, "paypal": false})
-        );
-        let name: Value = client
-            .get(format!("http://{address}/remote-control/names/erik"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(name, json!({"id": id}));
-        let response = client
-            .get(format!("http://{address}/remote-control/names/other"))
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null}))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let other: Value = client
-            .post(format!("http://{address}/remote-control/streamers"))
+        let account: Value = client
+            .post(format!("http://{address}/account/streamer"))
+            .bearer_auth(&session)
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        let response = client
-            .post(format!(
-                "http://{address}/remote-control/streamer/{}/settings",
-                other["key"].as_str().unwrap()
+        let key = key_of(&account);
+        assert_eq!(
+            account["settings"]["id"].as_str(),
+            remote_control::id_of(&key).as_deref()
+        );
+        let settings: Value = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings, account["settings"]);
+        let name: Value = client
+            .get(format!("http://{address}/remote-control/names/twitch/Erik"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(name["id"], account["settings"]["id"]);
+        let profile: Value = client
+            .get(format!(
+                "http://{address}/remote-control/{}/profile",
+                name["id"].as_str().unwrap()
             ))
-            .json(&json!({"name": "erik"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            profile,
+            json!({
+                "name": "Erik",
+                "login": "erik",
+                "avatar": "https://static-cdn.jtvnw.net/erik.png",
+            })
+        );
+        let response = client
+            .get(format!("http://{address}/remote-control/unknown/profile"))
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let response = client
             .get(format!(
-                "http://{address}/remote-control/streamer/{id}/settings"
+                "http://{address}/remote-control/names/twitch/other"
             ))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let again: Value = client
+            .post(format!("http://{address}/account/streamer"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(key_of(&again), key);
+    }
+
+    #[tokio::test]
+    async fn new_streamer_urls_keep_the_page() {
+        let (address, api) = start_api(None).await;
+        let (session, key, id) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        assert!(api.remote_control.is_connected(&id));
+        let account: Value = reqwest::Client::new()
+            .post(format!("http://{address}/account/streamer-url"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let new_key = key_of(&account);
+        assert_ne!(new_key, key);
+        assert_eq!(account["settings"]["id"], id);
+        assert!(!api.remote_control.is_connected(&id));
+        loop {
+            match socket.next().await {
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                Some(Ok(_)) => {}
+            }
+        }
+        assert!(
+            tokio_tungstenite::connect_async(format!(
+                "ws://{address}/remote-control/streamer/{key}"
+            ))
+            .await
+            .is_err()
+        );
+        let _socket = connect(&address, &new_key).await;
+        assert!(api.remote_control.is_connected(&id));
+        let name: Value = reqwest::Client::new()
+            .get(format!("http://{address}/remote-control/names/twitch/erik"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(name["id"], id);
     }
 }

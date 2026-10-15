@@ -24,12 +24,14 @@ import {
   BackendError,
   captureSong,
   formatPrice,
-  idOfName,
+  idOfTwitchLogin,
   musicStatus,
   orderSong,
   requestSong,
   streamerPaywall,
+  streamerProfile,
   type MusicStatus,
+  type Profile,
   type PublicPaywall,
 } from "../data/remoteControl";
 import SongRequestAdmin from "./SongRequestAdmin";
@@ -199,14 +201,46 @@ function Queue(props: { status: Status }) {
   );
 }
 
-function Viewer(props: { name: string }) {
-  const [id, setId] = createSignal<string | null>(null);
+function StreamerHeader(props: { profile: Profile }) {
+  return (
+    <div class="flex items-center gap-4">
+      <Show
+        when={props.profile.avatar}
+        fallback={
+          <span class="flex size-16 shrink-0 items-center justify-center rounded-full border-[1.5px] border-ghost-line bg-ghost font-display text-[28px] font-semibold text-ink">
+            {props.profile.name.slice(0, 1).toUpperCase()}
+          </span>
+        }
+      >
+        {(avatar) => (
+          <img src={avatar()} alt="" class="size-16 shrink-0 rounded-full bg-ghost object-cover" />
+        )}
+      </Show>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <span class="truncate font-display text-[23px] font-semibold">{props.profile.name}</span>
+        <a
+          href={`https://www.twitch.tv/${encodeURIComponent(props.profile.login)}`}
+          target="_blank"
+          rel="noopener"
+          class="inline-flex items-center gap-1.5 text-[15px] text-muted transition-colors hover:text-ink"
+        >
+          <Icon name="twitch" class="size-4 shrink-0" />
+          twitch.tv/{props.profile.login}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function Viewer(props: { id: string | null; twitch: string | null }) {
+  const [id, setId] = createSignal(props.id);
   const [status, setStatus] = createSignal<Status>("loading");
   const [song, setSong] = createSignal("");
   const [name, setName] = createSignal(readName());
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
+  const [profile, setProfile] = createSignal<Profile | null>(null);
   let form: HTMLFormElement | undefined;
   const [round, setRound] = createSignal(0);
   const nextRound = () => setRound(round() + 1);
@@ -314,10 +348,21 @@ function Viewer(props: { name: string }) {
   };
 
   onMount(async () => {
-    try {
-      setId(await idOfName(props.name));
-    } catch {
-      setStatus("unknown");
+    if (props.twitch) {
+      try {
+        setId(await idOfTwitchLogin(props.twitch));
+      } catch {
+        setStatus("unknown");
+      }
+    }
+    const current = id();
+    if (current) {
+      streamerProfile(current)
+        .then((found) => {
+          setProfile(found);
+          document.title = `${found.name} song requests – Moblin`;
+        })
+        .catch(() => {});
     }
     void refreshPaywall();
     void refresh();
@@ -343,10 +388,13 @@ function Viewer(props: { name: string }) {
 
   return (
     <>
-      <Hero title="Pick the next song.">
+      <Hero
+        title="Pick the next song."
+        top={profile() ? <StreamerHeader profile={profile()!} /> : undefined}
+      >
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Paste the Apple Music share link of the song you want to hear. It goes straight into the
-          streamer's queue in Moblin.
+          Paste the Apple Music share link of the song you want to hear. It goes straight into{" "}
+          {profile() ? `${profile()!.name}'s` : "the streamer's"} queue in Moblin.
         </p>
       </Hero>
       <Band>
@@ -440,13 +488,16 @@ function Viewer(props: { name: string }) {
   );
 }
 
-export default function SongRequest(props: { name?: string }) {
+export default function SongRequest(props: { twitch?: string }) {
+  const id = new URLSearchParams(location.search).get("streamer");
+  const twitch = props.twitch ?? null;
+
   return (
     <>
       <Nav />
       <main>
-        <Show when={props.name} fallback={<SongRequestAdmin />}>
-          {(name) => <Viewer name={name()} />}
+        <Show when={id || twitch} fallback={<SongRequestAdmin />}>
+          <Viewer id={id} twitch={twitch} />
         </Show>
       </main>
       <Footer />

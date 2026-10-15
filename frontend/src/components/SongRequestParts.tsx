@@ -14,12 +14,24 @@ export const ghostButtonClass =
 export const cardClass =
   "flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8";
 
-export function Hero(props: { eyebrow?: string; title: string; children: JSX.Element }) {
+export function Hero(props: {
+  eyebrow?: string;
+  top?: JSX.Element;
+  title: string;
+  children: JSX.Element;
+}) {
   return (
     <section class="mx-auto flex max-w-[1120px] flex-col gap-4 px-5 pt-12 pb-10 sm:px-8 lg:pt-18">
-      <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-        {props.eyebrow ?? "Song requests"}
-      </span>
+      <Show
+        when={props.top}
+        fallback={
+          <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
+            {props.eyebrow ?? "Song requests"}
+          </span>
+        }
+      >
+        {props.top}
+      </Show>
       <h1 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-6xl">{props.title}</h1>
       {props.children}
     </section>
@@ -34,13 +46,21 @@ export function Band(props: { children: JSX.Element }) {
   );
 }
 
-export function Value(props: { label: string; text: string; href?: string; secret?: boolean }) {
+export function Value(props: {
+  label: string;
+  text: string;
+  href?: string;
+  secret?: boolean;
+  hideLabel?: boolean;
+}) {
   const [shown, setShown] = createSignal(false);
   const shownText = () => (props.secret && !shown() ? "•".repeat(24) : props.text);
 
   return (
     <div class="flex flex-col gap-2">
-      <span class="text-[15px] font-semibold text-ink-2">{props.label}</span>
+      <span class={props.hideLabel ? "sr-only" : "text-[15px] font-semibold text-ink-2"}>
+        {props.label}
+      </span>
       <span class="flex items-start gap-2 rounded-2xl border-[1.5px] border-line bg-well px-4 py-3">
         <Show
           when={props.href}

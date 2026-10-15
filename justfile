@@ -34,7 +34,7 @@ backend-run *args:
 	set -euo pipefail
 	cd backend
 	cargo build
-	cargo run -q -- --allow-unattested {{args}} &
+	cargo run -q -- --allow-unattested --fake-twitch-sign-in --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	trap 'kill $!' EXIT
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	just backend-seed
@@ -70,5 +70,5 @@ cards-print out="cards-print":
 	cd frontend && node scripts/print-cards.ts {{absolute_path(out)}}
 
 # Pretends to be a Moblin streamer connected over remote control, for developing the song request page.
-backend-fake-streamer *key:
-	python3 scripts/remote_control_streamer.py {{key}}
+backend-fake-streamer *url:
+	python3 scripts/remote_control_streamer.py {{url}}

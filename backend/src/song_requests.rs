@@ -10,7 +10,6 @@ use crate::json_file;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
-    pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paywall: Option<Paywall>,
 }
@@ -57,9 +56,7 @@ impl Paywall {
 
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
-    InvalidName,
     InvalidPaywall,
-    NameTaken,
     Full,
     NotSaved,
 }
@@ -67,17 +64,6 @@ pub enum SettingsError {
 pub struct SongRequests {
     path: Option<PathBuf>,
     settings: Mutex<HashMap<String, Settings>>,
-}
-
-pub fn normalize_name(name: &str) -> Option<String> {
-    let name = name.trim().to_lowercase();
-    let valid = (3..=25).contains(&name.len())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-        && !name.starts_with('-')
-        && !name.ends_with('-');
-    valid.then_some(name)
 }
 
 impl SongRequests {
@@ -98,39 +84,21 @@ impl SongRequests {
             .unwrap_or_default()
     }
 
-    pub fn id_of_name(&self, name: &str) -> Option<String> {
-        let name = normalize_name(name)?;
-        self.settings
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|(_, settings)| settings.name.as_ref() == Some(&name))
-            .map(|(id, _)| id.clone())
-    }
-
-    pub fn set(
-        &self,
-        id: &str,
-        name: &str,
-        paywall: Option<Paywall>,
-    ) -> Result<Settings, SettingsError> {
-        let name = Some(normalize_name(name).ok_or(SettingsError::InvalidName)?);
+    pub fn set(&self, id: &str, paywall: Option<Paywall>) -> Result<Settings, SettingsError> {
         let paywall = match paywall {
             Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
             None => None,
         };
-        let new = Settings { name, paywall };
+        let new = Settings { paywall };
         let mut settings = self.settings.lock().unwrap();
-        if settings
-            .iter()
-            .any(|(other_id, other)| other_id != id && other.name == new.name)
-        {
-            return Err(SettingsError::NameTaken);
-        }
         if !settings.contains_key(id) && settings.len() >= 10000 {
             return Err(SettingsError::Full);
         }
-        let old = settings.insert(id.to_string(), new.clone());
+        let old = if new == Settings::default() {
+            settings.remove(id)
+        } else {
+            settings.insert(id.to_string(), new.clone())
+        };
         if let Err(error) = json_file::save(self.path.as_deref(), &*settings) {
             warn!("failed to save song request settings: {error:#}");
             match old {
@@ -148,49 +116,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn names_are_normalized() {
-        assert_eq!(normalize_name(" Erik-123 ").as_deref(), Some("erik-123"));
-        assert_eq!(normalize_name("ab"), None);
-        assert_eq!(normalize_name(&"a".repeat(26)), None);
-        assert_eq!(normalize_name("-erik"), None);
-        assert_eq!(normalize_name("erik-"), None);
-        assert_eq!(normalize_name("er ik"), None);
-        assert_eq!(normalize_name("erik_"), None);
-        assert_eq!(normalize_name("éric"), None);
-    }
-
-    #[test]
-    fn names_are_unique() {
-        let song_requests = SongRequests::load(None).unwrap();
-        assert_eq!(song_requests.get("a"), Settings::default());
-        assert_eq!(
-            song_requests.set("a", "Erik", None),
-            Ok(Settings {
-                name: Some("erik".to_string()),
-                paywall: None,
-            })
-        );
-        assert_eq!(song_requests.id_of_name("ERIK").as_deref(), Some("a"));
-        assert_eq!(
-            song_requests.set("b", "erik", None),
-            Err(SettingsError::NameTaken)
-        );
-        assert_eq!(
-            song_requests.set("b", "e r", None),
-            Err(SettingsError::InvalidName)
-        );
-        assert_eq!(
-            song_requests.set("a", " ", None),
-            Err(SettingsError::InvalidName)
-        );
-        assert!(song_requests.set("a", "erik", None).is_ok());
-        assert!(song_requests.set("a", "other", None).is_ok());
-        assert_eq!(song_requests.id_of_name("erik"), None);
-        assert!(song_requests.set("b", "erik", None).is_ok());
-        assert_eq!(song_requests.id_of_name("erik").as_deref(), Some("b"));
-    }
-
-    #[test]
     fn settings_are_saved() {
         let path = std::env::temp_dir().join(format!(
             "song-requests-{}-{:?}.json",
@@ -199,13 +124,19 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
-        song_requests.set("a", "erik", None).unwrap();
-        song_requests.set("b", "other", None).unwrap();
-        song_requests.set("b", "third", None).unwrap();
+        let paywall = Paywall {
+            email: "erik@example.com".to_string(),
+            price: 250,
+            currency: "SEK".to_string(),
+            merchant_id: None,
+        };
+        song_requests.set("a", Some(paywall.clone())).unwrap();
+        song_requests.set("b", Some(paywall.clone())).unwrap();
+        song_requests.set("b", None).unwrap();
         let song_requests = SongRequests::load(Some(path.clone())).unwrap();
-        assert_eq!(song_requests.id_of_name("erik").as_deref(), Some("a"));
-        assert_eq!(song_requests.id_of_name("third").as_deref(), Some("b"));
-        assert_eq!(song_requests.id_of_name("other"), None);
+        assert_eq!(song_requests.get("a").paywall, Some(paywall));
+        assert_eq!(song_requests.get("b"), Settings::default());
+        assert_eq!(song_requests.settings.lock().unwrap().len(), 1);
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -222,7 +153,7 @@ mod tests {
         };
         assert_eq!(
             song_requests
-                .set("a", "erik", paywall(" erik@example.com ", 250, "sek"))
+                .set("a", paywall(" erik@example.com ", 250, "sek"))
                 .unwrap()
                 .paywall,
             paywall("erik@example.com", 250, "SEK")
@@ -236,12 +167,12 @@ mod tests {
             ("erik@example.com", 250, "JPY"),
         ] {
             assert_eq!(
-                song_requests.set("a", "erik", paywall(email, price, currency)),
+                song_requests.set("a", paywall(email, price, currency)),
                 Err(SettingsError::InvalidPaywall)
             );
         }
-        assert!(song_requests.set("a", "erik", None).is_ok());
-        assert_eq!(song_requests.get("a").paywall, None);
+        assert!(song_requests.set("a", None).is_ok());
+        assert_eq!(song_requests.get("a"), Settings::default());
     }
 
     #[test]

@@ -10,53 +10,21 @@ import {
   inputClass,
   Value,
 } from "../components/SongRequestParts";
-import { pages } from "../data/links";
 import {
-  BackendError,
+  fetchAccount,
   createStreamer,
-  currencies,
-  keyOf,
-  saveStreamerSettings,
-  streamerSettings,
-  streamerUrl,
-  type Paywall,
-  type Settings,
-} from "../data/remoteControl";
+  newStreamerUrl,
+  readSession,
+  saveAccountSettings,
+  saveSession,
+  signInUrl,
+  takeSignInResult,
+  type Account,
+} from "../data/account";
+import { BackendError, currencies, type Paywall, type Settings } from "../data/remoteControl";
 
-const keyKey = "songRequestKey";
-
-function readKey() {
-  try {
-    return localStorage.getItem(keyKey);
-  } catch {
-    return null;
-  }
-}
-
-function saveKey(key: string | null) {
-  try {
-    if (key) {
-      localStorage.setItem(keyKey, key);
-    } else {
-      localStorage.removeItem(keyKey);
-    }
-  } catch {}
-}
-
-function errorText(error: unknown) {
-  if (error instanceof BackendError) {
-    switch (error.status) {
-      case 400:
-        return "That name can't be used. Use 3 to 25 letters, digits and dashes, not starting or ending with a dash.";
-      case 409:
-        return "That name is taken. Pick another one.";
-    }
-  }
-  return "Something went wrong. Try again.";
-}
-
-const pageUrl = (name: string) =>
-  new URL(`${asset(pages.songRequests)}${name}`, location.origin).href;
+const pageUrl = (account: Account) =>
+  new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
 
 function Steps() {
   return (
@@ -65,102 +33,31 @@ function Steps() {
         In Moblin, go to Settings, Remote control, Streamer, Assistant and paste the streamer URL as
         URL. Then turn Enabled on.
       </li>
-      <li>Make sure Moblin may use Apple Music, and share your page link with your viewers.</li>
+      <li>Make sure Moblin may use Apple Music.</li>
     </ol>
   );
 }
 
-function SignIn(props: { onKey: (key: string, settings: Settings, isNew: boolean) => void }) {
-  const [busy, setBusy] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
-  const [url, setUrl] = createSignal("");
-  const [signInError, setSignInError] = createSignal<string | null>(null);
-
-  const create = async () => {
-    setBusy(true);
-    setFailed(false);
-    try {
-      const streamer = await createStreamer();
-      props.onKey(streamer.key, await streamerSettings(streamer.key), true);
-    } catch {
-      setFailed(true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const signIn = async (event: SubmitEvent) => {
-    event.preventDefault();
-    const key = keyOf(url());
-    if (!key || busy()) {
-      return;
-    }
-    setBusy(true);
-    setSignInError(null);
-    try {
-      props.onKey(key, await streamerSettings(key), false);
-    } catch (error) {
-      setSignInError(
-        error instanceof BackendError && error.status === 404
-          ? "That is not a streamer URL from this page."
-          : "Something went wrong. Try again.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function TwitchSignIn(props: { failed: boolean }) {
   return (
-    <>
-      <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Create your page</h2>
-        <p class="text-ink-2">
-          You get a secret streamer URL for Moblin and a page your viewers request songs on.
-        </p>
-        <div class="flex flex-wrap items-center gap-4">
-          <button type="button" class={buttonClass} disabled={busy()} onClick={create}>
-            <Icon name="music" class="size-5" />
-            {busy() ? "Creating…" : "Create my page"}
-          </button>
-          <Show when={failed()}>
-            <p role="status" class="text-amber">
-              Could not create a page. Try again.
-            </p>
-          </Show>
-        </div>
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">Sign in</h2>
+      <p class="text-ink-2">Sign in with Twitch to create or manage your song request page.</p>
+      <div>
+        <a
+          href={signInUrl}
+          class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-twitch px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
+        >
+          <Icon name="twitch" class="size-5" />
+          Sign in with Twitch
+        </a>
       </div>
-      <form class={cardClass} onSubmit={signIn}>
-        <h2 class="text-[23px] font-semibold">Already have a page?</h2>
-        <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">Streamer URL</span>
-          <input
-            type="password"
-            required
-            value={url()}
-            onInput={(event) => setUrl(event.currentTarget.value)}
-            placeholder="wss://api.moblin.app/remote-control/streamer/…"
-            autocomplete="off"
-            spellcheck={false}
-            class={inputClass}
-          />
-          <span class="text-[15px] text-muted">
-            Copy it from Settings, Remote control, Streamer, Assistant in Moblin.
-          </span>
-        </label>
-        <div class="flex flex-wrap items-center gap-4">
-          <button type="submit" class={ghostButtonClass} disabled={busy()}>
-            Manage my page
-          </button>
-          <Show when={signInError()}>
-            {(text) => (
-              <p role="status" class="text-amber">
-                {text()}
-              </p>
-            )}
-          </Show>
-        </div>
-      </form>
-    </>
+      <Show when={props.failed}>
+        <p role="status" class="text-amber">
+          Signing in did not work. Try again.
+        </p>
+      </Show>
+    </div>
   );
 }
 
@@ -293,98 +190,70 @@ function Payments(props: {
 }
 
 function Admin(props: {
-  streamerKey: string;
+  session: string;
+  account: Account;
+  streamerUrl: string;
   settings: Settings;
-  isNew: boolean;
-  onForget: () => void;
+  onAccount: (account: Account) => void;
+  onSignOut: () => void;
 }) {
   const [settings, setSettings] = createSignal(props.settings);
-  const [name, setName] = createSignal(props.settings.name ?? "");
   const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<{ ok: boolean; text: string } | null>(null);
+  const [newUrlFailed, setNewUrlFailed] = createSignal(false);
 
-  onMount(() => {
-    const timer = setInterval(async () => {
-      try {
-        setSettings(await streamerSettings(props.streamerKey));
-      } catch {}
-    }, 10_000);
-    onCleanup(() => clearInterval(timer));
-  });
-
-  const save = async (changes: Partial<Pick<Settings, "name" | "paywall">>) => {
+  const newUrl = async () => {
+    if (
+      !confirm(
+        "Moblin disconnects and the current streamer URL stops working. Paste the new one in Moblin to reconnect.",
+      )
+    ) {
+      return;
+    }
     setBusy(true);
+    setNewUrlFailed(false);
     try {
-      setSettings(await saveStreamerSettings(props.streamerKey, { ...settings(), ...changes }));
+      props.onAccount(await newStreamerUrl(props.session));
+    } catch {
+      setNewUrlFailed(true);
     } finally {
       setBusy(false);
     }
   };
 
-  const saveName = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (busy()) {
-      return;
-    }
-    setResult(null);
+  onMount(() => {
+    const timer = setInterval(async () => {
+      try {
+        const account = await fetchAccount(props.session);
+        if (account.settings) {
+          setSettings(account.settings);
+        }
+      } catch {}
+    }, 10_000);
+    onCleanup(() => clearInterval(timer));
+  });
+
+  const save = async (changes: Pick<Settings, "paywall">) => {
+    setBusy(true);
     try {
-      await save({ name: name().trim() });
-      setName(settings().name ?? "");
-      setResult({ ok: true, text: "Saved." });
-    } catch (error) {
-      setResult({ ok: false, text: errorText(error) });
+      setSettings(await saveAccountSettings(props.session, { ...settings(), ...changes }));
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <>
-      <form class={cardClass} onSubmit={saveName}>
-        <h2 class="text-[23px] font-semibold">Your song request link</h2>
-        <p class="text-ink-2">
-          Viewers open this link to request songs. Share it in your chat, bio or stream overlay.
-        </p>
-        <Show when={settings().name}>
-          {(name) => (
-            <Value
-              label="Link for viewers to request songs"
-              text={pageUrl(name())}
-              href={pageUrl(name())}
-            />
-          )}
-        </Show>
-        <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">Name in the link</span>
-          <input
-            type="text"
-            required
-            minLength={3}
-            maxLength={25}
-            pattern="[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?"
-            value={name()}
-            onInput={(event) => setName(event.currentTarget.value.toLowerCase())}
-            placeholder="your-name"
-            autocomplete="off"
-            spellcheck={false}
-            class={`${inputClass} font-mono`}
-          />
-          <span class="text-[15px] text-muted">
-            Short and easy to remember, like your channel name. Letters, digits and dashes.
-          </span>
-        </label>
-        <div class="flex flex-wrap items-center gap-4">
-          <button type="submit" class={buttonClass} disabled={busy()}>
-            Save name
-          </button>
-          <Show when={result()}>
-            {(result) => (
-              <p role="status" class={result().ok ? "text-leaf" : "text-amber"}>
-                {result().text}
-              </p>
-            )}
-          </Show>
-        </div>
-      </form>
-      <Show when={settings().name && (settings().paypal || settings().paywall)}>
+      <div class={cardClass}>
+        <h2 class="text-[23px] font-semibold">Your page</h2>
+        <p class="text-ink-2">Share it with your viewers so they can request songs.</p>
+        <Value
+          label="Your page"
+          text={pageUrl(props.account)}
+          href={pageUrl(props.account)}
+          hideLabel
+        />
+      </div>
+      <Show when={settings().paypal || settings().paywall}>
         <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
       </Show>
       <div class={cardClass}>
@@ -396,52 +265,112 @@ function Admin(props: {
           {settings().connected ? "Moblin is connected." : "Moblin is not connected right now."}
         </p>
         <Steps />
-        <Value label="Streamer URL for Moblin" text={streamerUrl(props.streamerKey)} secret />
+        <Value label="Streamer URL for Moblin" text={props.streamerUrl} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
           <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
-          {props.isNew
-            ? "Keep the streamer URL to yourself and save it now. Anyone who has it can manage your page, and it is the only way back here from another browser."
-            : "Keep the streamer URL to yourself. Anyone who has it can manage your page."}
+          Keep the streamer URL to yourself. Anyone who has it can connect as your Moblin and get
+          your song requests. Reset it if it leaked.
         </p>
-        <div>
-          <button type="button" class={ghostButtonClass} onClick={props.onForget}>
-            Forget on this browser
+        <div class="flex flex-wrap items-center gap-4">
+          <button type="button" class={ghostButtonClass} disabled={busy()} onClick={newUrl}>
+            Reset streamer URL
           </button>
+          <Show when={newUrlFailed()}>
+            <p role="status" class="text-amber">
+              Something went wrong. Try again.
+            </p>
+          </Show>
         </div>
+      </div>
+      <div>
+        <button type="button" class={ghostButtonClass} onClick={props.onSignOut}>
+          Sign out
+        </button>
       </div>
     </>
   );
 }
 
+function SignedIn(props: {
+  session: string;
+  account: Account;
+  onAccount: (account: Account) => void;
+  onSignOut: () => void;
+}) {
+  const [failed, setFailed] = createSignal(false);
+
+  const create = async () => {
+    setFailed(false);
+    try {
+      props.onAccount(await createStreamer(props.session));
+    } catch {
+      setFailed(true);
+    }
+  };
+
+  onMount(() => {
+    if (!props.account.streamerUrl) {
+      void create();
+    }
+  });
+
+  return (
+    <Show
+      when={props.account.streamerUrl && props.account.settings ? props.account : null}
+      keyed
+      fallback={
+        <Show when={failed()} fallback={<p class="text-muted">Creating your page…</p>}>
+          <div class="flex flex-wrap items-center gap-4">
+            <p role="status" class="text-amber">
+              Could not create your page.
+            </p>
+            <button type="button" class={ghostButtonClass} onClick={create}>
+              Try again
+            </button>
+          </div>
+        </Show>
+      }
+    >
+      {(account) => (
+        <Admin
+          session={props.session}
+          account={account}
+          streamerUrl={account.streamerUrl!}
+          settings={account.settings!}
+          onAccount={props.onAccount}
+          onSignOut={props.onSignOut}
+        />
+      )}
+    </Show>
+  );
+}
+
 export default function SongRequestAdmin() {
-  const [session, setSession] = createSignal<{
-    key: string;
-    settings: Settings;
-    isNew: boolean;
-  } | null>(null);
+  const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
+  const [signInFailed, setSignInFailed] = createSignal(false);
 
   onMount(async () => {
-    const key = readKey();
-    if (key) {
+    const result = takeSignInResult();
+    if (result.session) {
+      saveSession(result.session);
+    }
+    setSignInFailed(result.failed);
+    const stored = readSession();
+    if (stored) {
       try {
-        setSession({ key, settings: await streamerSettings(key), isNew: false });
+        setSession({ session: stored, account: await fetchAccount(stored) });
       } catch (error) {
-        if (error instanceof BackendError && error.status === 404) {
-          saveKey(null);
+        if (error instanceof BackendError && error.status === 401) {
+          saveSession(null);
         }
       }
     }
     setLoading(false);
   });
 
-  const onKey = (key: string, settings: Settings, isNew: boolean) => {
-    saveKey(key);
-    setSession({ key, settings, isNew });
-  };
-
-  const forget = () => {
-    saveKey(null);
+  const signOut = () => {
+    saveSession(null);
     setSession(null);
   };
 
@@ -449,19 +378,20 @@ export default function SongRequestAdmin() {
     <>
       <Hero title="Let viewers pick the music.">
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Get your own song request page. Viewers add songs from Apple Music to the queue of
-          Moblin's music player, and you turn requests on and off here.
+          Sign in with Twitch to get your own song request page at moblin.app/twitch/your-name.
+          Viewers add songs from Apple Music to the queue of Moblin's music player, for free or for
+          a price you set.
         </p>
       </Hero>
       <Band>
         <Show when={!loading()} fallback={<p class="text-muted">Loading…</p>}>
-          <Show when={session()} fallback={<SignIn onKey={onKey} />}>
-            {(session) => (
-              <Admin
-                streamerKey={session().key}
-                settings={session().settings}
-                isNew={session().isNew}
-                onForget={forget}
+          <Show when={session()} keyed fallback={<TwitchSignIn failed={signInFailed()} />}>
+            {(current) => (
+              <SignedIn
+                session={current.session}
+                account={current.account}
+                onAccount={(account) => setSession({ ...current, account })}
+                onSignOut={signOut}
               />
             )}
           </Show>

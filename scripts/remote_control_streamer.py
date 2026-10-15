@@ -2,18 +2,22 @@
 
 import argparse
 import asyncio
+import base64
+import hashlib
 import json
-import urllib.request
+import secrets
 
 import websockets
 
 BACKEND = "localhost:8080"
 
 
-def create_streamer():
-    request = urllib.request.Request(f"http://{BACKEND}/remote-control/streamers", method="POST")
-    with urllib.request.urlopen(request) as response:
-        return json.load(response)
+def base64url(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def id_of(key):
+    return base64url(hashlib.sha256(key.encode()).digest()[:12])
 
 
 def found(link):
@@ -97,15 +101,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Pretends to be a Moblin streamer connected to the backend over remote control."
     )
-    parser.add_argument("key", nargs="?", help="Streamer key. A new one is created if not given.")
+    parser.add_argument(
+        "url", nargs="?", help="Streamer URL. A new one is made up if not given."
+    )
     args = parser.parse_args()
-    key = args.key
-    if key is None:
-        streamer = create_streamer()
-        key = streamer["key"]
-        print(f"Key: {key}")
-        print("Admin: http://localhost:5173/song-requests/ (paste the key and pick a page name)")
-        print("Songs with the id 404 are not found.")
+    key = (args.url or base64url(secrets.token_bytes(32))).rstrip("/").split("/")[-1]
+    print(f"Streamer URL: ws://{BACKEND}/remote-control/streamer/{key}")
+    print(f"Page: http://localhost:5173/song-requests/?streamer={id_of(key)}")
+    print("Songs with the id 404 are not found.")
     asyncio.run(run(key))
 
 

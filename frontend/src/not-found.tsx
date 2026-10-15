@@ -4,16 +4,15 @@ import "./index.css";
 import NotFound from "./pages/NotFound";
 import SongRequest from "./pages/SongRequest";
 
-const songRequestName = location.pathname
+const twitchLogin = location.pathname
   .slice(import.meta.env.BASE_URL.length)
-  .match(/^song-requests\/([^/]+)\/?$/)?.[1];
+  .match(/^twitch\/([^/]+)\/?$/)?.[1];
 
-if (songRequestName) {
+if (twitchLogin) {
   document.title = "Song requests – Moblin";
 }
 
 render(
-  () =>
-    songRequestName ? <SongRequest name={decodeURIComponent(songRequestName)} /> : <NotFound />,
+  () => (twitchLogin ? <SongRequest twitch={decodeURIComponent(twitchLogin)} /> : <NotFound />),
   document.getElementById("root")!,
 );

@@ -13,10 +13,10 @@ export default defineConfig({
     solid(),
     tailwindcss(),
     {
-      name: "song-requests-names",
+      name: "twitch-song-requests",
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
-          if (req.url && /\/song-requests\/[^/?.]+\/?(\?.*)?$/.test(req.url)) {
+          if (req.url && new RegExp(`^${base}twitch/[^/?.]+/?(\\?.*)?$`).test(req.url)) {
             req.url = `${base}404.html`;
           }
           next();

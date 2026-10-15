@@ -1,5 +1,7 @@
+mod accounts;
 mod api;
 mod app_attest;
+mod auth;
 mod challenges;
 mod json_file;
 mod kick;
@@ -23,8 +25,10 @@ use clap::Parser;
 use log::{info, warn};
 use reqwest::Client;
 
+use crate::accounts::Accounts;
 use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
+use crate::auth::{Auth, OAuthApp};
 use crate::challenges::Challenges;
 use crate::kick::Kick;
 use crate::live::Live;
@@ -111,10 +115,32 @@ struct Cli {
     /// Use the PayPal sandbox instead of real payments.
     #[arg(long, env = "PAYPAL_SANDBOX")]
     paypal_sandbox: bool,
+    /// The secret sessions of signed in streamers are signed with. Without
+    /// one a random secret is used and everyone is signed out when the
+    /// backend restarts.
+    #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
+    session_secret: Option<String>,
+    /// The file streamer accounts, and the song request page each one
+    /// manages, are saved in. Without one they are forgotten when the
+    /// backend restarts.
+    #[arg(long, env = "ACCOUNTS_FILE")]
+    accounts_file: Option<PathBuf>,
+    /// The URL this backend is reached at, for the sign in redirect URIs
+    /// registered with Twitch.
+    #[arg(long, env = "PUBLIC_URL", default_value = "https://api.moblin.app")]
+    public_url: String,
+    /// The URL of the website, where streamers are sent after signing in.
+    #[arg(long, env = "FRONTEND_URL", default_value = "https://moblin.app")]
+    frontend_url: String,
     /// Accept live posts from anyone, not only from the Moblin app, for
     /// developing the website.
     #[arg(long)]
     allow_unattested: bool,
+    /// Sign in as a made-up Twitch user without asking Twitch, for
+    /// developing the website. The login is `streamer`, or the `login`
+    /// query parameter of the sign in URL.
+    #[arg(long)]
+    fake_twitch_sign_in: bool,
 }
 
 fn http_client() -> Client {
@@ -136,6 +162,30 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let store = Arc::new(Store::new(cli.max_streamers));
     let client = http_client();
+    let twitch_app = match (&cli.twitch_client_id, &cli.twitch_client_secret) {
+        (Some(client_id), Some(client_secret)) => {
+            Some(OAuthApp::twitch(client_id.clone(), client_secret.clone()))
+        }
+        _ => None,
+    };
+    if cli.session_secret.is_none() {
+        warn!("no session secret, signing everyone out on restart");
+    }
+    if cli.fake_twitch_sign_in {
+        warn!("signing anyone in as any Twitch user without asking Twitch");
+    }
+    let auth = Auth::new(
+        http_client(),
+        cli.public_url,
+        cli.frontend_url,
+        twitch_app,
+        cli.fake_twitch_sign_in,
+        cli.session_secret.as_deref(),
+    )?;
+    if cli.accounts_file.is_none() {
+        warn!("no accounts file, forgetting accounts on restart");
+    }
+    let accounts = Accounts::load(cli.accounts_file)?;
     let twitch = match (cli.twitch_client_id, cli.twitch_client_secret) {
         (Some(client_id), Some(client_secret)) => Some(Arc::new(Twitch::new(
             client.clone(),
@@ -144,7 +194,7 @@ async fn main() -> Result<()> {
         ))),
         _ => {
             warn!(
-                "no Twitch client ID and secret, not looking Twitch profiles up nor checking who is live"
+                "no Twitch client ID and secret, not looking Twitch profiles up, checking who is live nor signing in with Twitch"
             );
             None
         }
@@ -212,6 +262,8 @@ async fn main() -> Result<()> {
         song_requests,
         paypal,
         song_queue,
+        auth,
+        accounts,
     });
     tokio::spawn({
         let api = api.clone();

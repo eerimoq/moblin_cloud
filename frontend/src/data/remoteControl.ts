@@ -1,5 +1,4 @@
 import { backendUrl } from "./backend";
-import { links } from "./links";
 
 export type Song = {
   id: string;
@@ -15,11 +14,6 @@ export type MusicStatus = {
   songNotFound: boolean | null;
 };
 
-export type Streamer = {
-  key: string;
-  id: string;
-};
-
 export type Paywall = {
   email: string;
   price: number;
@@ -30,7 +24,6 @@ export type Paywall = {
 export type Settings = {
   id: string;
   connected: boolean;
-  name: string | null;
   paywall: Paywall | null;
   paypal: boolean;
 };
@@ -86,8 +79,6 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
-export const createStreamer = () => call<Streamer>("/streamers", { method: "POST" });
-
 export const musicStatus = (id: string) => call<MusicStatus>(`/${encodeURIComponent(id)}/music`);
 
 const songRequest = (song: string, user: string) => ({
@@ -98,6 +89,14 @@ const songRequest = (song: string, user: string) => ({
 
 export const requestSong = (id: string, song: string, user: string) =>
   call<object>(`/${encodeURIComponent(id)}/music`, songRequest(song, user));
+
+export type Profile = {
+  name: string;
+  login: string;
+  avatar: string | null;
+};
+
+export const streamerProfile = (id: string) => call<Profile>(`/${encodeURIComponent(id)}/profile`);
 
 export const streamerPaywall = async (id: string) =>
   (await call<{ paywall: PublicPaywall | null }>(`/${encodeURIComponent(id)}/paywall`)).paywall;
@@ -115,23 +114,5 @@ export const captureSong = (id: string, orderId: string) =>
     method: "POST",
   });
 
-export const streamerSettings = (key: string) =>
-  call<Settings>(`/streamer/${encodeURIComponent(key)}/settings`);
-
-export const saveStreamerSettings = (key: string, settings: Pick<Settings, "name" | "paywall">) =>
-  call<Settings>(`/streamer/${encodeURIComponent(key)}/settings`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name: settings.name,
-      paywall: settings.paywall,
-    }),
-  });
-
-export const idOfName = async (name: string) =>
-  (await call<{ id: string }>(`/names/${encodeURIComponent(name)}`)).id;
-
-export const keyOf = (text: string) => text.trim().split("/").filter(Boolean).at(-1) ?? "";
-
-export const streamerUrl = (key: string) =>
-  `${import.meta.env.DEV ? "ws://localhost:8080" : links.api.replace(/^https/, "wss")}/remote-control/streamer/${key}`;
+export const idOfTwitchLogin = async (login: string) =>
+  (await call<{ id: string }>(`/names/twitch/${encodeURIComponent(login)}`)).id;
