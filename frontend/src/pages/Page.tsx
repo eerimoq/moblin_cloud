@@ -407,19 +407,13 @@ function TipJar(props: {
   );
 }
 
-function Queue(props: { status: Status; name: string | undefined }) {
+function Queue(props: { status: Status }) {
   return (
     <div class="flex flex-col gap-4 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8">
       <h2 class="text-[23px] font-semibold">Queue</h2>
       <Switch>
         <Match when={props.status === "loading"}>
           <p class="text-muted">Loading…</p>
-        </Match>
-        <Match when={props.status === "offline"}>
-          <p class="text-ink-2">
-            {props.name ?? "The streamer"} is offline. The queue shows up here when they go live
-            with Moblin.
-          </p>
         </Match>
         <Match when={typeof props.status === "object" && props.status}>
           {(status) => (
@@ -1137,6 +1131,11 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
               <p class="text-ink-2">
                 Paste the Apple Music link of a song and it goes straight into the queue.
               </p>
+              <Show when={status() === "offline"}>
+                <p class="text-amber">
+                  Song requests are not available right now. Try again when the streamer is live.
+                </p>
+              </Show>
               <label class="flex flex-col gap-2">
                 <span class="text-[15px] font-semibold text-ink-2">Apple Music song link</span>
                 <input
@@ -1239,8 +1238,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                 </div>
               )}
             </Show>
-            <div class={shown() === "songs" ? "" : "hidden"}>
-              <Queue status={status()} name={profile()?.name} />
+            <div class={shown() === "songs" && status() !== "offline" ? "" : "hidden"}>
+              <Queue status={status()} />
             </div>
           </div>
         </Show>

@@ -546,23 +546,6 @@ function MoneyInput(props: {
   );
 }
 
-function AmountInputs(props: { amounts: string[]; onAmounts: (amounts: string[]) => void }) {
-  return (
-    <Index each={props.amounts}>
-      {(amount, index) => (
-        <MoneyInput
-          value={amount()}
-          onValue={(value) =>
-            props.onAmounts(props.amounts.map((old, at) => (at === index ? value : old)))
-          }
-          required={index === 0}
-          label={`Amount ${index + 1}`}
-        />
-      )}
-    </Index>
-  );
-}
-
 const hundredths = (amount: string) =>
   Math.round(Number.parseFloat(amount.trim().replace(",", ".")) * 100);
 
@@ -636,9 +619,43 @@ function TipSettings(props: {
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">
             Suggested amounts ({props.currency})
           </legend>
-          <div class="flex flex-wrap items-end gap-4">
-            <AmountInputs amounts={amounts()} onAmounts={setAmounts} />
+          <div class="flex flex-col gap-3">
+            <Index each={amounts()}>
+              {(amount, index) => (
+                <div class="flex items-center gap-3">
+                  <MoneyInput
+                    value={amount()}
+                    onValue={(value) =>
+                      setAmounts(amounts().map((old, at) => (at === index ? value : old)))
+                    }
+                    required
+                    label={`Amount ${index + 1}`}
+                  />
+                  <Show when={amounts().length > 1}>
+                    <button
+                      type="button"
+                      class="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ghost hover:text-ink"
+                      aria-label={`Remove amount ${index + 1}`}
+                      onClick={() => setAmounts(amounts().filter((_, at) => at !== index))}
+                    >
+                      <Icon name="close" class="size-5" />
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </Index>
           </div>
+          <Show when={amounts().length < 4}>
+            <div class="mt-1">
+              <button
+                type="button"
+                class={ghostButtonClass}
+                onClick={() => setAmounts([...amounts(), ""])}
+              >
+                Add amount
+              </button>
+            </div>
+          </Show>
         </fieldset>
         <label class="flex flex-col gap-2">
           <span class="text-[15px] font-semibold text-ink-2">Webhook URL (optional)</span>
