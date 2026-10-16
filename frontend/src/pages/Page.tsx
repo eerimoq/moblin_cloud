@@ -486,9 +486,9 @@ function StreamerHeader(props: { profile: Profile | null; unknown: boolean }) {
           fallback={
             <>
               <span class="size-28 rounded-full bg-ghost sm:size-32" />
-              <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">
-                {props.unknown ? "Page not found." : "\u00a0"}
-              </h1>
+              <Show when={props.unknown}>
+                <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">Page not found.</h1>
+              </Show>
             </>
           }
         >
@@ -510,9 +510,6 @@ function StreamerHeader(props: { profile: Profile | null; unknown: boolean }) {
                   />
                 )}
               </Show>
-              <h1 class="max-w-full text-[40px] leading-[1.05] font-bold break-words sm:text-6xl">
-                {profile().name}
-              </h1>
               <a
                 href={`https://www.twitch.tv/${encodeURIComponent(profile().login)}`}
                 target="_blank"
