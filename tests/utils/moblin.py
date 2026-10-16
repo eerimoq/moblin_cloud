@@ -90,9 +90,9 @@ class StreamerConnection:
             except InvalidStatus as error:
                 if error.response.status_code != 404:
                     raise
-                LOGGER.info("The backend does not know streamer key %s, acting as assistant", self.key)
+                LOGGER.debug("The backend does not know streamer key %s, acting as assistant", self.key)
             except OSError:
-                LOGGER.info("The backend is down, closing Moblin's connection so it retries")
+                LOGGER.debug("The backend is down, closing Moblin's connection so it retries")
                 return
         if self.upstream is None:
             self._serve_locally()
@@ -238,14 +238,16 @@ class Moblin:
         if self.is_fake():
             self._fake = FakeMoblin(self.streamer_url(None))
             self._fake.start()
-        LOGGER.info(
-            "Waiting for %s's remote control streamer to connect to ws://%s:%d...",
-            self.device_name,
-            self._tester_ip_address,
-            self._port,
-        )
+        if not self.is_fake():
+            LOGGER.info(
+                "Waiting for %s's remote control streamer to connect to ws://%s:%d...",
+                self.device_name,
+                self._tester_ip_address,
+                self._port,
+            )
         self.wait_for_connection(timeout=300)
-        LOGGER.info("Remote control streamer connected")
+        if not self.is_fake():
+            LOGGER.info("Remote control streamer connected")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

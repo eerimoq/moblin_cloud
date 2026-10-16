@@ -120,5 +120,5 @@ def onboard_seller(browser: Browser, config: Config, action_url: str, interactiv
                     f"Connect the PayPal sandbox seller {paypal['seller-email']} in the opened browser."
                 )
 
-    LOGGER.info("Connecting the PayPal sandbox seller %s", paypal["seller-email"])
+    LOGGER.debug("Connecting the PayPal sandbox seller %s", paypal["seller-email"])
     browser.run(job)

@@ -23,7 +23,7 @@ SESSION_SECRET = "moblin-website-system-tests"
 
 
 def build_backend():
-    LOGGER.info("Building the backend...")
+    LOGGER.debug("Building the backend...")
     subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=BACKEND_DIR, check=True)
 
 

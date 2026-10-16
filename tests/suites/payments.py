@@ -56,7 +56,7 @@ class PaymentTestCase(TestCase):
             except BackendError as error:
                 if error.status != 502 or attempt == 2:
                     raise
-                LOGGER.info("Capturing %s failed with %s, trying again", order_id, error)
+                LOGGER.debug("Capturing %s failed with %s, trying again", order_id, error)
                 time.sleep(5)
         raise AssertionError("unreachable")
 

@@ -57,10 +57,10 @@ class FakeMoblin:
             try:
                 with connect(self.url, max_size=None, open_timeout=10) as websocket:
                     self._websocket = websocket
-                    LOGGER.info("Connected to %s", self.url)
+                    LOGGER.debug("Connected to %s", self.url)
                     self.serve(websocket)
             except Exception as error:
-                LOGGER.info("Disconnected from %s: %s", self.url, error)
+                LOGGER.debug("Disconnected from %s: %s", self.url, error)
             finally:
                 self._websocket = None
             self._stopped.wait(1)
@@ -98,11 +98,11 @@ class FakeMoblin:
         elif kind in ["tip", "spinWheelOfLuck"]:
             request_id = body.get("requestId")
             if request_id in self.handled_request_ids:
-                LOGGER.info("Request %s already handled", request_id)
+                LOGGER.debug("Request %s already handled", request_id)
             else:
                 if request_id is not None:
                     self.handled_request_ids.add(request_id)
-                LOGGER.info("Got %s %s", kind, body)
+                LOGGER.debug("Got %s %s", kind, body)
         return {"ok": {}}, None
 
     def import_settings(self, data: str):
@@ -159,6 +159,7 @@ def main():
     parser.add_argument("url", help="Where the remote control streamer connects at first.")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    LOGGER.setLevel(logging.DEBUG)
     FakeMoblin(args.url).run()
 
 
