@@ -71,7 +71,7 @@ export const createStreamer = (session: string) =>
   call<Account>(session, "/account/page", { method: "POST" });
 
 export const newStreamerUrl = (session: string) =>
-  call<Account>(session, "/account/page/streamer-url", { method: "POST" });
+  call<Account>(session, "/account/streamer-url", { method: "POST" });
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>(session, "/account/paypal/connect", { method: "POST" })).url;
@@ -87,7 +87,7 @@ export type SettingsChanges = Page & Pick<Settings, "currency" | "paywall" | "ti
 export const saveAccountSettings = (session: string, settings: SettingsChanges) =>
   call<Settings>(
     session,
-    "/account/page/settings",
+    "/account/settings",
     post({
       currency: settings.currency,
       paywall: settings.paywall,

@@ -63,11 +63,8 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/auth/twitch/callback", get(handle_callback))
         .route("/account", get(handle_account))
         .route("/account/page", post(handle_account_page))
-        .route(
-            "/account/page/streamer-url",
-            post(handle_account_streamer_url),
-        )
-        .route("/account/page/settings", post(handle_account_settings))
+        .route("/account/streamer-url", post(handle_account_streamer_url))
+        .route("/account/settings", post(handle_account_settings))
         .route(
             "/account/paypal/connect",
             post(handle_account_paypal_connect),
@@ -1827,7 +1824,7 @@ mod tests {
         let (session, key, id) = streamer(address, api).await;
         connect_paypal(api);
         let response = reqwest::Client::new()
-            .post(format!("http://{address}/account/page/settings"))
+            .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
             .send()
@@ -1888,7 +1885,7 @@ mod tests {
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
         let (key, id) = (key.as_str(), id.as_str());
-        let settings_url = format!("http://{address}/account/page/settings");
+        let settings_url = format!("http://{address}/account/settings");
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
@@ -2087,7 +2084,7 @@ mod tests {
         let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
         let response = client
-            .post(format!("http://{address}/account/page/settings"))
+            .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"currency": "EUR", "paywall": {"price": 250}}))
             .send()
@@ -2178,7 +2175,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(public, json!({"spin": null, "wheel": null}));
-        let settings_url = format!("http://{address}/account/page/settings");
+        let settings_url = format!("http://{address}/account/settings");
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
@@ -2332,7 +2329,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let settings: Value = client
-            .post(format!("http://{address}/account/page/settings"))
+            .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"currency": "usd", "paywall": null, "tips": {
                 "amounts": [1000, 200, 500],
@@ -2684,7 +2681,7 @@ mod tests {
             json!({"name": "Erik", "login": "erik", "streamerUrl": null, "settings": null})
         );
         let response = client
-            .post(format!("http://{address}/account/page/settings"))
+            .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null}))
             .send()
@@ -2706,7 +2703,7 @@ mod tests {
             remote_control::id_of(&key).as_deref()
         );
         let settings: Value = client
-            .post(format!("http://{address}/account/page/settings"))
+            .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null}))
             .send()
@@ -2717,7 +2714,7 @@ mod tests {
             .unwrap();
         assert_eq!(settings, account["settings"]);
         let settings: Value = client
-            .post(format!("http://{address}/account/page/settings"))
+            .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({
                 "paywall": null,
@@ -2734,7 +2731,7 @@ mod tests {
         assert_eq!(settings["title"], "Pick a banger");
         assert_eq!(settings["accent"], "pink");
         let response = client
-            .post(format!("http://{address}/account/page/settings"))
+            .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "accent": "teal"}))
             .send()
@@ -2803,7 +2800,7 @@ mod tests {
         let mut socket = connect(&address, &key).await;
         assert!(api.remote_control.is_connected(&id));
         let account: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/page/streamer-url"))
+            .post(format!("http://{address}/account/streamer-url"))
             .bearer_auth(&session)
             .send()
             .await
@@ -2880,7 +2877,7 @@ mod tests {
         let old = api.auth.session_at("1", 0, crate::deliveries::now() - 601);
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
-        let settings_url = format!("http://{address}/account/page/settings");
+        let settings_url = format!("http://{address}/account/settings");
         let paywall = json!({"currency": "SEK", "paywall": {"price": 250}});
         let response = client
             .post(&settings_url)
@@ -3129,8 +3126,8 @@ mod tests {
         for (method, path) in [
             ("GET", "/account"),
             ("POST", "/account/page"),
-            ("POST", "/account/page/streamer-url"),
-            ("POST", "/account/page/settings"),
+            ("POST", "/account/streamer-url"),
+            ("POST", "/account/settings"),
             ("POST", "/account/paypal/connect"),
             ("POST", "/account/paypal/check"),
             ("POST", "/account/sign-out"),
