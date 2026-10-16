@@ -267,9 +267,8 @@ function PayPalAccount(props: {
           <p class="text-ink-2">
             Connect your PayPal account to let viewers send you tips, on their own or with a song
             request or wheel spin. You sign in or sign up on PayPal with a personal or business
-            account (in some countries PayPal asks for a business account), and the money goes
-            straight to your PayPal account. Moblin takes nothing, PayPal charges its usual fees. By
-            connecting PayPal you agree to the{" "}
+            account (in some countries PayPal asks for a business account). By connecting PayPal you
+            agree to the{" "}
             <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
               terms
             </a>
@@ -478,8 +477,7 @@ function SongSettings(props: {
       <h2 class="text-[23px] font-semibold">Song requests</h2>
       <p class="text-ink-2">
         Let viewers add songs from Apple Music to the queue of Moblin's music player, for free or
-        with a tip. The money goes straight to your PayPal account. Moblin takes nothing, PayPal
-        charges its usual fees.
+        with a tip.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -603,7 +601,7 @@ function TipSettings(props: {
       <h2 class="text-[23px] font-semibold">Tips</h2>
       <p class="text-ink-2">
         Let viewers send you just a tip with PayPal. Viewers pick one of your amounts or enter their
-        own, and can add a message. The money goes straight to your PayPal account.
+        own, and can add a message.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -754,7 +752,7 @@ function SpinSettings(props: {
       <p class="text-ink-2">
         Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin
         when they buy more. Moblin spins the wheel you pick in its remote control settings, showing
-        the viewer's name and message. The money goes straight to your PayPal account.
+        the viewer's name and message.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -1083,7 +1081,8 @@ export default function Dashboard() {
         }
       >
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Sign in with Twitch to get your own page at moblin.app/twitch/your-name.
+          Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its usual
+          fees.
         </p>
         <p class="text-[15px] text-muted">
           Using the dashboard and your page means you agree to the{" "}
