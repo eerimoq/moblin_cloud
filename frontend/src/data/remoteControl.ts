@@ -131,14 +131,15 @@ export class BackendError extends Error {
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${backendUrl}/remote-control${path}`, init);
+  const response = await fetch(`${backendUrl}/pages${path}`, init);
   if (!response.ok) {
     throw new BackendError(response.status, await response.text());
   }
   return response.json();
 }
 
-export const musicStatus = (id: string) => call<MusicStatus>(`/${encodeURIComponent(id)}/music`);
+export const musicStatus = (id: string) =>
+  call<MusicStatus>(`/${encodeURIComponent(id)}/songs/queue`);
 
 const songRequest = (song: string, user: string) => ({
   method: "POST",
@@ -152,21 +153,21 @@ export type Profile = Page & {
   avatar: string | null;
 };
 
-export const streamerProfile = (id: string) => call<Profile>(`/${encodeURIComponent(id)}/profile`);
+export const streamerProfile = (id: string) => call<Profile>(`/${encodeURIComponent(id)}`);
 
 export const streamerPaywall = async (id: string) =>
-  (await call<{ paywall: PublicPaywall | null }>(`/${encodeURIComponent(id)}/paywall`)).paywall;
+  (await call<{ paywall: PublicPaywall | null }>(`/${encodeURIComponent(id)}/songs`)).paywall;
 
 export const orderSong = async (id: string, song: string, user: string) =>
   (
     await call<{ orderId: string }>(
-      `/${encodeURIComponent(id)}/music/orders`,
+      `/${encodeURIComponent(id)}/songs/orders`,
       songRequest(song, user),
     )
   ).orderId;
 
 export const captureSong = (id: string, orderId: string) =>
-  call<object>(`/${encodeURIComponent(id)}/music/orders/${encodeURIComponent(orderId)}/capture`, {
+  call<object>(`/${encodeURIComponent(id)}/songs/orders/${encodeURIComponent(orderId)}/capture`, {
     method: "POST",
   });
 
@@ -209,4 +210,4 @@ export const captureSpin = (id: string, orderId: string) =>
   });
 
 export const idOfTwitchLogin = async (login: string) =>
-  (await call<{ id: string }>(`/names/twitch/${encodeURIComponent(login)}`)).id;
+  (await call<{ id: string }>(`/twitch/${encodeURIComponent(login)}`)).id;

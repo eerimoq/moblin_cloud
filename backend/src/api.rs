@@ -58,17 +58,20 @@ pub fn router(api: Arc<Api>) -> Router {
             "/remote-control/streamer/{key}",
             get(handle_remote_control_streamer),
         )
-        .route(
-            "/remote-control/names/twitch/{login}",
-            get(handle_twitch_name),
-        )
+        .route("/pages/twitch/{login}", get(handle_twitch_page))
         .route("/auth/twitch/login", get(handle_login))
         .route("/auth/twitch/callback", get(handle_callback))
         .route("/account", get(handle_account))
-        .route("/account/streamer", post(handle_account_streamer))
-        .route("/account/streamer-url", post(handle_account_streamer_url))
-        .route("/account/settings", post(handle_account_settings))
-        .route("/account/paypal", post(handle_account_paypal))
+        .route("/account/page", post(handle_account_page))
+        .route(
+            "/account/page/streamer-url",
+            post(handle_account_streamer_url),
+        )
+        .route("/account/page/settings", post(handle_account_settings))
+        .route(
+            "/account/paypal/connect",
+            post(handle_account_paypal_connect),
+        )
         .route("/account/paypal/check", post(handle_account_paypal_check))
         .route(
             "/account/paypal/disconnect",
@@ -76,24 +79,24 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route("/paypal/webhooks", post(handle_paypal_webhook))
         .route("/account/sign-out", post(handle_account_sign_out))
-        .route("/remote-control/{id}/paywall", get(handle_paywall))
-        .route("/remote-control/{id}/profile", get(handle_profile))
-        .route("/remote-control/{id}/music", get(handle_music_status))
-        .route("/remote-control/{id}/music/orders", post(handle_order))
+        .route("/pages/{id}/songs", get(handle_songs))
+        .route("/pages/{id}", get(handle_page))
+        .route("/pages/{id}/songs/queue", get(handle_queue))
+        .route("/pages/{id}/songs/orders", post(handle_song_order))
         .route(
-            "/remote-control/{id}/music/orders/{order_id}/capture",
-            post(handle_capture),
+            "/pages/{id}/songs/orders/{order_id}/capture",
+            post(handle_song_capture),
         )
-        .route("/remote-control/{id}/tips", get(handle_tips))
-        .route("/remote-control/{id}/tips/orders", post(handle_tip_order))
+        .route("/pages/{id}/tips", get(handle_tips))
+        .route("/pages/{id}/tips/orders", post(handle_tip_order))
         .route(
-            "/remote-control/{id}/tips/orders/{order_id}/capture",
+            "/pages/{id}/tips/orders/{order_id}/capture",
             post(handle_tip_capture),
         )
-        .route("/remote-control/{id}/spin", get(handle_spin))
-        .route("/remote-control/{id}/spin/orders", post(handle_spin_order))
+        .route("/pages/{id}/spin", get(handle_spin))
+        .route("/pages/{id}/spin/orders", post(handle_spin_order))
         .route(
-            "/remote-control/{id}/spin/orders/{order_id}/capture",
+            "/pages/{id}/spin/orders/{order_id}/capture",
             post(handle_spin_capture),
         )
         .layer(cors)
@@ -540,7 +543,7 @@ async fn handle_account(
     Ok(account_response(&api, signed_in.account))
 }
 
-async fn handle_account_streamer(
+async fn handle_account_page(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
@@ -589,7 +592,7 @@ struct PayPalSignUpResponse {
     url: String,
 }
 
-async fn handle_account_paypal(
+async fn handle_account_paypal_connect(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<PayPalSignUpResponse>, (StatusCode, String)> {
@@ -819,7 +822,7 @@ struct ProfileResponse {
     accent: Option<String>,
 }
 
-async fn handle_profile(
+async fn handle_page(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Result<Json<ProfileResponse>, StatusCode> {
@@ -835,7 +838,7 @@ async fn handle_profile(
     }))
 }
 
-async fn handle_twitch_name(
+async fn handle_twitch_page(
     State(api): State<Arc<Api>>,
     Path(login): Path<String>,
 ) -> Result<Json<NameResponse>, StatusCode> {
@@ -861,7 +864,7 @@ struct PaywallResponse {
     paywall: Option<PublicPaywall>,
 }
 
-async fn handle_paywall(
+async fn handle_songs(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<PaywallResponse> {
@@ -974,7 +977,7 @@ fn music_error(error: RequestError) -> Failure {
     }
 }
 
-async fn handle_music_status(
+async fn handle_queue(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Result<Json<MusicStatus>, Failure> {
@@ -1063,7 +1066,7 @@ struct OrderResponse {
     order_id: String,
 }
 
-async fn handle_order(
+async fn handle_song_order(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     Json(request): Json<SongRequest>,
@@ -1098,7 +1101,7 @@ async fn handle_order(
     Ok(Json(OrderResponse { order_id }))
 }
 
-async fn handle_capture(
+async fn handle_song_capture(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
@@ -1769,7 +1772,7 @@ mod tests {
         let (address, _) = start_api_with(Some(new_paypal(paypal_url)), None, pages).await;
         let client = reqwest::Client::new();
         let public: Value = client
-            .get(format!("http://{address}/remote-control/p/paywall"))
+            .get(format!("http://{address}/pages/p/songs"))
             .send()
             .await
             .unwrap()
@@ -1787,7 +1790,7 @@ mod tests {
             }})
         );
         let response = client
-            .post(format!("http://{address}/remote-control/p/music/orders"))
+            .post(format!("http://{address}/pages/p/songs/orders"))
             .json(&json!({"song": LINK, "user": "Viewer"}))
             .send()
             .await
@@ -1805,7 +1808,7 @@ mod tests {
         api.accounts.signed_in("1", "Erik", "erik", None).unwrap();
         let session = api.auth.session("1", 0);
         let account: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/streamer"))
+            .post(format!("http://{address}/account/page"))
             .bearer_auth(&session)
             .send()
             .await
@@ -1824,7 +1827,7 @@ mod tests {
         let (session, key, id) = streamer(address, api).await;
         connect_paypal(api);
         let response = reqwest::Client::new()
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/page/settings"))
             .bearer_auth(&session)
             .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
             .send()
@@ -1885,7 +1888,7 @@ mod tests {
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
         let (key, id) = (key.as_str(), id.as_str());
-        let settings_url = format!("http://{address}/account/settings");
+        let settings_url = format!("http://{address}/account/page/settings");
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
@@ -1910,7 +1913,7 @@ mod tests {
         assert_eq!(settings["paypal"], true);
         assert_eq!(settings["merchantId"], "MERCHANT00001");
         let public: Value = client
-            .get(format!("http://{address}/remote-control/{id}/paywall"))
+            .get(format!("http://{address}/pages/{id}/songs"))
             .send()
             .await
             .unwrap()
@@ -1927,7 +1930,7 @@ mod tests {
                 "environment": "production",
             }})
         );
-        let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
         let response = client
             .post(&orders_url)
             .json(&json!({"song": "Song", "user": "Viewer"}))
@@ -2022,7 +2025,7 @@ mod tests {
     async fn wheels_are_pushed_by_the_streamer() {
         let (address, api) = start_api(None).await;
         let (_, key, id) = streamer(&address, &api).await;
-        let spin_url = format!("http://{address}/remote-control/{id}/spin");
+        let spin_url = format!("http://{address}/pages/{id}/spin");
         let wheel = || async {
             reqwest::get(&spin_url)
                 .await
@@ -2084,7 +2087,7 @@ mod tests {
         let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
         let response = client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/page/settings"))
             .bearer_auth(&session)
             .json(&json!({"currency": "EUR", "paywall": {"price": 250}}))
             .send()
@@ -2092,7 +2095,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let mut socket = connect(&address, &key).await;
-        let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
         assert_eq!(
             request_song(&mut socket, &orders_url).await,
             json!({"orderId": "ORDER1"})
@@ -2110,7 +2113,7 @@ mod tests {
     async fn paid_songs_are_retried_until_added_once() {
         let (address, api, _) = start_paid().await;
         let (key, id) = paid_streamer(&address, &api).await;
-        let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
         let mut socket = connect(&address, &key).await;
         assert_eq!(
             request_song(&mut socket, &orders_url).await,
@@ -2165,7 +2168,7 @@ mod tests {
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
-        let spin_url = format!("http://{address}/remote-control/{id}/spin");
+        let spin_url = format!("http://{address}/pages/{id}/spin");
         let public: Value = client
             .get(&spin_url)
             .send()
@@ -2175,7 +2178,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(public, json!({"spin": null, "wheel": null}));
-        let settings_url = format!("http://{address}/account/settings");
+        let settings_url = format!("http://{address}/account/page/settings");
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
@@ -2276,7 +2279,7 @@ mod tests {
         );
         let response = client
             .post(format!(
-                "http://{address}/remote-control/{id}/tips/orders/ORDER1/capture"
+                "http://{address}/pages/{id}/tips/orders/ORDER1/capture"
             ))
             .send()
             .await
@@ -2310,7 +2313,7 @@ mod tests {
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
-        let tips_url = format!("http://{address}/remote-control/{id}/tips");
+        let tips_url = format!("http://{address}/pages/{id}/tips");
         let public: Value = client
             .get(&tips_url)
             .send()
@@ -2329,7 +2332,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let settings: Value = client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/page/settings"))
             .bearer_auth(&session)
             .json(&json!({"currency": "usd", "paywall": null, "tips": {
                 "amounts": [1000, 200, 500],
@@ -2392,7 +2395,7 @@ mod tests {
         );
         let response = client
             .post(format!(
-                "http://{address}/remote-control/{id}/music/orders/ORDER1/capture"
+                "http://{address}/pages/{id}/songs/orders/ORDER1/capture"
             ))
             .send()
             .await
@@ -2446,7 +2449,7 @@ mod tests {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (_, key, id) = streamer(&address, &api).await;
-        let music_url = format!("http://{address}/remote-control/{id}/music");
+        let music_url = format!("http://{address}/pages/{id}/songs/queue");
         let response = client.get(&music_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let mut socket = connect(&address, &key).await;
@@ -2496,7 +2499,7 @@ mod tests {
         let (_, key, id) = streamer(&address, &api).await;
         let _socket = connect(&address, &key).await;
         let response = reqwest::Client::new()
-            .post(format!("http://{address}/remote-control/{id}/music/orders"))
+            .post(format!("http://{address}/pages/{id}/songs/orders"))
             .json(&json!({"song": LINK}))
             .send()
             .await
@@ -2512,7 +2515,7 @@ mod tests {
     async fn songs_not_found_are_dropped() {
         let (address, api, _) = start_paid().await;
         let (key, id) = paid_streamer(&address, &api).await;
-        let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
         let mut socket = connect(&address, &key).await;
         assert_eq!(
             request_song(&mut socket, &orders_url).await,
@@ -2681,7 +2684,7 @@ mod tests {
             json!({"name": "Erik", "login": "erik", "streamerUrl": null, "settings": null})
         );
         let response = client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/page/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null}))
             .send()
@@ -2689,7 +2692,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let account: Value = client
-            .post(format!("http://{address}/account/streamer"))
+            .post(format!("http://{address}/account/page"))
             .bearer_auth(&session)
             .send()
             .await
@@ -2703,7 +2706,7 @@ mod tests {
             remote_control::id_of(&key).as_deref()
         );
         let settings: Value = client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/page/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null}))
             .send()
@@ -2714,7 +2717,7 @@ mod tests {
             .unwrap();
         assert_eq!(settings, account["settings"]);
         let settings: Value = client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/page/settings"))
             .bearer_auth(&session)
             .json(&json!({
                 "paywall": null,
@@ -2731,7 +2734,7 @@ mod tests {
         assert_eq!(settings["title"], "Pick a banger");
         assert_eq!(settings["accent"], "pink");
         let response = client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/page/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "accent": "teal"}))
             .send()
@@ -2739,7 +2742,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let name: Value = client
-            .get(format!("http://{address}/remote-control/names/twitch/Erik"))
+            .get(format!("http://{address}/pages/twitch/Erik"))
             .send()
             .await
             .unwrap()
@@ -2749,7 +2752,7 @@ mod tests {
         assert_eq!(name["id"], account["settings"]["id"]);
         let profile: Value = client
             .get(format!(
-                "http://{address}/remote-control/{}/profile",
+                "http://{address}/pages/{}",
                 name["id"].as_str().unwrap()
             ))
             .send()
@@ -2770,21 +2773,19 @@ mod tests {
             })
         );
         let response = client
-            .get(format!("http://{address}/remote-control/unknown/profile"))
+            .get(format!("http://{address}/pages/unknown"))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let response = client
-            .get(format!(
-                "http://{address}/remote-control/names/twitch/other"
-            ))
+            .get(format!("http://{address}/pages/twitch/other"))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let again: Value = client
-            .post(format!("http://{address}/account/streamer"))
+            .post(format!("http://{address}/account/page"))
             .bearer_auth(&session)
             .send()
             .await
@@ -2802,7 +2803,7 @@ mod tests {
         let mut socket = connect(&address, &key).await;
         assert!(api.remote_control.is_connected(&id));
         let account: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/streamer-url"))
+            .post(format!("http://{address}/account/page/streamer-url"))
             .bearer_auth(&session)
             .send()
             .await
@@ -2830,7 +2831,7 @@ mod tests {
         let _socket = connect(&address, &new_key).await;
         assert!(api.remote_control.is_connected(&id));
         let name: Value = reqwest::Client::new()
-            .get(format!("http://{address}/remote-control/names/twitch/erik"))
+            .get(format!("http://{address}/pages/twitch/erik"))
             .send()
             .await
             .unwrap()
@@ -2879,7 +2880,7 @@ mod tests {
         let old = api.auth.session_at("1", 0, crate::deliveries::now() - 601);
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
-        let settings_url = format!("http://{address}/account/settings");
+        let settings_url = format!("http://{address}/account/page/settings");
         let paywall = json!({"currency": "SEK", "paywall": {"price": 250}});
         let response = client
             .post(&settings_url)
@@ -2890,7 +2891,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let response = client
-            .post(&paypal_url)
+            .post(format!("{paypal_url}/connect"))
             .bearer_auth(&old)
             .send()
             .await
@@ -2898,7 +2899,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         assert!(fake.referral.lock().unwrap().is_none());
         let sign_up: Value = client
-            .post(&paypal_url)
+            .post(format!("{paypal_url}/connect"))
             .bearer_auth(&session)
             .send()
             .await
@@ -2977,7 +2978,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let public: Value = client
-            .get(format!("http://{address}/remote-control/{id}/paywall"))
+            .get(format!("http://{address}/pages/{id}/songs"))
             .send()
             .await
             .unwrap()
@@ -3000,7 +3001,7 @@ mod tests {
         assert_eq!(settings["merchantId"], Value::Null);
         assert_eq!(settings["paypalPending"], false);
         let public: Value = client
-            .get(format!("http://{address}/remote-control/{id}/paywall"))
+            .get(format!("http://{address}/pages/{id}/songs"))
             .send()
             .await
             .unwrap()
@@ -3036,7 +3037,7 @@ mod tests {
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
         let (session, _, id) = streamer(&address, &api).await;
         let response = client
-            .post(format!("http://{address}/account/paypal"))
+            .post(format!("http://{address}/account/paypal/connect"))
             .bearer_auth(&session)
             .send()
             .await
@@ -3106,7 +3107,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(api.accounts.get("1").unwrap().merchant_id, None);
         let public: Value = client
-            .get(format!("http://{address}/remote-control/{id}/tips"))
+            .get(format!("http://{address}/pages/{id}/tips"))
             .send()
             .await
             .unwrap()
@@ -3127,10 +3128,10 @@ mod tests {
         let client = reqwest::Client::new();
         for (method, path) in [
             ("GET", "/account"),
-            ("POST", "/account/streamer"),
-            ("POST", "/account/streamer-url"),
-            ("POST", "/account/settings"),
-            ("POST", "/account/paypal"),
+            ("POST", "/account/page"),
+            ("POST", "/account/page/streamer-url"),
+            ("POST", "/account/page/settings"),
+            ("POST", "/account/paypal/connect"),
             ("POST", "/account/paypal/check"),
             ("POST", "/account/sign-out"),
         ] {
