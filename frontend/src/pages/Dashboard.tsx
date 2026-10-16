@@ -52,7 +52,7 @@ function Steps() {
         In Moblin, go to Settings, Remote control, Streamer, Assistant and paste the streamer URL as
         URL. Then turn Enabled on.
       </li>
-      <li>Make sure Moblin may use Apple Music.</li>
+      <li>For song requests, make sure Moblin may use Apple Music.</li>
     </ol>
   );
 }
@@ -818,14 +818,6 @@ function Admin(props: {
   return (
     <>
       <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
-      <Show when={settings().paypal}>
-        <PayPalAccount
-          session={props.session}
-          settings={settings()}
-          onSettings={setSettings}
-          onSignOut={props.onSignOut}
-        />
-      </Show>
       <Show when={settings().merchantId || settings().paywall}>
         <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
       </Show>
@@ -845,8 +837,16 @@ function Admin(props: {
           onSave={save}
         />
       </Show>
+      <Show when={settings().paypal}>
+        <PayPalAccount
+          session={props.session}
+          settings={settings()}
+          onSettings={setSettings}
+          onSignOut={props.onSignOut}
+        />
+      </Show>
       <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Connect Moblin for song requests</h2>
+        <h2 class="text-[23px] font-semibold">Connect Moblin</h2>
         <p class="flex items-center gap-2.5 text-[15px] text-muted">
           <span
             class={`size-2.5 shrink-0 rounded-full ${settings().connected ? "bg-leaf" : "bg-muted"}`}
@@ -857,8 +857,8 @@ function Admin(props: {
         <Value label="Streamer URL for Moblin" text={props.streamerUrl} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
           <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
-          Keep the streamer URL to yourself. Anyone who has it can connect as your Moblin and get
-          your song requests. Reset it if it leaked.
+          Keep the streamer URL to yourself. Anyone who has it can connect as your Moblin and
+          receive your song requests and wheel spins. Reset it if it leaked.
         </p>
         <div class="flex flex-wrap items-center gap-4">
           <button type="button" class={ghostButtonClass} disabled={busy()} onClick={newUrl}>
