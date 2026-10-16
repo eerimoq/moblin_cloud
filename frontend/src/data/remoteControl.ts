@@ -25,13 +25,11 @@ export const formatDuration = (duration: number) => {
 };
 
 export type Paywall = {
-  merchantId: string;
   price: number;
   currency: string;
 };
 
 export type Tips = {
-  merchantId: string;
   currency: string;
   amounts: number[];
   webhookUrl: string | null;
@@ -43,7 +41,6 @@ export type SpinOption = {
 };
 
 export type Spin = {
-  merchantId: string;
   options: SpinOption[];
   currency: string;
   webhookUrl: string;
@@ -62,6 +59,8 @@ export type Settings = Page & {
   tips: Tips | null;
   spin: Spin | null;
   paypal: boolean;
+  merchantId: string | null;
+  paypalPending: boolean;
 };
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];

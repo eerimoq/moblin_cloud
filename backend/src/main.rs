@@ -100,11 +100,16 @@ struct Cli {
     /// the backend restarts.
     #[arg(long, env = "SONG_QUEUE_FILE")]
     song_queue_file: Option<PathBuf>,
-    /// The client ID of a PayPal REST app, used together with its secret to
-    /// let streamers ask viewers to pay for songs, tips and wheel spins. The
-    /// money goes straight to the streamer's PayPal account. Without one
-    /// payments are unavailable.
-    #[arg(long, env = "PAYPAL_CLIENT_ID", requires = "paypal_client_secret")]
+    /// The client ID of a PayPal REST app of a PayPal partner, used together
+    /// with its secret to let streamers connect their PayPal account and ask
+    /// viewers to pay for songs, tips and wheel spins. The money goes straight
+    /// to the streamer's PayPal account. Without one payments are
+    /// unavailable.
+    #[arg(
+        long,
+        env = "PAYPAL_CLIENT_ID",
+        requires_all = ["paypal_client_secret", "paypal_partner_id"]
+    )]
     paypal_client_id: Option<String>,
     /// The client secret of the PayPal REST app.
     #[arg(
@@ -114,6 +119,19 @@ struct Cli {
         requires = "paypal_client_id"
     )]
     paypal_client_secret: Option<String>,
+    /// The PayPal merchant ID of the partner account the REST app belongs to,
+    /// for looking up streamers who connected their PayPal account.
+    #[arg(long, env = "PAYPAL_PARTNER_ID", requires = "paypal_client_id")]
+    paypal_partner_id: Option<String>,
+    /// The BN code PayPal gave the partner, sent with every PayPal request.
+    #[arg(long, env = "PAYPAL_ATTRIBUTION_ID", requires = "paypal_client_id")]
+    paypal_attribution_id: Option<String>,
+    /// The ID of the webhook registered for `<public url>/paypal/webhooks` in
+    /// the PayPal REST app, subscribed to MERCHANT.ONBOARDING.COMPLETED and
+    /// MERCHANT.PARTNER-CONSENT.REVOKED. Without one PayPal webhooks are
+    /// refused.
+    #[arg(long, env = "PAYPAL_WEBHOOK_ID", requires = "paypal_client_id")]
+    paypal_webhook_id: Option<String>,
     /// Use the PayPal sandbox instead of real payments.
     #[arg(long, env = "PAYPAL_SANDBOX")]
     paypal_sandbox: bool,
@@ -242,19 +260,29 @@ async fn main() -> Result<()> {
         warn!("no song queue file, forgetting requested songs not yet added on restart");
     }
     let song_queue = SongQueue::load(cli.song_queue_file)?;
-    let paypal = match (cli.paypal_client_id, cli.paypal_client_secret) {
-        (Some(client_id), Some(client_secret)) => {
+    let paypal = match (
+        cli.paypal_client_id,
+        cli.paypal_client_secret,
+        cli.paypal_partner_id,
+    ) {
+        (Some(client_id), Some(client_secret), Some(partner_id)) => {
             let url = if cli.paypal_sandbox {
                 paypal::SANDBOX_URL
             } else {
                 paypal::LIVE_URL
             };
             info!("taking payments through {url}");
+            if cli.paypal_webhook_id.is_none() {
+                warn!("no PayPal webhook ID, refusing PayPal webhooks");
+            }
             Some(PayPal::new(
                 http_client(),
                 url.to_string(),
                 client_id,
                 client_secret,
+                partner_id,
+                cli.paypal_attribution_id,
+                cli.paypal_webhook_id,
             ))
         }
         _ => {

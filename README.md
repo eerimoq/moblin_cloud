@@ -145,7 +145,8 @@ Docker; without one they are forgotten on restart.
 Streamers manage their page from the dashboard at `/dashboard/`; `/page/`
 shows the page itself when given `?streamer=<id>` and otherwise redirects to
 the dashboard. The settings of a page are
-`{"id", "connected", "paywall", "paypal", "title", "message", "accent"}`, read
+`{"id", "connected", "paywall", "tips", "spin", "paypal", "merchantId",
+"paypalPending", "title", "message", "accent"}`, read
 and changed through the account endpoints below. `title` (at most 60
 characters) and `message` (at most 300) are shown on the page, and
 `accent` is one of `green`, `purple`, `blue`, `pink`, `orange` and `red`; all
@@ -184,9 +185,7 @@ other's page. `POST /account/streamer-url` resets the streamer URL with a
 new key, for when it leaked: the old one stops working at once and a Moblin
 connected with it is disconnected, while the page, its settings and queued
 songs stay. `POST /account/settings` with `{"paywall", "title", "message", "accent"}`
-changes the settings. Setting a new PayPal merchant ID needs a session issued in the
-last 10 minutes and answers 403 otherwise, so a stolen session can't redirect
-payments.
+changes the settings.
 
 GitHub Pages has no file for `/twitch/<login>`, so it serves `404.html`,
 which renders the page for those paths (the dev server rewrites
@@ -218,24 +217,70 @@ Twitch user `streamer` (account id `fake-streamer`), or as another login with
 
 ### Paid song requests
 
-A streamer can ask viewers to pay for every song, with PayPal. They enter
-their PayPal merchant ID (13 characters, under Account settings, Business
-information on PayPal), a price of 0.50 to 1000 and a currency on their page,
-which the settings endpoint takes as `"paywall": {"merchantId", "price",
-"currency"}` (`price` in hundredths) or `null`. Streamers enter the merchant
-ID rather than their email because PayPal no longer accepts emails as the
-JavaScript SDK's `merchant-id`, and the page must not show anyone's
-email. Saving checks the merchant ID with a PayPal order that is never paid,
-and answers 422 when PayPal can't send payments to it. The money goes straight to the streamer:
-every PayPal order names the streamer as payee, so the backend never holds
-any of it and PayPal takes its fees from the streamer.
+A streamer can ask viewers to pay for every song, with PayPal. They first
+connect their PayPal account (see below), and then set a price of 0.50 to
+1000 and a currency on their page, which the settings endpoint takes as
+`"paywall": {"price", "currency"}` (`price` in hundredths) or `null`. The money
+goes straight to the streamer: every PayPal order names the streamer's
+merchant ID as payee, so the backend never holds any of it and PayPal takes
+its fees from the streamer. Creating and capturing orders acts for the
+streamer with a `PayPal-Auth-Assertion` header, an unsigned JWT
+(`{"alg": "none"}` and `{"iss": <client ID>, "payer_id": <merchant ID>}`,
+Base64 encoded, with an empty signature), using the permission the streamer
+granted when connecting.
+
+### Connecting PayPal
+
+Streamers connect their PayPal account with PayPal's seller onboarding
+([Partner Referrals](https://developer.paypal.com/docs/multiparty/seller-onboarding/before-payment/)),
+so the merchant ID always comes from PayPal and is never typed in. Streamers
+can connect a personal or a business account: set the Intent of the REST app
+to Mixed in its settings on the PayPal developer dashboard (Business makes
+everyone sign up for or upgrade to a business account). PayPal only lets
+personal accounts receive payments in some countries (such as the US, UK and
+Sweden, but not Germany) and asks for a business account elsewhere. `POST
+/account/paypal` needs a session issued in the last 10 minutes (and answers
+403 otherwise, so a stolen session can't redirect payments). It creates a
+referral with a random tracking ID, kept with the account until onboarding
+finishes, and answers `{"url"}`, PayPal's sign up link, which the dashboard
+opens. PayPal sends the streamer back to `<frontend url>/dashboard/`, which
+then calls `POST /account/paypal/check`. That looks the tracking ID up with
+PayPal (the return URL's query parameters are ignored, since anyone can make
+them up) and connects the merchant ID once PayPal reports what its integration
+checklist asks for: the account can receive payments, its email is confirmed
+and it granted our REST app third-party permissions (`oauth_third_party`). It
+answers the settings, 404 while PayPal knows no account for the tracking ID
+yet, 409 when the permissions are missing and 422 while the account can't
+receive payments. The dashboard checks again on every load while
+an onboarding is pending.
+
+PayPal also tells the backend with webhooks, posted to `POST
+/paypal/webhooks`. Register `https://api.moblin.app/paypal/webhooks` as a
+webhook of the REST app, subscribed to `MERCHANT.ONBOARDING.COMPLETED` and
+`MERCHANT.PARTNER-CONSENT.REVOKED`, and give its ID with
+`--paypal-webhook-id` (or `PAYPAL_WEBHOOK_ID`); without one webhooks answer
+503. Every webhook is checked with PayPal's verify webhook signature API
+(400 when the signature is bad, 502 when PayPal can't be reached, so PayPal
+retries). A completed onboarding looks the merchant's status up, finds the
+account whose pending tracking ID it has and connects it with the same checks
+as `POST /account/paypal/check`, so streamers who close the tab before
+returning are connected too. Revoked consent (or a closed PayPal account)
+disconnects every account connected to that merchant ID, which leaves their
+paid features unpaid until they connect again. Other events are ignored. A new onboarding replaces the connected account only
+once it finishes. The settings show the connected `merchantId` and whether an
+onboarding is pending as `paypalPending`.
+
+Paid features can only be turned on or changed while a PayPal account is
+connected (409 otherwise). Paid features saved before connecting was
+required are still shown on the dashboard, but are unpaid until the streamer
+connects PayPal: the paywall answers `null` IDs, and tips and the wheel are
+hidden.
 
 While a paywall is set `POST /remote-control/<id>/music` answers 402.
 `GET /remote-control/<id>/paywall` answers `{"paywall": {"price", "currency",
 "clientId", "merchantId", "environment"}}` or `{"paywall": null}`, where
-`environment` is `sandbox` or `production`. Paywalls saved with an
-email before merchant IDs were required answer `null` for both IDs and can't
-be paid until the streamer enters their merchant ID. The
+`environment` is `sandbox` or `production`. Without a connected PayPal account
+both IDs are `null` and the paywall can't be paid. The
 viewer page loads version 6 of the PayPal JavaScript SDK with those and
 shows PayPal's button, which opens PayPal's checkout over the page. The button
 creates the order with `POST /remote-control/<id>/music/orders` and `{"song",
@@ -249,7 +294,13 @@ queues the song like a free one, answering 202.
 The backend needs the client ID and secret of a
 [PayPal REST app](https://developer.paypal.com/dashboard/applications), given
 with `--paypal-client-id` and `--paypal-client-secret` (or `PAYPAL_CLIENT_ID`
-and `PAYPAL_CLIENT_SECRET`). `--paypal-sandbox` (or `PAYPAL_SANDBOX=true`)
+and `PAYPAL_CLIENT_SECRET`), and the merchant ID of the PayPal account the
+app belongs to with `--paypal-partner-id` (or `PAYPAL_PARTNER_ID`), for
+looking up onboarded streamers. Live onboarding only works once PayPal has
+approved that account as a partner; the sandbox works before.
+`--paypal-attribution-id` (or `PAYPAL_ATTRIBUTION_ID`) is the BN code PayPal
+gives partners, sent as `PayPal-Partner-Attribution-Id` with every PayPal
+request. `--paypal-sandbox` (or `PAYPAL_SANDBOX=true`)
 uses the PayPal sandbox instead. Without credentials streamers can't turn
 paid requests on, and paywalled pages answer 503 when a viewer tries to pay.
 
@@ -258,11 +309,10 @@ paid requests on, and paywalled pages answer 503 when a viewer tries to pay.
 Viewers can also tip a streamer with PayPal from the same page, picking one
 of the streamer's suggested amounts or entering their own (0.50 to 1000),
 with an optional name and a message of at most 200 characters. Streamers turn
-tips on with `"tips": {"merchantId", "currency", "amounts", "webhookUrl"}` in
+tips on with `"tips": {"currency", "amounts", "webhookUrl"}` in
 `POST /account/settings` (one to four amounts in hundredths and an optional
-webhook URL, or `null` to turn them off). The merchant ID is checked with PayPal and needs a recent sign
-in just like the paywall's, unless it is already the paywall's or the tips'
-merchant ID.
+webhook URL, or `null` to turn them off). Tips are paid to the connected
+PayPal account, like songs.
 
 `GET /remote-control/<id>/tips` answers `{"tips": {"amounts", "currency",
 "clientId", "merchantId", "environment"}}` or `{"tips": null}`. The page
@@ -306,7 +356,7 @@ URL, for local development only (`just backend-run` passes it).
 Viewers can also pay to spin the streamer's wheel, picking one of one to four
 options of a number of spins and its price (say 1 spin for 5.00 and 2 for
 8.00). For now a purchase only posts to the streamer's webhook, which decides
-what happens. It works like tips: `"spin": {"merchantId", "options": [{"spins",
+what happens. It works like tips: `"spin": {"options": [{"spins",
 "price"}], "currency", "webhookUrl"}` in `POST /account/settings` (1 to 100
 spins, prices in hundredths from 0.50 to 1000, each number of spins once; the
 webhook URL is required), `GET /remote-control/<id>/spin` answers `{"spin":

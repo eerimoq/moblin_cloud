@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::json_file;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Account {
     pub name: String,
     #[serde(default)]
@@ -19,6 +19,10 @@ pub struct Account {
     pub page: Option<Page>,
     #[serde(default)]
     pub sessions: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merchant_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paypal_tracking_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,6 +127,57 @@ impl Accounts {
         })
     }
 
+    pub fn start_paypal(&self, id: &str, tracking_id: String) -> Result<Account, AccountError> {
+        self.change(id, false, |account| {
+            account.paypal_tracking_id = Some(tracking_id);
+            Ok(())
+        })
+    }
+
+    pub fn connect_paypal(
+        &self,
+        id: &str,
+        tracking_id: &str,
+        merchant_id: String,
+    ) -> Result<Account, AccountError> {
+        self.change(id, false, |account| {
+            if account.paypal_tracking_id.as_deref() == Some(tracking_id) {
+                account.merchant_id = Some(merchant_id);
+                account.paypal_tracking_id = None;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn of_paypal_tracking_id(&self, tracking_id: &str) -> Option<String> {
+        self.accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(_, account)| account.paypal_tracking_id.as_deref() == Some(tracking_id))
+            .map(|(id, _)| id.clone())
+    }
+
+    pub fn disconnect_paypal(&self, merchant_id: &str) -> Vec<String> {
+        let ids: Vec<String> = self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, account)| account.merchant_id.as_deref() == Some(merchant_id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.into_iter()
+            .filter(|id| {
+                self.change(id, false, |account| {
+                    account.merchant_id = None;
+                    Ok(())
+                })
+                .is_ok()
+            })
+            .collect()
+    }
+
     pub fn sign_out(&self, id: &str) -> Result<Account, AccountError> {
         self.change(id, false, |account| {
             account.sessions += 1;
@@ -142,13 +197,7 @@ impl Accounts {
             Some(account) => account.clone(),
             None if !create => return Err(AccountError::Unknown),
             None if accounts.len() >= 10000 => return Err(AccountError::Full),
-            None => Account {
-                name: String::new(),
-                login: String::new(),
-                avatar: None,
-                page: None,
-                sessions: 0,
-            },
+            None => Account::default(),
         };
         change(&mut account)?;
         if old.as_ref() == Some(&account) {
@@ -195,9 +244,7 @@ mod tests {
             Ok(Account {
                 name: "Erik".to_string(),
                 login: "erik".to_string(),
-                avatar: None,
-                page: None,
-                sessions: 0,
+                ..Account::default()
             })
         );
         assert_eq!(
@@ -264,6 +311,37 @@ mod tests {
     }
 
     #[test]
+    fn paypal_connects_only_the_latest_onboarding() {
+        let accounts = Accounts::load(None).unwrap();
+        assert_eq!(
+            accounts.start_paypal("1", "a".to_string()),
+            Err(AccountError::Unknown)
+        );
+        accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        accounts.start_paypal("1", "a".to_string()).unwrap();
+        accounts.start_paypal("1", "b".to_string()).unwrap();
+        let account = accounts
+            .connect_paypal("1", "a", "MERCHANT00001".to_string())
+            .unwrap();
+        assert_eq!(account.merchant_id, None);
+        let account = accounts
+            .connect_paypal("1", "b", "MERCHANT00002".to_string())
+            .unwrap();
+        assert_eq!(account.merchant_id.as_deref(), Some("MERCHANT00002"));
+        assert_eq!(account.paypal_tracking_id, None);
+        accounts.start_paypal("1", "c".to_string()).unwrap();
+        assert_eq!(
+            accounts.get("1").unwrap().merchant_id.as_deref(),
+            Some("MERCHANT00002")
+        );
+        assert_eq!(accounts.of_paypal_tracking_id("c").as_deref(), Some("1"));
+        assert_eq!(accounts.of_paypal_tracking_id("b"), None);
+        assert!(accounts.disconnect_paypal("MERCHANT00001").is_empty());
+        assert_eq!(accounts.disconnect_paypal("MERCHANT00002"), ["1"]);
+        assert_eq!(accounts.get("1").unwrap().merchant_id, None);
+    }
+
+    #[test]
     fn logins_find_pages() {
         let accounts = Accounts::load(None).unwrap();
         accounts.signed_in("1", "Erik", "erik", None).unwrap();
@@ -297,7 +375,7 @@ mod tests {
                 login: "erik".to_string(),
                 avatar: None,
                 page: Some(page("p", "k")),
-                sessions: 0,
+                ..Account::default()
             })
         );
         std::fs::remove_file(&path).unwrap();

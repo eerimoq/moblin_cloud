@@ -26,16 +26,12 @@ pub struct Settings {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Paywall {
-    #[serde(default, rename = "merchantId")]
-    pub merchant_id: String,
     pub price: u32,
     pub currency: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tips {
-    #[serde(rename = "merchantId")]
-    pub merchant_id: String,
     pub currency: String,
     pub amounts: Vec<u32>,
     #[serde(default, rename = "webhookUrl")]
@@ -44,8 +40,6 @@ pub struct Tips {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Spin {
-    #[serde(rename = "merchantId")]
-    pub merchant_id: String,
     pub options: Vec<SpinOption>,
     pub currency: String,
     #[serde(rename = "webhookUrl")]
@@ -114,19 +108,11 @@ pub fn valid_price(price: u32) -> bool {
     (50..=100_000).contains(&price)
 }
 
-fn valid_merchant_id(merchant_id: &str) -> bool {
-    merchant_id.len() == 13 && merchant_id.chars().all(|c| c.is_ascii_alphanumeric())
-}
-
 impl Paywall {
     pub fn normalize(self) -> Option<Self> {
-        let merchant_id = self.merchant_id.trim().to_uppercase();
         let currency = self.currency.trim().to_uppercase();
-        let valid = valid_merchant_id(&merchant_id)
-            && valid_price(self.price)
-            && CURRENCIES.contains(&currency.as_str());
+        let valid = valid_price(self.price) && CURRENCIES.contains(&currency.as_str());
         valid.then_some(Self {
-            merchant_id,
             price: self.price,
             currency,
         })
@@ -135,17 +121,14 @@ impl Paywall {
 
 impl Tips {
     pub fn normalize(self) -> Option<Self> {
-        let merchant_id = self.merchant_id.trim().to_uppercase();
         let currency = self.currency.trim().to_uppercase();
         let mut amounts = self.amounts;
         amounts.sort_unstable();
         amounts.dedup();
-        let valid = valid_merchant_id(&merchant_id)
-            && (1..=4).contains(&amounts.len())
+        let valid = (1..=4).contains(&amounts.len())
             && amounts.iter().all(|amount| valid_price(*amount))
             && CURRENCIES.contains(&currency.as_str());
         valid.then_some(Self {
-            merchant_id,
             currency,
             amounts,
             webhook_url: self
@@ -158,13 +141,11 @@ impl Tips {
 
 impl Spin {
     pub fn normalize(self) -> Option<Self> {
-        let merchant_id = self.merchant_id.trim().to_uppercase();
         let currency = self.currency.trim().to_uppercase();
         let webhook_url = self.webhook_url.trim().to_string();
         let mut options = self.options;
         options.sort_unstable_by_key(|option| option.spins);
-        let valid = valid_merchant_id(&merchant_id)
-            && (1..=4).contains(&options.len())
+        let valid = (1..=4).contains(&options.len())
             && options
                 .iter()
                 .all(|option| (1..=100).contains(&option.spins) && valid_price(option.price))
@@ -174,7 +155,6 @@ impl Spin {
             && CURRENCIES.contains(&currency.as_str())
             && !webhook_url.is_empty();
         valid.then_some(Self {
-            merchant_id,
             options,
             currency,
             webhook_url,
@@ -252,7 +232,6 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let pages = Pages::load(Some(path.clone())).unwrap();
         let paywall = Paywall {
-            merchant_id: "ABCDEFGHJKLMN".to_string(),
             price: 250,
             currency: "SEK".to_string(),
         };
@@ -275,9 +254,8 @@ mod tests {
     #[test]
     fn paywalls_are_validated() {
         let pages = Pages::load(None).unwrap();
-        let paywall = |merchant_id: &str, price, currency: &str| {
+        let paywall = |price, currency: &str| {
             Some(Paywall {
-                merchant_id: merchant_id.to_string(),
                 price,
                 currency: currency.to_string(),
             })
@@ -288,22 +266,15 @@ mod tests {
         };
         assert_eq!(
             pages
-                .set("a", settings(paywall(" abcdefghjklmn ", 250, "sek")))
+                .set("a", settings(paywall(250, " sek ")))
                 .unwrap()
                 .paywall,
-            paywall("ABCDEFGHJKLMN", 250, "SEK")
+            paywall(250, "SEK")
         );
         assert_eq!(pages.get("a").paywall.unwrap().price, 250);
-        for (merchant_id, price, currency) in [
-            ("ABCDEFGHJKLM", 250, "SEK"),
-            ("erik@example.com", 250, "SEK"),
-            ("ABCDEF HJKLMN", 250, "SEK"),
-            ("ABCDEFGHJKLMN", 49, "SEK"),
-            ("ABCDEFGHJKLMN", 100_001, "SEK"),
-            ("ABCDEFGHJKLMN", 250, "JPY"),
-        ] {
+        for (price, currency) in [(49, "SEK"), (100_001, "SEK"), (250, "JPY")] {
             assert_eq!(
-                pages.set("a", settings(paywall(merchant_id, price, currency))),
+                pages.set("a", settings(paywall(price, currency))),
                 Err(SettingsError::InvalidPaywall)
             );
         }
@@ -314,9 +285,8 @@ mod tests {
     #[test]
     fn tips_are_validated() {
         let pages = Pages::load(None).unwrap();
-        let tips = |merchant_id: &str, currency: &str, amounts: &[u32]| Settings {
+        let tips = |currency: &str, amounts: &[u32]| Settings {
             tips: Some(Tips {
-                merchant_id: merchant_id.to_string(),
                 currency: currency.to_string(),
                 amounts: amounts.to_vec(),
                 webhook_url: None,
@@ -324,22 +294,19 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(
-            pages
-                .set("a", tips(" abcdefghjklmn ", "usd", &[1000, 200, 500, 200]))
-                .unwrap(),
-            tips("ABCDEFGHJKLMN", "USD", &[200, 500, 1000])
+            pages.set("a", tips("usd", &[1000, 200, 500, 200])).unwrap(),
+            tips("USD", &[200, 500, 1000])
         );
         assert_eq!(pages.get("a").tips.unwrap().amounts, [200, 500, 1000]);
-        for (merchant_id, currency, amounts) in [
-            ("ABCDEFGHJKLM", "USD", &[200][..]),
-            ("ABCDEFGHJKLMN", "JPY", &[200]),
-            ("ABCDEFGHJKLMN", "USD", &[]),
-            ("ABCDEFGHJKLMN", "USD", &[100, 200, 300, 400, 500]),
-            ("ABCDEFGHJKLMN", "USD", &[49, 200]),
-            ("ABCDEFGHJKLMN", "USD", &[100_001]),
+        for (currency, amounts) in [
+            ("JPY", &[200][..]),
+            ("USD", &[]),
+            ("USD", &[100, 200, 300, 400, 500]),
+            ("USD", &[49, 200]),
+            ("USD", &[100_001]),
         ] {
             assert_eq!(
-                pages.set("a", tips(merchant_id, currency, amounts)),
+                pages.set("a", tips(currency, amounts)),
                 Err(SettingsError::InvalidTips)
             );
         }
@@ -348,62 +315,49 @@ mod tests {
     #[test]
     fn spins_are_validated() {
         let pages = Pages::load(None).unwrap();
-        let spin =
-            |merchant_id: &str, options: &[(u32, u32)], currency: &str, webhook_url: &str| {
-                Settings {
-                    spin: Some(Spin {
-                        merchant_id: merchant_id.to_string(),
-                        options: options
-                            .iter()
-                            .map(|(spins, price)| SpinOption {
-                                spins: *spins,
-                                price: *price,
-                            })
-                            .collect(),
-                        currency: currency.to_string(),
-                        webhook_url: webhook_url.to_string(),
-                    }),
-                    ..Settings::default()
-                }
-            };
+        let spin = |options: &[(u32, u32)], currency: &str, webhook_url: &str| Settings {
+            spin: Some(Spin {
+                options: options
+                    .iter()
+                    .map(|(spins, price)| SpinOption {
+                        spins: *spins,
+                        price: *price,
+                    })
+                    .collect(),
+                currency: currency.to_string(),
+                webhook_url: webhook_url.to_string(),
+            }),
+            ..Settings::default()
+        };
         let url = "https://example.com/spin";
         assert_eq!(
-            pages.set(
-                "a",
-                spin(" abcdefghjklmn ", &[(2, 800), (1, 500)], "eur", url)
-            ),
-            Ok(spin("ABCDEFGHJKLMN", &[(1, 500), (2, 800)], "EUR", url))
+            pages.set("a", spin(&[(2, 800), (1, 500)], "eur", url)),
+            Ok(spin(&[(1, 500), (2, 800)], "EUR", url))
         );
-        for (merchant_id, options, currency, webhook_url) in [
-            ("ABCDEFGHJKLM", &[(1, 500)][..], "EUR", url),
-            ("ABCDEFGHJKLMN", &[(1, 49)], "EUR", url),
-            ("ABCDEFGHJKLMN", &[(0, 500)], "EUR", url),
-            ("ABCDEFGHJKLMN", &[(101, 500)], "EUR", url),
-            ("ABCDEFGHJKLMN", &[(1, 500), (1, 800)], "EUR", url),
-            ("ABCDEFGHJKLMN", &[], "EUR", url),
-            (
-                "ABCDEFGHJKLMN",
-                &[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)],
-                "EUR",
-                url,
-            ),
-            ("ABCDEFGHJKLMN", &[(1, 500)], "JPY", url),
-            ("ABCDEFGHJKLMN", &[(1, 500)], "EUR", " "),
+        for (options, currency, webhook_url) in [
+            (&[(1, 49)][..], "EUR", url),
+            (&[(0, 500)], "EUR", url),
+            (&[(101, 500)], "EUR", url),
+            (&[(1, 500), (1, 800)], "EUR", url),
+            (&[], "EUR", url),
+            (&[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)], "EUR", url),
+            (&[(1, 500)], "JPY", url),
+            (&[(1, 500)], "EUR", " "),
         ] {
             assert_eq!(
-                pages.set("a", spin(merchant_id, options, currency, webhook_url)),
+                pages.set("a", spin(options, currency, webhook_url)),
                 Err(SettingsError::InvalidSpin)
             );
         }
     }
 
     #[test]
-    fn email_paywalls_load_without_merchant_id() {
+    fn old_merchant_ids_are_ignored() {
         let settings: Settings = serde_json::from_str(
-            r#"{"paywall": {"email": "erik@example.com", "price": 250, "currency": "SEK"}}"#,
+            r#"{"paywall": {"merchantId": "ABCDEFGHJKLMN", "price": 250, "currency": "SEK"}}"#,
         )
         .unwrap();
-        assert_eq!(settings.paywall.unwrap().merchant_id, "");
+        assert_eq!(settings.paywall.unwrap().price, 250);
     }
 
     #[test]

@@ -23,7 +23,7 @@ use crate::live::Live;
 use crate::pages::{
     Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price, valid_price,
 };
-use crate::paypal::{CaptureError, Item, Order, PayPal, PayeeError};
+use crate::paypal::{CaptureError, Item, Order, PayPal, Seller};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
 use crate::song_queue::{self, QueuedSong, SongQueue};
 use crate::store::{Channel, Store, Streamer};
@@ -69,6 +69,9 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/streamer", post(handle_account_streamer))
         .route("/account/streamer-url", post(handle_account_streamer_url))
         .route("/account/settings", post(handle_account_settings))
+        .route("/account/paypal", post(handle_account_paypal))
+        .route("/account/paypal/check", post(handle_account_paypal_check))
+        .route("/paypal/webhooks", post(handle_paypal_webhook))
         .route("/account/sign-out", post(handle_account_sign_out))
         .route("/remote-control/{id}/paywall", get(handle_paywall))
         .route("/remote-control/{id}/profile", get(handle_profile))
@@ -208,12 +211,17 @@ struct SettingsResponse {
     tips: Option<Tips>,
     spin: Option<Spin>,
     paypal: bool,
+    #[serde(rename = "merchantId")]
+    merchant_id: Option<String>,
+    #[serde(rename = "paypalPending")]
+    paypal_pending: bool,
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
 }
 
 fn settings_response(api: &Api, id: String, settings: Settings) -> Json<SettingsResponse> {
+    let account = api.accounts.of_page(&id).unwrap_or_default();
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
         id,
@@ -221,6 +229,8 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         tips: settings.tips,
         spin: settings.spin,
         paypal: api.paypal.is_some(),
+        merchant_id: account.merchant_id,
+        paypal_pending: account.paypal_tracking_id.is_some(),
         title: settings.title,
         message: settings.message,
         accent: settings.accent,
@@ -242,22 +252,41 @@ struct SettingsRequest {
     accent: Option<String>,
 }
 
+fn merchant_of(api: &Api, id: &str) -> Option<String> {
+    api.accounts
+        .of_page(id)
+        .and_then(|account| account.merchant_id)
+}
+
+fn check_payable(api: &Api, id: &str) -> Result<(), (StatusCode, String)> {
+    if api.paypal.is_none() {
+        return Err(payments_unavailable());
+    }
+    if merchant_of(api, id).is_none() {
+        return Err((StatusCode::CONFLICT, "connect PayPal first".to_string()));
+    }
+    Ok(())
+}
+
+fn payments_unavailable() -> (StatusCode, String) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        "payments are unavailable".to_string(),
+    )
+}
+
 async fn update_settings(
     api: &Api,
     id: String,
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let current = api.pages.get(&id);
     let paywall = match request.paywall {
         Some(paywall) => {
             let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
-            check_merchant(
-                api,
-                &id,
-                &paywall.merchant_id,
-                paywall.price,
-                &paywall.currency,
-            )
-            .await?;
+            if current.paywall.as_ref() != Some(&paywall) {
+                check_payable(api, &id)?;
+            }
             Some(paywall)
         }
         None => None,
@@ -268,7 +297,9 @@ async fn update_settings(
             if let Some(url) = &tips.webhook_url {
                 check_webhook(api, url)?;
             }
-            check_merchant(api, &id, &tips.merchant_id, tips.amounts[0], &tips.currency).await?;
+            if current.tips.as_ref() != Some(&tips) {
+                check_payable(api, &id)?;
+            }
             Some(tips)
         }
         None => None,
@@ -277,14 +308,9 @@ async fn update_settings(
         Some(spin) => {
             let spin = spin.normalize().ok_or_else(invalid_spin)?;
             check_webhook(api, &spin.webhook_url)?;
-            check_merchant(
-                api,
-                &id,
-                &spin.merchant_id,
-                spin.options[0].price,
-                &spin.currency,
-            )
-            .await?;
+            if current.spin.as_ref() != Some(&spin) {
+                check_payable(api, &id)?;
+            }
             Some(spin)
         }
         None => None,
@@ -533,26 +559,182 @@ async fn handle_account_settings(
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?
+        .account
+        .page
+        .ok_or_else(no_page)?
+        .id;
+    update_settings(&api, id, request).await
+}
+
+#[derive(Serialize)]
+struct PayPalSignUpResponse {
+    url: String,
+}
+
+async fn handle_account_paypal(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<PayPalSignUpResponse>, (StatusCode, String)> {
     let signed_in = signed_in(&api, &headers)?;
-    let id = signed_in.account.page.ok_or_else(no_page)?.id;
-    let current_merchant_ids = merchant_ids(&api.pages.get(&id));
-    let new_merchant_ids = merchant_ids(&Settings {
-        paywall: request.paywall.clone().and_then(Paywall::normalize),
-        tips: request.tips.clone().and_then(Tips::normalize),
-        spin: request.spin.clone().and_then(Spin::normalize),
-        ..Settings::default()
-    });
-    if new_merchant_ids
-        .iter()
-        .any(|merchant_id| !current_merchant_ids.contains(merchant_id))
-        && !signed_in.fresh
-    {
+    if !signed_in.fresh {
         return Err((
             StatusCode::FORBIDDEN,
-            "sign in again to change the PayPal merchant ID".to_string(),
+            "sign in again to connect PayPal".to_string(),
         ));
     }
-    update_settings(&api, id, request).await
+    let paypal = api.paypal.as_ref().ok_or_else(payments_unavailable)?;
+    let tracking_id = api.remote_control.new_request_id().ok_or((
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "PayPal could not be connected".to_string(),
+    ))?;
+    let url = paypal
+        .referral(
+            &tracking_id,
+            &format!("{}/dashboard/", api.auth.frontend_url),
+        )
+        .await
+        .map_err(|error| {
+            warn!(
+                "creating a PayPal referral for {} failed: {error:#}",
+                signed_in.id
+            );
+            paypal_unreachable()
+        })?;
+    api.accounts
+        .start_paypal(&signed_in.id, tracking_id.clone())
+        .map_err(account_error)?;
+    info!(
+        "{} started connecting PayPal with tracking ID {tracking_id}",
+        signed_in.id
+    );
+    Ok(Json(PayPalSignUpResponse { url }))
+}
+
+fn paypal_unreachable() -> (StatusCode, String) {
+    (
+        StatusCode::BAD_GATEWAY,
+        "PayPal could not be reached".to_string(),
+    )
+}
+
+async fn handle_account_paypal_check(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let page = account.page.ok_or_else(no_page)?.id;
+    let paypal = api.paypal.as_ref().ok_or_else(payments_unavailable)?;
+    if let Some(tracking_id) = account.paypal_tracking_id {
+        let seller = paypal.seller(&tracking_id).await.map_err(|error| {
+            warn!("looking up PayPal tracking ID {tracking_id} of {id} failed: {error:#}");
+            paypal_unreachable()
+        })?;
+        let seller = seller.ok_or((
+            StatusCode::NOT_FOUND,
+            "PayPal has not connected an account yet".to_string(),
+        ))?;
+        finish_onboarding(&api, &id, &tracking_id, seller)?;
+    }
+    let settings = api.pages.get(&page);
+    Ok(settings_response(&api, page, settings))
+}
+
+fn finish_onboarding(
+    api: &Api,
+    id: &str,
+    tracking_id: &str,
+    seller: Seller,
+) -> Result<(), (StatusCode, String)> {
+    if !seller.permissions_granted {
+        info!(
+            "PayPal merchant {} of {id} did not grant the permissions",
+            seller.merchant_id
+        );
+        return Err((
+            StatusCode::CONFLICT,
+            "the PayPal account did not grant the permissions".to_string(),
+        ));
+    }
+    if !seller.payments_receivable || !seller.email_confirmed {
+        info!(
+            "PayPal merchant {} of {id} can't receive payments yet (payments receivable {}, email confirmed {})",
+            seller.merchant_id, seller.payments_receivable, seller.email_confirmed
+        );
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "the PayPal account can't receive payments yet".to_string(),
+        ));
+    }
+    api.accounts
+        .connect_paypal(id, tracking_id, seller.merchant_id.clone())
+        .map_err(account_error)?;
+    info!("{id} connected PayPal merchant {}", seller.merchant_id);
+    Ok(())
+}
+
+async fn handle_paypal_webhook(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    body: String,
+) -> StatusCode {
+    let Some(paypal) = api.paypal.as_ref().filter(|paypal| paypal.takes_webhooks()) else {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    };
+    let Ok(event) = serde_json::from_str::<Value>(&body) else {
+        return StatusCode::BAD_REQUEST;
+    };
+    match paypal.verify_webhook(&headers, &body).await {
+        Ok(true) => {}
+        Ok(false) => {
+            warn!("PayPal webhook {} has a bad signature", event["id"]);
+            return StatusCode::BAD_REQUEST;
+        }
+        Err(error) => {
+            warn!("verifying PayPal webhook {} failed: {error:#}", event["id"]);
+            return StatusCode::BAD_GATEWAY;
+        }
+    }
+    let event_type = event["event_type"].as_str().unwrap_or_default();
+    let merchant_id = event["resource"]["merchant_id"]
+        .as_str()
+        .unwrap_or_default();
+    info!(
+        "PayPal webhook {} {event_type} for merchant {merchant_id:?}",
+        event["id"]
+    );
+    match event_type {
+        "MERCHANT.ONBOARDING.COMPLETED" if !merchant_id.is_empty() => {
+            let seller = match paypal.seller_status(merchant_id).await {
+                Ok(seller) => seller,
+                Err(error) => {
+                    warn!("looking up PayPal merchant {merchant_id} failed: {error:#}");
+                    return StatusCode::BAD_GATEWAY;
+                }
+            };
+            let tracking_id = seller.tracking_id.clone().or_else(|| {
+                event["resource"]["tracking_id"]
+                    .as_str()
+                    .map(str::to_string)
+            });
+            let Some((id, tracking_id)) = tracking_id.and_then(|tracking_id| {
+                api.accounts
+                    .of_paypal_tracking_id(&tracking_id)
+                    .map(|id| (id, tracking_id))
+            }) else {
+                info!("no account is connecting PayPal merchant {merchant_id}");
+                return StatusCode::OK;
+            };
+            let _ = finish_onboarding(&api, &id, &tracking_id, seller);
+        }
+        "MERCHANT.PARTNER-CONSENT.REVOKED" => {
+            for id in api.accounts.disconnect_paypal(merchant_id) {
+                info!("{id} was disconnected from PayPal merchant {merchant_id}");
+            }
+        }
+        _ => {}
+    }
+    StatusCode::OK
 }
 
 async fn handle_account_sign_out(
@@ -565,26 +747,10 @@ async fn handle_account_sign_out(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn merchant_ids(settings: &Settings) -> Vec<String> {
-    let paywall = settings
-        .paywall
-        .as_ref()
-        .map(|paywall| &paywall.merchant_id);
-    let tips = settings.tips.as_ref().map(|tips| &tips.merchant_id);
-    let spin = settings.spin.as_ref().map(|spin| &spin.merchant_id);
-    paywall
-        .into_iter()
-        .chain(tips)
-        .chain(spin)
-        .filter(|merchant_id| !merchant_id.is_empty())
-        .cloned()
-        .collect()
-}
-
 fn invalid_spin() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the spin wheel needs a PayPal merchant ID, one to four options of 1 to 100 spins for 0.50 to 1000, a supported currency and a webhook URL"
+        "the spin wheel needs one to four options of 1 to 100 spins for 0.50 to 1000, a supported currency and a webhook URL"
             .to_string(),
     )
 }
@@ -603,49 +769,15 @@ fn check_webhook(api: &Api, url: &str) -> Result<(), (StatusCode, String)> {
 fn invalid_tips() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "tips need a PayPal merchant ID, one to four amounts of 0.50 to 1000 and a supported currency"
-            .to_string(),
+        "tips need one to four amounts of 0.50 to 1000 and a supported currency".to_string(),
     )
 }
 
 fn invalid_paywall() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the paywall needs a PayPal merchant ID, a price of 0.50 to 1000 and a supported currency"
-            .to_string(),
+        "the paywall needs a price of 0.50 to 1000 and a supported currency".to_string(),
     )
-}
-
-async fn check_merchant(
-    api: &Api,
-    id: &str,
-    merchant_id: &str,
-    price: u32,
-    currency: &str,
-) -> Result<(), (StatusCode, String)> {
-    let paypal = api.paypal.as_ref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "payments are unavailable".to_string(),
-    ))?;
-    let checked = merchant_ids(&api.pages.get(id))
-        .iter()
-        .any(|current| current == merchant_id);
-    if !checked {
-        paypal
-            .check_payee(merchant_id, price, currency)
-            .await
-            .map_err(|error| match error {
-                PayeeError::Invalid => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "PayPal can't send payments to that merchant ID".to_string(),
-                ),
-                PayeeError::Failed => (
-                    StatusCode::BAD_GATEWAY,
-                    "PayPal could not be reached".to_string(),
-                ),
-            })?;
-    }
-    Ok(())
 }
 
 #[derive(Serialize)]
@@ -709,6 +841,7 @@ async fn handle_paywall(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<PaywallResponse> {
+    let merchant_id = merchant_of(&api, &id);
     Json(PaywallResponse {
         paywall: api.pages.get(&id).paywall.map(|paywall| PublicPaywall {
             price: paywall.price,
@@ -716,9 +849,9 @@ async fn handle_paywall(
             client_id: api
                 .paypal
                 .as_ref()
-                .filter(|_| !paywall.merchant_id.is_empty())
+                .filter(|_| merchant_id.is_some())
                 .map(|paypal| paypal.client_id().to_string()),
-            merchant_id: Some(paywall.merchant_id).filter(|id| !id.is_empty()),
+            merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
         }),
     })
@@ -740,15 +873,16 @@ struct TipsResponse {
 }
 
 async fn handle_tips(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<TipsResponse> {
+    let tips = api.pages.get(&id).tips.zip(merchant_of(&api, &id));
     Json(TipsResponse {
-        tips: api.pages.get(&id).tips.map(|tips| PublicTips {
+        tips: tips.map(|(tips, merchant_id)| PublicTips {
             amounts: tips.amounts,
             currency: tips.currency,
             client_id: api
                 .paypal
                 .as_ref()
                 .map(|paypal| paypal.client_id().to_string()),
-            merchant_id: tips.merchant_id,
+            merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
         }),
     })
@@ -771,15 +905,16 @@ struct SpinResponse {
 }
 
 async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SpinResponse> {
+    let spin = api.pages.get(&id).spin.zip(merchant_of(&api, &id));
     Json(SpinResponse {
-        spin: api.pages.get(&id).spin.map(|spin| PublicSpin {
+        spin: spin.map(|(spin, merchant_id)| PublicSpin {
             options: spin.options,
             currency: spin.currency,
             client_id: api
                 .paypal
                 .as_ref()
                 .map(|paypal| paypal.client_id().to_string()),
-            merchant_id: spin.merchant_id,
+            merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
         }),
         wheel: api.remote_control.wheel(&id),
@@ -933,11 +1068,8 @@ async fn handle_order(
         StatusCode::BAD_REQUEST,
         "The streamer no longer asks for a payment. Reload the page.",
     ))?;
-    let paypal = api
-        .paypal
-        .as_ref()
-        .filter(|_| !paywall.merchant_id.is_empty())
-        .ok_or_else(paypal_unavailable)?;
+    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
+    let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
     let song = requested_song(&api, &id, song_and_user(request)?).await?;
     let order = Order {
         streamer: id.clone(),
@@ -946,7 +1078,7 @@ async fn handle_order(
             name: song.name,
         },
         user: song.user,
-        merchant_id: paywall.merchant_id,
+        merchant_id,
         price: paywall.price,
         currency: paywall.currency,
     };
@@ -1089,6 +1221,7 @@ async fn handle_tip_order(
         "The streamer no longer takes tips. Reload the page.",
     ))?;
     let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
+    let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
     if !valid_price(request.amount) {
         return Err(failure(StatusCode::BAD_REQUEST, "Tip from 0.50 to 1000."));
     }
@@ -1097,7 +1230,7 @@ async fn handle_tip_order(
         streamer: id.clone(),
         item: Item::Tip { message },
         user: user_name(request.user, "Someone"),
-        merchant_id: tips.merchant_id,
+        merchant_id,
         price: request.amount,
         currency: tips.currency,
     };
@@ -1176,6 +1309,7 @@ async fn handle_spin_order(
         "The streamer turned the wheel off. Reload the page.",
     ))?;
     let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
+    let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
     let option = spin
         .options
         .iter()
@@ -1191,7 +1325,7 @@ async fn handle_spin_order(
             message: viewer_message(request.message)?,
         },
         user: user_name(request.user, "Someone"),
-        merchant_id: spin.merchant_id,
+        merchant_id,
         price: option.price,
         currency: spin.currency,
     };
@@ -1372,9 +1506,108 @@ mod tests {
         );
     }
 
-    async fn start_paypal() -> (String, Arc<std::sync::Mutex<Option<Value>>>) {
-        let order = Arc::new(std::sync::Mutex::new(None::<Value>));
+    #[derive(Clone, Default)]
+    struct FakePayPal {
+        order: Arc<std::sync::Mutex<Option<Value>>>,
+        referral: Arc<std::sync::Mutex<Option<Value>>>,
+        seller: Arc<std::sync::Mutex<Option<Value>>>,
+        list_sellers: Arc<std::sync::Mutex<bool>>,
+        verification: Arc<std::sync::Mutex<Option<Value>>>,
+    }
+
+    fn new_paypal(url: String) -> PayPal {
+        PayPal::new(
+            reqwest::Client::new(),
+            url,
+            "id".to_string(),
+            "secret".to_string(),
+            "PARTNER000001".to_string(),
+            Some("BN".to_string()),
+            Some("WH".to_string()),
+        )
+    }
+
+    fn payer_of(assertion: &str) -> Value {
+        let payload = assertion.split('.').nth(1).unwrap();
+        serde_json::from_slice::<Value>(&BASE64_STANDARD.decode(payload).unwrap()).unwrap()
+            ["payer_id"]
+            .clone()
+    }
+
+    async fn start_paypal() -> (String, FakePayPal) {
+        let fake = FakePayPal::default();
+        let order = fake.order.clone();
         let router = Router::new()
+            .route(
+                "/v1/notifications/verify-webhook-signature",
+                post({
+                    let verification = fake.verification.clone();
+                    move |Json(body): Json<Value>| async move {
+                        let good = body["transmission_sig"] == "good" && body["webhook_id"] == "WH";
+                        *verification.lock().unwrap() = Some(body);
+                        Json(json!({
+                            "verification_status": if good { "SUCCESS" } else { "FAILURE" },
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/v2/customer/partner-referrals",
+                post({
+                    let referral = fake.referral.clone();
+                    move |headers: HeaderMap, Json(body): Json<Value>| async move {
+                        *referral.lock().unwrap() = Some(json!({
+                            "attribution": headers["paypal-partner-attribution-id"].to_str().unwrap(),
+                            "body": body,
+                        }));
+                        (
+                            StatusCode::CREATED,
+                            Json(json!({"links": [
+                                {"href": "https://api-m.sandbox.paypal.com/v2/customer/partner-referrals/x", "rel": "self", "method": "GET"},
+                                {"href": "https://www.sandbox.paypal.com/bizsignup/x", "rel": "action_url", "method": "GET"},
+                            ]})),
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/v1/customer/partners/PARTNER000001/merchant-integrations",
+                get({
+                    let seller = fake.seller.clone();
+                    let list_sellers = fake.list_sellers.clone();
+                    move |Query(query): Query<std::collections::HashMap<String, String>>| async move {
+                        match seller.lock().unwrap().clone() {
+                            Some(seller) if seller["tracking_id"] == query["tracking_id"].as_str() => {
+                                let integration = json!({
+                                    "merchant_id": seller["merchant_id"],
+                                    "tracking_id": seller["tracking_id"],
+                                    "links": [],
+                                });
+                                if *list_sellers.lock().unwrap() {
+                                    (StatusCode::OK, Json(json!([integration])))
+                                } else {
+                                    (StatusCode::OK, Json(integration))
+                                }
+                            }
+                            _ => (
+                                StatusCode::NOT_FOUND,
+                                Json(json!({"name": "RESOURCE_NOT_FOUND"})),
+                            ),
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/v1/customer/partners/PARTNER000001/merchant-integrations/{merchant}",
+                get({
+                    let seller = fake.seller.clone();
+                    move |Path(merchant): Path<String>| async move {
+                        let seller = seller.lock().unwrap().clone().unwrap();
+                        assert_eq!(seller["merchant_id"], merchant.as_str());
+                        Json(seller)
+                    }
+                }),
+            )
             .route(
                 "/v1/oauth2/token",
                 post(|| async {
@@ -1385,13 +1618,9 @@ mod tests {
                 "/v2/checkout/orders",
                 post({
                     let order = order.clone();
-                    move |Json(request): Json<Value>| async move {
-                        if request["purchase_units"][0]["payee"]["merchant_id"] == "NOBODY0000000" {
-                            return (
-                                StatusCode::UNPROCESSABLE_ENTITY,
-                                Json(json!({"details": [{"issue": "PAYEE_ACCOUNT_INVALID"}]})),
-                            );
-                        }
+                    move |headers: HeaderMap, Json(mut request): Json<Value>| async move {
+                        request["assertion"] =
+                            json!(headers["paypal-auth-assertion"].to_str().unwrap());
                         *order.lock().unwrap() = Some(request);
                         (
                             StatusCode::CREATED,
@@ -1407,7 +1636,15 @@ mod tests {
                 "/v2/checkout/orders/{id}/capture",
                 post({
                     let order = order.clone();
-                    move |Path(id): Path<String>| async move {
+                    move |headers: HeaderMap, Path(id): Path<String>| async move {
+                        assert_eq!(
+                            payer_of(headers["paypal-auth-assertion"].to_str().unwrap()),
+                            payer_of(
+                                order.lock().unwrap().as_ref().unwrap()["assertion"]
+                                    .as_str()
+                                    .unwrap()
+                            )
+                        );
                         let amount =
                             order.lock().unwrap().as_ref().unwrap()["purchase_units"][0]["amount"]
                                 .clone();
@@ -1438,7 +1675,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, router).await });
-        (format!("http://{address}"), order)
+        (format!("http://{address}"), fake)
     }
 
     const LINK: &str = "https://music.apple.com/song/1440818839?i=1440818839";
@@ -1485,35 +1722,30 @@ mod tests {
     }
 
     async fn start_paid() -> (String, Arc<Api>, Arc<std::sync::Mutex<Option<Value>>>) {
-        let (paypal_url, paypal_order) = start_paypal().await;
-        let (address, api) = start_api(Some(PayPal::new(
-            reqwest::Client::new(),
-            paypal_url,
-            "id".to_string(),
-            "secret".to_string(),
-        )))
-        .await;
-        (address, api, paypal_order)
+        let (paypal_url, fake) = start_paypal().await;
+        let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
+        (address, api, fake.order)
+    }
+
+    fn connect_paypal(api: &Api) {
+        api.accounts.start_paypal("1", "t".to_string()).unwrap();
+        api.accounts
+            .connect_paypal("1", "t", "MERCHANT00001".to_string())
+            .unwrap();
     }
 
     #[tokio::test]
-    async fn email_paywalls_cant_be_paid() {
-        let path = std::env::temp_dir().join(format!("email-paywalls-{}.json", std::process::id()));
+    async fn paywalls_without_paypal_cant_be_paid() {
+        let path = std::env::temp_dir().join(format!("old-paywalls-{}.json", std::process::id()));
         std::fs::write(
             &path,
-            r#"{"p": {"paywall": {"email": "erik@example.com", "price": 250, "currency": "SEK"}}}"#,
+            r#"{"p": {"paywall": {"merchantId": "MERCHANT00001", "price": 250, "currency": "SEK"}}}"#,
         )
         .unwrap();
         let pages = Pages::load(Some(path.clone())).unwrap();
         std::fs::remove_file(&path).unwrap();
         let (paypal_url, _) = start_paypal().await;
-        let paypal = PayPal::new(
-            reqwest::Client::new(),
-            paypal_url,
-            "id".to_string(),
-            "secret".to_string(),
-        );
-        let (address, _) = start_api_with(Some(paypal), None, pages).await;
+        let (address, _) = start_api_with(Some(new_paypal(paypal_url)), None, pages).await;
         let client = reqwest::Client::new();
         let public: Value = client
             .get(format!("http://{address}/remote-control/p/paywall"))
@@ -1569,12 +1801,11 @@ mod tests {
 
     async fn paid_streamer(address: &str, api: &Api) -> (String, String) {
         let (session, key, id) = streamer(address, api).await;
+        connect_paypal(api);
         let response = reqwest::Client::new()
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {
-                "merchantId": "merchant00001", "price": 250, "currency": "SEK",
-            }}))
+            .json(&json!({"paywall": {"price": 250, "currency": "SEK"}}))
             .send()
             .await
             .unwrap();
@@ -1637,19 +1868,16 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"paywall": {
-                "merchantId": "NOBODY0000000", "price": 250, "currency": "SEK",
-            }}))
+            .json(&json!({"paywall": {"price": 250, "currency": "SEK"}}))
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        connect_paypal(&api);
         let settings: Value = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"paywall": {
-                "merchantId": "merchant00001", "price": 250, "currency": "SEK",
-            }}))
+            .json(&json!({"paywall": {"price": 250, "currency": "sek"}}))
             .send()
             .await
             .unwrap()
@@ -1658,13 +1886,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             settings["paywall"],
-            json!({
-                "price": 250,
-                "currency": "SEK",
-                "merchantId": "MERCHANT00001",
-            })
+            json!({"price": 250, "currency": "SEK"})
         );
         assert_eq!(settings["paypal"], true);
+        assert_eq!(settings["merchantId"], "MERCHANT00001");
         let public: Value = client
             .get(format!("http://{address}/remote-control/{id}/paywall"))
             .send()
@@ -1739,6 +1964,10 @@ mod tests {
         assert_eq!(
             sent["purchase_units"][0]["payee"],
             json!({"merchant_id": "MERCHANT00001"})
+        );
+        assert_eq!(
+            payer_of(sent["assertion"].as_str().unwrap()),
+            "MERCHANT00001"
         );
         assert_eq!(
             sent["purchase_units"][0]["description"],
@@ -1838,12 +2067,11 @@ mod tests {
         let (address, api, _) = start_paid().await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
+        connect_paypal(&api);
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {
-                "merchantId": "merchant00001", "price": 250, "currency": "EUR",
-            }}))
+            .json(&json!({"paywall": {"price": 250, "currency": "EUR"}}))
             .send()
             .await
             .unwrap();
@@ -1938,6 +2166,7 @@ mod tests {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
         let (session, _, id) = streamer(&address, &api).await;
+        connect_paypal(&api);
         let (webhook_url, mut webhooks) = start_webhook().await;
         let spin_url = format!("http://{address}/remote-control/{id}/spin");
         let public: Value = client
@@ -1955,7 +2184,7 @@ mod tests {
                 .post(&settings_url)
                 .bearer_auth(&session)
                 .json(&json!({"paywall": null, "spin": {
-                    "merchantId": "merchant00001", "options": [{"spins": 1, "price": 500}],
+                    "options": [{"spins": 1, "price": 500}],
                     "currency": "usd", "webhookUrl": webhook,
                 }}))
                 .send()
@@ -1967,7 +2196,6 @@ mod tests {
             .post(&settings_url)
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "spin": {
-                "merchantId": "merchant00001",
                 "options": [{"spins": 2, "price": 800}, {"spins": 1, "price": 500}],
                 "currency": "usd",
                 "webhookUrl": webhook_url,
@@ -1981,7 +2209,6 @@ mod tests {
         assert_eq!(
             settings["spin"],
             json!({
-                "merchantId": "MERCHANT00001",
                 "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}],
                 "currency": "USD",
                 "webhookUrl": webhook_url,
@@ -2075,6 +2302,7 @@ mod tests {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
         let (session, _, id) = streamer(&address, &api).await;
+        connect_paypal(&api);
         let tips_url = format!("http://{address}/remote-control/{id}/tips");
         let public: Value = client
             .get(&tips_url)
@@ -2098,7 +2326,7 @@ mod tests {
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "tips": {
-                "merchantId": "merchant00001", "currency": "usd", "amounts": [500],
+                "currency": "usd", "amounts": [500],
                 "webhookUrl": "ftp://example.com/tips",
             }}))
             .send()
@@ -2109,7 +2337,7 @@ mod tests {
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "tips": {
-                "merchantId": "merchant00001", "currency": "usd", "amounts": [1000, 200, 500],
+                "currency": "usd", "amounts": [1000, 200, 500],
                 "webhookUrl": format!(" {webhook_url} "),
             }}))
             .send()
@@ -2121,7 +2349,6 @@ mod tests {
         assert_eq!(
             settings["tips"],
             json!({
-                "merchantId": "MERCHANT00001",
                 "currency": "USD",
                 "amounts": [200, 500, 1000],
                 "webhookUrl": webhook_url,
@@ -2643,58 +2870,217 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paypal_merchant_ids_change_only_after_signing_in_again() {
-        let (address, api, _) = start_paid().await;
-        let (_, _, id) = streamer(&address, &api).await;
+    async fn paypal_is_connected_through_onboarding() {
+        let (paypal_url, fake) = start_paypal().await;
+        let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
+        let (session, _, id) = streamer(&address, &api).await;
         let old = api.auth.session_at("1", 0, crate::song_queue::now() - 601);
         let client = reqwest::Client::new();
-        let save = |session: String, merchant_id: Option<&str>| {
-            let paywall =
-                merchant_id.map(|id| json!({"merchantId": id, "price": 250, "currency": "SEK"}));
+        let paypal_url = format!("http://{address}/account/paypal");
+        let settings_url = format!("http://{address}/account/settings");
+        let paywall = json!({"paywall": {"price": 250, "currency": "SEK"}});
+        let response = client
+            .post(&settings_url)
+            .bearer_auth(&session)
+            .json(&paywall)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let response = client
+            .post(&paypal_url)
+            .bearer_auth(&old)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(fake.referral.lock().unwrap().is_none());
+        let sign_up: Value = client
+            .post(&paypal_url)
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            sign_up,
+            json!({"url": "https://www.sandbox.paypal.com/bizsignup/x"})
+        );
+        let tracking_id = api.accounts.get("1").unwrap().paypal_tracking_id.unwrap();
+        let referral = fake.referral.lock().unwrap().clone().unwrap();
+        assert_eq!(referral["attribution"], "BN");
+        assert_eq!(referral["body"]["tracking_id"], tracking_id.as_str());
+        assert_eq!(
+            referral["body"]["partner_config_override"]["return_url"],
+            "https://moblin.app/dashboard/"
+        );
+        let account: Value = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(&old)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["settings"]["merchantId"], Value::Null);
+        assert_eq!(account["settings"]["paypalPending"], true);
+        let check = || {
             client
-                .post(format!("http://{address}/account/settings"))
-                .bearer_auth(session)
-                .json(&json!({"paywall": paywall}))
+                .post(format!("{paypal_url}/check"))
+                .bearer_auth(&old)
                 .send()
         };
-        let response = save(old.clone(), Some("MERCHANT00001")).await.unwrap();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        assert_eq!(api.pages.get(&id).paywall, None);
-        let response = save(api.auth.session("1", 0), Some("MERCHANT00001"))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let response = save(old.clone(), Some(" merchant00001 ")).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let response = save(old.clone(), Some("MERCHANT00002")).await.unwrap();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(check().await.unwrap().status(), StatusCode::NOT_FOUND);
+        *fake.seller.lock().unwrap() = Some(json!({
+            "tracking_id": tracking_id,
+            "merchant_id": "SELLER0000001",
+            "payments_receivable": true,
+            "primary_email_confirmed": true,
+            "oauth_integrations": [{
+                "integration_type": "OAUTH_THIRD_PARTY",
+                "integration_method": "PAYPAL",
+                "oauth_third_party": [{
+                    "partner_client_id": "other",
+                    "merchant_client_id": "m",
+                    "scopes": ["https://uri.paypal.com/services/payments/realtimepayment"],
+                }],
+            }],
+        }));
+        assert_eq!(check().await.unwrap().status(), StatusCode::CONFLICT);
+        {
+            let mut seller = fake.seller.lock().unwrap();
+            let seller = seller.as_mut().unwrap();
+            seller["oauth_integrations"][0]["oauth_third_party"][0]["partner_client_id"] =
+                json!("id");
+            seller["primary_email_confirmed"] = json!(false);
+        }
         assert_eq!(
-            api.pages.get(&id).paywall.unwrap().merchant_id,
-            "MERCHANT00001"
+            check().await.unwrap().status(),
+            StatusCode::UNPROCESSABLE_ENTITY
         );
-        let tips = |merchant_id: &str| {
-            json!({"paywall": null, "tips": {
-                "merchantId": merchant_id, "currency": "SEK", "amounts": [500],
-            }})
+        fake.seller.lock().unwrap().as_mut().unwrap()["primary_email_confirmed"] = json!(true);
+        *fake.list_sellers.lock().unwrap() = true;
+        let settings: Value = check().await.unwrap().json().await.unwrap();
+        assert_eq!(settings["merchantId"], "SELLER0000001");
+        assert_eq!(settings["paypalPending"], false);
+        let response = client
+            .post(&settings_url)
+            .bearer_auth(&old)
+            .json(&paywall)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let public: Value = client
+            .get(format!("http://{address}/remote-control/{id}/paywall"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(public["paywall"]["merchantId"], "SELLER0000001");
+        assert_eq!(public["paywall"]["clientId"], "id");
+        let settings: Value = check().await.unwrap().json().await.unwrap();
+        assert_eq!(settings["merchantId"], "SELLER0000001");
+    }
+
+    #[tokio::test]
+    async fn paypal_webhooks_connect_and_disconnect_streamers() {
+        let unconfigured = start().await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{unconfigured}/paypal/webhooks"))
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let (paypal_url, fake) = start_paypal().await;
+        let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
+        let (session, _, id) = streamer(&address, &api).await;
+        let response = client
+            .post(format!("http://{address}/account/paypal"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let tracking_id = api.accounts.get("1").unwrap().paypal_tracking_id.unwrap();
+        *fake.seller.lock().unwrap() = Some(json!({
+            "merchant_id": "SELLER0000001",
+            "tracking_id": tracking_id,
+            "payments_receivable": true,
+            "primary_email_confirmed": true,
+            "oauth_integrations": [{"oauth_third_party": [{
+                "partner_client_id": "id",
+                "merchant_client_id": "m",
+                "scopes": ["https://uri.paypal.com/services/payments/realtimepayment"],
+            }]}],
+        }));
+        let webhook = |signature: &str, event: &Value| {
+            client
+                .post(format!("http://{address}/paypal/webhooks"))
+                .header("paypal-auth-algo", "SHA256withRSA")
+                .header(
+                    "paypal-cert-url",
+                    "https://api.paypal.com/v1/notifications/certs/C",
+                )
+                .header("paypal-transmission-id", "T")
+                .header("paypal-transmission-sig", signature)
+                .header("paypal-transmission-time", "2026-10-16T05:19:23Z")
+                .header("content-type", "application/json")
+                .body(event.to_string())
+                .send()
         };
-        let response = client
-            .post(format!("http://{address}/account/settings"))
-            .bearer_auth(&old)
-            .json(&tips("MERCHANT00002"))
+        let completed = json!({
+            "id": "WH-1",
+            "event_type": "MERCHANT.ONBOARDING.COMPLETED",
+            "resource": {"partner_client_id": "id", "merchant_id": "SELLER0000001", "links": []},
+        });
+        let response = webhook("bad", &completed).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(api.accounts.get("1").unwrap().merchant_id, None);
+        let response = webhook("good", &completed).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let verification = fake.verification.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            verification,
+            json!({
+                "auth_algo": "SHA256withRSA",
+                "cert_url": "https://api.paypal.com/v1/notifications/certs/C",
+                "transmission_id": "T",
+                "transmission_sig": "good",
+                "transmission_time": "2026-10-16T05:19:23Z",
+                "webhook_id": "WH",
+                "webhook_event": completed,
+            })
+        );
+        let account = api.accounts.get("1").unwrap();
+        assert_eq!(account.merchant_id.as_deref(), Some("SELLER0000001"));
+        assert_eq!(account.paypal_tracking_id, None);
+        let response = webhook("good", &completed).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let revoked = json!({
+            "id": "WH-2",
+            "event_type": "MERCHANT.PARTNER-CONSENT.REVOKED",
+            "resource": {"merchant_id": "SELLER0000001", "tracking_id": tracking_id},
+        });
+        let response = webhook("good", &revoked).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(api.accounts.get("1").unwrap().merchant_id, None);
+        let public: Value = client
+            .get(format!("http://{address}/remote-control/{id}/tips"))
             .send()
             .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        let response = client
-            .post(format!("http://{address}/account/settings"))
-            .bearer_auth(&old)
-            .json(&tips("MERCHANT00001"))
-            .send()
+            .unwrap()
+            .json()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let response = save(old, None).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(public, json!({"tips": null}));
     }
 
     #[tokio::test]
@@ -2711,6 +3097,8 @@ mod tests {
             ("POST", "/account/streamer"),
             ("POST", "/account/streamer-url"),
             ("POST", "/account/settings"),
+            ("POST", "/account/paypal"),
+            ("POST", "/account/paypal/check"),
             ("POST", "/account/sign-out"),
         ] {
             for token in [

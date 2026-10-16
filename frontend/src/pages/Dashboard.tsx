@@ -4,6 +4,7 @@ import { createFlash } from "../flash";
 import Icon from "../components/Icon";
 import {
   Band,
+  buttonClass,
   cardClass,
   ghostButtonClass,
   Hero,
@@ -12,6 +13,8 @@ import {
   Value,
 } from "../components/PageParts";
 import {
+  checkPayPal,
+  connectPayPal,
   fetchAccount,
   createStreamer,
   newStreamerUrl,
@@ -81,10 +84,8 @@ function paymentErrorText(error: unknown, invalid: string) {
     switch (error.status) {
       case 400:
         return invalid;
-      case 403:
-        return "To change your PayPal merchant ID, sign in again first.";
-      case 422:
-        return "PayPal can't send payments to that merchant ID. Check it in your PayPal business account.";
+      case 409:
+        return "Connect your PayPal account first.";
       case 502:
         return "PayPal could not be reached. Try again.";
       case 503:
@@ -92,6 +93,148 @@ function paymentErrorText(error: unknown, invalid: string) {
     }
   }
   return "Something went wrong. Try again.";
+}
+
+function payPalErrorText(error: unknown) {
+  if (error instanceof BackendError) {
+    switch (error.status) {
+      case 403:
+        return "To connect PayPal, sign in again first.";
+      case 404:
+        return "PayPal has not connected your account yet. Finish signing up on PayPal, then check again.";
+      case 409:
+        return "You did not give Moblin permission to take payments for you on PayPal. Connect PayPal again and accept the permissions.";
+      case 422:
+        return "PayPal can't send payments to your account yet. Confirm your email address on PayPal, then check again.";
+      case 502:
+        return "PayPal could not be reached. Try again.";
+      case 503:
+        return "Payments are unavailable right now.";
+    }
+  }
+  return "Something went wrong. Try again.";
+}
+
+function PayPalAccount(props: {
+  session: string;
+  settings: Settings;
+  onSettings: (settings: Settings) => void;
+  onSignOut: () => void;
+}) {
+  const [working, setWorking] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [signInAgain, setSignInAgain] = createSignal(false);
+
+  const failed = (error: unknown) => {
+    if (signedOut(error)) {
+      props.onSignOut();
+      return;
+    }
+    setError(payPalErrorText(error));
+    setSignInAgain(error instanceof BackendError && error.status === 403);
+  };
+
+  const connect = async () => {
+    setError(null);
+    setSignInAgain(false);
+    setWorking(true);
+    try {
+      location.href = await connectPayPal(props.session);
+    } catch (error) {
+      failed(error);
+      setWorking(false);
+    }
+  };
+
+  const check = async (quiet: boolean) => {
+    setError(null);
+    setSignInAgain(false);
+    setWorking(true);
+    try {
+      props.onSettings(await checkPayPal(props.session));
+    } catch (error) {
+      if (!quiet) {
+        failed(error);
+      }
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  onMount(() => {
+    const search = new URLSearchParams(location.search);
+    const returned = search.has("merchantIdInPayPal");
+    if (returned) {
+      history.replaceState(null, "", location.pathname + location.hash);
+    }
+    if (props.settings.paypalPending) {
+      void check(!returned);
+    }
+  });
+
+  return (
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">PayPal</h2>
+      <Show
+        when={props.settings.merchantId}
+        fallback={
+          <p class="text-ink-2">
+            Connect your PayPal account to let viewers pay for songs, tips and wheel spins. You sign
+            in or sign up on PayPal with a personal or business account (in some countries PayPal
+            asks for a business account), and the money goes straight to your PayPal account. Moblin
+            takes nothing, PayPal charges its usual fees.
+          </p>
+        }
+      >
+        {(merchantId) => (
+          <p class="flex items-center gap-2.5 text-ink-2">
+            <span class="size-2.5 shrink-0 rounded-full bg-leaf" />
+            <span>
+              Connected to the PayPal account with merchant ID{" "}
+              <span class="font-mono">{merchantId()}</span>.
+            </span>
+          </p>
+        )}
+      </Show>
+      <Show when={props.settings.paypalPending}>
+        <p class="text-ink-2">
+          Finish connecting your account on PayPal. If you already did, check again.
+        </p>
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          class={props.settings.merchantId ? ghostButtonClass : buttonClass}
+          disabled={working()}
+          onClick={connect}
+        >
+          {props.settings.merchantId ? "Connect another PayPal account" : "Connect PayPal"}
+        </button>
+        <Show when={props.settings.paypalPending}>
+          <button
+            type="button"
+            class={ghostButtonClass}
+            disabled={working()}
+            onClick={() => check(false)}
+          >
+            Check again
+          </button>
+        </Show>
+        <Show when={error()}>
+          {(error) => (
+            <p role="status" class="text-amber">
+              {error()}
+            </p>
+          )}
+        </Show>
+        <Show when={signInAgain()}>
+          <a href={signInUrl} class={ghostButtonClass}>
+            Sign in again
+          </a>
+        </Show>
+      </div>
+    </div>
+  );
 }
 
 function YourPage(props: {
@@ -208,7 +351,6 @@ function Payments(props: {
   onSave: (changes: { paywall: Paywall | null }) => Promise<void>;
 }) {
   const [required, setRequired] = createSignal(props.paywall !== null);
-  const [merchantId, setMerchantId] = createSignal(props.paywall?.merchantId ?? "");
   const [price, setPrice] = createSignal(
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
   );
@@ -230,7 +372,6 @@ function Payments(props: {
       await props.onSave({
         paywall: required()
           ? {
-              merchantId: merchantId().trim(),
               price: Math.round(Number.parseFloat(price()) * 100),
               currency: currency(),
             }
@@ -238,12 +379,7 @@ function Payments(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(
-        paymentErrorText(
-          error,
-          "Enter your 13 character PayPal merchant ID and a price from 0.50 to 1000.",
-        ),
-      );
+      setError(paymentErrorText(error, "Enter a price from 0.50 to 1000."));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -267,7 +403,6 @@ function Payments(props: {
         Viewers pay to add songs
       </label>
       <Show when={required()}>
-        <MerchantId value={merchantId()} onInput={setMerchantId} />
         <div class="flex flex-wrap gap-4">
           <label class="flex min-w-40 flex-1 flex-col gap-2">
             <span class="text-[15px] font-semibold text-ink-2">Price per song</span>
@@ -302,30 +437,6 @@ function Payments(props: {
         </Show>
       </div>
     </form>
-  );
-}
-
-function MerchantId(props: { value: string; onInput: (value: string) => void }) {
-  return (
-    <label class="flex flex-col gap-2">
-      <span class="text-[15px] font-semibold text-ink-2">Your PayPal merchant ID</span>
-      <input
-        type="text"
-        required
-        minLength={13}
-        maxLength={13}
-        value={props.value}
-        onInput={(event) => props.onInput(event.currentTarget.value)}
-        placeholder="ABCDEFGHJKLMN"
-        autocomplete="off"
-        autocapitalize="characters"
-        spellcheck={false}
-        class={`${inputClass} font-mono uppercase`}
-      />
-      <span class="text-[15px] text-muted">
-        Find it on PayPal under Account settings, Business information.
-      </span>
-    </label>
   );
 }
 
@@ -381,9 +492,6 @@ function TipSettings(props: {
   onSave: (changes: { tips: Tips | null }) => Promise<void>;
 }) {
   const [enabled, setEnabled] = createSignal(props.tips !== null);
-  const [merchantId, setMerchantId] = createSignal(
-    props.tips?.merchantId ?? props.paywall?.merchantId ?? "",
-  );
   const [currency, setCurrency] = createSignal(
     props.tips?.currency ?? props.paywall?.currency ?? "USD",
   );
@@ -408,7 +516,6 @@ function TipSettings(props: {
       await props.onSave({
         tips: enabled()
           ? {
-              merchantId: merchantId().trim(),
               currency: currency(),
               amounts: amountsOf(amounts()),
               webhookUrl: webhookUrl().trim() || null,
@@ -420,7 +527,7 @@ function TipSettings(props: {
       setError(
         paymentErrorText(
           error,
-          "Enter your 13 character PayPal merchant ID, amounts from 0.50 to 1000 and a webhook URL starting with https://.",
+          "Enter amounts from 0.50 to 1000 and a webhook URL starting with https://.",
         ),
       );
       setSignInAgain(error instanceof BackendError && error.status === 403);
@@ -446,7 +553,6 @@ function TipSettings(props: {
         Viewers can send tips
       </label>
       <Show when={enabled()}>
-        <MerchantId value={merchantId()} onInput={setMerchantId} />
         <fieldset class="flex flex-col gap-2">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">Suggested amounts</legend>
           <div class="flex flex-wrap items-end gap-4">
@@ -493,13 +599,11 @@ function TipSettings(props: {
 
 function SpinSettings(props: {
   spin: Spin | null;
-  merchantId: string;
   currency: string;
   busy: boolean;
   onSave: (changes: { spin: Spin | null }) => Promise<void>;
 }) {
   const [enabled, setEnabled] = createSignal(props.spin !== null);
-  const [merchantId, setMerchantId] = createSignal(props.spin?.merchantId ?? props.merchantId);
   const [options, setOptions] = createSignal(
     (
       props.spin?.options ?? [
@@ -531,7 +635,6 @@ function SpinSettings(props: {
       await props.onSave({
         spin: enabled()
           ? {
-              merchantId: merchantId().trim(),
               options: options()
                 .filter((option) => option.spins.trim() && option.price.trim())
                 .map((option) => ({
@@ -548,7 +651,7 @@ function SpinSettings(props: {
       setError(
         paymentErrorText(
           error,
-          "Enter your 13 character PayPal merchant ID, 1 to 100 spins for 0.50 to 1000 per price and a webhook URL starting with https://.",
+          "Enter 1 to 100 spins for 0.50 to 1000 per price and a webhook URL starting with https://.",
         ),
       );
       setSignInAgain(error instanceof BackendError && error.status === 403);
@@ -575,7 +678,6 @@ function SpinSettings(props: {
         Viewers can spin the wheel
       </label>
       <Show when={enabled()}>
-        <MerchantId value={merchantId()} onInput={setMerchantId} />
         <fieldset class="flex flex-col gap-2">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">Prices</legend>
           <div class="flex flex-col gap-3">
@@ -719,10 +821,18 @@ function Admin(props: {
   return (
     <>
       <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
-      <Show when={settings().paypal || settings().paywall}>
+      <Show when={settings().paypal}>
+        <PayPalAccount
+          session={props.session}
+          settings={settings()}
+          onSettings={setSettings}
+          onSignOut={props.onSignOut}
+        />
+      </Show>
+      <Show when={settings().merchantId || settings().paywall}>
         <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
       </Show>
-      <Show when={settings().paypal || settings().tips}>
+      <Show when={settings().merchantId || settings().tips}>
         <TipSettings
           tips={settings().tips}
           paywall={settings().paywall}
@@ -730,10 +840,9 @@ function Admin(props: {
           onSave={save}
         />
       </Show>
-      <Show when={settings().paypal || settings().spin}>
+      <Show when={settings().merchantId || settings().spin}>
         <SpinSettings
           spin={settings().spin}
-          merchantId={settings().tips?.merchantId ?? settings().paywall?.merchantId ?? ""}
           currency={settings().tips?.currency ?? settings().paywall?.currency ?? "USD"}
           busy={busy()}
           onSave={save}
