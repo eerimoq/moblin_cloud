@@ -940,7 +940,7 @@ function SignedIn(props: {
       when={props.account.streamerUrl && props.account.settings ? props.account : null}
       keyed
       fallback={
-        <Show when={failed()} fallback={<p class="text-muted">Creating your page…</p>}>
+        <Show when={failed()}>
           <div class="flex flex-wrap items-center gap-4">
             <p role="status" class="text-amber">
               Could not create your page.
@@ -1012,7 +1012,7 @@ export default function Dashboard() {
         </p>
       </Hero>
       <Band>
-        <Show when={!loading()} fallback={<p class="text-muted">Loading…</p>}>
+        <Show when={!loading()}>
           <Show when={session()} keyed fallback={<TwitchSignIn failed={signInFailed()} />}>
             {(current) => (
               <SignedIn
