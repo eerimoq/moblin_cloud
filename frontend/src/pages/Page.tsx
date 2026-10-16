@@ -777,7 +777,7 @@ function WaysToTip(props: {
 
   return (
     <div class="flex flex-col gap-6">
-      <div class="flex flex-col items-center gap-2 text-center">
+      <div class="flex flex-col items-center gap-6 text-center">
         <h2 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-5xl">
           Tip {props.streamer ?? "the streamer"}
         </h2>
