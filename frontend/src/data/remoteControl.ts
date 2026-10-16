@@ -43,7 +43,6 @@ export type SpinOption = {
 export type Spin = {
   options: SpinOption[];
   currency: string;
-  webhookUrl: string;
 };
 
 export type Page = {

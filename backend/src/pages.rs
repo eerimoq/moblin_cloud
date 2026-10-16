@@ -42,8 +42,6 @@ pub struct Tips {
 pub struct Spin {
     pub options: Vec<SpinOption>,
     pub currency: String,
-    #[serde(rename = "webhookUrl")]
-    pub webhook_url: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -142,23 +140,17 @@ impl Tips {
 impl Spin {
     pub fn normalize(self) -> Option<Self> {
         let currency = self.currency.trim().to_uppercase();
-        let webhook_url = self.webhook_url.trim().to_string();
         let mut options = self.options;
         options.sort_unstable_by_key(|option| option.spins);
         let valid = (1..=4).contains(&options.len())
             && options
                 .iter()
-                .all(|option| (1..=100).contains(&option.spins) && valid_price(option.price))
+                .all(|option| (1..=10).contains(&option.spins) && valid_price(option.price))
             && options
                 .windows(2)
                 .all(|pair| pair[0].spins != pair[1].spins)
-            && CURRENCIES.contains(&currency.as_str())
-            && !webhook_url.is_empty();
-        valid.then_some(Self {
-            options,
-            currency,
-            webhook_url,
-        })
+            && CURRENCIES.contains(&currency.as_str());
+        valid.then_some(Self { options, currency })
     }
 }
 
@@ -315,7 +307,7 @@ mod tests {
     #[test]
     fn spins_are_validated() {
         let pages = Pages::load(None).unwrap();
-        let spin = |options: &[(u32, u32)], currency: &str, webhook_url: &str| Settings {
+        let spin = |options: &[(u32, u32)], currency: &str| Settings {
             spin: Some(Spin {
                 options: options
                     .iter()
@@ -325,27 +317,24 @@ mod tests {
                     })
                     .collect(),
                 currency: currency.to_string(),
-                webhook_url: webhook_url.to_string(),
             }),
             ..Settings::default()
         };
-        let url = "https://example.com/spin";
         assert_eq!(
-            pages.set("a", spin(&[(2, 800), (1, 500)], "eur", url)),
-            Ok(spin(&[(1, 500), (2, 800)], "EUR", url))
+            pages.set("a", spin(&[(2, 800), (1, 500)], "eur")),
+            Ok(spin(&[(1, 500), (2, 800)], "EUR"))
         );
-        for (options, currency, webhook_url) in [
-            (&[(1, 49)][..], "EUR", url),
-            (&[(0, 500)], "EUR", url),
-            (&[(101, 500)], "EUR", url),
-            (&[(1, 500), (1, 800)], "EUR", url),
-            (&[], "EUR", url),
-            (&[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)], "EUR", url),
-            (&[(1, 500)], "JPY", url),
-            (&[(1, 500)], "EUR", " "),
+        for (options, currency) in [
+            (&[(1, 49)][..], "EUR"),
+            (&[(0, 500)], "EUR"),
+            (&[(11, 500)], "EUR"),
+            (&[(1, 500), (1, 800)], "EUR"),
+            (&[], "EUR"),
+            (&[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)], "EUR"),
+            (&[(1, 500)], "JPY"),
         ] {
             assert_eq!(
-                pages.set("a", spin(options, currency, webhook_url)),
+                pages.set("a", spin(options, currency)),
                 Err(SettingsError::InvalidSpin)
             );
         }

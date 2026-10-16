@@ -317,7 +317,6 @@ async fn update_settings(
     let spin = match request.spin {
         Some(spin) => {
             let spin = spin.normalize().ok_or_else(invalid_spin)?;
-            check_webhook(api, &spin.webhook_url)?;
             if current.spin.as_ref() != Some(&spin) {
                 check_payable(api, &id)?;
             }
@@ -772,7 +771,7 @@ async fn handle_account_sign_out(
 fn invalid_spin() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the spin wheel needs one to four options of 1 to 100 spins for 0.50 to 1000, a supported currency and a webhook URL"
+        "the spin wheel needs one to four options of 1 to 10 spins for 0.50 to 1000 and a supported currency"
             .to_string(),
     )
 }
@@ -1152,6 +1151,12 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
             "The streamer went offline, so your payment was not taken.",
         ));
     }
+    if kind == "spin" && api.remote_control.wheel(id).is_none() {
+        return Err(failure(
+            StatusCode::NOT_FOUND,
+            "The streamer's wheel is gone, so your payment was not taken.",
+        ));
+    }
     paypal
         .capture(order_id, &order)
         .await
@@ -1330,6 +1335,12 @@ async fn handle_spin_order(
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
+    if api.remote_control.wheel(&id).is_none() {
+        return Err(failure(
+            StatusCode::NOT_FOUND,
+            "The streamer's wheel is not available right now. Try again when they are live.",
+        ));
+    }
     let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
     let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
     let option = spin
@@ -1376,19 +1387,43 @@ async fn capture_spin(
     order_id: String,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let order = capture(&api, &id, &order_id, "spin").await?;
-    if let Some(spin) = api.pages.get(&id).spin {
-        let mut body = webhook_body(&api, &id, &order);
-        if let Item::Spin { spins, message } = order.item {
-            body["spins"] = json!(spins);
-            body["message"] = json!(message);
-        }
-        tokio::spawn(async move {
-            api.webhooks
-                .deliver(&spin.webhook_url, &order_id, &body)
-                .await
-        });
-    }
+    let Item::Spin { spins, message } = order.item else {
+        return Err(capture_crashed());
+    };
+    let message = message.unwrap_or_default();
+    tokio::spawn(async move { spin_wheel(&api, &id, &order_id, order.user, message, spins).await });
     Ok(accepted())
+}
+
+async fn spin_wheel(
+    api: &Api,
+    id: &str,
+    order_id: &str,
+    user: String,
+    message: String,
+    spins: u32,
+) {
+    for attempt in 1..=6 {
+        match api
+            .remote_control
+            .spin_wheel(id, user.clone(), message.clone(), spins)
+            .await
+        {
+            Ok(()) => {
+                info!(
+                    "remote control streamer {id} spins the wheel {spins} times for {user:?} in PayPal order {order_id}"
+                );
+                return;
+            }
+            Err(error) => warn!(
+                "spinning the wheel of remote control streamer {id} for PayPal order {order_id} failed: {error:?} (attempt {attempt})"
+            ),
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    }
+    warn!(
+        "giving up spinning the wheel of remote control streamer {id} for PayPal order {order_id}"
+    );
 }
 
 fn verify(
@@ -2184,12 +2219,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spins_are_posted_to_the_webhook() {
+    async fn spins_are_sent_to_the_streamer() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
-        let (webhook_url, mut webhooks) = start_webhook().await;
         let spin_url = format!("http://{address}/remote-control/{id}/spin");
         let public: Value = client
             .get(&spin_url)
@@ -2201,26 +2235,23 @@ mod tests {
             .unwrap();
         assert_eq!(public, json!({"spin": null, "wheel": null}));
         let settings_url = format!("http://{address}/account/settings");
-        for webhook in [" ", "ftp://example.com/spin"] {
-            let response = client
-                .post(&settings_url)
-                .bearer_auth(&session)
-                .json(&json!({"paywall": null, "spin": {
-                    "options": [{"spins": 1, "price": 500}],
-                    "currency": "usd", "webhookUrl": webhook,
-                }}))
-                .send()
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        }
+        let response = client
+            .post(&settings_url)
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null, "spin": {
+                "options": [{"spins": 1, "price": 500}],
+                "currency": "jpy",
+            }}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let settings: Value = client
             .post(&settings_url)
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "spin": {
                 "options": [{"spins": 2, "price": 800}, {"spins": 1, "price": 500}],
                 "currency": "usd",
-                "webhookUrl": webhook_url,
             }}))
             .send()
             .await
@@ -2233,7 +2264,6 @@ mod tests {
             json!({
                 "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}],
                 "currency": "USD",
-                "webhookUrl": webhook_url,
             })
         );
         let public: Value = client
@@ -2255,6 +2285,28 @@ mod tests {
             }, "wheel": null})
         );
         let orders_url = format!("{spin_url}/orders");
+        let response = client
+            .post(&orders_url)
+            .json(&json!({"user": "Viewer", "spins": 2}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let mut socket = connect(&address, &key).await;
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [
+                    {"text": "Yes", "weight": 1},
+                ]}}}}})
+                .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
         for request in [
             json!({"user": "Viewer", "spins": 3}),
             json!({"user": "Viewer", "spins": 2, "message": "a".repeat(201)}),
@@ -2300,23 +2352,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let mut posted = webhooks.recv().await.unwrap();
-        assert_eq!(posted["id"].as_str().unwrap().len(), 22);
-        posted["id"] = json!("x");
-        posted["time"] = json!(0);
+        let request = receive(&mut socket).await;
         assert_eq!(
-            posted,
-            json!({
-                "type": "spin",
-                "id": "x",
-                "streamer": {"login": "erik", "name": "Erik"},
-                "user": "Viewer",
-                "amount": {"value": "8.00", "currency": "USD"},
-                "spins": 2,
-                "message": "Go big!",
-                "time": 0,
-            })
+            request["request"]["data"],
+            json!({"spinWheelOfLuck": {"name": "Viewer", "message": "Go big!", "count": 2}})
         );
+        answer(&mut socket, &request, Value::Null).await;
     }
 
     #[tokio::test]

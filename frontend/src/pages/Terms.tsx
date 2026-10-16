@@ -54,9 +54,9 @@ const sections: { title: string; body: JSX.Element[] }[] = [
         terms and the rules of the platforms you stream on.
       </>,
       <>
-        If you set a webhook URL, tips and spins are sent to it as they come in. Moblin tries a few
-        times and gives up if your server does not answer, so don't rely on it as your only record;
-        PayPal has all your payments.
+        If you set a webhook URL, tips are sent to it as they come in. Moblin tries a few times and
+        gives up if your server does not answer, so don't rely on it as your only record; PayPal has
+        all your payments.
       </>,
     ],
   },

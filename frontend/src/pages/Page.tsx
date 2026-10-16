@@ -699,7 +699,15 @@ function SpinWheel(props: {
         </h2>
         <p class="text-ink-2">Pick how many spins you want and add a message if you like.</p>
       </div>
-      <Show when={props.wheel} keyed>
+      <Show
+        when={props.wheel}
+        keyed
+        fallback={
+          <p class="text-amber">
+            The wheel is not available right now. Try again when the streamer is live.
+          </p>
+        }
+      >
         {(wheel) => <WheelPicture wheel={wheel} />}
       </Show>
       <Show when={props.spin.options.length > 1}>
@@ -743,7 +751,7 @@ function SpinWheel(props: {
             {formatPrice({ price: choice().price, currency: props.spin.currency })}
           </span>
         </p>
-        <PayPalButton config={props.spin} options={options} disabled={busy()} />
+        <PayPalButton config={props.spin} options={options} disabled={busy() || !props.wheel} />
         <p class="text-[15px] text-muted">
           Your payment goes straight to the streamer. <TermsLink />
         </p>

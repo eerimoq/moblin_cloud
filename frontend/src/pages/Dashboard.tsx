@@ -639,7 +639,6 @@ function SpinSettings(props: {
 
   const changeOption = (index: number, change: Partial<{ spins: string; price: string }>) =>
     setOptions(options().map((old, at) => (at === index ? { ...old, ...change } : old)));
-  const [webhookUrl, setWebhookUrl] = createSignal(props.spin?.webhookUrl ?? "");
   const [saving, setSaving] = createSignal(false);
   const [saved, flashSaved] = createFlash(2000);
   const [error, setError] = createSignal<string | null>(null);
@@ -664,18 +663,12 @@ function SpinSettings(props: {
                   price: Math.round(Number.parseFloat(option.price) * 100),
                 })),
               currency: currency(),
-              webhookUrl: webhookUrl().trim(),
             }
           : null,
       });
       flashSaved();
     } catch (error) {
-      setError(
-        paymentErrorText(
-          error,
-          "Enter 1 to 100 spins for 0.50 to 1000 per price and a webhook URL starting with https://.",
-        ),
-      );
+      setError(paymentErrorText(error, "Enter 1 to 10 spins for 0.50 to 1000 per price."));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -687,8 +680,8 @@ function SpinSettings(props: {
       <h2 class="text-[23px] font-semibold">Spin the wheel</h2>
       <p class="text-ink-2">
         Let viewers pay with PayPal to spin your wheel, with a lower price per spin when they buy
-        more. Every purchase is posted to your webhook with the number of spins. The money goes
-        straight to your PayPal account.
+        more. Moblin spins the wheel you pick in its remote control settings, showing the viewer's
+        name and message. The money goes straight to your PayPal account.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -710,7 +703,7 @@ function SpinSettings(props: {
                     type="number"
                     required={index === 0}
                     min="1"
-                    max="100"
+                    max="10"
                     step="1"
                     inputmode="numeric"
                     aria-label={`Spins ${index + 1}`}
@@ -737,24 +730,6 @@ function SpinSettings(props: {
           </div>
         </fieldset>
         <CurrencySelect value={currency()} onChange={setCurrency} />
-        <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">Webhook URL</span>
-          <input
-            type="url"
-            required
-            maxLength={500}
-            value={webhookUrl()}
-            onInput={(event) => setWebhookUrl(event.currentTarget.value)}
-            placeholder="https://example.com/spin?token=…"
-            autocomplete="off"
-            spellcheck={false}
-            class={inputClass}
-          />
-          <span class="text-[15px] text-muted">
-            Every spin is posted to this URL as JSON, with the name, amount, number of spins and
-            message. Put a secret in the URL so nobody else can post fake spins to it.
-          </span>
-        </label>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />

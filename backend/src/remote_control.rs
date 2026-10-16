@@ -103,7 +103,14 @@ impl Wheel {
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum Request {
-    Music { command: MusicCommand },
+    Music {
+        command: MusicCommand,
+    },
+    SpinWheelOfLuck {
+        name: String,
+        message: String,
+        count: u32,
+    },
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -454,9 +461,10 @@ impl Streamers {
         id: &str,
         command: MusicCommand,
     ) -> Result<MusicStatus, RequestError> {
-        let (number, ResponseData::Music { status }) =
-            self.request(id, command, Duration::from_secs(20)).await?
-        else {
+        let (number, data) = self
+            .request(id, Request::Music { command }, Duration::from_secs(20))
+            .await?;
+        let Some(ResponseData::Music { status }) = parse(data) else {
             return Err(RequestError::Failed);
         };
         let mut sessions = self.sessions.lock().unwrap();
@@ -471,21 +479,47 @@ impl Streamers {
     }
 
     pub async fn find(&self, id: &str, title: String) -> Result<Option<FoundSong>, RequestError> {
-        match self
-            .request(id, MusicCommand::Find { title }, Duration::from_secs(10))
-            .await?
-        {
-            (_, ResponseData::MusicFind { song }) => Ok(song),
+        let (_, data) = self
+            .request(
+                id,
+                Request::Music {
+                    command: MusicCommand::Find { title },
+                },
+                Duration::from_secs(10),
+            )
+            .await?;
+        match parse(data) {
+            Some(ResponseData::MusicFind { song }) => Ok(song),
             _ => Err(RequestError::Failed),
         }
+    }
+
+    pub async fn spin_wheel(
+        &self,
+        id: &str,
+        name: String,
+        message: String,
+        count: u32,
+    ) -> Result<(), RequestError> {
+        self.request(
+            id,
+            Request::SpinWheelOfLuck {
+                name,
+                message,
+                count,
+            },
+            Duration::from_secs(10),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn request(
         &self,
         id: &str,
-        command: MusicCommand,
+        data: Request,
         wait: Duration,
-    ) -> Result<(u64, ResponseData), RequestError> {
+    ) -> Result<(u64, Option<Value>), RequestError> {
         let (number, request_id, receiver) = {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions.by_id.get_mut(id).ok_or(RequestError::Offline)?;
@@ -497,7 +531,7 @@ impl Streamers {
                 .sender
                 .send(MessageToStreamer::Request {
                     id: request_id,
-                    data: Request::Music { command },
+                    data,
                 })
                 .map_err(|_| RequestError::Offline)?;
             (session.number, request_id, receiver)
@@ -518,11 +552,12 @@ impl Streamers {
         if result != (Outcome::Ok {}) {
             return Err(RequestError::Failed);
         }
-        let Some(Ok(data)) = data.map(serde_json::from_value) else {
-            return Err(RequestError::Failed);
-        };
         Ok((number, data))
     }
+}
+
+fn parse(data: Option<Value>) -> Option<ResponseData> {
+    serde_json::from_value(data?).ok()
 }
 
 #[cfg(test)]
@@ -601,6 +636,17 @@ mod tests {
                 },
             }),
             r#"{"request":{"id":4,"data":{"music":{"command":{"status":{}}}}}}"#
+        );
+        assert_eq!(
+            encode(&MessageToStreamer::Request {
+                id: 7,
+                data: Request::SpinWheelOfLuck {
+                    name: "Erik".to_string(),
+                    message: "Go!".to_string(),
+                    count: 3,
+                },
+            }),
+            r#"{"request":{"id":7,"data":{"spinWheelOfLuck":{"name":"Erik","message":"Go!","count":3}}}}"#
         );
     }
 
