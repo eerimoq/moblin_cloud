@@ -211,6 +211,7 @@ async fn handle_remote_control_streamer(
 struct SettingsResponse {
     id: String,
     connected: bool,
+    songs: bool,
     paywall: Option<Paywall>,
     tips: Option<Tips>,
     spin: Option<Spin>,
@@ -231,6 +232,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
         id,
+        songs: !settings.songs_disabled,
         paywall: settings.paywall,
         tips: settings.tips,
         spin: settings.spin,
@@ -249,6 +251,8 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
 
 #[derive(Deserialize)]
 struct SettingsRequest {
+    #[serde(default = "songs_by_default")]
+    songs: bool,
     paywall: Option<Paywall>,
     #[serde(default)]
     tips: Option<Tips>,
@@ -260,6 +264,10 @@ struct SettingsRequest {
     message: Option<String>,
     #[serde(default)]
     accent: Option<String>,
+}
+
+fn songs_by_default() -> bool {
+    true
 }
 
 fn merchant_of(api: &Api, id: &str) -> Option<String> {
@@ -292,6 +300,7 @@ async fn update_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let current = api.pages.get(&id);
     let paywall = match request.paywall {
+        Some(_) if !request.songs => None,
         Some(paywall) => {
             let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
             if current.paywall.as_ref() != Some(&paywall) {
@@ -329,6 +338,7 @@ async fn update_settings(
         .set(
             &id,
             Settings {
+                songs_disabled: !request.songs,
                 paywall,
                 tips,
                 spin,
@@ -355,7 +365,8 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
+        "remote control streamer {id} set songs {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
+        !settings.songs_disabled,
         settings.paywall,
         settings.tips,
         settings.spin,
@@ -814,6 +825,7 @@ struct ProfileResponse {
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
+    songs: bool,
 }
 
 async fn handle_profile(
@@ -829,6 +841,7 @@ async fn handle_profile(
         title: settings.title,
         message: settings.message,
         accent: settings.accent,
+        songs: !settings.songs_disabled,
     }))
 }
 
@@ -1056,7 +1069,11 @@ async fn handle_music_add(
     Path(id): Path<String>,
     Json(request): Json<SongRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    if api.pages.get(&id).paywall.is_some() {
+    let settings = api.pages.get(&id);
+    if settings.songs_disabled {
+        return Err(songs_disabled());
+    }
+    if settings.paywall.is_some() {
         return Err(failure(
             StatusCode::PAYMENT_REQUIRED,
             "The streamer now asks for a payment. Try again.",
@@ -1074,6 +1091,13 @@ async fn handle_music_add(
     Ok(queue(&api, id, request_id, song))
 }
 
+fn songs_disabled() -> Failure {
+    failure(
+        StatusCode::BAD_REQUEST,
+        "The streamer no longer takes song requests. Reload the page.",
+    )
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OrderResponse {
@@ -1085,7 +1109,11 @@ async fn handle_order(
     Path(id): Path<String>,
     Json(request): Json<SongRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let paywall = api.pages.get(&id).paywall.ok_or(failure(
+    let settings = api.pages.get(&id);
+    if settings.songs_disabled {
+        return Err(songs_disabled());
+    }
+    let paywall = settings.paywall.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer no longer asks for a payment. Reload the page.",
     ))?;
@@ -2578,6 +2606,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn disabled_songs_cant_be_requested() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let _socket = connect(&address, &key).await;
+        let settings: Value = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"songs": false, "paywall": null}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["songs"], false);
+        let profile: Value = client
+            .get(format!("http://{address}/remote-control/{id}/profile"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(profile["songs"], false);
+        for path in ["music", "music/orders"] {
+            let response = client
+                .post(format!("http://{address}/remote-control/{id}/{path}"))
+                .json(&json!({"song": LINK}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(
+                response.text().await.unwrap(),
+                "The streamer no longer takes song requests. Reload the page."
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn songs_not_found_are_dropped() {
         let (address, api) = start_api(None).await;
         let (_, key, id) = streamer(&address, &api).await;
@@ -2828,6 +2897,7 @@ mod tests {
                 "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
+                "songs": true,
             })
         );
         let response = client

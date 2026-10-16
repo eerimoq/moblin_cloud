@@ -54,6 +54,7 @@ export type Page = {
 export type Settings = Page & {
   id: string;
   connected: boolean;
+  songs: boolean;
   paywall: Paywall | null;
   tips: Tips | null;
   spin: Spin | null;
@@ -153,6 +154,7 @@ export const requestSong = (id: string, song: string, user: string) =>
   call<object>(`/${encodeURIComponent(id)}/music`, songRequest(song, user));
 
 export type Profile = Page & {
+  songs: boolean;
   name: string;
   login: string;
   avatar: string | null;

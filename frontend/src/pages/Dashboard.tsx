@@ -167,7 +167,7 @@ function PayPalAccount(props: {
   const disconnect = async () => {
     if (
       !confirm(
-        "Viewers can't pay for songs, tips or wheel spins until you connect a PayPal account again.",
+        "Viewers can't send you tips, with or without a song or wheel spin, until you connect a PayPal account again.",
       )
     ) {
       return;
@@ -207,10 +207,11 @@ function PayPalAccount(props: {
         when={props.settings.merchantId}
         fallback={
           <p class="text-ink-2">
-            Connect your PayPal account to let viewers pay for songs, tips and wheel spins. You sign
-            in or sign up on PayPal with a personal or business account (in some countries PayPal
-            asks for a business account), and the money goes straight to your PayPal account. Moblin
-            takes nothing, PayPal charges its usual fees. By connecting PayPal you agree to the{" "}
+            Connect your PayPal account to let viewers send you tips, on their own or with a song
+            request or wheel spin. You sign in or sign up on PayPal with a personal or business
+            account (in some countries PayPal asks for a business account), and the money goes
+            straight to your PayPal account. Moblin takes nothing, PayPal charges its usual fees. By
+            connecting PayPal you agree to the{" "}
             <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
               terms
             </a>
@@ -293,7 +294,7 @@ function YourPage(props: {
     <form class={cardClass} onSubmit={submit}>
       <h2 class="text-[23px] font-semibold">Your page</h2>
       <p class="text-ink-2">
-        Share it with your viewers so they can tip you, spin your wheel and request songs.
+        Share it with your viewers so they can send you tips, request songs and spin your wheel.
       </p>
       <Value
         label="Your page"
@@ -302,7 +303,7 @@ function YourPage(props: {
         hideLabel
       />
       <label class="flex flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">Headline</span>
+        <span class="text-[15px] font-semibold text-ink-2">Headline (optional)</span>
         <input
           type="text"
           maxLength={60}
@@ -367,11 +368,14 @@ function YourPage(props: {
   );
 }
 
-function Payments(props: {
+function SongSettings(props: {
+  songs: boolean;
   paywall: Paywall | null;
+  payable: boolean;
   busy: boolean;
-  onSave: (changes: { paywall: Paywall | null }) => Promise<void>;
+  onSave: (changes: { songs: boolean; paywall: Paywall | null }) => Promise<void>;
 }) {
+  const [enabled, setEnabled] = createSignal(props.songs);
   const [required, setRequired] = createSignal(props.paywall !== null);
   const [price, setPrice] = createSignal(
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
@@ -392,12 +396,14 @@ function Payments(props: {
     setSaving(true);
     try {
       await props.onSave({
-        paywall: required()
-          ? {
-              price: Math.round(Number.parseFloat(price()) * 100),
-              currency: currency(),
-            }
-          : null,
+        songs: enabled(),
+        paywall:
+          enabled() && required()
+            ? {
+                price: Math.round(Number.parseFloat(price()) * 100),
+                currency: currency(),
+              }
+            : null,
       });
       flashSaved();
     } catch (error) {
@@ -410,24 +416,36 @@ function Payments(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Paid song requests</h2>
+      <h2 class="text-[23px] font-semibold">Song requests</h2>
       <p class="text-ink-2">
-        Let viewers pay with PayPal to add a song. The money goes straight to your PayPal account.
-        Moblin takes nothing, PayPal charges its usual fees.
+        Let viewers add songs from Apple Music to the queue of Moblin's music player, for free or
+        with a tip. The money goes straight to your PayPal account. Moblin takes nothing, PayPal
+        charges its usual fees.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
           type="checkbox"
-          checked={required()}
-          onChange={(event) => setRequired(event.currentTarget.checked)}
+          checked={enabled()}
+          onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        Viewers pay to add songs
+        Viewers can request songs
       </label>
-      <Show when={required()}>
+      <Show when={enabled() && (props.payable || props.paywall)}>
+        <label class="flex items-center gap-3 text-ink-2">
+          <input
+            type="checkbox"
+            checked={required()}
+            onChange={(event) => setRequired(event.currentTarget.checked)}
+            class="size-5 accent-moss"
+          />
+          Viewers tip to add songs
+        </label>
+      </Show>
+      <Show when={enabled() && required() && (props.payable || props.paywall)}>
         <div class="flex flex-wrap gap-4">
           <label class="flex min-w-40 flex-1 flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">Price per song</span>
+            <span class="text-[15px] font-semibold text-ink-2">Tip per song</span>
             <input
               type="number"
               required
@@ -562,8 +580,8 @@ function TipSettings(props: {
     <form class={cardClass} onSubmit={submit}>
       <h2 class="text-[23px] font-semibold">Tips</h2>
       <p class="text-ink-2">
-        Let viewers tip you with PayPal. Viewers pick one of your amounts or enter their own, and
-        can add a message. The money goes straight to your PayPal account.
+        Let viewers send you just a tip with PayPal. Viewers pick one of your amounts or enter their
+        own, and can add a message. The money goes straight to your PayPal account.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -677,11 +695,11 @@ function SpinSettings(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Spin the wheel</h2>
+      <h2 class="text-[23px] font-semibold">Tips that spin the wheel</h2>
       <p class="text-ink-2">
-        Let viewers pay with PayPal to spin your wheel, with a lower price per spin when they buy
-        more. Moblin spins the wheel you pick in its remote control settings, showing the viewer's
-        name and message. The money goes straight to your PayPal account.
+        Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin
+        when they buy more. Moblin spins the wheel you pick in its remote control settings, showing
+        the viewer's name and message. The money goes straight to your PayPal account.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -690,11 +708,11 @@ function SpinSettings(props: {
           onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        Viewers can spin the wheel
+        Viewers tip to spin the wheel
       </label>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
-          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Prices</legend>
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Tips</legend>
           <div class="flex flex-col gap-3">
             <Index each={options()}>
               {(option, index) => (
@@ -719,7 +737,7 @@ function SpinSettings(props: {
                     max="1000"
                     step="0.01"
                     inputmode="decimal"
-                    aria-label={`Price ${index + 1}`}
+                    aria-label={`Tip ${index + 1}`}
                     value={option().price}
                     onInput={(event) => changeOption(index, { price: event.currentTarget.value })}
                     class={`${inputClass} max-w-32`}
@@ -818,9 +836,13 @@ function Admin(props: {
   return (
     <>
       <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
-      <Show when={settings().merchantId || settings().paywall}>
-        <Payments paywall={settings().paywall} busy={busy()} onSave={save} />
-      </Show>
+      <SongSettings
+        songs={settings().songs}
+        paywall={settings().paywall}
+        payable={settings().merchantId !== null}
+        busy={busy()}
+        onSave={save}
+      />
       <Show when={settings().merchantId || settings().tips}>
         <TipSettings
           tips={settings().tips}
@@ -978,11 +1000,11 @@ export default function Dashboard() {
 
   return (
     <>
-      <Hero title="Let viewers tip, spin and pick the music.">
+      <Hero title="Let viewers tip you, with a song or a spin.">
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
           Sign in with Twitch to get your own page at moblin.app/twitch/your-name. Viewers add songs
-          from Apple Music to the queue of Moblin's music player, for free or for a price you set,
-          and can send you tips or pay to spin your wheel.
+          from Apple Music to the queue of Moblin's music player, for free or with a tip you set,
+          and can send you tips on their own or to spin your wheel.
         </p>
         <p class="text-[15px] text-muted">
           Using the dashboard and your page means you agree to the{" "}

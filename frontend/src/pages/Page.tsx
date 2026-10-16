@@ -23,7 +23,6 @@ import {
   captureSong,
   captureSpin,
   captureTip,
-  defaultTitle,
   formatDuration,
   formatPrice,
   idOfTwitchLogin,
@@ -262,7 +261,6 @@ function MessageField(props: {
 function TipJar(props: {
   id: string;
   tips: PublicTips & PayPalConfig;
-  streamer: string | undefined;
   name: string;
   onName: (name: string) => void;
   onError: (error: unknown) => void;
@@ -342,12 +340,7 @@ function TipJar(props: {
       class={cardClass}
       onSubmit={(event) => event.preventDefault()}
     >
-      <div class="flex flex-col gap-1">
-        <h2 class="text-[28px] leading-tight font-semibold text-balance">
-          Send {props.streamer ?? "the streamer"} a tip.
-        </h2>
-        <p class="text-ink-2">Pick an amount and add a message if you like.</p>
-      </div>
+      <p class="text-ink-2">Pick an amount and add a message if you like.</p>
       <fieldset class="flex flex-col gap-3">
         <legend class="mb-2 text-[15px] font-semibold text-ink-2">Amount</legend>
         <AmountChips
@@ -529,12 +522,19 @@ function StreamerHeader(props: { profile: Profile | null; unknown: boolean }) {
                 <Icon name="twitch" class="size-5 shrink-0 text-twitch" />
                 twitch.tv/{profile().login}
               </a>
-              <Show when={profile().message}>
-                {(message) => (
-                  <p class="mt-2 text-lg whitespace-pre-line text-ink-2 text-pretty sm:text-[21px]">
-                    {message()}
-                  </p>
-                )}
+              <Show when={profile().title || profile().message}>
+                <div class="mt-2 flex flex-col gap-4">
+                  <Show when={profile().title}>
+                    {(title) => <p class="text-[23px] font-semibold text-balance">{title()}</p>}
+                  </Show>
+                  <Show when={profile().message}>
+                    {(message) => (
+                      <p class="text-lg whitespace-pre-line text-ink-2 text-pretty sm:text-[21px]">
+                        {message()}
+                      </p>
+                    )}
+                  </Show>
+                </div>
               </Show>
             </>
           )}
@@ -627,7 +627,6 @@ function SpinWheel(props: {
   id: string;
   spin: PublicSpin & PayPalConfig;
   wheel: Wheel | null;
-  streamer: string | undefined;
   name: string;
   onName: (name: string) => void;
   onError: (error: unknown) => void;
@@ -670,7 +669,7 @@ function SpinWheel(props: {
         await captureSpin(props.id, data.orderId);
         setResult({
           ok: true,
-          text: `Thanks! ${choice().spins === 1 ? "Your spin starts" : "Your spins start"} in a moment.`,
+          text: `Thanks for the tip! ${choice().spins === 1 ? "Your spin starts" : "Your spins start"} in a moment.`,
         });
         setMessage("");
       } catch (error) {
@@ -680,7 +679,10 @@ function SpinWheel(props: {
       }
     },
     onCancel: () => {
-      setResult({ ok: false, text: "Payment cancelled. The wheel was not spun." });
+      setResult({
+        ok: false,
+        text: "Payment cancelled. No tip was sent and the wheel was not spun.",
+      });
     },
     onError: () => {
       if (orderError) {
@@ -693,12 +695,9 @@ function SpinWheel(props: {
 
   return (
     <form class={cardClass} onSubmit={(event) => event.preventDefault()}>
-      <div class="flex flex-col gap-1">
-        <h2 class="text-[28px] leading-tight font-semibold text-balance">
-          Spin {props.streamer ? `${props.streamer}'s` : "the"} wheel.
-        </h2>
-        <p class="text-ink-2">Pick how many spins you want and add a message if you like.</p>
-      </div>
+      <p class="text-ink-2">
+        Pick how many spins you want and add a message if you like. The wheel spins live on stream.
+      </p>
       <Show
         when={props.wheel}
         keyed
@@ -746,14 +745,14 @@ function SpinWheel(props: {
       <MessageField message={message()} onMessage={setMessage} placeholder="Land on the big one!" />
       <div class="flex w-full max-w-sm flex-col gap-3">
         <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
-          <span class="text-ink-2">{spinsText(choice().spins)}</span>
+          <span class="text-ink-2">Your tip · {spinsText(choice().spins)}</span>
           <span class="font-display text-2xl font-semibold">
             {formatPrice({ price: choice().price, currency: props.spin.currency })}
           </span>
         </p>
         <PayPalButton config={props.spin} options={options} disabled={busy() || !props.wheel} />
         <p class="text-[15px] text-muted">
-          Your payment goes straight to the streamer. <TermsLink />
+          Your tip goes straight to the streamer. <TermsLink />
         </p>
       </div>
       <ResultLine result={result()} />
@@ -763,40 +762,73 @@ function SpinWheel(props: {
 
 type Section = "tip" | "spin" | "songs";
 
-const sectionTabs: { section: Section; icon: "heart" | "wheel" | "music"; label: string }[] = [
-  { section: "tip", icon: "heart", label: "Tip" },
-  { section: "spin", icon: "wheel", label: "Spin" },
-  { section: "songs", icon: "music", label: "Songs" },
-];
-
-function SectionSwitch(props: {
-  sections: Section[];
+type Way = {
   section: Section;
+  icon: "heart" | "wheel" | "music";
+  title: string;
+  text: string;
+  enabled: boolean;
+};
+
+function WaysToTip(props: {
+  streamer: string | undefined;
+  ways: Way[];
+  section: Section | undefined;
   onSection: (section: Section) => void;
 }) {
-  const tab = (section: Section, icon: "music" | "heart" | "wheel", label: string) => (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={props.section === section}
-      onClick={() => props.onSection(section)}
-      class={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full px-4 font-display whitespace-nowrap text-lg font-semibold transition-colors ${
-        props.section === section ? "bg-moss text-white" : "text-ink-2 hover:text-ink"
-      }`}
-    >
-      <Icon name={icon} class="size-5" />
-      {label}
-    </button>
-  );
+  const enabled = () => props.ways.filter((way) => way.enabled).length;
 
   return (
-    <div
-      role="tablist"
-      class="mx-auto flex w-full max-w-sm gap-1 rounded-full border-[1.5px] border-line bg-card p-1"
-    >
-      <For each={sectionTabs.filter((tab) => props.sections.includes(tab.section))}>
-        {(current) => tab(current.section, current.icon, current.label)}
-      </For>
+    <div class="flex flex-col gap-6">
+      <div class="flex flex-col items-center gap-2 text-center">
+        <h2 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-5xl">
+          Tip {props.streamer ?? "the streamer"}
+        </h2>
+        <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
+          {enabled() === 0
+            ? `${props.streamer ?? "The streamer"} isn't taking tips right now.`
+            : `Every tip goes straight to ${props.streamer ?? "the streamer"}.${
+                enabled() > 1 ? " Pick how you want to send yours." : ""
+              }`}
+        </p>
+      </div>
+      <div role="tablist" class="grid gap-3 sm:grid-cols-3">
+        <For each={props.ways}>
+          {(way) => {
+            const selected = () => props.section === way.section;
+            return (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={selected()}
+                disabled={!way.enabled}
+                onClick={() => props.onSection(way.section)}
+                class={`flex items-center gap-4 rounded-3xl border-[1.5px] p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 sm:flex-col sm:items-start sm:gap-3 sm:p-5 ${
+                  selected()
+                    ? "border-moss bg-well"
+                    : "border-line bg-card enabled:hover:border-leaf"
+                }`}
+              >
+                <span
+                  class={`flex size-12 shrink-0 items-center justify-center rounded-full transition-colors ${
+                    selected()
+                      ? "bg-moss text-white"
+                      : way.enabled
+                        ? "bg-well text-leaf"
+                        : "bg-well text-muted"
+                  }`}
+                >
+                  <Icon name={way.icon} class="size-6" />
+                </span>
+                <span class="flex min-w-0 flex-col gap-0.5">
+                  <span class="font-display text-xl font-semibold text-ink">{way.title}</span>
+                  <span class="text-[15px] text-ink-2">{way.text}</span>
+                </span>
+              </button>
+            );
+          }}
+        </For>
+      </div>
     </div>
   );
 }
@@ -822,11 +854,39 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const sections = (): Section[] => [
     ...(tipJar() ? (["tip"] as const) : []),
     ...(wheel() ? (["spin"] as const) : []),
-    "songs",
+    ...(songs() ? (["songs"] as const) : []),
   ];
+  const songs = () => profile()?.songs !== false;
   const shown = () => {
     const current = section();
     return current && sections().includes(current) ? current : sections()[0];
+  };
+
+  const ways = (): Way[] => {
+    const songPrice = paywall();
+    return [
+      {
+        section: "tip",
+        icon: "heart",
+        title: "Just a tip",
+        text: "Send a tip with a message if you like.",
+        enabled: tipJar() !== null,
+      },
+      {
+        section: "spin",
+        icon: "wheel",
+        title: "Spin the wheel",
+        text: "Your tip spins the wheel live on stream.",
+        enabled: wheel() !== null,
+      },
+      {
+        section: "songs",
+        icon: "music",
+        title: "Request a song",
+        text: songPrice ? "Your tip puts a song in the queue." : "Add a song to the queue.",
+        enabled: songs(),
+      },
+    ];
   };
 
   const changeSection = (next: Section) => {
@@ -938,7 +998,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
 
   const requested = (paid: boolean) => {
     const text = "Your song will be added to the queue in a moment.";
-    setResult({ ok: true, text: paid ? `Thanks! ${text}` : text });
+    setResult({ ok: true, text: paid ? `Thanks for the tip! ${text}` : text });
     setSong("");
     setTimeout(refresh, 3_000);
   };
@@ -986,7 +1046,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       }
     },
     onCancel: () => {
-      setResult({ ok: false, text: "Payment cancelled. No song was added." });
+      setResult({ ok: false, text: "Payment cancelled. No tip was sent and no song was added." });
     },
     onError: () => {
       if (orderError) {
@@ -999,7 +1059,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
 
   const refresh = async () => {
     const current = id();
-    if (!current) {
+    if (!current || !songs()) {
       return;
     }
     try {
@@ -1069,22 +1129,20 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
           <div
             class={`mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8 ${styled() ? "" : "invisible"}`}
           >
-            <Show when={sections().length > 1}>
-              <SectionSwitch sections={sections()} section={shown()} onSection={changeSection} />
-            </Show>
+            <WaysToTip
+              streamer={profile()?.name}
+              ways={ways()}
+              section={shown()}
+              onSection={changeSection}
+            />
             <form
               ref={(element) => (form = element)}
               class={`${cardClass} ${shown() === "songs" ? "" : "hidden"}`}
               onSubmit={submit}
             >
-              <div class="flex flex-col gap-1">
-                <h2 class="text-[28px] leading-tight font-semibold text-balance">
-                  {profile()?.title ?? defaultTitle}
-                </h2>
-                <p class="text-ink-2">
-                  Paste the Apple Music link of a song and it goes straight into the queue.
-                </p>
-              </div>
+              <p class="text-ink-2">
+                Paste the Apple Music link of a song and it goes straight into the queue.
+              </p>
               <label class="flex flex-col gap-2">
                 <span class="text-[15px] font-semibold text-ink-2">Apple Music song link</span>
                 <input
@@ -1141,7 +1199,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   {(current) => (
                     <div class="flex w-full max-w-sm flex-col gap-3">
                       <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
-                        <span class="text-ink-2">Price per song</span>
+                        <span class="text-ink-2">Your tip</span>
                         <span class="font-display text-2xl font-semibold">
                           {formatPrice(current)}
                         </span>
@@ -1152,7 +1210,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                         disabled={busy() || !song().trim()}
                       />
                       <p class="text-[15px] text-muted">
-                        Your payment goes straight to the streamer. <TermsLink />
+                        Your tip goes straight to the streamer. <TermsLink />
                       </p>
                     </div>
                   )}
@@ -1166,7 +1224,6 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   <TipJar
                     id={id() ?? ""}
                     tips={current}
-                    streamer={profile()?.name}
                     name={name()}
                     onName={setName}
                     onError={tipError}
@@ -1181,7 +1238,6 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                     id={id() ?? ""}
                     spin={current}
                     wheel={wheelOfLuck()}
-                    streamer={profile()?.name}
                     name={name()}
                     onName={setName}
                     onError={spinError}
