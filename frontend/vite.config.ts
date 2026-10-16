@@ -15,7 +15,13 @@ export default defineConfig({
     {
       name: "twitch-pages",
       configureServer(server) {
-        server.middlewares.use((req, _res, next) => {
+        server.middlewares.use((req, res, next) => {
+          const host = new URL(`http://${req.headers.host ?? "localhost"}`);
+          if (req.url?.startsWith("/api/auth/twitch/login") && host.hostname !== "localhost") {
+            res.writeHead(302, { location: `http://localhost:${host.port}${req.url}` });
+            res.end();
+            return;
+          }
           if (req.url && new RegExp(`^${base}twitch/[^/?.]+/?(\\?.*)?$`).test(req.url)) {
             req.url = `${base}404.html`;
           }
