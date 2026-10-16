@@ -27,6 +27,7 @@ import {
   type Account,
   type SettingsChanges,
 } from "../data/account";
+import { pages } from "../data/links";
 import {
   accents,
   BackendError,
@@ -182,7 +183,11 @@ function PayPalAccount(props: {
             Connect your PayPal account to let viewers pay for songs, tips and wheel spins. You sign
             in or sign up on PayPal with a personal or business account (in some countries PayPal
             asks for a business account), and the money goes straight to your PayPal account. Moblin
-            takes nothing, PayPal charges its usual fees.
+            takes nothing, PayPal charges its usual fees. By connecting PayPal you agree to the{" "}
+            <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
+              terms
+            </a>
+            .
           </p>
         }
       >
@@ -986,6 +991,13 @@ export default function Dashboard() {
           Sign in with Twitch to get your own page at moblin.app/twitch/your-name. Viewers add songs
           from Apple Music to the queue of Moblin's music player, for free or for a price you set,
           and can send you tips or pay to spin your wheel.
+        </p>
+        <p class="text-[15px] text-muted">
+          Using the dashboard and your page means you agree to the{" "}
+          <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
+            terms
+          </a>
+          .
         </p>
       </Hero>
       <Band>

@@ -94,6 +94,7 @@ export default defineConfig({
         "cards/index.html",
         "page/index.html",
         "dashboard/index.html",
+        "terms/index.html",
         "song-requests/index.html",
         "404.html",
       ],

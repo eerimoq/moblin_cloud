@@ -45,6 +45,7 @@ export const pages = {
   docs: "/docs/",
   cards: "/cards/",
   dashboard: "/dashboard/",
+  terms: "/terms/",
 } as const;
 
 export const platforms = [

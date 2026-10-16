@@ -146,6 +146,14 @@ function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; dis
   );
 }
 
+function TermsLink() {
+  return (
+    <a href={asset(pages.terms)} class="underline hover:text-ink">
+      Terms
+    </a>
+  );
+}
+
 type Result = { ok: boolean; text: string };
 
 function ResultLine(props: { result: Result | null }) {
@@ -392,7 +400,9 @@ function TipJar(props: {
           options={options}
           disabled={busy() || amount() === null}
         />
-        <p class="text-[15px] text-muted">Your tip goes straight to the streamer.</p>
+        <p class="text-[15px] text-muted">
+          Your tip goes straight to the streamer. <TermsLink />
+        </p>
       </div>
       <ResultLine result={result()} />
     </form>
@@ -729,7 +739,9 @@ function SpinWheel(props: {
           </span>
         </p>
         <PayPalButton config={props.spin} options={options} disabled={busy()} />
-        <p class="text-[15px] text-muted">Your payment goes straight to the streamer.</p>
+        <p class="text-[15px] text-muted">
+          Your payment goes straight to the streamer. <TermsLink />
+        </p>
       </div>
       <ResultLine result={result()} />
     </form>
@@ -1128,7 +1140,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                         disabled={busy() || !song().trim()}
                       />
                       <p class="text-[15px] text-muted">
-                        Your payment goes straight to the streamer.
+                        Your payment goes straight to the streamer. <TermsLink />
                       </p>
                     </div>
                   )}
