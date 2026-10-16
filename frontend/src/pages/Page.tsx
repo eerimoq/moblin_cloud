@@ -894,10 +894,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const payable = createMemo(
     () => {
       const current = paywall();
-      return current?.clientId &&
-        current.merchantId &&
-        current.environment &&
-        typeof status() === "object"
+      return current?.clientId && current.merchantId && current.environment
         ? {
             ...current,
             clientId: current.clientId,
@@ -1204,7 +1201,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                       <PayPalButton
                         config={current}
                         options={payPalOptions}
-                        disabled={busy() || !song().trim()}
+                        disabled={busy() || typeof status() === "string" || !song().trim()}
                       />
                       <p class="text-[15px] text-muted">
                         Your tip goes straight to the streamer. <TermsLink />
