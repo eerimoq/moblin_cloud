@@ -1,13 +1,10 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::Arc;
 
-use anyhow::Result;
 use log::warn;
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::json_file;
+use crate::database::Database;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
@@ -160,63 +157,65 @@ pub enum SettingsError {
     NotSaved,
 }
 
-fn with_currency(mut settings: Value) -> Value {
-    if settings.get("currency").is_none() {
-        let currency = ["paywall", "tips", "spin"]
-            .iter()
-            .find_map(|key| settings[key].get("currency").cloned());
-        if let (Some(currency), Some(settings)) = (currency, settings.as_object_mut()) {
-            settings.insert("currency".to_string(), currency);
-        }
-    }
-    settings
+fn not_saved(error: rusqlite::Error) -> SettingsError {
+    warn!("failed to save page settings: {error:#}");
+    SettingsError::NotSaved
 }
 
 pub struct Pages {
-    path: Option<PathBuf>,
-    settings: Mutex<HashMap<String, Settings>>,
+    database: Arc<Database>,
 }
 
 impl Pages {
-    pub fn load(path: Option<PathBuf>) -> Result<Self> {
-        let settings: HashMap<String, Value> = json_file::load(path.as_deref())?;
-        let settings = settings
-            .into_iter()
-            .map(|(id, settings)| Ok((id, serde_json::from_value(with_currency(settings))?)))
-            .collect::<Result<_>>()?;
-        Ok(Self {
-            path,
-            settings: Mutex::new(settings),
-        })
+    pub fn new(database: Arc<Database>) -> Self {
+        Self { database }
     }
 
     pub fn get(&self, id: &str) -> Settings {
-        self.settings
+        let settings: rusqlite::Result<Option<String>> = self
+            .database
             .lock()
-            .unwrap()
-            .get(id)
-            .cloned()
-            .unwrap_or_default()
+            .query_row("SELECT settings FROM pages WHERE id = ?1", [id], |row| {
+                row.get(0)
+            })
+            .optional();
+        match settings {
+            Ok(Some(settings)) => serde_json::from_str(&settings).unwrap_or_else(|error| {
+                warn!("failed to parse the settings of page {id}: {error}");
+                Settings::default()
+            }),
+            Ok(None) => Settings::default(),
+            Err(error) => {
+                warn!("failed to read page settings: {error:#}");
+                Settings::default()
+            }
+        }
     }
 
     pub fn set(&self, id: &str, new: Settings) -> Result<Settings, SettingsError> {
         let new = new.normalize()?;
-        let mut settings = self.settings.lock().unwrap();
-        if !settings.contains_key(id) && settings.len() >= 10000 {
-            return Err(SettingsError::Full);
-        }
-        let old = if new == Settings::default() {
-            settings.remove(id)
+        let database = self.database.lock();
+        if new == Settings::default() {
+            database
+                .execute("DELETE FROM pages WHERE id = ?1", [id])
+                .map_err(not_saved)?;
         } else {
-            settings.insert(id.to_string(), new.clone())
-        };
-        if let Err(error) = json_file::save(self.path.as_deref(), &*settings) {
-            warn!("failed to save page settings: {error:#}");
-            match old {
-                Some(old) => settings.insert(id.to_string(), old),
-                None => settings.remove(id),
-            };
-            return Err(SettingsError::NotSaved);
+            let full = database
+                .query_row(
+                    "SELECT NOT EXISTS (SELECT 1 FROM pages WHERE id = ?1) AND count(*) >= 10000 FROM pages",
+                    [id],
+                    |row| row.get(0),
+                )
+                .map_err(not_saved)?;
+            if full {
+                return Err(SettingsError::Full);
+            }
+            database
+                .execute(
+                    "INSERT OR REPLACE INTO pages (id, settings) VALUES (?1, ?2)",
+                    params![id, serde_json::to_string(&new).unwrap()],
+                )
+                .map_err(not_saved)?;
         }
         Ok(new)
     }
@@ -225,16 +224,12 @@ impl Pages {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database;
 
     #[test]
     fn settings_are_saved() {
-        let path = std::env::temp_dir().join(format!(
-            "pages-{}-{:?}.json",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_file(&path);
-        let pages = Pages::load(Some(path.clone())).unwrap();
+        let path = database::temporary_path("pages");
+        let pages = Pages::new(Database::open(Some(&path)).unwrap());
         let paywall = Paywall { price: 250 };
         let settings = Settings {
             currency: Some("SEK".to_string()),
@@ -245,18 +240,23 @@ mod tests {
         pages.set("a", settings.clone()).unwrap();
         pages.set("b", settings).unwrap();
         pages.set("b", Settings::default()).unwrap();
-        let pages = Pages::load(Some(path.clone())).unwrap();
+        let pages = Pages::new(Database::open(Some(&path)).unwrap());
         assert_eq!(pages.get("a").paywall, Some(paywall));
         assert_eq!(pages.get("a").currency(), "SEK");
         assert_eq!(pages.get("a").title.as_deref(), Some("Hi"));
         assert_eq!(pages.get("b"), Settings::default());
-        assert_eq!(pages.settings.lock().unwrap().len(), 1);
-        std::fs::remove_file(&path).unwrap();
+        let count: u32 = pages
+            .database
+            .lock()
+            .query_row("SELECT count(*) FROM pages", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        database::remove(&path);
     }
 
     #[test]
     fn paywalls_are_validated() {
-        let pages = Pages::load(None).unwrap();
+        let pages = Pages::new(Database::memory());
         let settings = |price| Settings {
             paywall: Some(Paywall { price }),
             ..Settings::default()
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn currencies_are_validated() {
-        let pages = Pages::load(None).unwrap();
+        let pages = Pages::new(Database::memory());
         let settings = |currency: &str| Settings {
             currency: Some(currency.to_string()),
             ..Settings::default()
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn tips_are_validated() {
-        let pages = Pages::load(None).unwrap();
+        let pages = Pages::new(Database::memory());
         let tips = |amounts: &[u32]| Settings {
             tips: Some(Tips {
                 amounts: amounts.to_vec(),
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn spins_are_validated() {
-        let pages = Pages::load(None).unwrap();
+        let pages = Pages::new(Database::memory());
         let spin = |options: &[(u32, u32)]| Settings {
             spin: Some(Spin {
                 options: options
@@ -346,40 +346,8 @@ mod tests {
     }
 
     #[test]
-    fn old_currencies_move_to_the_page() {
-        let path = std::env::temp_dir().join(format!(
-            "pages-old-{}-{:?}.json",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::write(
-            &path,
-            r#"{
-                "a": {"tips": {"currency": "SEK", "amounts": [500]}},
-                "b": {"spin": {"currency": "EUR", "options": [{"spins": 1, "price": 500}]}},
-                "c": {"title": "Hi"}
-            }"#,
-        )
-        .unwrap();
-        let pages = Pages::load(Some(path.clone())).unwrap();
-        assert_eq!(pages.get("a").currency(), "SEK");
-        assert_eq!(pages.get("b").currency(), "EUR");
-        assert_eq!(pages.get("c").currency(), "USD");
-        std::fs::remove_file(&path).unwrap();
-    }
-
-    #[test]
-    fn old_merchant_ids_are_ignored() {
-        let settings: Settings = serde_json::from_str(
-            r#"{"paywall": {"merchantId": "ABCDEFGHJKLMN", "price": 250, "currency": "SEK"}}"#,
-        )
-        .unwrap();
-        assert_eq!(settings.paywall.unwrap().price, 250);
-    }
-
-    #[test]
     fn pages_are_validated() {
-        let pages = Pages::load(None).unwrap();
+        let pages = Pages::new(Database::memory());
         let page = |title: &str, message: &str, accent: &str| Settings {
             title: Some(title.to_string()),
             message: Some(message.to_string()),

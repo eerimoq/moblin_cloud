@@ -1,25 +1,22 @@
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::Result;
 use futures_util::future::join_all;
 use log::{info, warn};
+use rusqlite::{Connection, Params, params};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::time::sleep;
 
-use crate::json_file;
+use crate::database::Database;
 use crate::pages::format_price;
 use crate::remote_control::{MusicCommand, RequestError, Streamers};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Delivery {
     pub streamer: String,
     pub request_id: String,
     pub requested_at: u64,
-    #[serde(flatten)]
     pub item: Item,
 }
 
@@ -44,8 +41,7 @@ pub enum Item {
 }
 
 pub struct Deliveries {
-    path: Option<PathBuf>,
-    deliveries: Mutex<Vec<Delivery>>,
+    database: Arc<Database>,
     added: Notify,
 }
 
@@ -57,61 +53,46 @@ pub fn now() -> u64 {
 }
 
 impl Deliveries {
-    pub fn load(path: Option<PathBuf>) -> Result<Self> {
-        let deliveries = json_file::load(path.as_deref())?;
-        Ok(Self {
-            path,
-            deliveries: Mutex::new(deliveries),
+    pub fn new(database: Arc<Database>) -> Self {
+        Self {
+            database,
             added: Notify::new(),
-        })
+        }
     }
 
     pub fn add(&self, streamer: String, request_id: String, item: Item) {
-        let mut deliveries = self.deliveries.lock().unwrap();
-        if deliveries
-            .iter()
-            .any(|delivery| delivery.request_id == request_id)
-        {
-            return;
+        if let Err(error) = self.database.lock().execute(
+            "INSERT OR IGNORE INTO deliveries (request_id, streamer, requested_at, item) VALUES (?1, ?2, ?3, ?4)",
+            params![request_id, streamer, now(), serde_json::to_string(&item).unwrap()],
+        ) {
+            warn!("failed to save delivery {request_id}: {error:#}");
         }
-        deliveries.push(Delivery {
-            streamer,
-            request_id,
-            requested_at: now(),
-            item,
-        });
-        self.save(&deliveries);
         self.added.notify_one();
     }
 
     pub fn pending(&self) -> Vec<Delivery> {
-        let mut deliveries = self.deliveries.lock().unwrap();
-        let count = deliveries.len();
-        deliveries.retain(|delivery| {
-            let expired = now().saturating_sub(delivery.requested_at) > 7 * 24 * 60 * 60;
-            if expired {
-                warn!(
-                    "giving up delivering {:?} in request {} to remote control streamer {}",
-                    delivery.item, delivery.request_id, delivery.streamer
-                );
-            }
-            !expired
-        });
-        if deliveries.len() != count {
-            self.save(&deliveries);
+        let database = self.database.lock();
+        let expired = query(
+            &database,
+            "DELETE FROM deliveries WHERE requested_at < ?1 RETURNING *",
+            [now().saturating_sub(7 * 24 * 60 * 60)],
+        );
+        for delivery in expired {
+            warn!(
+                "giving up delivering {:?} in request {} to remote control streamer {}",
+                delivery.item, delivery.request_id, delivery.streamer
+            );
         }
-        deliveries.clone()
+        query(&database, "SELECT * FROM deliveries ORDER BY rowid", [])
     }
 
     fn remove(&self, request_id: &str) {
-        let mut deliveries = self.deliveries.lock().unwrap();
-        deliveries.retain(|delivery| delivery.request_id != request_id);
-        self.save(&deliveries);
-    }
-
-    fn save(&self, deliveries: &Vec<Delivery>) {
-        if let Err(error) = json_file::save(self.path.as_deref(), deliveries) {
-            warn!("failed to save the deliveries: {error:#}");
+        if let Err(error) = self
+            .database
+            .lock()
+            .execute("DELETE FROM deliveries WHERE request_id = ?1", [request_id])
+        {
+            warn!("failed to remove delivery {request_id}: {error:#}");
         }
     }
 
@@ -165,6 +146,44 @@ impl Deliveries {
                 }
             }
             self.remove(&delivery.request_id);
+        }
+    }
+}
+
+fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery> {
+    let deliveries = database.prepare(sql).and_then(|mut statement| {
+        statement
+            .query_map(params, |row| {
+                Ok((
+                    row.get("request_id")?,
+                    row.get("streamer")?,
+                    row.get("requested_at")?,
+                    row.get::<_, String>("item")?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+    });
+    match deliveries {
+        Ok(deliveries) => deliveries
+            .into_iter()
+            .filter_map(|(request_id, streamer, requested_at, item)| {
+                match serde_json::from_str(&item) {
+                    Ok(item) => Some(Delivery {
+                        streamer,
+                        request_id,
+                        requested_at,
+                        item,
+                    }),
+                    Err(error) => {
+                        warn!("failed to parse delivery {request_id}: {error}");
+                        None
+                    }
+                }
+            })
+            .collect(),
+        Err(error) => {
+            warn!("failed to read deliveries: {error:#}");
+            Vec::new()
         }
     }
 }
@@ -225,6 +244,7 @@ async fn deliver(streamers: &Streamers, delivery: &Delivery) -> Result<Outcome, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database;
 
     fn song() -> Item {
         Item::Song {
@@ -260,19 +280,15 @@ mod tests {
 
     #[test]
     fn deliveries_are_saved() {
-        let path = std::env::temp_dir().join(format!(
-            "moblin-website-deliveries-{}.json",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&path);
-        let deliveries = Deliveries::load(Some(path.clone())).unwrap();
+        let path = database::temporary_path("deliveries");
+        let deliveries = Deliveries::new(Database::open(Some(&path)).unwrap());
         deliveries.add("S".to_string(), "A".to_string(), song());
         deliveries.add("S".to_string(), "B".to_string(), tip());
         deliveries.add("S".to_string(), "C".to_string(), spin());
         deliveries.add("S".to_string(), "C".to_string(), tip());
         deliveries.remove("A");
         let saved = deliveries.pending();
-        let deliveries = Deliveries::load(Some(path.clone())).unwrap();
+        let deliveries = Deliveries::new(Database::open(Some(&path)).unwrap());
         assert_eq!(deliveries.pending(), saved);
         assert_eq!(
             saved
@@ -281,22 +297,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![&tip(), &spin()]
         );
-        std::fs::remove_file(&path).unwrap();
-    }
-
-    #[test]
-    fn queued_songs_of_before_are_loaded() {
-        let delivery: Delivery = serde_json::from_str(
-            r#"{"streamer":"S","requestId":"A","link":"https://music.apple.com/song/1?i=1","user":"Viewer","requestedAt":5}"#,
-        )
-        .unwrap();
-        assert_eq!(delivery.item, song());
-        assert_eq!(delivery.requested_at, 5);
+        database::remove(&path);
     }
 
     #[test]
     fn old_deliveries_are_dropped() {
-        let deliveries = Deliveries::load(None).unwrap();
+        let deliveries = Deliveries::new(Database::memory());
         for (request_id, item, age) in [
             ("A", song(), 8),
             ("B", song(), 6),
@@ -305,12 +311,15 @@ mod tests {
             ("E", spin(), 8),
             ("F", spin(), 6),
         ] {
-            deliveries.deliveries.lock().unwrap().push(Delivery {
-                streamer: "S".to_string(),
-                request_id: request_id.to_string(),
-                requested_at: now() - age * 24 * 60 * 60,
-                item,
-            });
+            deliveries.add("S".to_string(), request_id.to_string(), item);
+            deliveries
+                .database
+                .lock()
+                .execute(
+                    "UPDATE deliveries SET requested_at = ?1 WHERE request_id = ?2",
+                    params![now() - age * 24 * 60 * 60, request_id],
+                )
+                .unwrap();
         }
         assert_eq!(request_ids(&deliveries), vec!["B", "D", "F"]);
     }

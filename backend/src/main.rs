@@ -3,8 +3,8 @@ mod api;
 mod app_attest;
 mod auth;
 mod challenges;
+mod database;
 mod deliveries;
-mod json_file;
 mod kick;
 mod live;
 mod live_status;
@@ -30,6 +30,7 @@ use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
 use crate::auth::{Auth, OAuthApp};
 use crate::challenges::Challenges;
+use crate::database::Database;
 use crate::deliveries::Deliveries;
 use crate::kick::Kick;
 use crate::live::Live;
@@ -88,16 +89,12 @@ struct Cli {
     /// use the development environment, distributed apps the production one.
     #[arg(long, env = "APP_ATTEST_ENVIRONMENT", value_enum, default_value_t = Environment::Production)]
     app_attest_environment: Environment,
-    /// The file the page settings of streamers (song requests, tips, the
-    /// wheel and the look of the page) are saved in. Without one they are
-    /// forgotten when the backend restarts.
-    #[arg(long, env = "PAGES_FILE")]
-    pages_file: Option<PathBuf>,
-    /// The file requested songs, tips and wheel spins are saved in until
-    /// Moblin has them. Without one those not yet delivered are forgotten
-    /// when the backend restarts.
-    #[arg(long, env = "SONG_QUEUE_FILE")]
-    song_queue_file: Option<PathBuf>,
+    /// The SQLite database streamer accounts, their page settings (song
+    /// requests, tips, the wheel and the look of the page) and requested
+    /// songs, tips and wheel spins not yet delivered to Moblin are saved in.
+    /// Without one they are forgotten when the backend restarts.
+    #[arg(long, env = "DATABASE")]
+    database: Option<PathBuf>,
     /// The client ID of a PayPal REST app of a PayPal partner, used together
     /// with its secret to let streamers connect their PayPal account and ask
     /// viewers to pay for songs, tips and wheel spins. The money goes straight
@@ -138,11 +135,6 @@ struct Cli {
     /// backend restarts.
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
-    /// The file streamer accounts, and the page each one
-    /// manages, are saved in. Without one they are forgotten when the
-    /// backend restarts.
-    #[arg(long, env = "ACCOUNTS_FILE")]
-    accounts_file: Option<PathBuf>,
     /// The URL this backend is reached at, for the sign in redirect URIs
     /// registered with Twitch.
     #[arg(long, env = "PUBLIC_URL", default_value = "https://api.moblin.app")]
@@ -200,10 +192,13 @@ async fn main() -> Result<()> {
         cli.fake_twitch_sign_in,
         cli.session_secret.as_deref(),
     )?;
-    if cli.accounts_file.is_none() {
-        warn!("no accounts file, forgetting accounts on restart");
+    if cli.database.is_none() {
+        warn!(
+            "no database, forgetting accounts, page settings and undelivered requests on restart"
+        );
     }
-    let accounts = Accounts::load(cli.accounts_file)?;
+    let database = Database::open(cli.database.as_deref())?;
+    let accounts = Accounts::new(database.clone());
     let twitch = match (cli.twitch_client_id, cli.twitch_client_secret) {
         (Some(client_id), Some(client_secret)) => Some(Arc::new(Twitch::new(
             client.clone(),
@@ -243,16 +238,8 @@ async fn main() -> Result<()> {
         );
         Some(AppAttest::new(&cli.app_id, cli.app_attest_environment))
     };
-    if cli.pages_file.is_none() {
-        warn!("no pages file, forgetting page settings on restart");
-    }
-    let pages = Pages::load(cli.pages_file)?;
-    if cli.song_queue_file.is_none() {
-        warn!(
-            "no song queue file, forgetting songs, tips and wheel spins not yet delivered on restart"
-        );
-    }
-    let deliveries = Deliveries::load(cli.song_queue_file)?;
+    let pages = Pages::new(database.clone());
+    let deliveries = Deliveries::new(database);
     let paypal = match (
         cli.paypal_client_id,
         cli.paypal_client_secret,

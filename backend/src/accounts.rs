@@ -1,31 +1,22 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::Arc;
 
-use anyhow::Result;
 use log::warn;
-use serde::{Deserialize, Serialize};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use crate::json_file;
+use crate::database::Database;
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Account {
     pub name: String,
-    #[serde(default)]
     pub login: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page: Option<Page>,
-    #[serde(default)]
     pub sessions: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merchant_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paypal_tracking_id: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Page {
     pub id: String,
     pub key: String,
@@ -39,22 +30,41 @@ pub enum AccountError {
     NotSaved,
 }
 
+const COLUMNS: &str =
+    "name, login, avatar, page_id, page_key, sessions, merchant_id, paypal_tracking_id";
+
+const SAME_LOGIN: &str = "login != '' AND lower(login) = lower(trim(?1))";
+
+fn account(row: &Row) -> rusqlite::Result<Account> {
+    let page_id: Option<String> = row.get(3)?;
+    let page_key: Option<String> = row.get(4)?;
+    Ok(Account {
+        name: row.get(0)?,
+        login: row.get(1)?,
+        avatar: row.get(2)?,
+        page: page_id.zip(page_key).map(|(id, key)| Page { id, key }),
+        sessions: row.get(5)?,
+        merchant_id: row.get(6)?,
+        paypal_tracking_id: row.get(7)?,
+    })
+}
+
+fn not_saved(error: rusqlite::Error) -> AccountError {
+    warn!("failed to save accounts: {error:#}");
+    AccountError::NotSaved
+}
+
 pub struct Accounts {
-    path: Option<PathBuf>,
-    accounts: Mutex<HashMap<String, Account>>,
+    database: Arc<Database>,
 }
 
 impl Accounts {
-    pub fn load(path: Option<PathBuf>) -> Result<Self> {
-        let accounts = json_file::load(path.as_deref())?;
-        Ok(Self {
-            path,
-            accounts: Mutex::new(accounts),
-        })
+    pub fn new(database: Arc<Database>) -> Self {
+        Self { database }
     }
 
     pub fn get(&self, id: &str) -> Option<Account> {
-        self.accounts.lock().unwrap().get(id).cloned()
+        self.find("id = ?1", id)
     }
 
     pub fn signed_in(
@@ -70,47 +80,25 @@ impl Accounts {
             account.avatar = avatar.map(str::to_string);
             Ok(())
         })?;
-        let mut accounts = self.accounts.lock().unwrap();
-        let mut changed = false;
-        for (other_id, other) in accounts.iter_mut() {
-            if other_id != id && same_login(&other.login, login) {
-                other.login.clear();
-                changed = true;
-            }
-        }
-        if changed && let Err(error) = json_file::save(self.path.as_deref(), &*accounts) {
+        if let Err(error) = self.database.lock().execute(
+            &format!("UPDATE accounts SET login = '' WHERE id != ?2 AND {SAME_LOGIN}"),
+            params![login, id],
+        ) {
             warn!("failed to save accounts: {error:#}");
         }
         Ok(account)
     }
 
     pub fn page_of_login(&self, login: &str) -> Option<String> {
-        self.accounts
-            .lock()
-            .unwrap()
-            .values()
-            .find(|account| same_login(&account.login, login))
-            .and_then(|account| account.page.as_ref())
-            .map(|page| page.id.clone())
+        self.find(SAME_LOGIN, login)?.page.map(|page| page.id)
     }
 
     pub fn of_page(&self, page: &str) -> Option<Account> {
-        self.accounts
-            .lock()
-            .unwrap()
-            .values()
-            .find(|account| account.page.as_ref().is_some_and(|own| own.id == page))
-            .cloned()
+        self.find("page_id = ?1", page)
     }
 
     pub fn page_of_key(&self, key: &str) -> Option<String> {
-        self.accounts
-            .lock()
-            .unwrap()
-            .values()
-            .filter_map(|account| account.page.as_ref())
-            .find(|page| page.key == key)
-            .map(|page| page.id.clone())
+        self.find("page_key = ?1", key)?.page.map(|page| page.id)
     }
 
     pub fn give_page(&self, id: &str, page: Page) -> Result<Account, AccountError> {
@@ -150,32 +138,33 @@ impl Accounts {
     }
 
     pub fn of_paypal_tracking_id(&self, tracking_id: &str) -> Option<String> {
-        self.accounts
+        self.database
             .lock()
-            .unwrap()
-            .iter()
-            .find(|(_, account)| account.paypal_tracking_id.as_deref() == Some(tracking_id))
-            .map(|(id, _)| id.clone())
+            .query_row(
+                "SELECT id FROM accounts WHERE paypal_tracking_id = ?1",
+                [tracking_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read accounts: {error:#}");
+                None
+            })
     }
 
     pub fn disconnect_paypal(&self, merchant_id: &str) -> Vec<String> {
-        let ids: Vec<String> = self
-            .accounts
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, account)| account.merchant_id.as_deref() == Some(merchant_id))
-            .map(|(id, _)| id.clone())
-            .collect();
-        ids.into_iter()
-            .filter(|id| {
-                self.change(id, false, |account| {
-                    account.merchant_id = None;
-                    Ok(())
-                })
-                .is_ok()
+        let database = self.database.lock();
+        database
+            .prepare("UPDATE accounts SET merchant_id = NULL WHERE merchant_id = ?1 RETURNING id")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([merchant_id], |row| row.get(0))?
+                    .collect()
             })
-            .collect()
+            .unwrap_or_else(|error| {
+                warn!("failed to save accounts: {error:#}");
+                Vec::new()
+            })
     }
 
     pub fn forget_paypal(&self, id: &str) -> Result<Account, AccountError> {
@@ -193,44 +182,76 @@ impl Accounts {
         })
     }
 
+    fn find(&self, condition: &str, value: &str) -> Option<Account> {
+        self.database
+            .lock()
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM accounts WHERE {condition} LIMIT 1"),
+                [value],
+                account,
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read accounts: {error:#}");
+                None
+            })
+    }
+
     fn change(
         &self,
         id: &str,
         create: bool,
         change: impl FnOnce(&mut Account) -> Result<(), AccountError>,
     ) -> Result<Account, AccountError> {
-        let mut accounts = self.accounts.lock().unwrap();
-        let old = accounts.get(id).cloned();
+        let database = self.database.lock();
+        let old = database
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM accounts WHERE id = ?1"),
+                [id],
+                account,
+            )
+            .optional()
+            .map_err(not_saved)?;
         let mut account = match &old {
             Some(account) => account.clone(),
             None if !create => return Err(AccountError::Unknown),
-            None if accounts.len() >= 10000 => return Err(AccountError::Full),
+            None if count(&database).map_err(not_saved)? >= 10000 => {
+                return Err(AccountError::Full);
+            }
             None => Account::default(),
         };
         change(&mut account)?;
         if old.as_ref() == Some(&account) {
             return Ok(account);
         }
-        accounts.insert(id.to_string(), account.clone());
-        if let Err(error) = json_file::save(self.path.as_deref(), &*accounts) {
-            warn!("failed to save accounts: {error:#}");
-            match old {
-                Some(old) => accounts.insert(id.to_string(), old),
-                None => accounts.remove(id),
-            };
-            return Err(AccountError::NotSaved);
-        }
+        database
+            .execute(
+                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
+                params![
+                    id,
+                    account.name,
+                    account.login,
+                    account.avatar,
+                    account.page.as_ref().map(|page| &page.id),
+                    account.page.as_ref().map(|page| &page.key),
+                    account.sessions,
+                    account.merchant_id,
+                    account.paypal_tracking_id,
+                ],
+            )
+            .map_err(not_saved)?;
         Ok(account)
     }
 }
 
-fn same_login(a: &str, b: &str) -> bool {
-    !a.is_empty() && a.eq_ignore_ascii_case(b.trim())
+fn count(database: &Connection) -> rusqlite::Result<u64> {
+    database.query_row("SELECT count(*) FROM accounts", [], |row| row.get(0))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database;
 
     fn page(id: &str, key: &str) -> Page {
         Page {
@@ -241,7 +262,7 @@ mod tests {
 
     #[test]
     fn pages_are_kept() {
-        let accounts = Accounts::load(None).unwrap();
+        let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.get("1"), None);
         assert_eq!(
             accounts.give_page("1", page("p", "k")),
@@ -276,7 +297,7 @@ mod tests {
 
     #[test]
     fn pages_find_their_account() {
-        let accounts = Accounts::load(None).unwrap();
+        let accounts = Accounts::new(Database::memory());
         accounts
             .signed_in("1", "Erik", "erik", Some("https://example.com/a.png"))
             .unwrap();
@@ -291,7 +312,7 @@ mod tests {
 
     #[test]
     fn keys_are_replaced() {
-        let accounts = Accounts::load(None).unwrap();
+        let accounts = Accounts::new(Database::memory());
         accounts.signed_in("1", "Erik", "erik", None).unwrap();
         accounts.give_page("1", page("p", "k")).unwrap();
         assert_eq!(accounts.page_of_key("k").as_deref(), Some("p"));
@@ -305,7 +326,7 @@ mod tests {
 
     #[test]
     fn signing_out_ends_sessions() {
-        let accounts = Accounts::load(None).unwrap();
+        let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.sign_out("1"), Err(AccountError::Unknown));
         accounts.signed_in("1", "Erik", "erik", None).unwrap();
         assert_eq!(accounts.sign_out("1").unwrap().sessions, 1);
@@ -320,7 +341,7 @@ mod tests {
 
     #[test]
     fn paypal_connects_only_the_latest_onboarding() {
-        let accounts = Accounts::load(None).unwrap();
+        let accounts = Accounts::new(Database::memory());
         assert_eq!(
             accounts.start_paypal("1", "a".to_string()),
             Err(AccountError::Unknown)
@@ -360,7 +381,7 @@ mod tests {
 
     #[test]
     fn logins_find_pages() {
-        let accounts = Accounts::load(None).unwrap();
+        let accounts = Accounts::new(Database::memory());
         accounts.signed_in("1", "Erik", "erik", None).unwrap();
         assert_eq!(accounts.page_of_login("erik"), None);
         accounts.give_page("1", page("a", "k")).unwrap();
@@ -375,16 +396,11 @@ mod tests {
 
     #[test]
     fn accounts_are_saved() {
-        let path = std::env::temp_dir().join(format!(
-            "accounts-{}-{:?}.json",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_file(&path);
-        let accounts = Accounts::load(Some(path.clone())).unwrap();
+        let path = database::temporary_path("accounts");
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
         accounts.signed_in("3", "erik", "erik", None).unwrap();
         accounts.give_page("3", page("p", "k")).unwrap();
-        let accounts = Accounts::load(Some(path.clone())).unwrap();
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
         assert_eq!(
             accounts.get("3"),
             Some(Account {
@@ -395,6 +411,6 @@ mod tests {
                 ..Account::default()
             })
         );
-        std::fs::remove_file(&path).unwrap();
+        database::remove(&path);
     }
 }

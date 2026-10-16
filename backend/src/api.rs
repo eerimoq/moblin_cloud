@@ -1444,6 +1444,7 @@ mod tests {
 
     use super::*;
     use crate::auth::OAuthApp;
+    use crate::database::Database;
 
     async fn start() -> String {
         start_with(None).await
@@ -1454,7 +1455,7 @@ mod tests {
     }
 
     async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
-        start_api_with(paypal, None, Pages::load(None).unwrap()).await
+        start_api_with(paypal, None, Pages::new(Database::memory())).await
     }
 
     async fn start_api_with(
@@ -1470,7 +1471,7 @@ mod tests {
             remote_control: Streamers::new(),
             pages,
             paypal,
-            deliveries: Deliveries::load(None).unwrap(),
+            deliveries: Deliveries::new(Database::memory()),
             auth: Auth::new(
                 reqwest::Client::new(),
                 "http://localhost".to_string(),
@@ -1480,7 +1481,7 @@ mod tests {
                 Some("secret"),
             )
             .unwrap(),
-            accounts: Accounts::load(None).unwrap(),
+            accounts: Accounts::new(Database::memory()),
         });
         tokio::spawn({
             let api = api.clone();
@@ -1757,14 +1758,17 @@ mod tests {
 
     #[tokio::test]
     async fn paywalls_without_paypal_cant_be_paid() {
-        let path = std::env::temp_dir().join(format!("old-paywalls-{}.json", std::process::id()));
-        std::fs::write(
-            &path,
-            r#"{"p": {"paywall": {"merchantId": "MERCHANT00001", "price": 250, "currency": "SEK"}}}"#,
-        )
-        .unwrap();
-        let pages = Pages::load(Some(path.clone())).unwrap();
-        std::fs::remove_file(&path).unwrap();
+        let pages = Pages::new(Database::memory());
+        pages
+            .set(
+                "p",
+                Settings {
+                    currency: Some("SEK".to_string()),
+                    paywall: Some(Paywall { price: 250 }),
+                    ..Settings::default()
+                },
+            )
+            .unwrap();
         let (paypal_url, _) = start_paypal().await;
         let (address, _) = start_api_with(Some(new_paypal(paypal_url)), None, pages).await;
         let client = reqwest::Client::new();
@@ -2576,7 +2580,7 @@ mod tests {
                 token_url: format!("{twitch}/token"),
                 users_url: format!("{twitch}/users"),
             }),
-            Pages::load(None).unwrap(),
+            Pages::new(Database::memory()),
         )
         .await;
         let client = reqwest::Client::builder()
