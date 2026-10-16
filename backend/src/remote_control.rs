@@ -106,10 +106,20 @@ enum Request {
     Music {
         command: MusicCommand,
     },
+    #[serde(rename_all = "camelCase")]
     SpinWheelOfLuck {
         name: String,
         message: String,
         count: u32,
+        request_id: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Tip {
+        name: String,
+        message: String,
+        amount: String,
+        currency: String,
+        request_id: String,
     },
 }
 
@@ -500,6 +510,7 @@ impl Streamers {
         name: String,
         message: String,
         count: u32,
+        request_id: String,
     ) -> Result<(), RequestError> {
         self.request(
             id,
@@ -507,6 +518,31 @@ impl Streamers {
                 name,
                 message,
                 count,
+                request_id,
+            },
+            Duration::from_secs(10),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn tip(
+        &self,
+        id: &str,
+        name: String,
+        message: String,
+        amount: String,
+        currency: String,
+        request_id: String,
+    ) -> Result<(), RequestError> {
+        self.request(
+            id,
+            Request::Tip {
+                name,
+                message,
+                amount,
+                currency,
+                request_id,
             },
             Duration::from_secs(10),
         )
@@ -644,9 +680,23 @@ mod tests {
                     name: "Erik".to_string(),
                     message: "Go!".to_string(),
                     count: 3,
+                    request_id: "ORDER1".to_string(),
                 },
             }),
-            r#"{"request":{"id":7,"data":{"spinWheelOfLuck":{"name":"Erik","message":"Go!","count":3}}}}"#
+            r#"{"request":{"id":7,"data":{"spinWheelOfLuck":{"name":"Erik","message":"Go!","count":3,"requestId":"ORDER1"}}}}"#
+        );
+        assert_eq!(
+            encode(&MessageToStreamer::Request {
+                id: 8,
+                data: Request::Tip {
+                    name: "Erik".to_string(),
+                    message: "Hi".to_string(),
+                    amount: "7.00".to_string(),
+                    currency: "USD".to_string(),
+                    request_id: "ORDER2".to_string(),
+                },
+            }),
+            r#"{"request":{"id":8,"data":{"tip":{"name":"Erik","message":"Hi","amount":"7.00","currency":"USD","requestId":"ORDER2"}}}}"#
         );
     }
 

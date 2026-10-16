@@ -3,6 +3,7 @@ mod api;
 mod app_attest;
 mod auth;
 mod challenges;
+mod deliveries;
 mod json_file;
 mod kick;
 mod live;
@@ -11,10 +12,8 @@ mod pages;
 mod paypal;
 mod profiles;
 mod remote_control;
-mod song_queue;
 mod store;
 mod twitch;
-mod webhooks;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -31,6 +30,7 @@ use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
 use crate::auth::{Auth, OAuthApp};
 use crate::challenges::Challenges;
+use crate::deliveries::Deliveries;
 use crate::kick::Kick;
 use crate::live::Live;
 use crate::live_status::LiveStatus;
@@ -38,10 +38,8 @@ use crate::pages::Pages;
 use crate::paypal::PayPal;
 use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
-use crate::song_queue::SongQueue;
 use crate::store::Store;
 use crate::twitch::Twitch;
-use crate::webhooks::Webhooks;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -95,9 +93,9 @@ struct Cli {
     /// forgotten when the backend restarts.
     #[arg(long, env = "PAGES_FILE")]
     pages_file: Option<PathBuf>,
-    /// The file song requests are saved in until they are in the streamer's
-    /// queue. Without one requested songs not yet added are forgotten when
-    /// the backend restarts.
+    /// The file requested songs, tips and wheel spins are saved in until
+    /// Moblin has them. Without one those not yet delivered are forgotten
+    /// when the backend restarts.
     #[arg(long, env = "SONG_QUEUE_FILE")]
     song_queue_file: Option<PathBuf>,
     /// The client ID of a PayPal REST app of a PayPal partner, used together
@@ -161,18 +159,9 @@ struct Cli {
     /// query parameter of the sign in URL.
     #[arg(long)]
     fake_twitch_sign_in: bool,
-    /// Lets tip webhooks use http and local hosts, for local development only.
-    #[arg(long)]
-    allow_local_webhooks: bool,
 }
 
 fn http_client() -> Client {
-    http_client_builder()
-        .build()
-        .expect("a client without a proxy or TLS config always builds")
-}
-
-fn http_client_builder() -> reqwest::ClientBuilder {
     Client::builder()
         .user_agent(concat!(
             env!("CARGO_PKG_NAME"),
@@ -181,6 +170,8 @@ fn http_client_builder() -> reqwest::ClientBuilder {
             " (+https://moblin.app)"
         ))
         .timeout(TIMEOUT)
+        .build()
+        .expect("a client without a proxy or TLS config always builds")
 }
 
 #[tokio::main]
@@ -257,9 +248,11 @@ async fn main() -> Result<()> {
     }
     let pages = Pages::load(cli.pages_file)?;
     if cli.song_queue_file.is_none() {
-        warn!("no song queue file, forgetting requested songs not yet added on restart");
+        warn!(
+            "no song queue file, forgetting songs, tips and wheel spins not yet delivered on restart"
+        );
     }
-    let song_queue = SongQueue::load(cli.song_queue_file)?;
+    let deliveries = Deliveries::load(cli.song_queue_file)?;
     let paypal = match (
         cli.paypal_client_id,
         cli.paypal_client_secret,
@@ -298,20 +291,13 @@ async fn main() -> Result<()> {
         remote_control: Streamers::new(),
         pages,
         paypal,
-        song_queue,
+        deliveries,
         auth,
         accounts,
-        webhooks: Webhooks::new(
-            http_client_builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .expect("a client without a proxy or TLS config always builds"),
-            cli.allow_local_webhooks,
-        ),
     });
     tokio::spawn({
         let api = api.clone();
-        async move { api.song_queue.run(&api.remote_control).await }
+        async move { api.deliveries.run(&api.remote_control).await }
     });
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await

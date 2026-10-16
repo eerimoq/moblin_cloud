@@ -30,7 +30,6 @@ export type Paywall = {
 
 export type Tips = {
   amounts: number[];
-  webhookUrl: string | null;
 };
 
 export type SpinOption = {

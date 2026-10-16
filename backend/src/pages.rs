@@ -41,8 +41,6 @@ pub struct Paywall {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tips {
     pub amounts: Vec<u32>,
-    #[serde(default, rename = "webhookUrl")]
-    pub webhook_url: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -140,13 +138,7 @@ impl Tips {
         amounts.dedup();
         let valid =
             (1..=4).contains(&amounts.len()) && amounts.iter().all(|amount| valid_price(*amount));
-        valid.then_some(Self {
-            amounts,
-            webhook_url: self
-                .webhook_url
-                .map(|url| url.trim().to_string())
-                .filter(|url| !url.is_empty()),
-        })
+        valid.then_some(Self { amounts })
     }
 }
 
@@ -311,7 +303,6 @@ mod tests {
         let tips = |amounts: &[u32]| Settings {
             tips: Some(Tips {
                 amounts: amounts.to_vec(),
-                webhook_url: None,
             }),
             ..Settings::default()
         };

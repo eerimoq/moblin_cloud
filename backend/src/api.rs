@@ -12,13 +12,14 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{Account, AccountError, Accounts, Page};
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
+use crate::deliveries::{self, Deliveries};
 use crate::live::Live;
 use crate::pages::{
     CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
@@ -26,9 +27,7 @@ use crate::pages::{
 };
 use crate::paypal::{CaptureError, Item, Order, PayPal, Seller};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
-use crate::song_queue::{self, QueuedSong, SongQueue};
 use crate::store::{Channel, Store, Streamer};
-use crate::webhooks::Webhooks;
 
 const ASSERTION_HEADER: &str = "moblin-assertion";
 
@@ -40,10 +39,9 @@ pub struct Api {
     pub remote_control: Streamers,
     pub pages: Pages,
     pub paypal: Option<PayPal>,
-    pub song_queue: SongQueue,
+    pub deliveries: Deliveries,
     pub auth: Auth,
     pub accounts: Accounts,
-    pub webhooks: Webhooks,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -326,9 +324,6 @@ async fn update_settings(
     let tips = match request.tips {
         Some(tips) => {
             let tips = tips.normalize().ok_or_else(invalid_tips)?;
-            if let Some(url) = &tips.webhook_url {
-                check_webhook(api, url)?;
-            }
             if paid || current.tips.as_ref() != Some(&tips) {
                 check_payable(api, &id)?;
             }
@@ -802,17 +797,6 @@ fn invalid_spin() -> (StatusCode, String) {
     )
 }
 
-fn check_webhook(api: &Api, url: &str) -> Result<(), (StatusCode, String)> {
-    if api.webhooks.allows(url) {
-        Ok(())
-    } else {
-        Err((
-            StatusCode::BAD_REQUEST,
-            "the webhook URL must be an https URL of a public host".to_string(),
-        ))
-    }
-}
-
 fn invalid_currency() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
@@ -1079,13 +1063,14 @@ fn queue(
         "queued {:?} by {:?} in request {request_id} for remote control streamer {id}",
         song.link, song.user
     );
-    api.song_queue.add(QueuedSong {
-        streamer: id,
+    api.deliveries.add(
+        id,
         request_id,
-        link: song.link,
-        user: song.user,
-        requested_at: song_queue::now(),
-    });
+        deliveries::Item::Song {
+            link: song.link,
+            user: song.user,
+        },
+    );
     (
         StatusCode::ACCEPTED,
         Json(Value::Object(Default::default())),
@@ -1345,30 +1330,26 @@ async fn capture_tip(
     order_id: String,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let order = capture(&api, &id, &order_id, "tip").await?;
-    let url = api.pages.get(&id).tips.and_then(|tips| tips.webhook_url);
-    let mut body = webhook_body(&api, &id, &order);
-    if let Item::Tip { message } = order.item {
-        body["message"] = json!(message);
-    }
-    if let Some(url) = url {
-        tokio::spawn(async move { api.webhooks.deliver(&url, &order_id, &body).await });
-    }
-    Ok(accepted())
-}
-
-fn webhook_body(api: &Api, id: &str, order: &Order) -> Value {
-    let account = api.accounts.of_page(id);
-    json!({
-        "type": order.item.kind(),
-        "id": api.remote_control.new_request_id().unwrap_or_default(),
-        "streamer": {
-            "login": account.as_ref().map(|account| &account.login),
-            "name": account.as_ref().map(|account| &account.name),
+    let Item::Tip { message } = order.item else {
+        return Err(capture_crashed());
+    };
+    info!(
+        "queued a tip of {} {} by {:?} in PayPal order {order_id} for remote control streamer {id}",
+        format_price(order.price),
+        order.currency,
+        order.user
+    );
+    api.deliveries.add(
+        id,
+        order_id,
+        deliveries::Item::Tip {
+            user: order.user,
+            message: message.unwrap_or_default(),
+            amount: order.price,
+            currency: order.currency,
         },
-        "user": order.user,
-        "amount": {"value": format_price(order.price), "currency": order.currency},
-        "time": song_queue::now(),
-    })
+    );
+    Ok(accepted())
 }
 
 fn accepted() -> (StatusCode, Json<Value>) {
@@ -1451,40 +1432,20 @@ async fn capture_spin(
     let Item::Spin { spins, message } = order.item else {
         return Err(capture_crashed());
     };
-    let message = message.unwrap_or_default();
-    tokio::spawn(async move { spin_wheel(&api, &id, &order_id, order.user, message, spins).await });
-    Ok(accepted())
-}
-
-async fn spin_wheel(
-    api: &Api,
-    id: &str,
-    order_id: &str,
-    user: String,
-    message: String,
-    spins: u32,
-) {
-    for attempt in 1..=6 {
-        match api
-            .remote_control
-            .spin_wheel(id, user.clone(), message.clone(), spins)
-            .await
-        {
-            Ok(()) => {
-                info!(
-                    "remote control streamer {id} spins the wheel {spins} times for {user:?} in PayPal order {order_id}"
-                );
-                return;
-            }
-            Err(error) => warn!(
-                "spinning the wheel of remote control streamer {id} for PayPal order {order_id} failed: {error:?} (attempt {attempt})"
-            ),
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-    }
-    warn!(
-        "giving up spinning the wheel of remote control streamer {id} for PayPal order {order_id}"
+    info!(
+        "queued {spins} wheel spins by {:?} in PayPal order {order_id} for remote control streamer {id}",
+        order.user
     );
+    api.deliveries.add(
+        id,
+        order_id,
+        deliveries::Item::Spin {
+            user: order.user,
+            message: message.unwrap_or_default(),
+            spins,
+        },
+    );
+    Ok(accepted())
 }
 
 fn verify(
@@ -1566,8 +1527,7 @@ mod tests {
             remote_control: Streamers::new(),
             pages,
             paypal,
-            song_queue: SongQueue::load(None).unwrap(),
-            webhooks: Webhooks::new(reqwest::Client::new(), true),
+            deliveries: Deliveries::load(None).unwrap(),
             auth: Auth::new(
                 reqwest::Client::new(),
                 "http://localhost".to_string(),
@@ -1581,7 +1541,7 @@ mod tests {
         });
         tokio::spawn({
             let api = api.clone();
-            async move { api.song_queue.run(&api.remote_control).await }
+            async move { api.deliveries.run(&api.remote_control).await }
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -1968,12 +1928,12 @@ mod tests {
 
     async fn wait_until_added(api: &Api) {
         for _ in 0..100 {
-            if api.song_queue.pending().is_empty() {
+            if api.deliveries.pending().is_empty() {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        panic!("the song is still queued");
+        panic!("still queued");
     }
 
     #[tokio::test]
@@ -2107,7 +2067,7 @@ mod tests {
                 "requestId": "ORDER1",
             }}}})
         );
-        assert!(!api.song_queue.pending().is_empty());
+        assert!(!api.deliveries.pending().is_empty());
         answer(
             &mut socket,
             &request,
@@ -2204,7 +2164,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
-        assert!(api.song_queue.pending().is_empty());
+        assert!(api.deliveries.pending().is_empty());
     }
 
     #[tokio::test]
@@ -2242,7 +2202,7 @@ mod tests {
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], add);
         socket.close(None).await.unwrap();
-        assert!(!api.song_queue.pending().is_empty());
+        assert!(!api.deliveries.pending().is_empty());
         let mut socket = connect(&address, &key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], add);
@@ -2258,23 +2218,6 @@ mod tests {
                 .await
                 .is_err()
         );
-    }
-
-    async fn start_webhook() -> (String, tokio::sync::mpsc::UnboundedReceiver<Value>) {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Value>();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/hook?token=x", listener.local_addr().unwrap());
-        tokio::spawn(async move {
-            let router = Router::new().route(
-                "/hook",
-                post(move |Json(body): Json<Value>| async move {
-                    sender.send(body).unwrap();
-                    StatusCode::NO_CONTENT
-                }),
-            );
-            axum::serve(listener, router).await
-        });
-        (url, receiver)
     }
 
     #[tokio::test]
@@ -2407,18 +2350,26 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let request = receive(&mut socket).await;
-        assert_eq!(
-            request["request"]["data"],
-            json!({"spinWheelOfLuck": {"name": "Viewer", "message": "Go big!", "count": 2}})
-        );
+        let spin = json!({"spinWheelOfLuck": {
+            "name": "Viewer",
+            "message": "Go big!",
+            "count": 2,
+            "requestId": "ORDER1",
+        }});
+        assert_eq!(request["request"]["data"], spin);
+        socket.close(None).await.unwrap();
+        let mut socket = connect(&address, &key).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], spin);
         answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
     }
 
     #[tokio::test]
-    async fn tips_are_posted_to_the_webhook() {
+    async fn tips_are_sent_to_the_streamer() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
         let tips_url = format!("http://{address}/remote-control/{id}/tips");
         let public: Value = client
@@ -2438,24 +2389,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let (webhook_url, mut webhooks) = start_webhook().await;
-        let response = client
-            .post(format!("http://{address}/account/settings"))
-            .bearer_auth(&session)
-            .json(&json!({"currency": "usd", "paywall": null, "tips": {
-                "amounts": [500],
-                "webhookUrl": "ftp://example.com/tips",
-            }}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"currency": "usd", "paywall": null, "tips": {
                 "amounts": [1000, 200, 500],
-                "webhookUrl": format!(" {webhook_url} "),
             }}))
             .send()
             .await
@@ -2463,13 +2401,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(
-            settings["tips"],
-            json!({
-                "amounts": [200, 500, 1000],
-                "webhookUrl": webhook_url,
-            })
-        );
+        assert_eq!(settings["tips"], json!({"amounts": [200, 500, 1000]}));
         let public: Value = client
             .get(&tips_url)
             .send()
@@ -2533,29 +2465,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let mut posted = webhooks.recv().await.unwrap();
-        assert_eq!(posted["id"].as_str().unwrap().len(), 22);
-        posted["id"] = json!("x");
-        assert!(posted["time"].as_u64().unwrap() >= song_queue::now() - 10);
-        posted["time"] = json!(0);
-        assert_eq!(
-            posted,
-            json!({
-                "type": "tip",
-                "id": "x",
-                "streamer": {"login": "erik", "name": "Erik"},
-                "user": "Viewer",
-                "message": "Great stream!",
-                "amount": {"value": "7.00", "currency": "USD"},
-                "time": 0,
-            })
-        );
         let response = client
             .post(format!("{orders_url}/ORDER1/capture"))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
+        assert_eq!(api.deliveries.pending().len(), 1);
+        let tip = json!({"tip": {
+            "name": "Viewer",
+            "message": "Great stream!",
+            "amount": "7.00",
+            "currency": "USD",
+            "requestId": "ORDER1",
+        }});
+        let mut socket = connect(&address, &key).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], tip);
+        socket
+            .send(Message::text(
+                json!({"response": {"id": request["request"]["id"], "result": {"error": {}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket.close(None).await.unwrap();
+        let mut socket = connect(&address, &key).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], tip);
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut socket))
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -3032,7 +2976,7 @@ mod tests {
         let (paypal_url, fake) = start_paypal().await;
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
         let (session, _, id) = streamer(&address, &api).await;
-        let old = api.auth.session_at("1", 0, crate::song_queue::now() - 601);
+        let old = api.auth.session_at("1", 0, crate::deliveries::now() - 601);
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
         let settings_url = format!("http://{address}/account/settings");

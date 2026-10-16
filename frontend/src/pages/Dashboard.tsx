@@ -556,7 +556,6 @@ function TipSettings(props: {
   onSave: (changes: { tips: Tips | null }) => Promise<void>;
 }) {
   const [enabled, setEnabled] = createSignal(props.tips !== null);
-  const [webhookUrl, setWebhookUrl] = createSignal(props.tips?.webhookUrl ?? "");
   const [amounts, setAmounts] = createSignal(
     (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
   );
@@ -575,21 +574,11 @@ function TipSettings(props: {
     setSaving(true);
     try {
       await props.onSave({
-        tips: enabled()
-          ? {
-              amounts: amountsOf(amounts()),
-              webhookUrl: webhookUrl().trim() || null,
-            }
-          : null,
+        tips: enabled() ? { amounts: amountsOf(amounts()) } : null,
       });
       flashSaved();
     } catch (error) {
-      setError(
-        paymentErrorText(
-          error,
-          "Enter amounts from 0.50 to 1000 and a webhook URL starting with https://.",
-        ),
-      );
+      setError(paymentErrorText(error, "Enter amounts from 0.50 to 1000."));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -601,7 +590,8 @@ function TipSettings(props: {
       <h2 class="text-[23px] font-semibold">Tips</h2>
       <p class="text-ink-2">
         Let viewers send you just a tip with PayPal. Viewers pick one of your amounts or enter their
-        own, and can add a message.
+        own, and can add a message. Tips show up in Moblin's chat, also those sent while Moblin is
+        not connected.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -655,23 +645,6 @@ function TipSettings(props: {
             </div>
           </Show>
         </fieldset>
-        <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">Webhook URL (optional)</span>
-          <input
-            type="url"
-            maxLength={500}
-            value={webhookUrl()}
-            onInput={(event) => setWebhookUrl(event.currentTarget.value)}
-            placeholder="https://example.com/tips?token=…"
-            autocomplete="off"
-            spellcheck={false}
-            class={inputClass}
-          />
-          <span class="text-[15px] text-muted">
-            Every tip is posted to this URL as JSON, with the name, message and amount. Put a secret
-            in the URL so nobody else can post fake tips to it.
-          </span>
-        </label>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
