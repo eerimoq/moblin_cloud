@@ -219,6 +219,8 @@ struct SettingsResponse {
     merchant_id: Option<String>,
     #[serde(rename = "paypalPending")]
     paypal_pending: bool,
+    #[serde(rename = "paypalSandbox")]
+    paypal_sandbox: bool,
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
@@ -235,6 +237,10 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         paypal: api.paypal.is_some(),
         merchant_id: account.merchant_id,
         paypal_pending: account.paypal_tracking_id.is_some(),
+        paypal_sandbox: api
+            .paypal
+            .as_ref()
+            .is_some_and(|paypal| paypal.environment() == "sandbox"),
         title: settings.title,
         message: settings.message,
         accent: settings.accent,

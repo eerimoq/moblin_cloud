@@ -137,6 +137,11 @@ function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; dis
           props.disabled ? "pointer-events-none opacity-40" : ""
         }`}
       />
+      <Show when={props.config.environment === "sandbox"}>
+        <p role="status" class="text-amber">
+          PayPal sandbox. This is a test payment and no real money is moved.
+        </p>
+      </Show>
       <Show when={failed()}>
         <p role="status" class="text-amber">
           PayPal could not be loaded. Reload the page to try again.

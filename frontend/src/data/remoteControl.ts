@@ -61,6 +61,7 @@ export type Settings = Page & {
   paypal: boolean;
   merchantId: string | null;
   paypalPending: boolean;
+  paypalSandbox: boolean;
 };
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];

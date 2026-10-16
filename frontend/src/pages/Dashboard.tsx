@@ -198,6 +198,11 @@ function PayPalAccount(props: {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">PayPal</h2>
+      <Show when={props.settings.paypalSandbox}>
+        <p role="status" class="text-amber">
+          PayPal is in sandbox mode. Payments are for testing only and no real money is moved.
+        </p>
+      </Show>
       <Show
         when={props.settings.merchantId}
         fallback={
