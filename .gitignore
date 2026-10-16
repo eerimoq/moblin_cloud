@@ -1,2 +1,8 @@
 .DS_Store
 /cards-print
+tests/config.toml
+tests/files/
+tests/cache/
+tests/logs/
+logs/
+__pycache__/

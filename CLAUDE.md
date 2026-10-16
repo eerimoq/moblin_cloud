@@ -24,6 +24,8 @@ just spell-check    # codespell, configured in .codespellrc
 just test           # cargo test (backend only; the frontend has no tests)
 ```
 
+`just system-test [--device <name>] [pattern]` runs the black box system tests in `tests/` (Python, `systest`, like Moblin's `tests/`): they start the release backend and drive its API like the frontend, with the PayPal sandbox and a Moblin whose remote control connection the tester relays to the backend: the fake `tests/utils/fake_moblin.py` by default, a real device with `--device`. Not run in CI; see `tests/README.md`.
+
 Run a single backend test: `cd backend && cargo test store::tests::list_is_capped` (tests are inline `#[cfg(test)]` modules per file).
 
 Development needs two terminals:

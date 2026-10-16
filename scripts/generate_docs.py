@@ -189,11 +189,7 @@ def is_punct(tokens, i, value):
 
 
 def is_ident(tokens, i, value=None):
-    return (
-        i < len(tokens)
-        and tokens[i].kind == "ident"
-        and (value is None or tokens[i].value == value)
-    )
+    return i < len(tokens) and tokens[i].kind == "ident" and (value is None or tokens[i].value == value)
 
 
 def split_arguments(tokens):
@@ -399,11 +395,7 @@ def parse_to_string(body, enum):
                     j += 1
             if is_punct(body, j, ":"):
                 k = j + 1
-                while (
-                    k < len(body)
-                    and not is_ident(body, k, "case")
-                    and not is_ident(body, k, "default")
-                ):
+                while k < len(body) and not is_ident(body, k, "case") and not is_ident(body, k, "default"):
                     if body[k].kind == "string":
                         for name in names:
                             enum["strings"].setdefault(name, body[k].value)
@@ -429,9 +421,7 @@ class Extractor:
                 section = new_section()
                 page["sections"].append(section)
                 build(page, section)
-                page["sections"] = [
-                    s for s in page["sections"] if s["items"] or s["header"] or s["footer"]
-                ]
+                page["sections"] = [s for s in page["sections"] if s["items"] or s["header"] or s["footer"]]
             return page
         base = slug(title)
         page_id = base
@@ -486,9 +476,7 @@ class Extractor:
         functions = {}
         i = 0
         while i < len(tokens):
-            if (is_ident(tokens, i, "func") or is_ident(tokens, i, "var")) and is_ident(
-                tokens, i + 1
-            ):
+            if (is_ident(tokens, i, "func") or is_ident(tokens, i, "var")) and is_ident(tokens, i + 1):
                 name = tokens[i + 1].value
                 j = i + 2
                 while j < len(tokens) and not is_punct(tokens, j, "{"):
@@ -696,11 +684,7 @@ class Extractor:
             else:
                 label = tokens[j + 1 : end]
             j = end + 1
-        if (
-            is_ident(tokens, j, "label")
-            and is_punct(tokens, j + 1, ":")
-            and is_punct(tokens, j + 2, "{")
-        ):
+        if is_ident(tokens, j, "label") and is_punct(tokens, j + 1, ":") and is_punct(tokens, j + 2, "{"):
             end = matching(tokens, j + 2)
             label = tokens[j + 3 : end]
             j = end + 1
@@ -721,11 +705,7 @@ class Extractor:
             and is_punct(destination, k + 1, "(")
         ):
             call_end = matching(destination, k + 1)
-            rest = [
-                t
-                for t in destination[call_end + 1 :]
-                if not (t.kind == "punct" and t.value in ")}")
-            ]
+            rest = [t for t in destination[call_end + 1 :] if not (t.kind == "punct" and t.value in ")}")]
             if not rest or is_punct(rest, 0, "."):
                 view = destination[k].value
         if view is None:
@@ -790,8 +770,7 @@ class Extractor:
                     if not (
                         k >= 2
                         and is_punct(tokens, k - 1, ":")
-                        and tokens[k - 2].value
-                        in ("systemImage", "systemName", "image", "imageName", "logo")
+                        and tokens[k - 2].value in ("systemImage", "systemName", "image", "imageName", "logo")
                     ):
                         text = clean(token.value)
                         if text:
@@ -826,9 +805,7 @@ class Extractor:
                 and is_punct(tokens, k + 1, ":")
             ):
                 value = tokens[k + 2 : k + 7]
-                text = literal(value) or (
-                    value[0].value if value and value[0].kind == "string" else None
-                )
+                text = literal(value) or (value[0].value if value and value[0].kind == "string" else None)
                 if text:
                     return clean(text)
             k += 1
@@ -839,9 +816,7 @@ class Extractor:
         if "title" not in names:
             return None
         struct = self.structs[view]
-        if any(
-            is_ident([t], 0, "NavigationLink") or is_ident([t], 0, "Form") for t in struct.tokens
-        ):
+        if any(is_ident([t], 0, "NavigationLink") or is_ident([t], 0, "Form") for t in struct.tokens):
             if view not in ("TextEditNavigationView", "MultiLineTextFieldNavigationView"):
                 return None
         title = None
@@ -870,14 +845,8 @@ class Extractor:
         if view in context["stack"] or len(context["stack"]) > 12 or "Wizard" in view:
             return j, section
         scope = self.argument_scope(arguments, context)
-        strings = {
-            name: clean(literal(value))
-            for name, value in arguments
-            if name and clean(literal(value))
-        }
-        return j, self.walk(
-            view, scope, context["page"], section, context["stack"] + [view], strings
-        )
+        strings = {name: clean(literal(value)) for name, value in arguments if name and clean(literal(value))}
+        return j, self.walk(view, scope, context["page"], section, context["stack"] + [view], strings)
 
     def resolve_type(self, value, scope):
         if not value or value[0].kind != "ident":
@@ -925,11 +894,7 @@ class Extractor:
             closure_end = matching(tokens, j)
             content = tokens[j + 1 : closure_end]
             j = closure_end + 1
-        if (
-            is_ident(tokens, j, "label")
-            and is_punct(tokens, j + 1, ":")
-            and is_punct(tokens, j + 2, "{")
-        ):
+        if is_ident(tokens, j, "label") and is_punct(tokens, j + 1, ":") and is_punct(tokens, j + 2, "{"):
             closure_end = matching(tokens, j + 2)
             label = label or self.label_text(tokens[j + 3 : closure_end])
             j = closure_end + 1

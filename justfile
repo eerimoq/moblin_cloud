@@ -1,20 +1,42 @@
+python_dirs := "tests scripts"
+
+config_dir := ".config"
+
 style:
 	cd frontend && oxfmt
 	cd backend && cargo fmt
+	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}}
+	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}}
 
 style-check:
 	cd frontend && oxfmt --check
 	cd backend && cargo fmt --check
+	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}} --check
+	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}} --check
 
 lint:
 	cd frontend && oxlint --deny-warnings
 	cd backend && cargo clippy --all-targets -- -D warnings
+	pylint --rcfile {{config_dir}}/pylintrc {{python_dirs}}
+	ruff check --config {{config_dir}}/ruff.toml {{python_dirs}}
+	mypy --config-file {{config_dir}}/mypy.ini {{python_dirs}}
 
 spell-check:
 	codespell
 
 test:
 	cd backend && cargo test
+
+# Runs the backend system tests, see tests/README.md.
+system-test *args:
+	python3 -m tests.test {{args}}
+
+# Copies Moblin settings that connect its remote control streamer to the system tests.
+system-test-generate-device-settings-clipboard:
+	python3 -m tests.generate_device_settings
+
+system-test-generate-device-settings-stdout:
+	python3 -m tests.generate_device_settings --force-stdout
 
 npm-latest-args := "python -c \"import json,sys; print(' '.join(f'{d}@latest' for d in json.load(open('package.json'))[sys.argv[1]]))\""
 

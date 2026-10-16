@@ -1,1 +1,10 @@
 websockets>=14
+systest
+requests
+playwright
+xdg-base-dirs
+pyperclip
+ruff
+pylint
+isort
+mypy

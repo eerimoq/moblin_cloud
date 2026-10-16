@@ -1,0 +1,41 @@
+[general]
+# The address of this machine, where a real Moblin device reaches the tester and the backend.
+tester-ip-address = "macpro.home"
+# The port the backend under test listens on, on all interfaces.
+backend-port = 8090
+# The port Moblin's remote control streamer connects to. The tester relays the connection to
+# the backend when Moblin is given a streamer URL, and acts as Moblin's assistant otherwise.
+remote-control-port = 2345
+# Show the browser used for PayPal and Twitch. It is always shown with --interactive.
+headless-browser = true
+# Accept live posts without App Attest. Set to false to test that only Moblin can post, with
+# a Moblin debug build whose MOBLIN_WEBSITE_API_URL is http://<tester-ip-address>:<backend-port>.
+allow-unattested = true
+# app-attest-environment = "development"
+# app-id = "L82N7LD4N5.com.eerimoq.Mobs"
+
+# A real Moblin device, used with --device iphone16pro instead of the fake Moblin.
+[device.iphone16pro]
+moblin-ip-address = "iphone16pro.home"
+# "apple-music" if Moblin may use Apple Music, for song requests.
+capabilities = ["apple-music"]
+
+# Optional. A Twitch application, for profile lookups, the live status and real sign in. Its
+# OAuth redirect URL must be http://localhost:<backend-port>/auth/twitch/callback.
+# [twitch]
+# client-id = "..."
+# client-secret = "..."
+# "fake" signs in as made-up users without Twitch, "real" in the browser with a Twitch account.
+# sign-in = "fake"
+# live-channel = "eerimoq"
+
+# Optional. A PayPal sandbox REST app of a partner, plus another business sandbox account to
+# connect as the streamer, from https://developer.paypal.com/dashboard/accounts.
+# [paypal]
+# client-id = "..."
+# client-secret = "..."
+# partner-id = "..."
+# attribution-id = "..."
+# webhook-id = "..."
+# seller-email = "seller@business.example.com"
+# seller-password = "..."
