@@ -10,6 +10,7 @@ import {
   Hero,
   inputClass,
   SaveButton,
+  Spinner,
   Value,
 } from "../components/PageParts";
 import {
@@ -940,7 +941,7 @@ function SignedIn(props: {
       when={props.account.streamerUrl && props.account.settings ? props.account : null}
       keyed
       fallback={
-        <Show when={failed()}>
+        <Show when={failed()} fallback={<Spinner />}>
           <div class="flex flex-wrap items-center gap-4">
             <p role="status" class="text-amber">
               Could not create your page.
@@ -1012,7 +1013,7 @@ export default function Dashboard() {
         </p>
       </Hero>
       <Band>
-        <Show when={!loading()}>
+        <Show when={!loading()} fallback={<Spinner />}>
           <Show when={session()} keyed fallback={<TwitchSignIn failed={signInFailed()} />}>
             {(current) => (
               <SignedIn

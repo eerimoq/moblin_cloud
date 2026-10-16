@@ -14,6 +14,17 @@ export const ghostButtonClass =
 export const cardClass =
   "flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8";
 
+export function Spinner() {
+  return (
+    <div role="status" aria-label="Loading" class="flex justify-center py-12">
+      <span
+        class="size-10 animate-spin rounded-full border-4 border-line border-t-leaf"
+        style={{ "animation-delay": `-${performance.now() % 1000}ms` }}
+      />
+    </div>
+  );
+}
+
 export function SaveButton(props: { saving: boolean; saved: boolean; disabled: boolean }) {
   return (
     <button type="submit" class={buttonClass} disabled={props.disabled || props.saving}>
