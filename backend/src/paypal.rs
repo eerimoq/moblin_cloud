@@ -203,7 +203,10 @@ impl PayPal {
                 }],
                 "products": ["EXPRESS_CHECKOUT"],
                 "legal_consents": [{"type": "SHARE_DATA_CONSENT", "granted": true}],
-                "partner_config_override": {"return_url": return_url},
+                "partner_config_override": {
+                    "return_url": return_url,
+                    "return_url_description": "Return to Moblin",
+                },
             }))
             .send()
             .await
