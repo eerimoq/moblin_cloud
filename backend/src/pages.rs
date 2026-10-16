@@ -11,12 +11,6 @@ use crate::json_file;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
-    #[serde(
-        default,
-        rename = "songsDisabled",
-        skip_serializing_if = "std::ops::Not::not"
-    )]
-    pub songs_disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,7 +80,6 @@ impl Settings {
             currency => currency.filter(|currency| currency != DEFAULT_CURRENCY),
         };
         let paywall = match self.paywall {
-            Some(_) if self.songs_disabled => None,
             Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
             None => None,
         };
@@ -105,7 +98,6 @@ impl Settings {
             accent => accent.filter(|accent| accent != ACCENTS[0]),
         };
         Ok(Self {
-            songs_disabled: self.songs_disabled,
             currency,
             paywall,
             tips,
@@ -422,24 +414,6 @@ mod tests {
                 Err(SettingsError::InvalidPage)
             );
         }
-    }
-
-    #[test]
-    fn disabled_songs_have_no_paywall() {
-        let pages = Pages::load(None).unwrap();
-        let settings = Settings {
-            songs_disabled: true,
-            paywall: Some(Paywall { price: 250 }),
-            ..Settings::default()
-        };
-        assert_eq!(
-            pages.set("a", settings),
-            Ok(Settings {
-                songs_disabled: true,
-                ..Settings::default()
-            })
-        );
-        assert!(pages.get("a").songs_disabled);
     }
 
     #[test]

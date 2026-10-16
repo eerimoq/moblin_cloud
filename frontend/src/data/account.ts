@@ -82,15 +82,13 @@ export const checkPayPal = (session: string) =>
 export const disconnectPayPal = (session: string) =>
   call<Settings>(session, "/account/paypal/disconnect", { method: "POST" });
 
-export type SettingsChanges = Page &
-  Pick<Settings, "songs" | "currency" | "paywall" | "tips" | "spin">;
+export type SettingsChanges = Page & Pick<Settings, "currency" | "paywall" | "tips" | "spin">;
 
 export const saveAccountSettings = (session: string, settings: SettingsChanges) =>
   call<Settings>(
     session,
     "/account/settings",
     post({
-      songs: settings.songs,
       currency: settings.currency,
       paywall: settings.paywall,
       tips: settings.tips,

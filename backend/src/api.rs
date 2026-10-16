@@ -78,10 +78,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/sign-out", post(handle_account_sign_out))
         .route("/remote-control/{id}/paywall", get(handle_paywall))
         .route("/remote-control/{id}/profile", get(handle_profile))
-        .route(
-            "/remote-control/{id}/music",
-            get(handle_music_status).post(handle_music_add),
-        )
+        .route("/remote-control/{id}/music", get(handle_music_status))
         .route("/remote-control/{id}/music/orders", post(handle_order))
         .route(
             "/remote-control/{id}/music/orders/{order_id}/capture",
@@ -210,7 +207,6 @@ async fn handle_remote_control_streamer(
 struct SettingsResponse {
     id: String,
     connected: bool,
-    songs: bool,
     currency: String,
     paywall: Option<Paywall>,
     tips: Option<Tips>,
@@ -232,7 +228,6 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
         id,
-        songs: !settings.songs_disabled,
         currency: settings.currency().to_string(),
         paywall: settings.paywall,
         tips: settings.tips,
@@ -252,8 +247,6 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
 
 #[derive(Deserialize)]
 struct SettingsRequest {
-    #[serde(default = "songs_by_default")]
-    songs: bool,
     #[serde(default)]
     currency: Option<String>,
     paywall: Option<Paywall>,
@@ -267,10 +260,6 @@ struct SettingsRequest {
     message: Option<String>,
     #[serde(default)]
     accent: Option<String>,
-}
-
-fn songs_by_default() -> bool {
-    true
 }
 
 fn merchant_of(api: &Api, id: &str) -> Option<String> {
@@ -311,7 +300,6 @@ async fn update_settings(
     }
     let paid = currency != current.currency();
     let paywall = match request.paywall {
-        Some(_) if !request.songs => None,
         Some(paywall) => {
             let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
             if paid || current.paywall.as_ref() != Some(&paywall) {
@@ -346,7 +334,6 @@ async fn update_settings(
         .set(
             &id,
             Settings {
-                songs_disabled: !request.songs,
                 currency: Some(currency),
                 paywall,
                 tips,
@@ -375,8 +362,7 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set songs {}, currency {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
-        !settings.songs_disabled,
+        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
         settings.currency(),
         settings.paywall,
         settings.tips,
@@ -831,7 +817,6 @@ struct ProfileResponse {
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
-    songs: bool,
 }
 
 async fn handle_profile(
@@ -847,7 +832,6 @@ async fn handle_profile(
         title: settings.title,
         message: settings.message,
         accent: settings.accent,
-        songs: !settings.songs_disabled,
     }))
 }
 
@@ -979,10 +963,6 @@ fn music_error(error: RequestError) -> Failure {
             StatusCode::NOT_FOUND,
             "The streamer is offline right now. Try again when they are live.",
         ),
-        RequestError::TooFast => failure(
-            StatusCode::TOO_MANY_REQUESTS,
-            "A song was just requested. Try again in a few seconds.",
-        ),
         RequestError::Timeout => failure(
             StatusCode::GATEWAY_TIMEOUT,
             "The streamer's Moblin did not answer. It may need an update.",
@@ -1077,40 +1057,6 @@ fn queue(
     )
 }
 
-async fn handle_music_add(
-    State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
-    Json(request): Json<SongRequest>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let settings = api.pages.get(&id);
-    if settings.songs_disabled {
-        return Err(songs_disabled());
-    }
-    if settings.paywall.is_some() {
-        return Err(failure(
-            StatusCode::PAYMENT_REQUIRED,
-            "The streamer now asks for a payment. Try again.",
-        ));
-    }
-    let song_and_user = song_and_user(request)?;
-    api.remote_control
-        .limit_requests(&id)
-        .map_err(music_error)?;
-    let song = requested_song(&api, &id, song_and_user).await?;
-    let request_id = api.remote_control.new_request_id().ok_or(failure(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Something went wrong. Try again.",
-    ))?;
-    Ok(queue(&api, id, request_id, song))
-}
-
-fn songs_disabled() -> Failure {
-    failure(
-        StatusCode::BAD_REQUEST,
-        "The streamer no longer takes song requests. Reload the page.",
-    )
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OrderResponse {
@@ -1123,13 +1069,10 @@ async fn handle_order(
     Json(request): Json<SongRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
     let settings = api.pages.get(&id);
-    if settings.songs_disabled {
-        return Err(songs_disabled());
-    }
     let currency = settings.currency().to_string();
     let paywall = settings.paywall.ok_or(failure(
         StatusCode::BAD_REQUEST,
-        "The streamer no longer asks for a payment. Reload the page.",
+        "The streamer no longer takes song requests. Reload the page.",
     ))?;
     let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
     let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
@@ -1984,15 +1927,7 @@ mod tests {
                 "environment": "production",
             }})
         );
-        let music_url = format!("http://{address}/remote-control/{id}/music");
-        let response = client
-            .post(&music_url)
-            .json(&json!({"song": LINK}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
-        let orders_url = format!("{music_url}/orders");
+        let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
         let response = client
             .post(&orders_url)
             .json(&json!({"song": "Song", "user": "Viewer"}))
@@ -2000,6 +1935,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Paste the Apple Music share link of a song."
+        );
         let response = client
             .post(&orders_url)
             .json(&json!({"song": LINK, "user": "Viewer"}))
@@ -2503,69 +2442,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn songs_are_added_through_the_streamer() {
+    async fn music_status_comes_from_the_streamer() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (_, key, id) = streamer(&address, &api).await;
-        let key = key.as_str();
         let music_url = format!("http://{address}/remote-control/{id}/music");
         let response = client.get(&music_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let response = client
-            .post(&music_url)
-            .json(&json!({"song": LINK}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let mut socket = connect(&address, key).await;
+        let mut socket = connect(&address, &key).await;
         socket
             .send(Message::text(json!({"ping": {}}).to_string()))
             .await
             .unwrap();
         assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
-        let response = client
-            .post(&music_url)
-            .json(&json!({"song": "another"}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(
-            response.text().await.unwrap(),
-            "Paste the Apple Music share link of a song."
-        );
-        assert_eq!(request_song(&mut socket, &music_url).await, json!({}));
-        let response = client
-            .post(&music_url)
-            .json(&json!({"song": LINK}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let status = tokio::spawn({
+            let client = client.clone();
+            let music_url = music_url.clone();
+            async move {
+                client
+                    .get(music_url)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()
+            }
+        });
         let request = receive(&mut socket).await;
-        let add = &request["request"]["data"]["music"]["command"]["add"];
-        assert_eq!(add["title"], LINK);
-        assert_eq!(add["user"], "Viewer");
-        let request_id = add["requestId"].as_str().unwrap().to_string();
-        assert_eq!(request_id.len(), 22);
+        assert_eq!(
+            request["request"]["data"],
+            json!({"music": {"command": {"status": {}}}})
+        );
         answer(
             &mut socket,
             &request,
             music(json!([{"id": "q1", "title": "Song", "duration": 213, "user": "Viewer"}])),
         )
         .await;
-        wait_until_added(&api).await;
-        let cached: Value = client
-            .get(&music_url)
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
         assert_eq!(
-            cached["songs"],
+            status.await.unwrap()["songs"],
             json!([{"id": "q1", "title": "Song", "artist": null, "duration": 213, "user": "Viewer"}])
         );
         socket.close(None).await.unwrap();
@@ -2575,54 +2491,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_songs_cant_be_requested() {
+    async fn songs_need_a_paywall() {
         let (address, api) = start_api(None).await;
-        let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (_, key, id) = streamer(&address, &api).await;
         let _socket = connect(&address, &key).await;
-        let settings: Value = client
-            .post(format!("http://{address}/account/settings"))
-            .bearer_auth(&session)
-            .json(&json!({"songs": false, "paywall": null}))
+        let response = reqwest::Client::new()
+            .post(format!("http://{address}/remote-control/{id}/music/orders"))
+            .json(&json!({"song": LINK}))
             .send()
             .await
-            .unwrap()
-            .json()
-            .await
             .unwrap();
-        assert_eq!(settings["songs"], false);
-        let profile: Value = client
-            .get(format!("http://{address}/remote-control/{id}/profile"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(profile["songs"], false);
-        for path in ["music", "music/orders"] {
-            let response = client
-                .post(format!("http://{address}/remote-control/{id}/{path}"))
-                .json(&json!({"song": LINK}))
-                .send()
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-            assert_eq!(
-                response.text().await.unwrap(),
-                "The streamer no longer takes song requests. Reload the page."
-            );
-        }
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer no longer takes song requests. Reload the page."
+        );
     }
 
     #[tokio::test]
     async fn songs_not_found_are_dropped() {
-        let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&address, &api).await;
-        let key = key.as_str();
-        let music_url = format!("http://{address}/remote-control/{id}/music");
-        let mut socket = connect(&address, key).await;
-        assert_eq!(request_song(&mut socket, &music_url).await, json!({}));
+        let (address, api, _) = start_paid().await;
+        let (key, id) = paid_streamer(&address, &api).await;
+        let orders_url = format!("http://{address}/remote-control/{id}/music/orders");
+        let mut socket = connect(&address, &key).await;
+        assert_eq!(
+            request_song(&mut socket, &orders_url).await,
+            json!({"orderId": "ORDER1"})
+        );
+        let response = reqwest::Client::new()
+            .post(format!("{orders_url}/ORDER1/capture"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
         let request = receive(&mut socket).await;
         let mut status = music(json!([]));
         status["music"]["status"]["songNotFound"] = json!(true);
@@ -2866,7 +2767,6 @@ mod tests {
                 "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
-                "songs": true,
             })
         );
         let response = client

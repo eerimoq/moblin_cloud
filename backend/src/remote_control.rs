@@ -183,7 +183,6 @@ pub struct Song {
 #[derive(Debug, PartialEq)]
 pub enum RequestError {
     Offline,
-    TooFast,
     Timeout,
     Failed,
 }
@@ -193,7 +192,6 @@ struct Session {
     sender: mpsc::UnboundedSender<MessageToStreamer>,
     next_request_id: u64,
     pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
-    last_request: Option<Instant>,
     status: Option<(Instant, MusicStatus)>,
     wheel: Option<Wheel>,
 }
@@ -270,19 +268,6 @@ impl Streamers {
 
     pub fn new_request_id(&self) -> Option<String> {
         Some(BASE64_URL_SAFE_NO_PAD.encode(self.random_bytes::<16>()?))
-    }
-
-    pub fn limit_requests(&self, id: &str) -> Result<(), RequestError> {
-        let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions.by_id.get_mut(id).ok_or(RequestError::Offline)?;
-        if session
-            .last_request
-            .is_some_and(|last_request| last_request.elapsed() < Duration::from_secs(3))
-        {
-            return Err(RequestError::TooFast);
-        }
-        session.last_request = Some(Instant::now());
-        Ok(())
     }
 
     pub fn disconnect(&self, id: &str) {
@@ -421,7 +406,6 @@ impl Streamers {
                 sender,
                 next_request_id: 0,
                 pending: HashMap::new(),
-                last_request: None,
                 status: None,
                 wheel: None,
             },

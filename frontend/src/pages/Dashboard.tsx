@@ -433,15 +433,12 @@ function YourPage(props: {
 }
 
 function SongSettings(props: {
-  songs: boolean;
   paywall: Paywall | null;
   currency: string;
-  payable: boolean;
   busy: boolean;
-  onSave: (changes: { songs: boolean; paywall: Paywall | null }) => Promise<void>;
+  onSave: (changes: { paywall: Paywall | null }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(props.songs);
-  const [required, setRequired] = createSignal(props.paywall !== null);
+  const [enabled, setEnabled] = createSignal(props.paywall !== null);
   const [price, setPrice] = createSignal(
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
   );
@@ -460,8 +457,7 @@ function SongSettings(props: {
     setSaving(true);
     try {
       await props.onSave({
-        songs: enabled(),
-        paywall: enabled() && required() ? { price: hundredths(price()) } : null,
+        paywall: enabled() ? { price: hundredths(price()) } : null,
       });
       flashSaved();
     } catch (error) {
@@ -476,8 +472,7 @@ function SongSettings(props: {
     <form class={cardClass} onSubmit={submit}>
       <h2 class="text-[23px] font-semibold">Song requests</h2>
       <p class="text-ink-2">
-        Let viewers add songs from Apple Music to the queue of Moblin's music player, for free or
-        with a tip.
+        Let viewers add songs from Apple Music to the queue of Moblin's music player with a tip.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -488,18 +483,7 @@ function SongSettings(props: {
         />
         Viewers can request songs
       </label>
-      <Show when={enabled() && (props.payable || props.paywall)}>
-        <label class="flex items-center gap-3 text-ink-2">
-          <input
-            type="checkbox"
-            checked={required()}
-            onChange={(event) => setRequired(event.currentTarget.checked)}
-            class="size-5 accent-moss"
-          />
-          Viewers tip to add songs
-        </label>
-      </Show>
-      <Show when={enabled() && required() && (props.payable || props.paywall)}>
+      <Show when={enabled()}>
         <label class="flex flex-col gap-2">
           <span class="text-[15px] font-semibold text-ink-2">Tip per song ({props.currency})</span>
           <MoneyInput value={price()} onValue={setPrice} required />
@@ -890,14 +874,14 @@ function Admin(props: {
           onSave={save}
         />
       </Show>
-      <SongSettings
-        songs={settings().songs}
-        paywall={settings().paywall}
-        currency={settings().currency}
-        payable={settings().merchantId !== null}
-        busy={busy()}
-        onSave={save}
-      />
+      <Show when={settings().merchantId || settings().paywall}>
+        <SongSettings
+          paywall={settings().paywall}
+          currency={settings().currency}
+          busy={busy()}
+          onSave={save}
+        />
+      </Show>
       <Show when={settings().paypal}>
         <PayPalAccount
           session={props.session}

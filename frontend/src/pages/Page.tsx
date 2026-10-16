@@ -16,7 +16,7 @@ import {
 } from "solid-js";
 import { asset } from "../asset";
 import Icon from "../components/Icon";
-import { buttonClass, cardClass, inputClass } from "../components/PageParts";
+import { cardClass, inputClass } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
   BackendError,
@@ -30,7 +30,6 @@ import {
   orderSong,
   orderSpin,
   orderTip,
-  requestSong,
   streamerPaywall,
   streamerProfile,
   streamerSpin,
@@ -847,14 +846,13 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     ...(wheel() ? (["spin"] as const) : []),
     ...(songs() ? (["songs"] as const) : []),
   ];
-  const songs = () => profile()?.songs !== false;
+  const songs = () => payable() !== null;
   const shown = () => {
     const current = section();
     return current && sections().includes(current) ? current : sections()[0];
   };
 
   const ways = (): Way[] => {
-    const songPrice = paywall();
     return [
       {
         section: "tip",
@@ -874,7 +872,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         section: "songs",
         icon: "music",
         title: "Request a song",
-        text: songPrice ? "Your tip puts a song in the queue." : "Add a song to the queue.",
+        text: "Your tip puts a song in the queue.",
         enabled: songs(),
       },
     ];
@@ -984,9 +982,11 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
   };
 
-  const requested = (paid: boolean) => {
-    const text = "Your song will be added to the queue in a moment.";
-    setResult({ ok: true, text: paid ? `Thanks for the tip! ${text}` : text });
+  const requested = () => {
+    setResult({
+      ok: true,
+      text: "Thanks for the tip! Your song will be added to the queue in a moment.",
+    });
     setSong("");
     setTimeout(refresh, 3_000);
   };
@@ -1026,7 +1026,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       setResult({ ok: true, text: "Payment approved. Completing it…" });
       try {
         await captureSong(id() ?? "", data.orderId);
-        requested(true);
+        requested();
       } catch (error) {
         showError(error);
       } finally {
@@ -1075,32 +1075,15 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         .catch(() => {})
         .finally(() => setStyled(true));
     }
-    void refreshPaywall();
+    void refreshPaywall().then(refresh);
     void refreshTips();
     void refreshSpin();
-    void refresh();
     const timer = setInterval(() => {
       void refresh();
       void refreshSpin();
     }, 30_000);
     onCleanup(() => clearInterval(timer));
   });
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (paywall() || !start()) {
-      return;
-    }
-    setBusy(true);
-    try {
-      await requestSong(id() ?? "", song().trim(), name().trim());
-      requested(false);
-    } catch (error) {
-      showError(error);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <div data-accent={profile()?.accent ?? undefined} class="isolate flex min-h-svh flex-col">
@@ -1126,7 +1109,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
             <form
               ref={(element) => (form = element)}
               class={`${cardClass} ${shown() === "songs" ? "" : "hidden"}`}
-              onSubmit={submit}
+              onSubmit={(event) => event.preventDefault()}
             >
               <p class="text-ink-2">
                 Paste the Apple Music link of a song and it goes straight into the queue.
@@ -1175,20 +1158,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                 />
               </label>
               <div class="flex flex-wrap items-center gap-4">
-                <Show
-                  when={payable()}
-                  keyed
-                  fallback={
-                    <button
-                      type="submit"
-                      class={buttonClass}
-                      disabled={busy() || typeof status() === "string" || paywall() !== null}
-                    >
-                      <Icon name="music" class="size-5" />
-                      {busy() ? "Adding…" : "Add to queue"}
-                    </button>
-                  }
-                >
+                <Show when={payable()} keyed>
                   {(current) => (
                     <div class="flex w-full max-w-sm flex-col gap-3">
                       <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
