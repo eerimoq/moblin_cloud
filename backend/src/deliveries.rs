@@ -155,7 +155,7 @@ impl Deliveries {
                     "{:?} in request {} was not found by remote control streamer {}",
                     delivery.item, delivery.request_id, delivery.streamer
                 ),
-                Err(RequestError::Offline) => return,
+                Err(RequestError::Offline | RequestError::Timeout) => return,
                 Err(error) => {
                     info!(
                         "delivering request {} to remote control streamer {} failed: {error:?}",

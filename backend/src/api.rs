@@ -1163,7 +1163,7 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
             ),
             CaptureError::Pending if kind == "tip" => failure(
                 StatusCode::PAYMENT_REQUIRED,
-                "PayPal is still reviewing the payment. Your tip reaches the streamer once PayPal approves it.",
+                "PayPal is still reviewing the payment, so the tip was not shown. If PayPal approves it, the money still reaches the streamer.",
             ),
             CaptureError::Pending => failure(
                 StatusCode::PAYMENT_REQUIRED,
