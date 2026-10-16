@@ -818,11 +818,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
 
   const changeSection = (next: Section) => {
     setSection(next);
-    history.replaceState(
-      null,
-      "",
-      location.pathname + location.search + (next === sections()[0] ? "" : `#${next}`),
-    );
+    history.replaceState(null, "", `${location.pathname}${location.search}#${next}`);
   };
   let form: HTMLFormElement | undefined;
   const payable = createMemo(
