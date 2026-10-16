@@ -21,7 +21,9 @@ class PayPalSandbox:
     """Talks to the PayPal sandbox as the partner, to pay orders and check what the backend did with them."""
 
     def __init__(self, config: Config):
-        self._paypal = config.paypal()
+        paypal = config.paypal()
+        assert paypal is not None
+        self._paypal = paypal
         self._token: str | None = None
 
     def order(self, order_id: str, merchant_id: str) -> dict:

@@ -59,7 +59,9 @@ class MoblinWheel(RemoteControlTestCase):
         self.moblin.connect_to_backend(self.dashboard.streamer_url(), WHEEL)
         expected = {"options": [{"text": option["text"], "weight": option["weight"]} for option in WHEEL]}
         self.wait_until(lambda: self.viewer.spin()["wheel"] == expected, "the wheel to be on the page")
-        self.assert_equal(self.moblin.wheel()["options"][1]["text"], "Spin again")
+        wheel = self.moblin.wheel()
+        assert wheel is not None
+        self.assert_equal(wheel["options"][1]["text"], "Spin again")
         self.moblin.connect_to_backend(self.dashboard.streamer_url())
         self.wait_until(lambda: self.viewer.spin()["wheel"] is None, "the wheel to be gone")
 

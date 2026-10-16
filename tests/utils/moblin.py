@@ -217,7 +217,7 @@ class Moblin:
         if device_name is None:
             self.capabilities = list(Capability)
         else:
-            self.capabilities = config.capabilities(device_name)
+            self.capabilities = [Capability(capability) for capability in config.capabilities(device_name)]
         self._fake: FakeMoblin | None = None
         self._port = config.remote_control_port()
         self._tester_ip_address = config.tester_ip_address()
@@ -460,7 +460,7 @@ def wheel_option(text: str, weight: int = 1) -> dict:
 
 
 def settings_for(remote_control_url: str, wheel: list[dict] | None) -> dict:
-    remote_control = {
+    remote_control: dict = {
         "server": {
             "enabled": True,
             "url": remote_control_url,
@@ -471,7 +471,7 @@ def settings_for(remote_control_url: str, wheel: list[dict] | None) -> dict:
         "hasMigratedAssistant": True,
     }
     scene = {"name": "Front", "cameraPosition": "Front", "enabled": True}
-    settings = {
+    settings: dict = {
         "scenes": [scene],
         "remoteControl": remote_control,
         "verboseStatuses": True,

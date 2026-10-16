@@ -1,4 +1,5 @@
 import argparse
+import functools
 import json
 import re
 import subprocess
@@ -90,7 +91,7 @@ def read_string(source, i):
 
 
 def tokenize(source):
-    tokens = []
+    tokens: list = []
     i = 0
     n = len(source)
     while i < n:
@@ -262,8 +263,8 @@ class Struct:
 
 def parse_declarations(tokens):
     structs = {}
-    classes = {}
-    enums = {}
+    classes: dict = {}
+    enums: dict = {}
     i = 0
     while i < len(tokens):
         token = tokens[i]
@@ -635,9 +636,7 @@ class Extractor:
             call_end = matching(branch, 1)
             scope = self.argument_scope(split_arguments(branch[2:call_end]), context)
 
-            def build(child, child_section, view=view, scope=scope):
-                self.walk(view, scope, child, child_section, context["stack"] + [view])
-
+            build = functools.partial(self.walk, view, scope, stack=context["stack"] + [view])
             child = self.make_page(title, (page["id"], title), page, build, extend=True)
             add_item(section, {"type": "page", "label": title, "page": child["id"]})
         return end + 1
@@ -724,7 +723,7 @@ class Extractor:
             add_item(section, {"type": "page", "label": title, "page": child["id"]})
             return j
         arguments = split_arguments(destination[k + 2 : call_end])
-        setting = self.title_setting(view, arguments, context)
+        setting = self.title_setting(view, arguments)
         if setting is not None:
             setting["label"] = title or setting["label"]
             add_item(section, setting)
@@ -811,7 +810,7 @@ class Extractor:
             k += 1
         return None
 
-    def title_setting(self, view, arguments, context):
+    def title_setting(self, view, arguments):
         names = {name for name, _ in arguments}
         if "title" not in names:
             return None
@@ -838,7 +837,7 @@ class Extractor:
         end = matching(tokens, i + 1)
         arguments = split_arguments(tokens[i + 2 : end])
         j = end + 1
-        setting = self.title_setting(view, arguments, context)
+        setting = self.title_setting(view, arguments)
         if setting is not None:
             add_item(section, setting)
             return j, section
@@ -909,7 +908,7 @@ class Extractor:
         prop = self.resolve_binding(binding, context["scope"]) if binding else None
         options = None
         if kind == "Picker":
-            options = self.picker_options(content, prop)
+            options = self.picker_options(content)
             if options:
                 item["options"] = options
         if prop and prop[1]:
@@ -925,7 +924,7 @@ class Extractor:
             return None
         return clean(enum["strings"].get(case) or enum["raw"].get(case))
 
-    def picker_options(self, content, prop):
+    def picker_options(self, content):
         for k in range(len(content) - 3):
             if is_ident(content, k, "ForEach") and is_punct(content, k + 1, "("):
                 end = matching(content, k + 1)
@@ -1062,7 +1061,7 @@ def merge_sections(page):
             seen.add(key)
             unique.append(section)
     page["sections"] = unique
-    merged = []
+    merged: list = []
     for section in page["sections"]:
         if (
             merged

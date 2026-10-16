@@ -45,7 +45,7 @@ class TestCase(systest.TestCase):
     def sign_in(self, login: str = "streamer") -> Dashboard:
         return self.context.sign_in(login)
 
-    def assert_backend_error(self, status: int, call: Callable[[], object], text: str | None = None) -> str:
+    def assert_backend_error(self, status: int, call: Callable[..., object], text: str | None = None) -> str:
         try:
             call()
         except BackendError as error:

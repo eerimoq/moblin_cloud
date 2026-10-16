@@ -120,6 +120,7 @@ class TipPaid(PaymentTestCase):
             self.connect_moblin()
         self.dashboard.save_settings(currency="EUR", tips=TIPS)
         tips = self.viewer.tips()
+        assert tips is not None
         self.assert_equal(tips["currency"], "EUR")
         order_id = self.viewer.order_tip(700, "  Viewer  ", "  Great stream!  ")
         self.pay(order_id)
@@ -312,7 +313,9 @@ class SongRequestPaid(SongRequestTestCase):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
         self.connect_moblin()
         self.moblin.clear_music()
-        self.assert_equal(self.viewer.paywall()["price"], 150)
+        paywall = self.viewer.paywall()
+        assert paywall is not None
+        self.assert_equal(paywall["price"], 150)
         order_id = self.viewer.order_song(SONG, "Viewer")
         self.assert_equal(self.moblin.backend_requests("find")[-1].body, {"title": SONG_LINK})
         self.pay(order_id)

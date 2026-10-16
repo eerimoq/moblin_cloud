@@ -86,6 +86,7 @@ async def run(key):
         try:
             async for text in websocket:
                 message = json.loads(text)
+                reply: dict
                 print("<-", text)
                 if "hello" in message:
                     reply = {"identify": {"streamerId": "FAKE", "authentication": "fake"}}

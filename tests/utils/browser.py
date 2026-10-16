@@ -45,7 +45,7 @@ class Browser:
         outcome: list = []
         self._jobs.put((job, done, outcome))
         done.wait()
-        result, error = outcome
+        result, error = outcome[0]
         if error is not None:
             raise error
         return result
@@ -61,10 +61,10 @@ class Browser:
                     job, done, outcome = item
                     page = context.new_page()
                     try:
-                        outcome += [job(page), None]
+                        outcome.append((job(page), None))
                     except Exception as error:
                         self._save_screenshot(page)
-                        outcome += [None, error]
+                        outcome.append((None, error))
                     finally:
                         page.close()
                         done.set()

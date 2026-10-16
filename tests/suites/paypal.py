@@ -64,7 +64,7 @@ class PaidSettings(PayPalTestCase):
             settings["spin"]["options"], [{"spins": 1, "price": 200}, {"spins": 3, "price": 500}]
         )
         viewer = self.website.viewer(settings["id"])
-        client_id = self.context.config.paypal()["client-id"]
+        client_id = (self.context.config.paypal() or {})["client-id"]
         self.assert_equal(
             viewer.paywall(),
             {
@@ -131,7 +131,9 @@ class DisconnectPayPal(PayPalTestCase):
         self.assert_false(settings["paypalPending"])
         viewer = self.website.viewer(page_id)
         self.assert_equal(viewer.tips(), None)
-        self.assert_is_none(viewer.paywall()["merchantId"])
+        paywall = viewer.paywall()
+        assert paywall is not None
+        self.assert_is_none(paywall["merchantId"])
         self.assert_backend_error(
             503, lambda: viewer.order_tip(100), "Payments are unavailable right now. Try again later."
         )
@@ -146,7 +148,7 @@ class WebhookWithBadSignature(PayPalTestCase):
     """Refuse PayPal webhooks whose signature PayPal does not verify."""
 
     def run(self):
-        event = {
+        event: dict = {
             "id": "WH-TEST",
             "event_type": "MERCHANT.PARTNER-CONSENT.REVOKED",
             "resource": {"merchant_id": "ABCDEFGHIJKLM"},
@@ -163,7 +165,7 @@ class WebhookWithBadSignature(PayPalTestCase):
             },
             timeout=60,
         )
-        if "webhook-id" in self.context.config.paypal():
+        if "webhook-id" in (self.context.config.paypal() or {}):
             self.assert_equal(response.status_code, 400)
         else:
             self.assert_equal(response.status_code, 503)

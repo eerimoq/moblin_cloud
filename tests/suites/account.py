@@ -21,14 +21,15 @@ def unpadded_base64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
-def session_issued_at(session: str, issued: int) -> str:
+def session_issued_at(session: str | None, issued: int) -> str:
     """The same session as if it was issued at another time, signed with the backend's session secret."""
-    payload = session.split(".")[0]
-    payload = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode()
+    assert session is not None
+    encoded = session.split(".")[0]
+    payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
     account, generation, _ = payload.rsplit(":", 2)
-    payload = f"{account}:{generation}:{issued}".encode()
-    tag = hmac.new(SESSION_SECRET.encode(), payload, hashlib.sha256).digest()
-    return f"{unpadded_base64url(payload)}.{unpadded_base64url(tag)}"
+    signed = f"{account}:{generation}:{issued}".encode()
+    tag = hmac.new(SESSION_SECRET.encode(), signed, hashlib.sha256).digest()
+    return f"{unpadded_base64url(signed)}.{unpadded_base64url(tag)}"
 
 
 def streamer_connects(url: str) -> bool:

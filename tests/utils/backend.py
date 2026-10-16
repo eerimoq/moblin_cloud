@@ -131,8 +131,8 @@ class Backend:
             arguments.append("--allow-unattested")
         else:
             arguments += ["--app-attest-environment", self.config.app_attest_environment()]
-            if self.config.app_id() is not None:
-                arguments += ["--app-id", self.config.app_id()]
+            if (app_id := self.config.app_id()) is not None:
+                arguments += ["--app-id", app_id]
         if self.config.twitch_sign_in() == "fake":
             arguments.append("--fake-twitch-sign-in")
         twitch = self.config.twitch()

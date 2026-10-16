@@ -20,4 +20,8 @@ disable =
     line-too-long,
     consider-using-with,
     no-else-return,
+    too-many-branches,
+    too-many-statements,
+    too-many-boolean-expressions,
+    attribute-defined-outside-init,
     fixme

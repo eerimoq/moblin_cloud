@@ -8,8 +8,8 @@ from ..utils.test_case import TestCase
 from ..utils.utils import manual_confirmation
 
 
-def channels(*channels: tuple[str, str]) -> list[dict]:
-    return [{"platform": platform, "name": name} for platform, name in channels]
+def channels(*pairs: tuple[str, str]) -> list[dict]:
+    return [{"platform": platform, "name": name} for platform, name in pairs]
 
 
 def unique_name(prefix: str) -> str:
@@ -119,7 +119,7 @@ class InvalidLivePost(StreamersTestCase):
 
     def run(self):
         self.skip_if_attested()
-        for body in [
+        bodies: list[dict] = [
             {"channels": []},
             {"channels": channels(*[("twitch", f"too_many_{number}") for number in range(6)])},
             {"channels": channels(("twitch", "bad name"))},
@@ -127,7 +127,8 @@ class InvalidLivePost(StreamersTestCase):
             {"channels": channels(("twitch", ""))},
             {"channels": channels(("facebook", "someone"))},
             {"channels": "twitch"},
-        ]:
+        ]
+        for body in bodies:
             response = self.website.went_live(body)
             self.assert_equal(response.status_code, 400, f"{body}: {response.text}")
 
@@ -145,7 +146,9 @@ class TwitchProfileLookedUp(StreamersTestCase):
             return streamer is not None and streamer["channels"][0]["displayName"] is not None
 
         self.wait_until(looked_up, "the Twitch profile to be looked up")
-        channel = self.listed("eerimoq")["channels"][0]
+        streamer = self.listed("eerimoq")
+        assert streamer is not None
+        channel = streamer["channels"][0]
         self.assert_equal(channel["displayName"].lower(), "eerimoq")
         self.assert_true(channel["avatar"].startswith("https://"))
         self.assert_in(channel["live"], [True, False])
