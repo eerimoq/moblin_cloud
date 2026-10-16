@@ -15,6 +15,7 @@ import {
 import {
   checkPayPal,
   connectPayPal,
+  disconnectPayPal,
   fetchAccount,
   createStreamer,
   newStreamerUrl,
@@ -162,6 +163,26 @@ function PayPalAccount(props: {
     }
   };
 
+  const disconnect = async () => {
+    if (
+      !confirm(
+        "Viewers can't pay for songs, tips or wheel spins until you connect a PayPal account again.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setSignInAgain(false);
+    setWorking(true);
+    try {
+      props.onSettings(await disconnectPayPal(props.session));
+    } catch (error) {
+      failed(error);
+    } finally {
+      setWorking(false);
+    }
+  };
+
   onMount(() => {
     const search = new URLSearchParams(location.search);
     const returned = search.has("merchantIdInPayPal");
@@ -202,27 +223,17 @@ function PayPalAccount(props: {
         )}
       </Show>
       <Show when={props.settings.paypalPending}>
-        <p class="text-ink-2">
-          Finish connecting your account on PayPal. If you already did, check again.
-        </p>
+        <p class="text-ink-2">Finish connecting your account on PayPal, then reload this page.</p>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          class={props.settings.merchantId ? ghostButtonClass : buttonClass}
-          disabled={working()}
-          onClick={connect}
-        >
-          {props.settings.merchantId ? "Connect another PayPal account" : "Connect PayPal"}
-        </button>
-        <Show when={props.settings.paypalPending}>
-          <button
-            type="button"
-            class={ghostButtonClass}
-            disabled={working()}
-            onClick={() => check(false)}
-          >
-            Check again
+        <Show when={!props.settings.merchantId}>
+          <button type="button" class={buttonClass} disabled={working()} onClick={connect}>
+            Connect PayPal
+          </button>
+        </Show>
+        <Show when={props.settings.merchantId || props.settings.paypalPending}>
+          <button type="button" class={ghostButtonClass} disabled={working()} onClick={disconnect}>
+            Disconnect PayPal
           </button>
         </Show>
         <Show when={error()}>

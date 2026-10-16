@@ -71,6 +71,10 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/settings", post(handle_account_settings))
         .route("/account/paypal", post(handle_account_paypal))
         .route("/account/paypal/check", post(handle_account_paypal_check))
+        .route(
+            "/account/paypal/disconnect",
+            post(handle_account_paypal_disconnect),
+        )
         .route("/paypal/webhooks", post(handle_paypal_webhook))
         .route("/account/sign-out", post(handle_account_sign_out))
         .route("/remote-control/{id}/paywall", get(handle_paywall))
@@ -636,6 +640,18 @@ async fn handle_account_paypal_check(
         ))?;
         finish_onboarding(&api, &id, &tracking_id, seller)?;
     }
+    let settings = api.pages.get(&page);
+    Ok(settings_response(&api, page, settings))
+}
+
+async fn handle_account_paypal_disconnect(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let page = account.page.ok_or_else(no_page)?.id;
+    api.accounts.forget_paypal(&id).map_err(account_error)?;
+    info!("{id} disconnected PayPal");
     let settings = api.pages.get(&page);
     Ok(settings_response(&api, page, settings))
 }
@@ -2986,6 +3002,27 @@ mod tests {
         assert_eq!(public["paywall"]["clientId"], "id");
         let settings: Value = check().await.unwrap().json().await.unwrap();
         assert_eq!(settings["merchantId"], "SELLER0000001");
+        let settings: Value = client
+            .post(format!("{paypal_url}/disconnect"))
+            .bearer_auth(&old)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["merchantId"], Value::Null);
+        assert_eq!(settings["paypalPending"], false);
+        let public: Value = client
+            .get(format!("http://{address}/remote-control/{id}/paywall"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(public["paywall"]["merchantId"], Value::Null);
+        assert_eq!(public["paywall"]["clientId"], Value::Null);
     }
 
     #[tokio::test]

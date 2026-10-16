@@ -178,6 +178,14 @@ impl Accounts {
             .collect()
     }
 
+    pub fn forget_paypal(&self, id: &str) -> Result<Account, AccountError> {
+        self.change(id, false, |account| {
+            account.merchant_id = None;
+            account.paypal_tracking_id = None;
+            Ok(())
+        })
+    }
+
     pub fn sign_out(&self, id: &str) -> Result<Account, AccountError> {
         self.change(id, false, |account| {
             account.sessions += 1;
@@ -339,6 +347,15 @@ mod tests {
         assert!(accounts.disconnect_paypal("MERCHANT00001").is_empty());
         assert_eq!(accounts.disconnect_paypal("MERCHANT00002"), ["1"]);
         assert_eq!(accounts.get("1").unwrap().merchant_id, None);
+        accounts.start_paypal("1", "d".to_string()).unwrap();
+        accounts
+            .connect_paypal("1", "d", "MERCHANT00003".to_string())
+            .unwrap();
+        accounts.start_paypal("1", "e".to_string()).unwrap();
+        let account = accounts.forget_paypal("1").unwrap();
+        assert_eq!(account.merchant_id, None);
+        assert_eq!(account.paypal_tracking_id, None);
+        assert_eq!(accounts.forget_paypal("2"), Err(AccountError::Unknown));
     }
 
     #[test]

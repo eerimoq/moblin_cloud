@@ -79,6 +79,9 @@ export const connectPayPal = async (session: string) =>
 export const checkPayPal = (session: string) =>
   call<Settings>(session, "/account/paypal/check", { method: "POST" });
 
+export const disconnectPayPal = (session: string) =>
+  call<Settings>(session, "/account/paypal/disconnect", { method: "POST" });
+
 export type SettingsChanges = Page & Pick<Settings, "paywall" | "tips" | "spin">;
 
 export const saveAccountSettings = (session: string, settings: SettingsChanges) =>
