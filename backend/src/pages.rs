@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use anyhow::Result;
 use log::warn;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::json_file;
 
@@ -16,6 +17,8 @@ pub struct Settings {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub songs_disabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paywall: Option<Paywall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -33,12 +36,10 @@ pub struct Settings {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Paywall {
     pub price: u32,
-    pub currency: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tips {
-    pub currency: String,
     pub amounts: Vec<u32>,
     #[serde(default, rename = "webhookUrl")]
     pub webhook_url: Option<String>,
@@ -47,7 +48,6 @@ pub struct Tips {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Spin {
     pub options: Vec<SpinOption>,
-    pub currency: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -60,6 +60,8 @@ pub const CURRENCIES: [&str; 16] = [
     "AUD", "BRL", "CAD", "CHF", "CZK", "DKK", "EUR", "GBP", "HKD", "MXN", "NOK", "NZD", "PLN",
     "SEK", "SGD", "USD",
 ];
+
+const DEFAULT_CURRENCY: &str = "USD";
 
 pub const ACCENTS: [&str; 6] = ["green", "purple", "blue", "pink", "orange", "red"];
 
@@ -74,7 +76,17 @@ fn text(text: Option<String>, max: usize) -> Result<Option<String>, SettingsErro
 }
 
 impl Settings {
+    pub fn currency(&self) -> &str {
+        self.currency.as_deref().unwrap_or(DEFAULT_CURRENCY)
+    }
+
     pub fn normalize(self) -> Result<Self, SettingsError> {
+        let currency = match self.currency.map(|currency| currency.trim().to_uppercase()) {
+            Some(currency) if !CURRENCIES.contains(&currency.as_str()) => {
+                return Err(SettingsError::InvalidCurrency);
+            }
+            currency => currency.filter(|currency| currency != DEFAULT_CURRENCY),
+        };
         let paywall = match self.paywall {
             Some(_) if self.songs_disabled => None,
             Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
@@ -96,6 +108,7 @@ impl Settings {
         };
         Ok(Self {
             songs_disabled: self.songs_disabled,
+            currency,
             paywall,
             tips,
             spin,
@@ -116,26 +129,18 @@ pub fn valid_price(price: u32) -> bool {
 
 impl Paywall {
     pub fn normalize(self) -> Option<Self> {
-        let currency = self.currency.trim().to_uppercase();
-        let valid = valid_price(self.price) && CURRENCIES.contains(&currency.as_str());
-        valid.then_some(Self {
-            price: self.price,
-            currency,
-        })
+        valid_price(self.price).then_some(self)
     }
 }
 
 impl Tips {
     pub fn normalize(self) -> Option<Self> {
-        let currency = self.currency.trim().to_uppercase();
         let mut amounts = self.amounts;
         amounts.sort_unstable();
         amounts.dedup();
-        let valid = (1..=4).contains(&amounts.len())
-            && amounts.iter().all(|amount| valid_price(*amount))
-            && CURRENCIES.contains(&currency.as_str());
+        let valid =
+            (1..=4).contains(&amounts.len()) && amounts.iter().all(|amount| valid_price(*amount));
         valid.then_some(Self {
-            currency,
             amounts,
             webhook_url: self
                 .webhook_url
@@ -147,7 +152,6 @@ impl Tips {
 
 impl Spin {
     pub fn normalize(self) -> Option<Self> {
-        let currency = self.currency.trim().to_uppercase();
         let mut options = self.options;
         options.sort_unstable_by_key(|option| option.spins);
         let valid = (1..=4).contains(&options.len())
@@ -156,20 +160,32 @@ impl Spin {
                 .all(|option| (1..=10).contains(&option.spins) && valid_price(option.price))
             && options
                 .windows(2)
-                .all(|pair| pair[0].spins != pair[1].spins)
-            && CURRENCIES.contains(&currency.as_str());
-        valid.then_some(Self { options, currency })
+                .all(|pair| pair[0].spins != pair[1].spins);
+        valid.then_some(Self { options })
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
+    InvalidCurrency,
     InvalidPaywall,
     InvalidTips,
     InvalidSpin,
     InvalidPage,
     Full,
     NotSaved,
+}
+
+fn with_currency(mut settings: Value) -> Value {
+    if settings.get("currency").is_none() {
+        let currency = ["paywall", "tips", "spin"]
+            .iter()
+            .find_map(|key| settings[key].get("currency").cloned());
+        if let (Some(currency), Some(settings)) = (currency, settings.as_object_mut()) {
+            settings.insert("currency".to_string(), currency);
+        }
+    }
+    settings
 }
 
 pub struct Pages {
@@ -179,7 +195,11 @@ pub struct Pages {
 
 impl Pages {
     pub fn load(path: Option<PathBuf>) -> Result<Self> {
-        let settings = json_file::load(path.as_deref())?;
+        let settings: HashMap<String, Value> = json_file::load(path.as_deref())?;
+        let settings = settings
+            .into_iter()
+            .map(|(id, settings)| Ok((id, serde_json::from_value(with_currency(settings))?)))
+            .collect::<Result<_>>()?;
         Ok(Self {
             path,
             settings: Mutex::new(settings),
@@ -231,11 +251,9 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         let pages = Pages::load(Some(path.clone())).unwrap();
-        let paywall = Paywall {
-            price: 250,
-            currency: "SEK".to_string(),
-        };
+        let paywall = Paywall { price: 250 };
         let settings = Settings {
+            currency: Some("SEK".to_string()),
             paywall: Some(paywall.clone()),
             title: Some("Hi".to_string()),
             ..Settings::default()
@@ -245,6 +263,7 @@ mod tests {
         pages.set("b", Settings::default()).unwrap();
         let pages = Pages::load(Some(path.clone())).unwrap();
         assert_eq!(pages.get("a").paywall, Some(paywall));
+        assert_eq!(pages.get("a").currency(), "SEK");
         assert_eq!(pages.get("a").title.as_deref(), Some("Hi"));
         assert_eq!(pages.get("b"), Settings::default());
         assert_eq!(pages.settings.lock().unwrap().len(), 1);
@@ -254,27 +273,14 @@ mod tests {
     #[test]
     fn paywalls_are_validated() {
         let pages = Pages::load(None).unwrap();
-        let paywall = |price, currency: &str| {
-            Some(Paywall {
-                price,
-                currency: currency.to_string(),
-            })
-        };
-        let settings = |paywall| Settings {
-            paywall,
+        let settings = |price| Settings {
+            paywall: Some(Paywall { price }),
             ..Settings::default()
         };
-        assert_eq!(
-            pages
-                .set("a", settings(paywall(250, " sek ")))
-                .unwrap()
-                .paywall,
-            paywall(250, "SEK")
-        );
-        assert_eq!(pages.get("a").paywall.unwrap().price, 250);
-        for (price, currency) in [(49, "SEK"), (100_001, "SEK"), (250, "JPY")] {
+        assert_eq!(pages.set("a", settings(250)), Ok(settings(250)));
+        for price in [49, 100_001] {
             assert_eq!(
-                pages.set("a", settings(paywall(price, currency))),
+                pages.set("a", settings(price)),
                 Err(SettingsError::InvalidPaywall)
             );
         }
@@ -283,30 +289,40 @@ mod tests {
     }
 
     #[test]
+    fn currencies_are_validated() {
+        let pages = Pages::load(None).unwrap();
+        let settings = |currency: &str| Settings {
+            currency: Some(currency.to_string()),
+            ..Settings::default()
+        };
+        assert_eq!(pages.set("a", settings(" sek ")), Ok(settings("SEK")));
+        assert_eq!(pages.get("a").currency(), "SEK");
+        assert_eq!(pages.set("a", settings("usd")), Ok(Settings::default()));
+        assert_eq!(pages.get("a").currency(), "USD");
+        assert_eq!(
+            pages.set("a", settings("JPY")),
+            Err(SettingsError::InvalidCurrency)
+        );
+    }
+
+    #[test]
     fn tips_are_validated() {
         let pages = Pages::load(None).unwrap();
-        let tips = |currency: &str, amounts: &[u32]| Settings {
+        let tips = |amounts: &[u32]| Settings {
             tips: Some(Tips {
-                currency: currency.to_string(),
                 amounts: amounts.to_vec(),
                 webhook_url: None,
             }),
             ..Settings::default()
         };
         assert_eq!(
-            pages.set("a", tips("usd", &[1000, 200, 500, 200])).unwrap(),
-            tips("USD", &[200, 500, 1000])
+            pages.set("a", tips(&[1000, 200, 500, 200])).unwrap(),
+            tips(&[200, 500, 1000])
         );
         assert_eq!(pages.get("a").tips.unwrap().amounts, [200, 500, 1000]);
-        for (currency, amounts) in [
-            ("JPY", &[200][..]),
-            ("USD", &[]),
-            ("USD", &[100, 200, 300, 400, 500]),
-            ("USD", &[49, 200]),
-            ("USD", &[100_001]),
-        ] {
+        for amounts in [&[][..], &[100, 200, 300, 400, 500], &[49, 200], &[100_001]] {
             assert_eq!(
-                pages.set("a", tips(currency, amounts)),
+                pages.set("a", tips(amounts)),
                 Err(SettingsError::InvalidTips)
             );
         }
@@ -315,7 +331,7 @@ mod tests {
     #[test]
     fn spins_are_validated() {
         let pages = Pages::load(None).unwrap();
-        let spin = |options: &[(u32, u32)], currency: &str| Settings {
+        let spin = |options: &[(u32, u32)]| Settings {
             spin: Some(Spin {
                 options: options
                     .iter()
@@ -324,28 +340,49 @@ mod tests {
                         price: *price,
                     })
                     .collect(),
-                currency: currency.to_string(),
             }),
             ..Settings::default()
         };
         assert_eq!(
-            pages.set("a", spin(&[(2, 800), (1, 500)], "eur")),
-            Ok(spin(&[(1, 500), (2, 800)], "EUR"))
+            pages.set("a", spin(&[(2, 800), (1, 500)])),
+            Ok(spin(&[(1, 500), (2, 800)]))
         );
-        for (options, currency) in [
-            (&[(1, 49)][..], "EUR"),
-            (&[(0, 500)], "EUR"),
-            (&[(11, 500)], "EUR"),
-            (&[(1, 500), (1, 800)], "EUR"),
-            (&[], "EUR"),
-            (&[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)], "EUR"),
-            (&[(1, 500)], "JPY"),
+        for options in [
+            &[(1, 49)][..],
+            &[(0, 500)],
+            &[(11, 500)],
+            &[(1, 500), (1, 800)],
+            &[],
+            &[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)],
         ] {
             assert_eq!(
-                pages.set("a", spin(options, currency)),
+                pages.set("a", spin(options)),
                 Err(SettingsError::InvalidSpin)
             );
         }
+    }
+
+    #[test]
+    fn old_currencies_move_to_the_page() {
+        let path = std::env::temp_dir().join(format!(
+            "pages-old-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(
+            &path,
+            r#"{
+                "a": {"tips": {"currency": "SEK", "amounts": [500]}},
+                "b": {"spin": {"currency": "EUR", "options": [{"spins": 1, "price": 500}]}},
+                "c": {"title": "Hi"}
+            }"#,
+        )
+        .unwrap();
+        let pages = Pages::load(Some(path.clone())).unwrap();
+        assert_eq!(pages.get("a").currency(), "SEK");
+        assert_eq!(pages.get("b").currency(), "EUR");
+        assert_eq!(pages.get("c").currency(), "USD");
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]
@@ -401,10 +438,7 @@ mod tests {
         let pages = Pages::load(None).unwrap();
         let settings = Settings {
             songs_disabled: true,
-            paywall: Some(Paywall {
-                price: 250,
-                currency: "SEK".to_string(),
-            }),
+            paywall: Some(Paywall { price: 250 }),
             ..Settings::default()
         };
         assert_eq!(

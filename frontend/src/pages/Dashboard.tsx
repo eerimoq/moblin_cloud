@@ -118,9 +118,67 @@ function payPalErrorText(error: unknown) {
   return "Something went wrong. Try again.";
 }
 
+function CurrencySettings(props: {
+  currency: string;
+  busy: boolean;
+  onSave: (changes: { currency: string }) => Promise<void>;
+}) {
+  const [currency, setCurrency] = createSignal(props.currency);
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.busy) {
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      await props.onSave({ currency: currency() });
+      flashSaved();
+    } catch (error) {
+      setError(paymentErrorText(error, "Pick one of the currencies."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form class="flex flex-col gap-4" onSubmit={submit}>
+      <label class="flex w-32 flex-col gap-2">
+        <span class="text-[15px] font-semibold text-ink-2">Currency</span>
+        <select
+          value={currency()}
+          onChange={(event) => setCurrency(event.currentTarget.value)}
+          class={inputClass}
+        >
+          <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
+        </select>
+      </label>
+      <p class="text-[15px] text-muted">
+        Viewers pay all tips, song requests and wheel spins in this currency.
+      </p>
+      <div class="flex flex-wrap items-center gap-4">
+        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
+        <Show when={error()}>
+          {(error) => (
+            <p role="status" class="text-amber">
+              {error()}
+            </p>
+          )}
+        </Show>
+      </div>
+    </form>
+  );
+}
+
 function PayPalAccount(props: {
   session: string;
   settings: Settings;
+  busy: boolean;
+  onSave: (changes: { currency: string }) => Promise<void>;
   onSettings: (settings: Settings) => void;
   onSignOut: () => void;
 }) {
@@ -231,6 +289,13 @@ function PayPalAccount(props: {
       </Show>
       <Show when={props.settings.paypalPending}>
         <p class="text-ink-2">Finish connecting your account on PayPal, then reload this page.</p>
+      </Show>
+      <Show when={props.settings.merchantId}>
+        <CurrencySettings
+          currency={props.settings.currency}
+          busy={props.busy}
+          onSave={props.onSave}
+        />
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <Show when={!props.settings.merchantId}>
@@ -371,6 +436,7 @@ function YourPage(props: {
 function SongSettings(props: {
   songs: boolean;
   paywall: Paywall | null;
+  currency: string;
   payable: boolean;
   busy: boolean;
   onSave: (changes: { songs: boolean; paywall: Paywall | null }) => Promise<void>;
@@ -380,7 +446,6 @@ function SongSettings(props: {
   const [price, setPrice] = createSignal(
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
   );
-  const [currency, setCurrency] = createSignal(props.paywall?.currency ?? "USD");
   const [saving, setSaving] = createSignal(false);
   const [saved, flashSaved] = createFlash(2000);
   const [error, setError] = createSignal<string | null>(null);
@@ -398,12 +463,7 @@ function SongSettings(props: {
       await props.onSave({
         songs: enabled(),
         paywall:
-          enabled() && required()
-            ? {
-                price: Math.round(Number.parseFloat(price()) * 100),
-                currency: currency(),
-              }
-            : null,
+          enabled() && required() ? { price: Math.round(Number.parseFloat(price()) * 100) } : null,
       });
       flashSaved();
     } catch (error) {
@@ -443,23 +503,20 @@ function SongSettings(props: {
         </label>
       </Show>
       <Show when={enabled() && required() && (props.payable || props.paywall)}>
-        <div class="flex flex-wrap gap-4">
-          <label class="flex min-w-40 flex-1 flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">Tip per song</span>
-            <input
-              type="number"
-              required
-              min="0.5"
-              max="1000"
-              step="0.01"
-              inputmode="decimal"
-              value={price()}
-              onInput={(event) => setPrice(event.currentTarget.value)}
-              class={inputClass}
-            />
-          </label>
-          <CurrencySelect value={currency()} onChange={setCurrency} />
-        </div>
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">Tip per song ({props.currency})</span>
+          <input
+            type="number"
+            required
+            min="0.5"
+            max="1000"
+            step="0.01"
+            inputmode="decimal"
+            value={price()}
+            onInput={(event) => setPrice(event.currentTarget.value)}
+            class={`${inputClass} max-w-32`}
+          />
+        </label>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
@@ -477,21 +534,6 @@ function SongSettings(props: {
         </Show>
       </div>
     </form>
-  );
-}
-
-function CurrencySelect(props: { value: string; onChange: (value: string) => void }) {
-  return (
-    <label class="flex w-32 flex-col gap-2">
-      <span class="text-[15px] font-semibold text-ink-2">Currency</span>
-      <select
-        value={props.value}
-        onChange={(event) => props.onChange(event.currentTarget.value)}
-        class={inputClass}
-      >
-        <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
-      </select>
-    </label>
   );
 }
 
@@ -527,14 +569,11 @@ const amountsOf = (amounts: string[]) =>
 
 function TipSettings(props: {
   tips: Tips | null;
-  paywall: Paywall | null;
+  currency: string;
   busy: boolean;
   onSave: (changes: { tips: Tips | null }) => Promise<void>;
 }) {
   const [enabled, setEnabled] = createSignal(props.tips !== null);
-  const [currency, setCurrency] = createSignal(
-    props.tips?.currency ?? props.paywall?.currency ?? "USD",
-  );
   const [webhookUrl, setWebhookUrl] = createSignal(props.tips?.webhookUrl ?? "");
   const [amounts, setAmounts] = createSignal(
     (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
@@ -556,7 +595,6 @@ function TipSettings(props: {
       await props.onSave({
         tips: enabled()
           ? {
-              currency: currency(),
               amounts: amountsOf(amounts()),
               webhookUrl: webhookUrl().trim() || null,
             }
@@ -594,10 +632,11 @@ function TipSettings(props: {
       </label>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
-          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Suggested amounts</legend>
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">
+            Suggested amounts ({props.currency})
+          </legend>
           <div class="flex flex-wrap items-end gap-4">
             <AmountInputs amounts={amounts()} onAmounts={setAmounts} />
-            <CurrencySelect value={currency()} onChange={setCurrency} />
           </div>
         </fieldset>
         <label class="flex flex-col gap-2">
@@ -653,7 +692,6 @@ function SpinSettings(props: {
       ]
     ).map((option) => ({ spins: String(option.spins), price: (option.price / 100).toFixed(2) })),
   );
-  const [currency, setCurrency] = createSignal(props.spin?.currency ?? props.currency);
 
   const changeOption = (index: number, change: Partial<{ spins: string; price: string }>) =>
     setOptions(options().map((old, at) => (at === index ? { ...old, ...change } : old)));
@@ -680,7 +718,6 @@ function SpinSettings(props: {
                   spins: Number.parseInt(option.spins),
                   price: Math.round(Number.parseFloat(option.price) * 100),
                 })),
-              currency: currency(),
             }
           : null,
       });
@@ -712,7 +749,7 @@ function SpinSettings(props: {
       </label>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
-          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Tips</legend>
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Tips ({props.currency})</legend>
           <div class="flex flex-col gap-3">
             <Index each={options()}>
               {(option, index) => (
@@ -747,7 +784,6 @@ function SpinSettings(props: {
             </Index>
           </div>
         </fieldset>
-        <CurrencySelect value={currency()} onChange={setCurrency} />
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
@@ -839,6 +875,7 @@ function Admin(props: {
       <SongSettings
         songs={settings().songs}
         paywall={settings().paywall}
+        currency={settings().currency}
         payable={settings().merchantId !== null}
         busy={busy()}
         onSave={save}
@@ -846,7 +883,7 @@ function Admin(props: {
       <Show when={settings().merchantId || settings().tips}>
         <TipSettings
           tips={settings().tips}
-          paywall={settings().paywall}
+          currency={settings().currency}
           busy={busy()}
           onSave={save}
         />
@@ -854,7 +891,7 @@ function Admin(props: {
       <Show when={settings().merchantId || settings().spin}>
         <SpinSettings
           spin={settings().spin}
-          currency={settings().tips?.currency ?? settings().paywall?.currency ?? "USD"}
+          currency={settings().currency}
           busy={busy()}
           onSave={save}
         />
@@ -863,6 +900,8 @@ function Admin(props: {
         <PayPalAccount
           session={props.session}
           settings={settings()}
+          busy={busy()}
+          onSave={save}
           onSettings={setSettings}
           onSignOut={props.onSignOut}
         />

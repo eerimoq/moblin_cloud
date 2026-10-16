@@ -21,7 +21,8 @@ use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
 use crate::live::Live;
 use crate::pages::{
-    Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price, valid_price,
+    CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
+    valid_price,
 };
 use crate::paypal::{CaptureError, Item, Order, PayPal, Seller};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
@@ -212,6 +213,7 @@ struct SettingsResponse {
     id: String,
     connected: bool,
     songs: bool,
+    currency: String,
     paywall: Option<Paywall>,
     tips: Option<Tips>,
     spin: Option<Spin>,
@@ -233,6 +235,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         connected: api.remote_control.is_connected(&id),
         id,
         songs: !settings.songs_disabled,
+        currency: settings.currency().to_string(),
         paywall: settings.paywall,
         tips: settings.tips,
         spin: settings.spin,
@@ -253,6 +256,8 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
 struct SettingsRequest {
     #[serde(default = "songs_by_default")]
     songs: bool,
+    #[serde(default)]
+    currency: Option<String>,
     paywall: Option<Paywall>,
     #[serde(default)]
     tips: Option<Tips>,
@@ -299,11 +304,19 @@ async fn update_settings(
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let current = api.pages.get(&id);
+    let currency = request
+        .currency
+        .map(|currency| currency.trim().to_uppercase())
+        .unwrap_or_else(|| current.currency().to_string());
+    if !CURRENCIES.contains(&currency.as_str()) {
+        return Err(invalid_currency());
+    }
+    let paid = currency != current.currency();
     let paywall = match request.paywall {
         Some(_) if !request.songs => None,
         Some(paywall) => {
             let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
-            if current.paywall.as_ref() != Some(&paywall) {
+            if paid || current.paywall.as_ref() != Some(&paywall) {
                 check_payable(api, &id)?;
             }
             Some(paywall)
@@ -316,7 +329,7 @@ async fn update_settings(
             if let Some(url) = &tips.webhook_url {
                 check_webhook(api, url)?;
             }
-            if current.tips.as_ref() != Some(&tips) {
+            if paid || current.tips.as_ref() != Some(&tips) {
                 check_payable(api, &id)?;
             }
             Some(tips)
@@ -326,7 +339,7 @@ async fn update_settings(
     let spin = match request.spin {
         Some(spin) => {
             let spin = spin.normalize().ok_or_else(invalid_spin)?;
-            if current.spin.as_ref() != Some(&spin) {
+            if paid || current.spin.as_ref() != Some(&spin) {
                 check_payable(api, &id)?;
             }
             Some(spin)
@@ -339,6 +352,7 @@ async fn update_settings(
             &id,
             Settings {
                 songs_disabled: !request.songs,
+                currency: Some(currency),
                 paywall,
                 tips,
                 spin,
@@ -348,6 +362,7 @@ async fn update_settings(
             },
         )
         .map_err(|error| match error {
+            SettingsError::InvalidCurrency => invalid_currency(),
             SettingsError::InvalidPaywall => invalid_paywall(),
             SettingsError::InvalidTips => invalid_tips(),
             SettingsError::InvalidSpin => invalid_spin(),
@@ -365,8 +380,9 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set songs {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
+        "remote control streamer {id} set songs {}, currency {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
         !settings.songs_disabled,
+        settings.currency(),
         settings.paywall,
         settings.tips,
         settings.spin,
@@ -782,8 +798,7 @@ async fn handle_account_sign_out(
 fn invalid_spin() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the spin wheel needs one to four options of 1 to 10 spins for 0.50 to 1000 and a supported currency"
-            .to_string(),
+        "the spin wheel needs one to four options of 1 to 10 spins for 0.50 to 1000".to_string(),
     )
 }
 
@@ -798,17 +813,24 @@ fn check_webhook(api: &Api, url: &str) -> Result<(), (StatusCode, String)> {
     }
 }
 
+fn invalid_currency() -> (StatusCode, String) {
+    (
+        StatusCode::BAD_REQUEST,
+        "the currency is not supported".to_string(),
+    )
+}
+
 fn invalid_tips() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "tips need one to four amounts of 0.50 to 1000 and a supported currency".to_string(),
+        "tips need one to four amounts of 0.50 to 1000".to_string(),
     )
 }
 
 fn invalid_paywall() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the paywall needs a price of 0.50 to 1000 and a supported currency".to_string(),
+        "the paywall needs a price of 0.50 to 1000".to_string(),
     )
 }
 
@@ -876,10 +898,12 @@ async fn handle_paywall(
     Path(id): Path<String>,
 ) -> Json<PaywallResponse> {
     let merchant_id = merchant_of(&api, &id);
+    let settings = api.pages.get(&id);
+    let currency = settings.currency().to_string();
     Json(PaywallResponse {
-        paywall: api.pages.get(&id).paywall.map(|paywall| PublicPaywall {
+        paywall: settings.paywall.map(|paywall| PublicPaywall {
             price: paywall.price,
-            currency: paywall.currency,
+            currency,
             client_id: api
                 .paypal
                 .as_ref()
@@ -907,11 +931,13 @@ struct TipsResponse {
 }
 
 async fn handle_tips(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<TipsResponse> {
-    let tips = api.pages.get(&id).tips.zip(merchant_of(&api, &id));
+    let settings = api.pages.get(&id);
+    let currency = settings.currency().to_string();
+    let tips = settings.tips.zip(merchant_of(&api, &id));
     Json(TipsResponse {
         tips: tips.map(|(tips, merchant_id)| PublicTips {
             amounts: tips.amounts,
-            currency: tips.currency,
+            currency,
             client_id: api
                 .paypal
                 .as_ref()
@@ -939,11 +965,13 @@ struct SpinResponse {
 }
 
 async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SpinResponse> {
-    let spin = api.pages.get(&id).spin.zip(merchant_of(&api, &id));
+    let settings = api.pages.get(&id);
+    let currency = settings.currency().to_string();
+    let spin = settings.spin.zip(merchant_of(&api, &id));
     Json(SpinResponse {
         spin: spin.map(|(spin, merchant_id)| PublicSpin {
             options: spin.options,
-            currency: spin.currency,
+            currency,
             client_id: api
                 .paypal
                 .as_ref()
@@ -1113,6 +1141,7 @@ async fn handle_order(
     if settings.songs_disabled {
         return Err(songs_disabled());
     }
+    let currency = settings.currency().to_string();
     let paywall = settings.paywall.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer no longer asks for a payment. Reload the page.",
@@ -1129,7 +1158,7 @@ async fn handle_order(
         user: song.user,
         merchant_id,
         price: paywall.price,
-        currency: paywall.currency,
+        currency,
     };
     let order_id = paypal.create_order(order).await.map_err(|error| {
         warn!("creating a PayPal order for remote control streamer {id} failed: {error:#}");
@@ -1271,7 +1300,9 @@ async fn handle_tip_order(
     Path(id): Path<String>,
     Json(request): Json<TipRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let tips = api.pages.get(&id).tips.ok_or(failure(
+    let settings = api.pages.get(&id);
+    let currency = settings.currency().to_string();
+    settings.tips.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
     ))?;
@@ -1287,7 +1318,7 @@ async fn handle_tip_order(
         user: user_name(request.user, "Someone"),
         merchant_id,
         price: request.amount,
-        currency: tips.currency,
+        currency,
     };
     let order_id = paypal.create_order(order).await.map_err(|error| {
         warn!("creating a PayPal tip order for remote control streamer {id} failed: {error:#}");
@@ -1359,7 +1390,9 @@ async fn handle_spin_order(
     Path(id): Path<String>,
     Json(request): Json<SpinRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let spin = api.pages.get(&id).spin.ok_or(failure(
+    let settings = api.pages.get(&id);
+    let currency = settings.currency().to_string();
+    let spin = settings.spin.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
@@ -1388,7 +1421,7 @@ async fn handle_spin_order(
         user: user_name(request.user, "Someone"),
         merchant_id,
         price: option.price,
-        currency: spin.currency,
+        currency,
     };
     let order_id = paypal.create_order(order).await.map_err(|error| {
         warn!("creating a PayPal spin order for remote control streamer {id} failed: {error:#}");
@@ -1890,7 +1923,7 @@ mod tests {
         let response = reqwest::Client::new()
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250, "currency": "SEK"}}))
+            .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
             .send()
             .await
             .unwrap();
@@ -1953,7 +1986,7 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250, "currency": "SEK"}}))
+            .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
             .send()
             .await
             .unwrap();
@@ -1962,17 +1995,15 @@ mod tests {
         let settings: Value = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250, "currency": "sek"}}))
+            .json(&json!({"currency": "sek", "paywall": {"price": 250}}))
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(
-            settings["paywall"],
-            json!({"price": 250, "currency": "SEK"})
-        );
+        assert_eq!(settings["paywall"], json!({"price": 250}));
+        assert_eq!(settings["currency"], "SEK");
         assert_eq!(settings["paypal"], true);
         assert_eq!(settings["merchantId"], "MERCHANT00001");
         let public: Value = client
@@ -2156,7 +2187,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250, "currency": "EUR"}}))
+            .json(&json!({"currency": "EUR", "paywall": {"price": 250}}))
             .send()
             .await
             .unwrap();
@@ -2266,9 +2297,8 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "spin": {
+            .json(&json!({"currency": "jpy", "paywall": null, "spin": {
                 "options": [{"spins": 1, "price": 500}],
-                "currency": "jpy",
             }}))
             .send()
             .await
@@ -2277,9 +2307,8 @@ mod tests {
         let settings: Value = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "spin": {
+            .json(&json!({"currency": "usd", "paywall": null, "spin": {
                 "options": [{"spins": 2, "price": 800}, {"spins": 1, "price": 500}],
-                "currency": "usd",
             }}))
             .send()
             .await
@@ -2289,10 +2318,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             settings["spin"],
-            json!({
-                "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}],
-                "currency": "USD",
-            })
+            json!({"options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}]})
         );
         let public: Value = client
             .get(&spin_url)
@@ -2416,8 +2442,8 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "tips": {
-                "currency": "usd", "amounts": [500],
+            .json(&json!({"currency": "usd", "paywall": null, "tips": {
+                "amounts": [500],
                 "webhookUrl": "ftp://example.com/tips",
             }}))
             .send()
@@ -2427,8 +2453,8 @@ mod tests {
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "tips": {
-                "currency": "usd", "amounts": [1000, 200, 500],
+            .json(&json!({"currency": "usd", "paywall": null, "tips": {
+                "amounts": [1000, 200, 500],
                 "webhookUrl": format!(" {webhook_url} "),
             }}))
             .send()
@@ -2440,7 +2466,6 @@ mod tests {
         assert_eq!(
             settings["tips"],
             json!({
-                "currency": "USD",
                 "amounts": [200, 500, 1000],
                 "webhookUrl": webhook_url,
             })
@@ -3011,7 +3036,7 @@ mod tests {
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
         let settings_url = format!("http://{address}/account/settings");
-        let paywall = json!({"paywall": {"price": 250, "currency": "SEK"}});
+        let paywall = json!({"currency": "SEK", "paywall": {"price": 250}});
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
@@ -3140,6 +3165,16 @@ mod tests {
             .unwrap();
         assert_eq!(public["paywall"]["merchantId"], Value::Null);
         assert_eq!(public["paywall"]["clientId"], Value::Null);
+        for (currency, status) in [("SEK", StatusCode::OK), ("EUR", StatusCode::CONFLICT)] {
+            let response = client
+                .post(&settings_url)
+                .bearer_auth(&session)
+                .json(&json!({"currency": currency, "paywall": {"price": 250}}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+        }
     }
 
     #[tokio::test]

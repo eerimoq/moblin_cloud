@@ -26,11 +26,9 @@ export const formatDuration = (duration: number) => {
 
 export type Paywall = {
   price: number;
-  currency: string;
 };
 
 export type Tips = {
-  currency: string;
   amounts: number[];
   webhookUrl: string | null;
 };
@@ -42,7 +40,6 @@ export type SpinOption = {
 
 export type Spin = {
   options: SpinOption[];
-  currency: string;
 };
 
 export type Page = {
@@ -55,6 +52,7 @@ export type Settings = Page & {
   id: string;
   connected: boolean;
   songs: boolean;
+  currency: string;
   paywall: Paywall | null;
   tips: Tips | null;
   spin: Spin | null;
