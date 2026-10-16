@@ -290,13 +290,6 @@ function PayPalAccount(props: {
       <Show when={props.settings.paypalPending}>
         <p class="text-ink-2">Finish connecting your account on PayPal, then reload this page.</p>
       </Show>
-      <Show when={props.settings.merchantId}>
-        <CurrencySettings
-          currency={props.settings.currency}
-          busy={props.busy}
-          onSave={props.onSave}
-        />
-      </Show>
       <div class="flex flex-wrap items-center gap-4">
         <Show when={!props.settings.merchantId}>
           <button type="button" class={buttonClass} disabled={working()} onClick={connect}>
@@ -321,6 +314,13 @@ function PayPalAccount(props: {
           </a>
         </Show>
       </div>
+      <Show when={props.settings.merchantId}>
+        <CurrencySettings
+          currency={props.settings.currency}
+          busy={props.busy}
+          onSave={props.onSave}
+        />
+      </Show>
     </div>
   );
 }
@@ -462,8 +462,7 @@ function SongSettings(props: {
     try {
       await props.onSave({
         songs: enabled(),
-        paywall:
-          enabled() && required() ? { price: Math.round(Number.parseFloat(price()) * 100) } : null,
+        paywall: enabled() && required() ? { price: hundredths(price()) } : null,
       });
       flashSaved();
     } catch (error) {
@@ -505,17 +504,7 @@ function SongSettings(props: {
       <Show when={enabled() && required() && (props.payable || props.paywall)}>
         <label class="flex flex-col gap-2">
           <span class="text-[15px] font-semibold text-ink-2">Tip per song ({props.currency})</span>
-          <input
-            type="number"
-            required
-            min="0.5"
-            max="1000"
-            step="0.01"
-            inputmode="decimal"
-            value={price()}
-            onInput={(event) => setPrice(event.currentTarget.value)}
-            class={`${inputClass} max-w-32`}
-          />
+          <MoneyInput value={price()} onValue={setPrice} required />
         </label>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
@@ -537,35 +526,47 @@ function SongSettings(props: {
   );
 }
 
+function MoneyInput(props: {
+  value: string;
+  onValue: (value: string) => void;
+  required?: boolean;
+  label?: string;
+}) {
+  return (
+    <input
+      type="text"
+      required={props.required}
+      pattern="\d+([.,]\d{1,2})?"
+      inputmode="decimal"
+      aria-label={props.label}
+      value={props.value}
+      onInput={(event) => props.onValue(event.currentTarget.value)}
+      class={`${inputClass} max-w-32`}
+    />
+  );
+}
+
 function AmountInputs(props: { amounts: string[]; onAmounts: (amounts: string[]) => void }) {
   return (
     <Index each={props.amounts}>
       {(amount, index) => (
-        <input
-          type="number"
-          required={index === 0}
-          min="0.5"
-          max="1000"
-          step="0.01"
-          inputmode="decimal"
-          aria-label={`Amount ${index + 1}`}
+        <MoneyInput
           value={amount()}
-          onInput={(event) =>
-            props.onAmounts(
-              props.amounts.map((old, at) => (at === index ? event.currentTarget.value : old)),
-            )
+          onValue={(value) =>
+            props.onAmounts(props.amounts.map((old, at) => (at === index ? value : old)))
           }
-          class={`${inputClass} max-w-32`}
+          required={index === 0}
+          label={`Amount ${index + 1}`}
         />
       )}
     </Index>
   );
 }
 
-const amountsOf = (amounts: string[]) =>
-  amounts
-    .filter((amount) => amount.trim())
-    .map((amount) => Math.round(Number.parseFloat(amount) * 100));
+const hundredths = (amount: string) =>
+  Math.round(Number.parseFloat(amount.trim().replace(",", ".")) * 100);
+
+const amountsOf = (amounts: string[]) => amounts.filter((amount) => amount.trim()).map(hundredths);
 
 function TipSettings(props: {
   tips: Tips | null;
@@ -716,7 +717,7 @@ function SpinSettings(props: {
                 .filter((option) => option.spins.trim() && option.price.trim())
                 .map((option) => ({
                   spins: Number.parseInt(option.spins),
-                  price: Math.round(Number.parseFloat(option.price) * 100),
+                  price: hundredths(option.price),
                 })),
             }
           : null,
@@ -732,7 +733,7 @@ function SpinSettings(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Tips that spin the wheel</h2>
+      <h2 class="text-[23px] font-semibold">Wheel of luck</h2>
       <p class="text-ink-2">
         Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin
         when they buy more. Moblin spins the wheel you pick in its remote control settings, showing
@@ -755,11 +756,9 @@ function SpinSettings(props: {
               {(option, index) => (
                 <div class="flex items-center gap-3 text-ink-2">
                   <input
-                    type="number"
-                    required={index === 0}
-                    min="1"
-                    max="10"
-                    step="1"
+                    type="text"
+                    required
+                    pattern="\d+"
                     inputmode="numeric"
                     aria-label={`Spins ${index + 1}`}
                     value={option().spins}
@@ -767,22 +766,37 @@ function SpinSettings(props: {
                     class={`${inputClass} max-w-20`}
                   />
                   <span class="shrink-0">spins for</span>
-                  <input
-                    type="number"
-                    required={index === 0}
-                    min="0.5"
-                    max="1000"
-                    step="0.01"
-                    inputmode="decimal"
-                    aria-label={`Tip ${index + 1}`}
+                  <MoneyInput
                     value={option().price}
-                    onInput={(event) => changeOption(index, { price: event.currentTarget.value })}
-                    class={`${inputClass} max-w-32`}
+                    onValue={(price) => changeOption(index, { price })}
+                    required
+                    label={`Tip ${index + 1}`}
                   />
+                  <Show when={options().length > 1}>
+                    <button
+                      type="button"
+                      class="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ghost hover:text-ink"
+                      aria-label={`Remove option ${index + 1}`}
+                      onClick={() => setOptions(options().filter((_, at) => at !== index))}
+                    >
+                      <Icon name="close" class="size-5" />
+                    </button>
+                  </Show>
                 </div>
               )}
             </Index>
           </div>
+          <Show when={options().length < 4}>
+            <div class="mt-1">
+              <button
+                type="button"
+                class={ghostButtonClass}
+                onClick={() => setOptions([...options(), { spins: "", price: "" }])}
+              >
+                Add option
+              </button>
+            </div>
+          </Show>
         </fieldset>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
@@ -872,14 +886,6 @@ function Admin(props: {
   return (
     <>
       <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
-      <SongSettings
-        songs={settings().songs}
-        paywall={settings().paywall}
-        currency={settings().currency}
-        payable={settings().merchantId !== null}
-        busy={busy()}
-        onSave={save}
-      />
       <Show when={settings().merchantId || settings().tips}>
         <TipSettings
           tips={settings().tips}
@@ -896,6 +902,14 @@ function Admin(props: {
           onSave={save}
         />
       </Show>
+      <SongSettings
+        songs={settings().songs}
+        paywall={settings().paywall}
+        currency={settings().currency}
+        payable={settings().merchantId !== null}
+        busy={busy()}
+        onSave={save}
+      />
       <Show when={settings().paypal}>
         <PayPalAccount
           session={props.session}
@@ -931,20 +945,6 @@ function Admin(props: {
             </p>
           </Show>
         </div>
-      </div>
-      <div>
-        <button
-          type="button"
-          class={ghostButtonClass}
-          onClick={async () => {
-            try {
-              await signOutEverywhere(props.session);
-            } catch {}
-            props.onSignOut();
-          }}
-        >
-          Sign out everywhere
-        </button>
       </div>
     </>
   );
@@ -1039,11 +1039,34 @@ export default function Dashboard() {
 
   return (
     <>
-      <Hero title="Let viewers tip you, with a song or a spin.">
+      <Hero
+        title="Let viewers tip you."
+        top={
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
+              Dashboard
+            </span>
+            <Show when={session()}>
+              {(current) => (
+                <button
+                  type="button"
+                  class={ghostButtonClass}
+                  onClick={async () => {
+                    try {
+                      await signOutEverywhere(current().session);
+                    } catch {}
+                    signOut();
+                  }}
+                >
+                  Sign out everywhere
+                </button>
+              )}
+            </Show>
+          </div>
+        }
+      >
         <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Sign in with Twitch to get your own page at moblin.app/twitch/your-name. Viewers add songs
-          from Apple Music to the queue of Moblin's music player, for free or with a tip you set,
-          and can send you tips on their own or to spin your wheel.
+          Sign in with Twitch to get your own page at moblin.app/twitch/your-name.
         </p>
         <p class="text-[15px] text-muted">
           Using the dashboard and your page means you agree to the{" "}
