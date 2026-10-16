@@ -10,7 +10,7 @@ projects live here:
 - `frontend/` — a static site (SolidJS + TypeScript + Tailwind v4 + Vite), deployed to GitHub Pages.
 - `backend/` — a small Rust (axum) service deployed at `https://api.moblin.app` as a Docker image. It serves the "Streamers" list and the "Erik is live on Twitch" status.
 
-`README.md` documents the deploy flow, the App Attest scheme and the Twitch credentials; read it before touching either.
+`README.md` only covers getting started; the deploy flow, App Attest and the Twitch and PayPal setup are described below and in the code.
 
 ## Commands
 
