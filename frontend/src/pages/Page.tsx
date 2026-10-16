@@ -803,22 +803,25 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   });
   const [profile, setProfile] = createSignal<Profile | null>(null);
   const [styled, setStyled] = createSignal(false);
-  const [section, setSection] = createSignal<Section>(
-    location.hash === "#tip" ? "tip" : location.hash === "#spin" ? "spin" : "songs",
+  const [section, setSection] = createSignal<Section | null>(
+    (["tip", "spin", "songs"] as const).find((name) => location.hash === `#${name}`) ?? null,
   );
   const sections = (): Section[] => [
     ...(tipJar() ? (["tip"] as const) : []),
     ...(wheel() ? (["spin"] as const) : []),
     "songs",
   ];
-  const shown = () => (sections().includes(section()) ? section() : "songs");
+  const shown = () => {
+    const current = section();
+    return current && sections().includes(current) ? current : sections()[0];
+  };
 
   const changeSection = (next: Section) => {
     setSection(next);
     history.replaceState(
       null,
       "",
-      location.pathname + location.search + (next === "songs" ? "" : `#${next}`),
+      location.pathname + location.search + (next === sections()[0] ? "" : `#${next}`),
     );
   };
   let form: HTMLFormElement | undefined;
