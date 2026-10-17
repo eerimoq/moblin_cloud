@@ -54,21 +54,16 @@ struct Cli {
     /// Address to listen on.
     #[arg(long, env = "LISTEN", default_value = "127.0.0.1:8080")]
     listen: SocketAddr,
-    /// Never list more than this many streamers, live ones first. Older
-    /// streamers who are still live are remembered beyond that, so that
-    /// they are listed again when a newer one leaves.
+    /// Maximum number of listed streamers.
     #[arg(long, env = "MAX_STREAMERS", default_value_t = 6)]
     max_streamers: usize,
-    /// Pause at least this many seconds between two requests to the
-    /// platforms, when looking profiles and live statuses up.
+    /// Minimum seconds between platform requests.
     #[arg(long, env = "LOOKUP_SPACING", default_value_t = 2)]
     lookup_spacing: u64,
-    /// The client ID of a Twitch application, used together with its secret
-    /// to look Twitch profiles up. Without one Twitch streamers are listed
-    /// without a display name and avatar.
+    /// Twitch application client ID.
     #[arg(long, env = "TWITCH_CLIENT_ID", requires = "twitch_client_secret")]
     twitch_client_id: Option<String>,
-    /// The client secret of the Twitch application.
+    /// Twitch application client secret.
     #[arg(
         long,
         env = "TWITCH_CLIENT_SECRET",
@@ -76,38 +71,26 @@ struct Cli {
         requires = "twitch_client_id"
     )]
     twitch_client_secret: Option<String>,
-    /// The Twitch channel whose live status the website shows, for the
-    /// "Erik is live on Twitch" button. Needs the Twitch client ID and
-    /// secret.
+    /// Twitch channel whose live status the website shows.
     #[arg(long, env = "TWITCH_LIVE_CHANNEL", default_value = "eerimoq")]
     twitch_live_channel: String,
-    /// The App ID (team ID, a period and the bundle ID) of the Moblin app.
-    /// Only live posts signed by it, with App Attest, are accepted.
+    /// App ID of the Moblin app, for App Attest.
     #[arg(long, env = "APP_ID", default_value = "L82N7LD4N5.com.eerimoq.Mobs")]
     app_id: String,
-    /// The App Attest environment the app runs in. Apps installed by Xcode
-    /// use the development environment, distributed apps the production one.
+    /// App Attest environment.
     #[arg(long, env = "APP_ATTEST_ENVIRONMENT", value_enum, default_value_t = Environment::Production)]
     app_attest_environment: Environment,
-    /// The SQLite database the list of streamers, streamer accounts, their
-    /// page settings (song requests, tips, the wheel and the look of the
-    /// page) and requested songs, tips and wheel spins not yet delivered to
-    /// Moblin are saved in.
-    /// Without one they are forgotten when the backend restarts.
+    /// SQLite database. In memory without it.
     #[arg(long, env = "DATABASE")]
     database: Option<PathBuf>,
-    /// The client ID of a PayPal REST app of a PayPal partner, used together
-    /// with its secret to let streamers connect their PayPal account and ask
-    /// viewers to pay for songs, tips and wheel spins. The money goes straight
-    /// to the streamer's PayPal account. Without one payments are
-    /// unavailable.
+    /// PayPal partner REST app client ID.
     #[arg(
         long,
         env = "PAYPAL_CLIENT_ID",
         requires_all = ["paypal_client_secret", "paypal_partner_id"]
     )]
     paypal_client_id: Option<String>,
-    /// The client secret of the PayPal REST app.
+    /// PayPal partner REST app client secret.
     #[arg(
         long,
         env = "PAYPAL_CLIENT_SECRET",
@@ -115,41 +98,31 @@ struct Cli {
         requires = "paypal_client_id"
     )]
     paypal_client_secret: Option<String>,
-    /// The PayPal merchant ID of the partner account the REST app belongs to,
-    /// for looking up streamers who connected their PayPal account.
+    /// PayPal partner merchant ID.
     #[arg(long, env = "PAYPAL_PARTNER_ID", requires = "paypal_client_id")]
     paypal_partner_id: Option<String>,
-    /// The BN code PayPal gave the partner, sent with every PayPal request.
+    /// PayPal partner BN code.
     #[arg(long, env = "PAYPAL_ATTRIBUTION_ID", requires = "paypal_client_id")]
     paypal_attribution_id: Option<String>,
-    /// The ID of the webhook registered for `<public url>/paypal/webhooks` in
-    /// the PayPal REST app, subscribed to MERCHANT.ONBOARDING.COMPLETED and
-    /// MERCHANT.PARTNER-CONSENT.REVOKED. Without one PayPal webhooks are
-    /// refused.
+    /// PayPal webhook ID.
     #[arg(long, env = "PAYPAL_WEBHOOK_ID", requires = "paypal_client_id")]
     paypal_webhook_id: Option<String>,
-    /// Use the PayPal sandbox instead of real payments.
+    /// Use the PayPal sandbox.
     #[arg(long, env = "PAYPAL_SANDBOX")]
     paypal_sandbox: bool,
-    /// The secret sessions of signed in streamers are signed with. Without
-    /// one a random secret is used and everyone is signed out when the
-    /// backend restarts.
+    /// Session signing secret. Random without it.
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
-    /// The URL this backend is reached at, for the sign in redirect URIs
-    /// registered with Twitch.
+    /// URL of this backend.
     #[arg(long, env = "PUBLIC_URL", default_value = "https://api.moblin.app")]
     public_url: String,
-    /// The URL of the website, where streamers are sent after signing in.
+    /// URL of the website.
     #[arg(long, env = "FRONTEND_URL", default_value = "https://moblin.app")]
     frontend_url: String,
-    /// Accept live posts from anyone, not only from the Moblin app, for
-    /// developing the website.
+    /// Accept live posts without App Attest, for development.
     #[arg(long)]
     allow_unattested: bool,
-    /// Sign in as a made-up Twitch user without asking Twitch, for
-    /// developing the website. The login is `streamer`, or the `login`
-    /// query parameter of the sign in URL.
+    /// Fake Twitch sign in, for development.
     #[arg(long)]
     fake_twitch_sign_in: bool,
 }
