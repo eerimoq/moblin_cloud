@@ -1,4 +1,5 @@
 import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
 import { copyText } from "../components/CopyButton";
@@ -1260,6 +1261,27 @@ function NeedsPayments(props: { title: string; onConnect: () => void }) {
   );
 }
 
+function QrCode(props: { text: string; label: string }) {
+  const qr = () => encode(props.text, { border: 4 });
+  const path = () =>
+    qr()
+      .data.flatMap((row, y) => row.map((dark, x) => (dark ? `M${x} ${y}h1v1h-1z` : "")))
+      .join("");
+
+  return (
+    <svg
+      viewBox={`0 0 ${qr().size} ${qr().size}`}
+      role="img"
+      aria-label={props.label}
+      shape-rendering="crispEdges"
+      class="size-64 rounded-2xl"
+    >
+      <rect width="100%" height="100%" fill="#fff" />
+      <path d={path()} fill="#000" />
+    </svg>
+  );
+}
+
 function MoblinSettings(props: {
   moblinCloudKey: string;
   connected: boolean;
@@ -1267,6 +1289,18 @@ function MoblinSettings(props: {
   newKeyFailed: boolean;
   onNewKey: () => void;
 }) {
+  const [qrShown, setQrShown] = createSignal(false);
+  const [copied, flashCopied] = createFlash(1500);
+  const deepLink = () => {
+    const settings = { moblinCloud: { enabled: true, key: props.moblinCloudKey } };
+    return `moblin://?${encodeURIComponent(JSON.stringify(settings))}`;
+  };
+  const copyDeepLink = async () => {
+    if (await copyText(deepLink())) {
+      flashCopied();
+    }
+  };
+
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Moblin</h2>
@@ -1283,6 +1317,24 @@ function MoblinSettings(props: {
       <Notice>
         {t("Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.")}
       </Notice>
+      <p class="text-ink-2">
+        {t(
+          "Or set it all up at once on the device running Moblin: scan the QR code with its camera or open the deep link there.",
+        )}
+      </p>
+      <div class="flex flex-wrap items-center gap-4">
+        <button type="button" class={ghostButtonClass} onClick={() => setQrShown(!qrShown())}>
+          <Icon name={qrShown() ? "eye-off" : "eye"} class="size-5" />
+          {qrShown() ? t("Hide QR code") : t("Show QR code")}
+        </button>
+        <button type="button" class={ghostButtonClass} onClick={copyDeepLink}>
+          <Icon name={copied() ? "check" : "copy"} class="size-4" />
+          {copied() ? t("Copied") : t("Copy deep link")}
+        </button>
+      </div>
+      <Show when={qrShown()}>
+        <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
+      </Show>
       <div class="flex flex-wrap items-center gap-4">
         <button
           type="button"
