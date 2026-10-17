@@ -864,6 +864,7 @@ function SpinWheel(props: {
   id: string;
   spin: PublicSpin & { payment: Payment };
   wheel: Wheel | null;
+  connected: boolean;
   name: string;
   onName: (name: string) => void;
   onError: (error: unknown) => void;
@@ -952,7 +953,9 @@ function SpinWheel(props: {
         keyed
         fallback={
           <Notice>
-            {t("The wheel is not available right now. Try again when the streamer is live.")}
+            {props.connected
+              ? t("The streamer is not taking wheel spins right now.")
+              : t("The wheel is not available right now. Try again when the streamer is live.")}
           </Notice>
         }
       >
@@ -1121,6 +1124,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
+  const [streamerConnected, setStreamerConnected] = createSignal(false);
   const [profile, setProfile] = createSignal<Profile | null>(null);
   const [styled, setStyled] = createSignal(false);
   const [section, setSection] = createSignal<Section | null>(
@@ -1212,12 +1216,13 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         const found = await streamerSpin(current);
         setSpin(found.spin);
         setWheelOfLuck(found.wheel);
+        setStreamerConnected(found.connected);
       } catch {}
     }
   };
 
   const spinError = (error: unknown) => {
-    if (error instanceof BackendError && error.status === 400) {
+    if (error instanceof BackendError && [400, 404, 409].includes(error.status)) {
       void refreshSpin();
     }
   };
@@ -1473,6 +1478,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                     id={id() ?? ""}
                     spin={current}
                     wheel={wheelOfLuck()}
+                    connected={streamerConnected()}
                     name={name()}
                     onName={setName}
                     onError={spinError}

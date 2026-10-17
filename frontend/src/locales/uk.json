@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "Ретранслятор знаходить стримерів у вашій локальній мережі. Увімкніть «Вручну», щоб натомість ввести один з URL стримера як URL стримера.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "URL стріму — у Налаштування → Стріми → <ваш стрім> → URL. Там показано приклади URL для RTMP, SRT(LA), WHIP і Mobcam.",
   "The streamer is not taking song requests right now.": "Стример зараз не приймає замовлення пісень.",
+  "The streamer is not taking wheel spins right now.": "Стрімер зараз не приймає обертання колеса.",
   "The streamer isn't taking tips right now.": "Стример зараз не приймає чайові.",
   "The wheel is not available right now. Try again when the streamer is live.": "Колесо зараз недоступне. Спробуй ще раз, коли стример буде в ефірі.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "Колесо крутиться наживо на стрімі, тож дивись стрім, щоб побачити, де воно зупиниться.",

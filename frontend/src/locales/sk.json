@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "Relay nájde streamerov vo vašej lokálnej sieti. Zapni Manuálne, ak chceš namiesto toho zadať jednu z URL streamera ako URL streamera.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "URL streamu je v Nastavenia → Streamy → <tvoj stream> → URL. Zobrazuje príklady URL pre RTMP, SRT(LA), WHIP a Mobcam.",
   "The streamer is not taking song requests right now.": "Streamer momentálne neprijíma žiadosti o skladby.",
+  "The streamer is not taking wheel spins right now.": "Streamer momentálne neprijíma točenia kolesa.",
   "The streamer isn't taking tips right now.": "Streamer momentálne neprijíma tipy.",
   "The wheel is not available right now. Try again when the streamer is live.": "Koleso momentálne nie je k dispozícii. Skús to znova, keď bude streamer naživo.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "Koleso sa točí naživo na streame, takže sleduj stream a uvidíš, kde sa zastaví.",

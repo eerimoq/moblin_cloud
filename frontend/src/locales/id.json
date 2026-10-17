@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "Relay menemukan streamer di jaringan lokalmu. Aktifkan Manual untuk memasukkan salah satu URL streamer sebagai URL Streamer.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "URL stream ada di Pengaturan → Stream → <stream kamu> → URL. Di sana ada contoh URL RTMP, SRT(LA), WHIP, dan Mobcam.",
   "The streamer is not taking song requests right now.": "Streamer sedang tidak menerima permintaan lagu saat ini.",
+  "The streamer is not taking wheel spins right now.": "Streamer sedang tidak menerima putaran roda saat ini.",
   "The streamer isn't taking tips right now.": "Streamer sedang tidak menerima tip saat ini.",
   "The wheel is not available right now. Try again when the streamer is live.": "Roda sedang tidak tersedia. Coba lagi saat streamer sedang live.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "Roda berputar langsung di stream, jadi tonton stream-nya untuk melihat di mana roda berhenti.",

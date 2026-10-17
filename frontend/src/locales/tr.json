@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "Relay, yerel ağındaki yayıncıları keşfeder. Bunun yerine yayıncının URL'lerinden birini Yayıncı URL'si olarak girmek için Manuel'i aç.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "Yayın URL'si Ayarlar → Yayınlar → <yayının> → URL'de. RTMP, SRT(LA), WHIP ve Mobcam URL örneklerini gösterir.",
   "The streamer is not taking song requests right now.": "Yayıncı şu anda şarkı isteği kabul etmiyor.",
+  "The streamer is not taking wheel spins right now.": "Yayıncı şu anda çark çevirme kabul etmiyor.",
   "The streamer isn't taking tips right now.": "Yayıncı şu anda bahşiş kabul etmiyor.",
   "The wheel is not available right now. Try again when the streamer is live.": "Çark şu anda kullanılamıyor. Yayıncı canlıdayken tekrar dene.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "Çark yayında canlı dönüyor, o yüzden nerede duracağını görmek için yayını izle.",

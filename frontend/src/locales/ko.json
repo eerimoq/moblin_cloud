@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "릴레이는 로컬 네트워크에서 스트리머를 찾아냅니다. 대신 스트리머의 URL 중 하나를 스트리머 URL로 직접 입력하려면 수동을 켜세요.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "스트림 URL은 설정 → 스트림 → <내 스트림> → URL에 있어요. RTMP, SRT(LA), WHIP, Mobcam URL 예시가 표시됩니다.",
   "The streamer is not taking song requests right now.": "스트리머가 지금은 신청곡을 받지 않아요.",
+  "The streamer is not taking wheel spins right now.": "스트리머가 지금은 룰렛 돌리기를 받지 않고 있어요.",
   "The streamer isn't taking tips right now.": "스트리머가 지금은 팁을 받지 않아요.",
   "The wheel is not available right now. Try again when the streamer is live.": "지금은 룰렛을 사용할 수 없어요. 스트리머가 라이브 중일 때 다시 시도해 주세요.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "룰렛은 방송에서 실시간으로 돌아가니까, 방송을 보고 어디에 멈추는지 확인하세요.",

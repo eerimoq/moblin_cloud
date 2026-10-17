@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "Relayen hittar streamers på ditt lokala nätverk. Slå på Manuell för att i stället ange en av streamerns URL:er som Streamer-URL.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "Stream-URL:en finns i Inställningar → Streamar → <din stream> → URL. Där visas exempel på URL:er för RTMP, SRT(LA), WHIP och Mobcam.",
   "The streamer is not taking song requests right now.": "Streamern tar inte emot låtönskemål just nu.",
+  "The streamer is not taking wheel spins right now.": "Streamern tar inte emot snurr på hjulet just nu.",
   "The streamer isn't taking tips right now.": "Streamern tar inte emot tips just nu.",
   "The wheel is not available right now. Try again when the streamer is live.": "Hjulet är inte tillgängligt just nu. Försök igen när streamern är live.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "Hjulet snurrar live i streamen, så titta på streamen för att se var det landar.",

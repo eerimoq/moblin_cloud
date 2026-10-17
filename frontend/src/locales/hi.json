@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "रिले आपके लोकल नेटवर्क पर स्ट्रीमर खोज लेता है। इसके बजाय स्ट्रीमर के किसी URL को Streamer URL के रूप में डालने के लिए Manual चालू करें।",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "स्ट्रीम URL सेटिंग्स → स्ट्रीम्स → <आपकी स्ट्रीम> → URL में है। इसमें RTMP, SRT(LA), WHIP और Mobcam URL के उदाहरण दिखते हैं।",
   "The streamer is not taking song requests right now.": "स्ट्रीमर अभी गानों के अनुरोध नहीं ले रहा है।",
+  "The streamer is not taking wheel spins right now.": "स्ट्रीमर अभी व्हील स्पिन नहीं ले रहा है।",
   "The streamer isn't taking tips right now.": "स्ट्रीमर अभी टिप नहीं ले रहे हैं।",
   "The wheel is not available right now. Try again when the streamer is live.": "व्हील अभी उपलब्ध नहीं है। स्ट्रीमर के लाइव होने पर दोबारा कोशिश करें।",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "व्हील स्ट्रीम पर लाइव घूमता है, इसलिए स्ट्रीम देखें और जानें कि यह कहाँ रुकता है।",

@@ -1100,6 +1100,7 @@ struct PublicSpin {
 struct SpinResponse {
     spin: Option<PublicSpin>,
     wheel: Option<Wheel>,
+    connected: bool,
 }
 
 async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SpinResponse> {
@@ -1118,6 +1119,7 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
             stripe,
         }),
         wheel: api.remote_control.wheel(&id),
+        connected: api.remote_control.is_connected(&id),
     })
 }
 
@@ -1598,10 +1600,17 @@ async fn handle_spin_order(
         "The streamer turned the wheel off. Reload the page.",
     ))?;
     if api.remote_control.wheel(&id).is_none() {
-        return Err(failure(
-            StatusCode::NOT_FOUND,
-            "The streamer's wheel is not available right now. Try again when they are live.",
-        ));
+        return Err(if api.remote_control.is_connected(&id) {
+            failure(
+                StatusCode::CONFLICT,
+                "The streamer is not taking wheel spins right now.",
+            )
+        } else {
+            failure(
+                StatusCode::NOT_FOUND,
+                "The streamer's wheel is not available right now. Try again when they are live.",
+            )
+        });
     }
     let payee = payee(&api, &id, request.provider.as_deref())?;
     let option = spin
@@ -2862,7 +2871,10 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(public, json!({"spin": null, "wheel": null}));
+        assert_eq!(
+            public,
+            json!({"spin": null, "wheel": null, "connected": false})
+        );
         let settings_url = format!("http://{address}/account/settings");
         let response = client
             .post(&settings_url)
@@ -2907,7 +2919,7 @@ mod tests {
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
                 "stripe": null,
-            }, "wheel": null})
+            }, "wheel": null, "connected": false})
         );
         let orders_url = format!("{spin_url}/orders");
         let response = client
@@ -2918,6 +2930,32 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let mut socket = connect(&address, &key).await;
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let public: Value = client
+            .get(&spin_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(public["wheel"], Value::Null);
+        assert_eq!(public["connected"], true);
+        let response = client
+            .post(&orders_url)
+            .json(&json!({"user": "Viewer", "spins": 2}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer is not taking wheel spins right now."
+        );
         socket
             .send(Message::text(
                 json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [

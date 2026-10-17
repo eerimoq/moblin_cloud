@@ -214,7 +214,9 @@ export type Wheel = {
 };
 
 export const streamerSpin = (id: string) =>
-  call<{ spin: PublicSpin | null; wheel: Wheel | null }>(`/${encodeURIComponent(id)}/spin`);
+  call<{ spin: PublicSpin | null; wheel: Wheel | null; connected: boolean }>(
+    `/${encodeURIComponent(id)}/spin`,
+  );
 
 export const orderSpin = (
   id: string,

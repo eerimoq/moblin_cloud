@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "リレーはローカルネットワーク上のストリーマーを自動で見つけます。代わりにストリーマーのURLのどれかをストリーマーURLとして入力するには、「手動」をオンにします。",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "配信URLは設定 → 配信 → <あなたの配信> → URL にあります。RTMP、SRT(LA)、WHIP、MobcamのURL例が表示されます。",
   "The streamer is not taking song requests right now.": "現在、配信者はリクエスト曲を受け付けていません。",
+  "The streamer is not taking wheel spins right now.": "配信者は現在ルーレットを受け付けていません。",
   "The streamer isn't taking tips right now.": "配信者は現在チップを受け付けていません。",
   "The wheel is not available right now. Try again when the streamer is live.": "現在ホイールは利用できません。配信者がライブ中にもう一度お試しください。",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "ホイールは配信中にライブで回るので、配信を見てどこに止まるか確かめよう。",

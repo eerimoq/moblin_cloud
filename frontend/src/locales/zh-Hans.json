@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "中继设备会在你的本地网络中发现主播。开启“手动”,即可改为输入主播的某个 URL 作为主播 URL。",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "串流 URL 在 设置 → 串流 → <你的串流> → URL 中,里面有 RTMP、SRT(LA)、WHIP 和 Mobcam URL 的示例。",
   "The streamer is not taking song requests right now.": "主播目前不接受点歌。",
+  "The streamer is not taking wheel spins right now.": "主播目前不接受转轮盘。",
   "The streamer isn't taking tips right now.": "主播目前不接受打赏。",
   "The wheel is not available right now. Try again when the streamer is live.": "转盘暂时不可用。请在主播开播时再试。",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "转盘会在直播中实时转动,快去看直播,看看它停在哪里吧。",

@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "De relay vindt streamers op je lokale netwerk. Zet Handmatig aan om in plaats daarvan een van de URL's van de streamer in te voeren als Streamer-URL.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "De stream-URL staat in Instellingen → Streams → <jouw stream> → URL. Hij toont voorbeelden voor RTMP-, SRT(LA)-, WHIP- en Mobcam-URL's.",
   "The streamer is not taking song requests right now.": "De streamer neemt op dit moment geen nummerverzoeken aan.",
+  "The streamer is not taking wheel spins right now.": "De streamer accepteert op dit moment geen draaien aan het rad.",
   "The streamer isn't taking tips right now.": "De streamer neemt op dit moment geen tips aan.",
   "The wheel is not available right now. Try again when the streamer is live.": "Het rad is nu niet beschikbaar. Probeer het opnieuw als de streamer live is.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "Het rad draait live tijdens de stream, dus kijk mee om te zien waar het stopt.",

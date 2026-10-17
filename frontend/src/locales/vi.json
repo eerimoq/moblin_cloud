@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "Relay tự tìm streamer trong mạng nội bộ của bạn. Bật Thủ công để nhập một trong các URL của streamer làm URL Streamer.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "URL stream nằm trong Cài đặt → Stream → <stream của bạn> → URL. Ở đó có ví dụ về URL RTMP, SRT(LA), WHIP và Mobcam.",
   "The streamer is not taking song requests right now.": "Streamer hiện không nhận yêu cầu bài hát.",
+  "The streamer is not taking wheel spins right now.": "Streamer hiện không nhận lượt quay vòng quay.",
   "The streamer isn't taking tips right now.": "Streamer hiện không nhận tip.",
   "The wheel is not available right now. Try again when the streamer is live.": "Vòng quay hiện không khả dụng. Hãy thử lại khi streamer đang live.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "Vòng quay quay trực tiếp trên stream, nên hãy xem stream để biết nó dừng ở đâu nhé.",

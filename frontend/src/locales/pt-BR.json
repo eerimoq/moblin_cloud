@@ -508,6 +508,7 @@
   "The relay discovers streamers on your local network. Turn on Manual to enter one of the streamer's URLs as Streamer URL instead.": "O relay descobre streamers na sua rede local. Ative Manual para digitar uma das URLs do streamer como URL do streamer.",
   "The stream URL is in Settings → Streams → <your stream> → URL. It shows examples for RTMP, SRT(LA), WHIP and Mobcam URLs.": "A URL da stream fica em Ajustes → Streams → <sua stream> → URL. Ela mostra exemplos de URLs de RTMP, SRT(LA), WHIP e Mobcam.",
   "The streamer is not taking song requests right now.": "O streamer não está aceitando pedidos de música no momento.",
+  "The streamer is not taking wheel spins right now.": "O streamer não está aceitando giros da roda no momento.",
   "The streamer isn't taking tips right now.": "O streamer não está aceitando gorjetas agora.",
   "The wheel is not available right now. Try again when the streamer is live.": "A roda não está disponível agora. Tente de novo quando o streamer estiver ao vivo.",
   "The wheel spins live on stream, so watch the stream to see where it lands.": "A roleta gira ao vivo na live, então assista à transmissão para ver onde ela para.",
