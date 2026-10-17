@@ -996,6 +996,7 @@ struct RequestedSong {
     link: String,
     user: String,
     name: String,
+    duration: Option<u32>,
 }
 
 fn song_and_user(request: SongRequest) -> Result<(String, String), Failure> {
@@ -1030,7 +1031,12 @@ async fn requested_song(
         link,
         user,
         name: song.name(),
+        duration: song.duration,
     })
+}
+
+fn song_price(price: u32, duration: Option<u32>) -> u32 {
+    price.saturating_mul(duration.unwrap_or(0).div_ceil(300).max(1))
 }
 
 fn queue(
@@ -1085,7 +1091,7 @@ async fn handle_song_order(
         },
         user: song.user,
         merchant_id,
-        price: paywall.price,
+        price: song_price(paywall.price, song.duration),
         currency,
     };
     let order_id = paypal.create_order(order).await.map_err(|error| {
@@ -1196,6 +1202,7 @@ async fn capture_song(
         link,
         user: order.user,
         name,
+        duration: None,
     };
     Ok(queue(&api, id, order_id, song))
 }
@@ -1879,6 +1886,46 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("still queued");
+    }
+
+    #[tokio::test]
+    async fn long_songs_cost_more() {
+        let (address, api, paypal_order) = start_paid().await;
+        let (key, id) = paid_streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
+        for (duration, value) in [
+            (None, "2.50"),
+            (Some(300), "2.50"),
+            (Some(301), "5.00"),
+            (Some(601), "7.50"),
+        ] {
+            let created = tokio::spawn({
+                let orders_url = orders_url.clone();
+                async move {
+                    reqwest::Client::new()
+                        .post(orders_url)
+                        .json(&json!({"song": LINK}))
+                        .send()
+                        .await
+                        .unwrap()
+                        .status()
+                }
+            });
+            let request = receive(&mut socket).await;
+            answer(
+                &mut socket,
+                &request,
+                json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "duration": duration}}}),
+            )
+            .await;
+            assert_eq!(created.await.unwrap(), StatusCode::OK);
+            let sent = paypal_order.lock().unwrap().clone().unwrap();
+            assert_eq!(
+                sent["purchase_units"][0]["amount"],
+                json!({"currency_code": "SEK", "value": value})
+            );
+        }
     }
 
     #[tokio::test]

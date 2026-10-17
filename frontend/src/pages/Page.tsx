@@ -1170,8 +1170,11 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                     <div class="flex w-full max-w-sm flex-col gap-3">
                       <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
                         <span class="text-ink-2">Your tip</span>
-                        <span class="font-display text-2xl font-semibold">
-                          {formatPrice(current)}
+                        <span>
+                          <span class="font-display text-2xl font-semibold">
+                            {formatPrice(current)}
+                          </span>
+                          <span class="text-ink-2"> per 5 minutes</span>
                         </span>
                       </p>
                       <PayPalButton
@@ -1180,6 +1183,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                         disabled={busy() || typeof status() === "string" || !song().trim()}
                       />
                       <p class="text-[15px] text-muted">
+                        Every started 5 minutes of the song counts, and it always plays in full.
                         Your tip goes straight to the streamer. <TermsLink />
                       </p>
                     </div>

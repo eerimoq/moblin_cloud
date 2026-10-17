@@ -1,6 +1,7 @@
 import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
+import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
 import {
   Band,
@@ -325,6 +326,13 @@ function YourPage(props: {
   const [saving, setSaving] = createSignal(false);
   const [saved, flashSaved] = createFlash(2000);
   const [error, setError] = createSignal<string | null>(null);
+  const [copied, flashCopied] = createFlash(1500);
+
+  const copyLink = async () => {
+    if (await copyText(pageUrl(props.account))) {
+      flashCopied();
+    }
+  };
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -349,12 +357,6 @@ function YourPage(props: {
       <p class="text-ink-2">
         Share it with your viewers so they can send you tips, request songs and spin your wheel.
       </p>
-      <Value
-        label="Your page"
-        text={pageUrl(props.account)}
-        href={pageUrl(props.account)}
-        hideLabel
-      />
       <label class="flex flex-col gap-2">
         <span class="text-[15px] font-semibold text-ink-2">Headline (optional)</span>
         <input
@@ -409,6 +411,10 @@ function YourPage(props: {
         <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
           Open your page
         </a>
+        <button type="button" class={ghostButtonClass} onClick={copyLink}>
+          <Icon name={copied() ? "check" : "copy"} class="size-4" />
+          {copied() ? "Copied" : "Copy link"}
+        </button>
         <Show when={error()}>
           {(error) => (
             <p role="status" class="text-amber">
@@ -478,8 +484,17 @@ function SongSettings(props: {
       </label>
       <Show when={enabled()}>
         <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">Tip per song ({props.currency})</span>
-          <MoneyInput value={price()} onValue={setPrice} required />
+          <span class="text-[15px] font-semibold text-ink-2">
+            Tip per 5 minutes of song ({props.currency})
+          </span>
+          <span class="flex items-center gap-3">
+            <MoneyInput value={price()} onValue={setPrice} required />
+            <span class="text-ink-2">per started 5 minutes</span>
+          </span>
+          <span class="text-[15px] text-muted">
+            A song up to 5 minutes long costs this once, a song of 5 to 10 minutes twice, and so on.
+            Songs always play in full.
+          </span>
         </label>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
@@ -1042,7 +1057,7 @@ function MoblinSettings(props: {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Configure Moblin</h2>
-      <p class="flex items-center gap-2.5 text-[15px] text-muted">
+      <p class="flex items-center gap-2.5 text-ink-2">
         <span
           class={`size-2.5 shrink-0 rounded-full ${props.connected ? "bg-leaf" : "bg-muted"}`}
         />

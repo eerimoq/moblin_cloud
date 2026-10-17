@@ -151,6 +151,7 @@ pub struct FoundSong {
     pub id: String,
     pub title: String,
     pub artist: Option<String>,
+    pub duration: Option<u32>,
 }
 
 impl FoundSong {
@@ -739,12 +740,13 @@ mod tests {
         };
         assert_eq!(
             found(
-                r#"{"response":{"id":3,"result":{"ok":{}},"data":{"musicFind":{"song":{"id":"1440818839","title":"Song","artist":"Band"}}}}}"#
+                r#"{"response":{"id":3,"result":{"ok":{}},"data":{"musicFind":{"song":{"id":"1440818839","title":"Song","artist":"Band","duration":213}}}}}"#
             ),
             Some(FoundSong {
                 id: "1440818839".to_string(),
                 title: "Song".to_string(),
                 artist: Some("Band".to_string()),
+                duration: Some(213),
             })
         );
         assert_eq!(
