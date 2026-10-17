@@ -46,18 +46,6 @@ import {
 const pageUrl = (account: Account) =>
   new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
 
-function Steps() {
-  return (
-    <ol class="flex list-decimal flex-col gap-2 pl-6 text-ink-2">
-      <li>
-        In Moblin, go to Settings → Moblin cloud and paste the secret key as Secret key. Then turn
-        Enabled on.
-      </li>
-      <li>For song requests, make sure Moblin may use Apple Music.</li>
-    </ol>
-  );
-}
-
 function TwitchSignIn(props: { failed: boolean }) {
   return (
     <div class={cardClass}>
@@ -474,6 +462,10 @@ function SongSettings(props: {
       <h2 class="text-[23px] font-semibold">Song requests</h2>
       <p class="text-ink-2">
         Let viewers add songs from Apple Music to the queue of Moblin's music player with a tip.
+      </p>
+      <p class="text-ink-2">
+        Moblin plays the songs with Apple Music, so you need an Apple Music subscription and must
+        allow Moblin to use Apple Music. Viewers do not need an Apple Music subscription.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -898,7 +890,10 @@ function Admin(props: {
           />
           {settings().connected ? "Moblin is connected." : "Moblin is not connected right now."}
         </p>
-        <Steps />
+        <p class="text-ink-2">
+          In Moblin, go to Settings → Moblin cloud and paste the secret key as Secret key. Then turn
+          Enabled on.
+        </p>
         <Value label="Secret key for Moblin" text={props.secretKey} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
           <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
