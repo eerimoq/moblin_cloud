@@ -1269,7 +1269,7 @@ function MoblinSettings(props: {
 }) {
   return (
     <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Configure Moblin")}</h2>
+      <h2 class="text-[23px] font-semibold">Moblin</h2>
       <p class="flex items-center gap-2.5 text-ink-2">
         <span
           class={`size-2.5 shrink-0 rounded-full ${props.connected ? "bg-leaf" : "bg-muted"}`}
