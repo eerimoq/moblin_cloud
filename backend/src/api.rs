@@ -25,10 +25,11 @@ use crate::pages::{
     CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
     valid_price,
 };
-use crate::payments::{CaptureError, Item, Order, Orders};
+use crate::payments::{CaptureError, Item, Order, Orders, Payee};
 use crate::paypal::{PayPal, Seller};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
 use crate::store::{Channel, Store, Streamer};
+use crate::stripe::{self, Stripe};
 
 const ASSERTION_HEADER: &str = "moblin-assertion";
 
@@ -40,6 +41,7 @@ pub struct Api {
     pub remote_control: Streamers,
     pub pages: Pages,
     pub paypal: Option<PayPal>,
+    pub stripe: Option<Stripe>,
     pub orders: Orders,
     pub deliveries: Deliveries,
     pub auth: Auth,
@@ -80,6 +82,15 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_account_paypal_disconnect),
         )
         .route("/paypal/webhooks", post(handle_paypal_webhook))
+        .route(
+            "/account/stripe/connect",
+            post(handle_account_stripe_connect),
+        )
+        .route("/account/stripe/check", post(handle_account_stripe_check))
+        .route(
+            "/account/stripe/disconnect",
+            post(handle_account_stripe_disconnect),
+        )
         .route("/account/sign-out", post(handle_account_sign_out))
         .route("/pages/{id}/songs", get(handle_songs))
         .route("/pages/{id}", get(handle_page))
@@ -223,6 +234,13 @@ struct SettingsResponse {
     paypal_pending: bool,
     #[serde(rename = "paypalSandbox")]
     paypal_sandbox: bool,
+    stripe: bool,
+    #[serde(rename = "stripeAccountId")]
+    stripe_account_id: Option<String>,
+    #[serde(rename = "stripePending")]
+    stripe_pending: bool,
+    #[serde(rename = "stripeTest")]
+    stripe_test: bool,
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
@@ -244,6 +262,10 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
             .paypal
             .as_ref()
             .is_some_and(|paypal| paypal.environment() == "sandbox"),
+        stripe: api.stripe.is_some(),
+        stripe_pending: account.stripe_account_id.is_some() && !account.stripe_ready,
+        stripe_account_id: account.stripe_account_id.filter(|_| account.stripe_ready),
+        stripe_test: api.stripe.as_ref().is_some_and(Stripe::is_test),
         title: settings.title,
         message: settings.message,
         accent: settings.accent,
@@ -273,12 +295,24 @@ fn merchant_of(api: &Api, id: &str) -> Option<String> {
         .and_then(|account| account.merchant_id)
 }
 
+fn stripe_of(api: &Api, id: &str) -> Option<String> {
+    api.stripe.as_ref()?;
+    api.accounts
+        .of_page(id)
+        .filter(|account| account.stripe_ready)
+        .and_then(|account| account.stripe_account_id)
+}
+
 fn check_payable(api: &Api, id: &str) -> Result<(), (StatusCode, String)> {
-    if api.paypal.is_none() {
+    if api.paypal.is_none() && api.stripe.is_none() {
         return Err(payments_unavailable());
     }
-    if merchant_of(api, id).is_none() {
-        return Err((StatusCode::CONFLICT, "connect PayPal first".to_string()));
+    let paypal = api.paypal.is_some() && merchant_of(api, id).is_some();
+    if !paypal && stripe_of(api, id).is_none() {
+        return Err((
+            StatusCode::CONFLICT,
+            "connect PayPal or Stripe first".to_string(),
+        ));
     }
     Ok(())
 }
@@ -590,14 +624,14 @@ async fn handle_account_settings(
 }
 
 #[derive(Serialize)]
-struct PayPalSignUpResponse {
+struct SignUpResponse {
     url: String,
 }
 
 async fn handle_account_paypal_connect(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
-) -> Result<Json<PayPalSignUpResponse>, (StatusCode, String)> {
+) -> Result<Json<SignUpResponse>, (StatusCode, String)> {
     let signed_in = signed_in(&api, &headers)?;
     if !signed_in.fresh {
         return Err((
@@ -630,7 +664,7 @@ async fn handle_account_paypal_connect(
         "{} started connecting PayPal with tracking ID {tracking_id}",
         signed_in.id
     );
-    Ok(Json(PayPalSignUpResponse { url }))
+    Ok(Json(SignUpResponse { url }))
 }
 
 fn paypal_unreachable() -> (StatusCode, String) {
@@ -771,6 +805,117 @@ async fn handle_paypal_webhook(
     StatusCode::OK
 }
 
+#[derive(Deserialize)]
+struct StripeConnectRequest {
+    country: Option<String>,
+}
+
+async fn handle_account_stripe_connect(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    request: Option<Json<StripeConnectRequest>>,
+) -> Result<Json<SignUpResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, fresh } = signed_in(&api, &headers)?;
+    if !fresh {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "sign in again to connect Stripe".to_string(),
+        ));
+    }
+    let stripe = api.stripe.as_ref().ok_or_else(payments_unavailable)?;
+    let stripe_account_id = match account.stripe_account_id {
+        Some(stripe_account_id) => stripe_account_id,
+        None => {
+            let country = request
+                .and_then(|Json(request)| request.country)
+                .map(|country| country.trim().to_uppercase())
+                .filter(|country| stripe::COUNTRIES.contains(&country.as_str()))
+                .ok_or((
+                    StatusCode::BAD_REQUEST,
+                    "pick one of the countries Stripe supports".to_string(),
+                ))?;
+            let stripe_account_id = stripe
+                .create_account(&id, &account.name, &country)
+                .await
+                .map_err(|error| {
+                    warn!("creating a Stripe account in {country} for {id} failed: {error:#}");
+                    (
+                        StatusCode::BAD_GATEWAY,
+                        "Stripe could not create the account".to_string(),
+                    )
+                })?;
+            api.accounts
+                .start_stripe(&id, stripe_account_id.clone())
+                .map_err(account_error)?;
+            info!("{id} got Stripe account {stripe_account_id}");
+            stripe_account_id
+        }
+    };
+    let url = stripe
+        .onboarding_link(
+            &stripe_account_id,
+            &format!("{}/dashboard/?stripe", api.auth.frontend_url),
+        )
+        .await
+        .map_err(|error| {
+            warn!("creating a Stripe account link for {id} failed: {error:#}");
+            stripe_unreachable()
+        })?;
+    info!("{id} started connecting Stripe account {stripe_account_id}");
+    Ok(Json(SignUpResponse { url }))
+}
+
+fn stripe_unreachable() -> (StatusCode, String) {
+    (
+        StatusCode::BAD_GATEWAY,
+        "Stripe could not be reached".to_string(),
+    )
+}
+
+async fn handle_account_stripe_check(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let page = account.page.ok_or_else(no_page)?.id;
+    let stripe = api.stripe.as_ref().ok_or_else(payments_unavailable)?;
+    if let Some(stripe_account_id) = account.stripe_account_id {
+        let ready = stripe
+            .takes_payments(&stripe_account_id)
+            .await
+            .map_err(|error| {
+                warn!("looking up Stripe account {stripe_account_id} of {id} failed: {error:#}");
+                stripe_unreachable()
+            })?;
+        api.accounts
+            .stripe_ready(&id, &stripe_account_id, ready)
+            .map_err(account_error)?;
+        if ready != account.stripe_ready {
+            info!("Stripe account {stripe_account_id} of {id} takes payments: {ready}");
+        }
+        if !ready {
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "the Stripe account can't receive payments yet".to_string(),
+            ));
+        }
+    }
+    let settings = api.pages.get(&page);
+    Ok(settings_response(&api, page, settings))
+}
+
+async fn handle_account_stripe_disconnect(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let page = account.page.ok_or_else(no_page)?.id;
+    api.accounts.forget_stripe(&id).map_err(account_error)?;
+    info!("{id} disconnected Stripe");
+    let settings = api.pages.get(&page);
+    Ok(settings_response(&api, page, settings))
+}
+
 async fn handle_account_sign_out(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
@@ -851,6 +996,27 @@ async fn handle_twitch_page(
     Ok(Json(NameResponse { id }))
 }
 
+fn client_id(api: &Api, merchant_id: &Option<String>) -> Option<String> {
+    api.paypal
+        .as_ref()
+        .filter(|_| merchant_id.is_some())
+        .map(|paypal| paypal.client_id().to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicStripe {
+    publishable_key: String,
+    account_id: String,
+}
+
+fn public_stripe(api: &Api, id: &str) -> Option<PublicStripe> {
+    Some(PublicStripe {
+        publishable_key: api.stripe.as_ref()?.publishable_key().to_string(),
+        account_id: stripe_of(api, id)?,
+    })
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PublicPaywall {
@@ -859,6 +1025,7 @@ struct PublicPaywall {
     client_id: Option<String>,
     merchant_id: Option<String>,
     environment: Option<&'static str>,
+    stripe: Option<PublicStripe>,
 }
 
 #[derive(Serialize)]
@@ -877,13 +1044,10 @@ async fn handle_songs(
         paywall: settings.paywall.map(|paywall| PublicPaywall {
             price: paywall.price,
             currency,
-            client_id: api
-                .paypal
-                .as_ref()
-                .filter(|_| merchant_id.is_some())
-                .map(|paypal| paypal.client_id().to_string()),
+            client_id: client_id(&api, &merchant_id),
             merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
+            stripe: public_stripe(&api, &id),
         }),
     })
 }
@@ -894,8 +1058,9 @@ struct PublicTips {
     amounts: Vec<u32>,
     currency: String,
     client_id: Option<String>,
-    merchant_id: String,
+    merchant_id: Option<String>,
     environment: Option<&'static str>,
+    stripe: Option<PublicStripe>,
 }
 
 #[derive(Serialize)]
@@ -906,17 +1071,17 @@ struct TipsResponse {
 async fn handle_tips(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<TipsResponse> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let tips = settings.tips.zip(merchant_of(&api, &id));
+    let merchant_id = merchant_of(&api, &id);
+    let stripe = public_stripe(&api, &id);
+    let payable = merchant_id.is_some() || stripe.is_some();
     Json(TipsResponse {
-        tips: tips.map(|(tips, merchant_id)| PublicTips {
+        tips: settings.tips.filter(|_| payable).map(|tips| PublicTips {
             amounts: tips.amounts,
             currency,
-            client_id: api
-                .paypal
-                .as_ref()
-                .map(|paypal| paypal.client_id().to_string()),
+            client_id: client_id(&api, &merchant_id),
             merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
+            stripe,
         }),
     })
 }
@@ -927,8 +1092,9 @@ struct PublicSpin {
     options: Vec<SpinOption>,
     currency: String,
     client_id: Option<String>,
-    merchant_id: String,
+    merchant_id: Option<String>,
     environment: Option<&'static str>,
+    stripe: Option<PublicStripe>,
 }
 
 #[derive(Serialize)]
@@ -940,17 +1106,17 @@ struct SpinResponse {
 async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SpinResponse> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let spin = settings.spin.zip(merchant_of(&api, &id));
+    let merchant_id = merchant_of(&api, &id);
+    let stripe = public_stripe(&api, &id);
+    let payable = merchant_id.is_some() || stripe.is_some();
     Json(SpinResponse {
-        spin: spin.map(|(spin, merchant_id)| PublicSpin {
+        spin: settings.spin.filter(|_| payable).map(|spin| PublicSpin {
             options: spin.options,
             currency,
-            client_id: api
-                .paypal
-                .as_ref()
-                .map(|paypal| paypal.client_id().to_string()),
+            client_id: client_id(&api, &merchant_id),
             merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
+            stripe,
         }),
         wheel: api.remote_control.wheel(&id),
     })
@@ -995,6 +1161,8 @@ async fn handle_queue(
 struct SongRequest {
     song: String,
     user: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
 }
 
 struct RequestedSong {
@@ -1072,6 +1240,16 @@ fn queue(
 #[serde(rename_all = "camelCase")]
 struct OrderResponse {
     order_id: String,
+    #[serde(flatten)]
+    stripe: Option<StripePayment>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StripePayment {
+    client_secret: String,
+    price: u32,
+    currency: String,
 }
 
 async fn handle_song_order(
@@ -1085,8 +1263,7 @@ async fn handle_song_order(
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes song requests. Reload the page.",
     ))?;
-    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
-    let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
+    let payee = payee(&api, &id, request.provider.as_deref())?;
     let song = requested_song(&api, &id, song_and_user(request)?).await?;
     let order = Order {
         streamer: id.clone(),
@@ -1095,18 +1272,11 @@ async fn handle_song_order(
             name: song.name,
         },
         user: song.user,
-        merchant_id,
+        payee,
         price: song_price(paywall.price, song.duration),
         currency,
     };
-    let order_id = start_order(&api, paypal, order).await.map_err(|error| {
-        warn!("creating a PayPal order for remote control streamer {id} failed: {error:#}");
-        failure(
-            StatusCode::BAD_GATEWAY,
-            "PayPal could not start the payment. Try again.",
-        )
-    })?;
-    Ok(Json(OrderResponse { order_id }))
+    Ok(Json(start_order(&api, order).await?))
 }
 
 async fn handle_song_capture(
@@ -1118,11 +1288,52 @@ async fn handle_song_capture(
         .unwrap_or_else(|_| Err(capture_crashed()))
 }
 
-async fn start_order(api: &Api, paypal: &PayPal, order: Order) -> Result<String> {
-    api.orders.make_room()?;
-    let order_id = paypal.create_order(&order).await?;
+fn payee(api: &Api, id: &str, provider: Option<&str>) -> Result<Payee, Failure> {
+    match provider.unwrap_or("paypal") {
+        "paypal" if api.paypal.is_some() => merchant_of(api, id).map(Payee::PayPal),
+        "stripe" => stripe_of(api, id).map(Payee::Stripe),
+        _ => None,
+    }
+    .ok_or_else(payment_unavailable)
+}
+
+async fn start_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> {
+    let provider = order.payee.provider();
+    let created = async {
+        api.orders.make_room()?;
+        match &order.payee {
+            Payee::PayPal(merchant_id) => {
+                let paypal = api.paypal.as_ref().context("no PayPal")?;
+                let order_id = paypal.create_order(&order, merchant_id).await?;
+                anyhow::Ok((order_id, None))
+            }
+            Payee::Stripe(account) => {
+                let stripe = api.stripe.as_ref().context("no Stripe")?;
+                let (order_id, client_secret) = stripe.create_payment(&order, account).await?;
+                Ok((
+                    order_id,
+                    Some(StripePayment {
+                        client_secret,
+                        price: order.price,
+                        currency: order.currency.clone(),
+                    }),
+                ))
+            }
+        }
+    };
+    let (order_id, stripe) = created.await.map_err(|error| {
+        warn!(
+            "creating a {provider} {} order for remote control streamer {} failed: {error:#}",
+            order.item.kind(),
+            order.streamer
+        );
+        failure(
+            StatusCode::BAD_GATEWAY,
+            &format!("{provider} could not start the payment. Try again."),
+        )
+    })?;
     api.orders.insert(order_id.clone(), order);
-    Ok(order_id)
+    Ok(OrderResponse { order_id, stripe })
 }
 
 fn capture_crashed() -> Failure {
@@ -1132,7 +1343,7 @@ fn capture_crashed() -> Failure {
     )
 }
 
-fn paypal_unavailable() -> Failure {
+fn payment_unavailable() -> Failure {
     failure(
         StatusCode::SERVICE_UNAVAILABLE,
         "Payments are unavailable right now. Try again later.",
@@ -1140,7 +1351,6 @@ fn paypal_unavailable() -> Failure {
 }
 
 async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Order, Failure> {
-    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
     let order = api
         .orders
         .get(order_id)
@@ -1149,19 +1359,35 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
             StatusCode::GONE,
             "This payment is unknown or expired, so no money was taken.",
         ))?;
-    if kind == "song" && !api.remote_control.is_connected(id) {
-        return Err(failure(
-            StatusCode::NOT_FOUND,
-            "The streamer went offline, so your payment was not taken.",
-        ));
+    let refusal = if kind == "song" && !api.remote_control.is_connected(id) {
+        Some("The streamer went offline, so your payment was not taken.")
+    } else if kind == "spin" && api.remote_control.wheel(id).is_none() {
+        Some("The streamer's wheel is gone, so your payment was not taken.")
+    } else {
+        None
+    };
+    if let Some(refusal) = refusal {
+        if let Payee::Stripe(account) = &order.payee
+            && let Some(stripe) = &api.stripe
+        {
+            api.orders.remove(order_id);
+            if let Err(error) = stripe.cancel(order_id, account).await {
+                warn!("cancelling Stripe payment {order_id} failed: {error:#}");
+            }
+        }
+        return Err(failure(StatusCode::NOT_FOUND, refusal));
     }
-    if kind == "spin" && api.remote_control.wheel(id).is_none() {
-        return Err(failure(
-            StatusCode::NOT_FOUND,
-            "The streamer's wheel is gone, so your payment was not taken.",
-        ));
-    }
-    let captured = paypal.capture(order_id, &order).await;
+    let provider = order.payee.provider();
+    let captured = match &order.payee {
+        Payee::PayPal(merchant_id) => {
+            let paypal = api.paypal.as_ref().ok_or_else(payment_unavailable)?;
+            paypal.capture(order_id, &order, merchant_id).await
+        }
+        Payee::Stripe(account) => {
+            let stripe = api.stripe.as_ref().ok_or_else(payment_unavailable)?;
+            stripe.capture(order_id, &order, account).await
+        }
+    };
     if !matches!(
         captured,
         Err(CaptureError::NotApproved | CaptureError::Failed)
@@ -1169,36 +1395,36 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
         api.orders.remove(order_id);
     }
     captured.map_err(|error| match error {
-            CaptureError::NotApproved if kind == "song" => failure(
-                StatusCode::PAYMENT_REQUIRED,
-                "The payment was not completed. No song was added.",
-            ),
-            CaptureError::NotApproved => failure(
-                StatusCode::PAYMENT_REQUIRED,
-                "The payment was not completed.",
-            ),
-            CaptureError::AlreadyCaptured => {
-                failure(StatusCode::CONFLICT, "This payment was already used.")
-            }
-            CaptureError::Pending if kind == "spin" => failure(
-                StatusCode::PAYMENT_REQUIRED,
-                "PayPal is still reviewing the payment, so the wheel was not spun. If the money is taken, ask the streamer for a refund.",
-            ),
-            CaptureError::Pending if kind == "tip" => failure(
-                StatusCode::PAYMENT_REQUIRED,
-                "PayPal is still reviewing the payment, so the tip was not shown. If PayPal approves it, the money still reaches the streamer.",
-            ),
-            CaptureError::Pending => failure(
-                StatusCode::PAYMENT_REQUIRED,
-                "PayPal is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund.",
-            ),
-            CaptureError::Failed | CaptureError::Unexpected => failure(
-                StatusCode::BAD_GATEWAY,
-                "PayPal could not complete the payment.",
-            ),
-        })?;
+        CaptureError::NotApproved if kind == "song" => failure(
+            StatusCode::PAYMENT_REQUIRED,
+            "The payment was not completed. No song was added.",
+        ),
+        CaptureError::NotApproved => failure(
+            StatusCode::PAYMENT_REQUIRED,
+            "The payment was not completed.",
+        ),
+        CaptureError::AlreadyCaptured => {
+            failure(StatusCode::CONFLICT, "This payment was already used.")
+        }
+        CaptureError::Pending if kind == "spin" => failure(
+            StatusCode::PAYMENT_REQUIRED,
+            &format!("{provider} is still reviewing the payment, so the wheel was not spun. If the money is taken, ask the streamer for a refund."),
+        ),
+        CaptureError::Pending if kind == "tip" => failure(
+            StatusCode::PAYMENT_REQUIRED,
+            &format!("{provider} is still reviewing the payment, so the tip was not shown. If {provider} approves it, the money still reaches the streamer."),
+        ),
+        CaptureError::Pending => failure(
+            StatusCode::PAYMENT_REQUIRED,
+            &format!("{provider} is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund."),
+        ),
+        CaptureError::Failed | CaptureError::Unexpected => failure(
+            StatusCode::BAD_GATEWAY,
+            &format!("{provider} could not complete the payment."),
+        ),
+    })?;
     info!(
-        "{:?} paid {} {} in PayPal order {order_id}",
+        "{:?} paid {} {} in {provider} order {order_id}",
         order.user,
         format_price(order.price),
         order.currency
@@ -1245,6 +1471,8 @@ struct TipRequest {
     amount: u32,
     user: Option<String>,
     message: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
 }
 
 async fn handle_tip_order(
@@ -1258,8 +1486,7 @@ async fn handle_tip_order(
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
     ))?;
-    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
-    let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
+    let payee = payee(&api, &id, request.provider.as_deref())?;
     if !valid_price(request.amount) {
         return Err(failure(StatusCode::BAD_REQUEST, "Tip from 0.50 to 1000."));
     }
@@ -1268,18 +1495,11 @@ async fn handle_tip_order(
         streamer: id.clone(),
         item: Item::Tip { message },
         user: user_name(request.user, "Someone"),
-        merchant_id,
+        payee,
         price: request.amount,
         currency,
     };
-    let order_id = start_order(&api, paypal, order).await.map_err(|error| {
-        warn!("creating a PayPal tip order for remote control streamer {id} failed: {error:#}");
-        failure(
-            StatusCode::BAD_GATEWAY,
-            "PayPal could not start the payment. Try again.",
-        )
-    })?;
-    Ok(Json(OrderResponse { order_id }))
+    Ok(Json(start_order(&api, order).await?))
 }
 
 async fn handle_tip_capture(
@@ -1301,7 +1521,7 @@ async fn capture_tip(
         return Err(capture_crashed());
     };
     info!(
-        "queued a tip of {} {} by {:?} in PayPal order {order_id} for remote control streamer {id}",
+        "queued a tip of {} {} by {:?} in order {order_id} for remote control streamer {id}",
         format_price(order.price),
         order.currency,
         order.user
@@ -1331,6 +1551,8 @@ struct SpinRequest {
     spins: u32,
     user: Option<String>,
     message: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
 }
 
 async fn handle_spin_order(
@@ -1350,8 +1572,7 @@ async fn handle_spin_order(
             "The streamer's wheel is not available right now. Try again when they are live.",
         ));
     }
-    let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
-    let merchant_id = merchant_of(&api, &id).ok_or_else(paypal_unavailable)?;
+    let payee = payee(&api, &id, request.provider.as_deref())?;
     let option = spin
         .options
         .iter()
@@ -1367,18 +1588,11 @@ async fn handle_spin_order(
             message: viewer_message(request.message)?,
         },
         user: user_name(request.user, "Someone"),
-        merchant_id,
+        payee,
         price: option.price,
         currency,
     };
-    let order_id = start_order(&api, paypal, order).await.map_err(|error| {
-        warn!("creating a PayPal spin order for remote control streamer {id} failed: {error:#}");
-        failure(
-            StatusCode::BAD_GATEWAY,
-            "PayPal could not start the payment. Try again.",
-        )
-    })?;
-    Ok(Json(OrderResponse { order_id }))
+    Ok(Json(start_order(&api, order).await?))
 }
 
 async fn handle_spin_capture(
@@ -1400,7 +1614,7 @@ async fn capture_spin(
         return Err(capture_crashed());
     };
     info!(
-        "queued {spins} wheel spins by {:?} in PayPal order {order_id} for remote control streamer {id}",
+        "queued {spins} wheel spins by {:?} in order {order_id} for remote control streamer {id}",
         order.user
     );
     api.deliveries.add(
@@ -1479,11 +1693,12 @@ mod tests {
     }
 
     async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
-        start_api_with(paypal, None, Pages::new(Database::memory())).await
+        start_api_with(paypal, None, None, Pages::new(Database::memory())).await
     }
 
     async fn start_api_with(
         paypal: Option<PayPal>,
+        stripe: Option<Stripe>,
         twitch: Option<OAuthApp>,
         pages: Pages,
     ) -> (String, Arc<Api>) {
@@ -1495,6 +1710,7 @@ mod tests {
             remote_control: Streamers::new(),
             pages,
             paypal,
+            stripe,
             orders: Orders::new(),
             deliveries: Deliveries::new(Database::memory()),
             auth: Auth::new(
@@ -1725,6 +1941,378 @@ mod tests {
         (format!("http://{address}"), fake)
     }
 
+    #[derive(Clone, Default)]
+    struct FakeStripe {
+        accounts: Arc<std::sync::Mutex<Vec<Value>>>,
+        link: Arc<std::sync::Mutex<Option<Value>>>,
+        active: Arc<std::sync::Mutex<bool>>,
+        payment: Arc<std::sync::Mutex<Option<Value>>>,
+        state: Arc<std::sync::Mutex<&'static str>>,
+        cancelled: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    fn new_stripe(url: String) -> Stripe {
+        Stripe::new(
+            reqwest::Client::new(),
+            url,
+            "sk_test_secret".to_string(),
+            "pk_test_public".to_string(),
+        )
+    }
+
+    async fn start_stripe() -> (String, FakeStripe) {
+        let fake = FakeStripe::default();
+        *fake.state.lock().unwrap() = "requires_payment_method";
+        let router = Router::new()
+            .route(
+                "/v2/core/accounts",
+                post({
+                    let accounts = fake.accounts.clone();
+                    move |headers: HeaderMap, Json(body): Json<Value>| async move {
+                        assert!(headers.contains_key("stripe-version"));
+                        accounts.lock().unwrap().push(body);
+                        Json(json!({"id": "acct_1", "object": "v2.core.account"}))
+                    }
+                }),
+            )
+            .route(
+                "/v2/core/account_links",
+                post({
+                    let link = fake.link.clone();
+                    move |Json(body): Json<Value>| async move {
+                        *link.lock().unwrap() = Some(body);
+                        Json(json!({"url": "https://connect.stripe.com/setup/x"}))
+                    }
+                }),
+            )
+            .route(
+                "/v2/core/accounts/{account}",
+                get({
+                    let active = fake.active.clone();
+                    move |Path(account): Path<String>| async move {
+                        assert_eq!(account, "acct_1");
+                        let status = if *active.lock().unwrap() {
+                            "active"
+                        } else {
+                            "pending"
+                        };
+                        Json(json!({"id": account, "configuration": {"merchant": {
+                            "capabilities": {"card_payments": {"status": status}},
+                        }}}))
+                    }
+                }),
+            )
+            .route(
+                "/v1/payment_intents",
+                post({
+                    let payment = fake.payment.clone();
+                    move |headers: HeaderMap,
+                          axum::Form(form): axum::Form<
+                        std::collections::HashMap<String, String>,
+                    >| async move {
+                        *payment.lock().unwrap() = Some(json!({
+                            "account": headers["stripe-account"].to_str().unwrap(),
+                            "form": form,
+                        }));
+                        Json(json!({
+                            "id": "pi_1",
+                            "client_secret": "pi_1_secret_2",
+                            "status": "requires_payment_method",
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/v1/payment_intents/{id}/capture",
+                post({
+                    let payment = fake.payment.clone();
+                    let state = fake.state.clone();
+                    move |headers: HeaderMap, Path(id): Path<String>| async move {
+                        let payment = payment.lock().unwrap().clone().unwrap();
+                        assert_eq!(headers["stripe-account"], "acct_1");
+                        let mut state = state.lock().unwrap();
+                        if id != "pi_1" || *state != "requires_capture" {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"error": {
+                                    "code": "payment_intent_unexpected_state",
+                                    "payment_intent": {"id": id, "status": *state},
+                                }})),
+                            );
+                        }
+                        *state = "succeeded";
+                        (
+                            StatusCode::OK,
+                            Json(json!({
+                                "id": id,
+                                "status": "succeeded",
+                                "amount_received": payment["form"]["amount"]
+                                    .as_str()
+                                    .unwrap()
+                                    .parse::<u32>()
+                                    .unwrap(),
+                                "currency": payment["form"]["currency"],
+                            })),
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/v1/payment_intents/{id}/cancel",
+                post({
+                    let cancelled = fake.cancelled.clone();
+                    move |Path(id): Path<String>| async move {
+                        cancelled.lock().unwrap().push(id);
+                        Json(json!({"status": "canceled"}))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        (format!("http://{address}"), fake)
+    }
+
+    async fn start_stripe_api() -> (String, Arc<Api>, FakeStripe) {
+        let (stripe_url, fake) = start_stripe().await;
+        let (address, api) = start_api_with(
+            None,
+            Some(new_stripe(stripe_url)),
+            None,
+            Pages::new(Database::memory()),
+        )
+        .await;
+        (address, api, fake)
+    }
+
+    fn connect_stripe(api: &Api) {
+        api.accounts
+            .start_stripe("1", "acct_1".to_string())
+            .unwrap();
+        api.accounts.stripe_ready("1", "acct_1", true).unwrap();
+    }
+
+    #[tokio::test]
+    async fn stripe_connects_and_takes_tips() {
+        let (address, api, fake) = start_stripe_api().await;
+        let client = reqwest::Client::new();
+        let (session, _, id) = streamer(&address, &api).await;
+        let post = |path: &str| {
+            client
+                .post(format!("http://{address}{path}"))
+                .bearer_auth(&session)
+        };
+        let settings: Value = post("/account/stripe/check")
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["stripe"], true);
+        assert_eq!(settings["stripeAccountId"], Value::Null);
+        assert_eq!(settings["stripePending"], false);
+        assert_eq!(settings["stripeTest"], true);
+        assert_eq!(settings["paypal"], false);
+        for request in [json!({}), json!({"country": "XX"})] {
+            let response = post("/account/stripe/connect")
+                .json(&request)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        let response = post("/account/stripe/connect").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        for request in [Some(json!({"country": " se "})), None] {
+            let mut connect = post("/account/stripe/connect");
+            if let Some(request) = request {
+                connect = connect.json(&request);
+            }
+            let signed_up: Value = connect.send().await.unwrap().json().await.unwrap();
+            assert_eq!(
+                signed_up,
+                json!({"url": "https://connect.stripe.com/setup/x"})
+            );
+        }
+        let accounts = fake.accounts.lock().unwrap().clone();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0]["display_name"], "Erik");
+        assert_eq!(accounts[0]["dashboard"], "full");
+        assert_eq!(accounts[0]["identity"], json!({"country": "se"}));
+        assert_eq!(accounts[0]["metadata"], json!({"twitch_user_id": "1"}));
+        let link = fake.link.lock().unwrap().clone().unwrap();
+        assert_eq!(link["account"], "acct_1");
+        assert_eq!(
+            link["use_case"]["account_onboarding"]["return_url"],
+            "https://moblin.app/dashboard/?stripe"
+        );
+        let response = post("/account/stripe/check").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let settings_request = json!({"currency": "eur", "tips": {"amounts": [500]}});
+        let response = post("/account/settings")
+            .json(&settings_request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        *fake.active.lock().unwrap() = true;
+        let settings: Value = post("/account/stripe/check")
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["stripeAccountId"], "acct_1");
+        assert_eq!(settings["stripePending"], false);
+        let response = post("/account/settings")
+            .json(&settings_request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let tips_url = format!("http://{address}/pages/{id}/tips");
+        let public: Value = client
+            .get(&tips_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            public,
+            json!({"tips": {
+                "amounts": [500],
+                "currency": "EUR",
+                "clientId": null,
+                "merchantId": null,
+                "environment": null,
+                "stripe": {"publishableKey": "pk_test_public", "accountId": "acct_1"},
+            }})
+        );
+        let orders_url = format!("{tips_url}/orders");
+        let response = client
+            .post(&orders_url)
+            .json(&json!({"amount": 700}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let order: Value = client
+            .post(&orders_url)
+            .json(&json!({"amount": 700, "user": "Viewer", "message": "Great stream!", "provider": "stripe"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            order,
+            json!({
+                "orderId": "pi_1",
+                "clientSecret": "pi_1_secret_2",
+                "price": 700,
+                "currency": "EUR",
+            })
+        );
+        let payment = fake.payment.lock().unwrap().clone().unwrap();
+        assert_eq!(payment["account"], "acct_1");
+        assert_eq!(payment["form"]["amount"], "700");
+        assert_eq!(payment["form"]["currency"], "eur");
+        assert_eq!(payment["form"]["capture_method"], "manual");
+        assert_eq!(
+            payment["form"]["description"],
+            "Tip from Viewer: Great stream!"
+        );
+        let capture_url = format!("{orders_url}/pi_1/capture");
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        *fake.state.lock().unwrap() = "requires_capture";
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+        assert_eq!(api.deliveries.pending().len(), 1);
+        let settings: Value = post("/account/stripe/disconnect")
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["stripeAccountId"], Value::Null);
+        let public: Value = client
+            .get(&tips_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(public, json!({"tips": null}));
+    }
+
+    #[tokio::test]
+    async fn stripe_holds_are_released_when_the_streamer_goes_offline() {
+        let (address, api, fake) = start_stripe_api().await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        connect_stripe(&api);
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut socket = connect(&address, &key).await;
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
+        let created = tokio::spawn({
+            let orders_url = orders_url.clone();
+            async move {
+                reqwest::Client::new()
+                    .post(orders_url)
+                    .json(&json!({"song": LINK, "provider": "stripe"}))
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()
+            }
+        });
+        let request = receive(&mut socket).await;
+        answer(
+            &mut socket,
+            &request,
+            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "duration": 400}}}),
+        )
+        .await;
+        assert_eq!(created.await.unwrap()["orderId"], "pi_1");
+        let payment = fake.payment.lock().unwrap().clone().unwrap();
+        assert_eq!(payment["form"]["amount"], "500");
+        assert_eq!(payment["form"]["currency"], "sek");
+        socket.close(None).await.unwrap();
+        for _ in 0..100 {
+            if !api.remote_control.is_connected(&id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        *fake.state.lock().unwrap() = "requires_capture";
+        let capture_url = format!("{orders_url}/pi_1/capture");
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(*fake.cancelled.lock().unwrap(), ["pi_1"]);
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+        assert!(api.deliveries.pending().is_empty());
+    }
+
     const LINK: &str = "https://music.apple.com/song/1440818839?i=1440818839";
 
     async fn answer<S>(socket: &mut S, request: &Value, data: Value)
@@ -1795,7 +2383,7 @@ mod tests {
             )
             .unwrap();
         let (paypal_url, _) = start_paypal().await;
-        let (address, _) = start_api_with(Some(new_paypal(paypal_url)), None, pages).await;
+        let (address, _) = start_api_with(Some(new_paypal(paypal_url)), None, None, pages).await;
         let client = reqwest::Client::new();
         let public: Value = client
             .get(format!("http://{address}/pages/p/songs"))
@@ -1813,6 +2401,7 @@ mod tests {
                 "clientId": null,
                 "merchantId": null,
                 "environment": "production",
+                "stripe": null,
             }})
         );
         let response = client
@@ -1992,6 +2581,7 @@ mod tests {
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
+                "stripe": null,
             }})
         );
         let orders_url = format!("http://{address}/pages/{id}/songs/orders");
@@ -2285,6 +2875,7 @@ mod tests {
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
+                "stripe": null,
             }, "wheel": null})
         );
         let orders_url = format!("{spin_url}/orders");
@@ -2424,6 +3015,7 @@ mod tests {
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
+                "stripe": null,
             }})
         );
         for request in [
@@ -2635,6 +3227,7 @@ mod tests {
     async fn streamers_sign_in_and_manage_their_page() {
         let twitch = start_twitch().await;
         let (address, _) = start_api_with(
+            None,
             None,
             Some(OAuthApp {
                 client_id: "id".to_string(),

@@ -26,7 +26,9 @@ impl Database {
                      page_key TEXT,
                      sessions INTEGER NOT NULL,
                      merchant_id TEXT,
-                     paypal_tracking_id TEXT
+                     paypal_tracking_id TEXT,
+                     stripe_account_id TEXT,
+                     stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
                  CREATE INDEX IF NOT EXISTS accounts_page_key ON accounts (page_key);
@@ -46,6 +48,25 @@ impl Database {
                  );",
             )
             .context("failed to create the database tables")?;
+        for (column, definition) in [
+            ("stripe_account_id", "TEXT"),
+            ("stripe_ready", "INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            let exists: bool = connection
+                .query_row(
+                    "SELECT count(*) > 0 FROM pragma_table_info('accounts') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .context("failed to read the accounts table")?;
+            if !exists {
+                connection
+                    .execute_batch(&format!(
+                        "ALTER TABLE accounts ADD COLUMN {column} {definition}"
+                    ))
+                    .with_context(|| format!("failed to add {column} to the accounts table"))?;
+            }
+        }
         Ok(Arc::new(Self(Mutex::new(connection))))
     }
 

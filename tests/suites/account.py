@@ -254,16 +254,16 @@ class AccountCurrency(AccountTestCase):
         self.assert_equal(dashboard.save_settings(currency="USD")["currency"], "USD")
 
 
-class AccountPaidFeaturesNeedPayPal(AccountTestCase):
-    """Refuse to turn song requests, tips or the wheel on before PayPal is connected."""
+class AccountPaidFeaturesNeedPayments(AccountTestCase):
+    """Refuse to turn song requests, tips or the wheel on before PayPal or Stripe is connected."""
 
     def run(self):
         dashboard = self.sign_in("paidneedspaypal")
         page_id = dashboard.create_page()["settings"]["id"]
-        if self.context.config.paypal() is None:
+        if self.context.config.paypal() is None and self.context.config.stripe() is None:
             status, text = 503, "payments are unavailable"
         else:
-            status, text = 409, "connect PayPal first"
+            status, text = 409, "connect PayPal or Stripe first"
         for changes in [
             {"paywall": {"price": 100}},
             {"tips": {"amounts": [100]}},
@@ -310,6 +310,6 @@ def tests(context: Context):
         AccountSignOutEverywhere(context),
         AccountPageLook(context),
         AccountCurrency(context),
-        AccountPaidFeaturesNeedPayPal(context),
+        AccountPaidFeaturesNeedPayments(context),
         AccountCors(context),
     ]

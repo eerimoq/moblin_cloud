@@ -13,11 +13,11 @@ const sections: { title: string; body: JSX.Element[] }[] = [
     body: [
       <>
         Tip pages on moblin.app let viewers tip streamers. Every payment on a tip page is a tip,
-        sent directly to the streamer's PayPal account. Nothing is sold or bought.
+        sent directly to the streamer's PayPal or Stripe account. Nothing is sold or bought.
       </>,
       <>
         Moblin only provides the software. Moblin does not receive, hold or forward the money and
-        takes no fee. PayPal charges the streamer its usual fees.
+        takes no fee. PayPal and Stripe charge the streamer their usual fees.
       </>,
     ],
   },
@@ -34,7 +34,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
       </>,
       <>
         Questions about a tip, refunds and disputes are between you and the streamer. Contact the
-        streamer first, or use PayPal's resolution center. Moblin cannot refund tips.
+        streamer first, or use PayPal's resolution center or your card issuer. Moblin cannot refund
+        tips.
       </>,
     ],
   },
@@ -47,14 +48,19 @@ const sections: { title: string; body: JSX.Element[] }[] = [
         You can remove the permission in your PayPal settings at any time.
       </>,
       <>
+        When you connect Stripe, you sign up or sign in on Stripe with an account that Moblin
+        creates for you. Moblin only uses it to take tips for you, and never refunds tips or moves
+        money out of it. You can disconnect Stripe in the dashboard at any time.
+      </>,
+      <>
         You are responsible for what your tip page says, for refunds and disputes with your viewers,
-        for any taxes on what you receive, and for following PayPal's terms and the rules of the
-        platforms you stream on.
+        for any taxes on what you receive, and for following PayPal's or Stripe's terms and the
+        rules of the platforms you stream on.
       </>,
       <>
         Tips, wheel spins and song requests are sent to your Moblin app. When it is not connected,
         Moblin keeps them for 7 days and then gives up, so don't rely on it as your only record;
-        PayPal has all your tips.
+        PayPal and Stripe have all your tips.
       </>,
     ],
   },
@@ -109,7 +115,7 @@ export default function Terms() {
             </a>
             , and for the tips viewers send streamers there.
           </p>
-          <p class="text-[15px] text-muted">Last updated October 16, 2026.</p>
+          <p class="text-[15px] text-muted">Last updated October 17, 2026.</p>
         </Hero>
         <Band>
           <For each={sections}>

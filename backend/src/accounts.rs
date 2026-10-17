@@ -14,6 +14,8 @@ pub struct Account {
     pub sessions: u64,
     pub merchant_id: Option<String>,
     pub paypal_tracking_id: Option<String>,
+    pub stripe_account_id: Option<String>,
+    pub stripe_ready: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -30,8 +32,7 @@ pub enum AccountError {
     NotSaved,
 }
 
-const COLUMNS: &str =
-    "name, login, avatar, page_id, page_key, sessions, merchant_id, paypal_tracking_id";
+const COLUMNS: &str = "name, login, avatar, page_id, page_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
 
 const SAME_LOGIN: &str = "login != '' AND lower(login) = lower(trim(?1))";
 
@@ -46,6 +47,8 @@ fn account(row: &Row) -> rusqlite::Result<Account> {
         sessions: row.get(5)?,
         merchant_id: row.get(6)?,
         paypal_tracking_id: row.get(7)?,
+        stripe_account_id: row.get(8)?,
+        stripe_ready: row.get(9)?,
     })
 }
 
@@ -175,6 +178,38 @@ impl Accounts {
         })
     }
 
+    pub fn start_stripe(&self, id: &str, account_id: String) -> Result<Account, AccountError> {
+        self.change(id, false, |account| {
+            if account.stripe_account_id.as_ref() != Some(&account_id) {
+                account.stripe_account_id = Some(account_id);
+                account.stripe_ready = false;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn stripe_ready(
+        &self,
+        id: &str,
+        account_id: &str,
+        ready: bool,
+    ) -> Result<Account, AccountError> {
+        self.change(id, false, |account| {
+            if account.stripe_account_id.as_deref() == Some(account_id) {
+                account.stripe_ready = ready;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn forget_stripe(&self, id: &str) -> Result<Account, AccountError> {
+        self.change(id, false, |account| {
+            account.stripe_account_id = None;
+            account.stripe_ready = false;
+            Ok(())
+        })
+    }
+
     pub fn sign_out(&self, id: &str) -> Result<Account, AccountError> {
         self.change(id, false, |account| {
             account.sessions += 1;
@@ -226,7 +261,7 @@ impl Accounts {
         }
         database
             .execute(
-                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
+                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"),
                 params![
                     id,
                     account.name,
@@ -237,6 +272,8 @@ impl Accounts {
                     account.sessions,
                     account.merchant_id,
                     account.paypal_tracking_id,
+                    account.stripe_account_id,
+                    account.stripe_ready,
                 ],
             )
             .map_err(not_saved)?;
@@ -377,6 +414,73 @@ mod tests {
         assert_eq!(account.merchant_id, None);
         assert_eq!(account.paypal_tracking_id, None);
         assert_eq!(accounts.forget_paypal("2"), Err(AccountError::Unknown));
+    }
+
+    #[test]
+    fn stripe_is_ready_only_for_the_current_account() {
+        let accounts = Accounts::new(Database::memory());
+        assert_eq!(
+            accounts.start_stripe("1", "acct_1".to_string()),
+            Err(AccountError::Unknown)
+        );
+        accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        accounts.start_stripe("1", "acct_1".to_string()).unwrap();
+        assert!(
+            !accounts
+                .stripe_ready("1", "acct_2", true)
+                .unwrap()
+                .stripe_ready
+        );
+        assert!(
+            accounts
+                .stripe_ready("1", "acct_1", true)
+                .unwrap()
+                .stripe_ready
+        );
+        assert!(
+            accounts
+                .start_stripe("1", "acct_1".to_string())
+                .unwrap()
+                .stripe_ready
+        );
+        let account = accounts.start_stripe("1", "acct_2".to_string()).unwrap();
+        assert_eq!(account.stripe_account_id.as_deref(), Some("acct_2"));
+        assert!(!account.stripe_ready);
+        accounts.stripe_ready("1", "acct_2", true).unwrap();
+        let account = accounts.forget_stripe("1").unwrap();
+        assert_eq!(account.stripe_account_id, None);
+        assert!(!account.stripe_ready);
+    }
+
+    #[test]
+    fn old_databases_get_the_stripe_columns() {
+        let path = database::temporary_path("old-accounts");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE accounts (
+                     id TEXT PRIMARY KEY,
+                     name TEXT NOT NULL,
+                     login TEXT NOT NULL,
+                     avatar TEXT,
+                     page_id TEXT,
+                     page_key TEXT,
+                     sessions INTEGER NOT NULL,
+                     merchant_id TEXT,
+                     paypal_tracking_id TEXT
+                 );
+                 INSERT INTO accounts VALUES ('1', 'Erik', 'erik', NULL, 'p', 'k', 0, 'M', NULL);",
+            )
+            .unwrap();
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        let account = accounts.get("1").unwrap();
+        assert_eq!(account.merchant_id.as_deref(), Some("M"));
+        assert_eq!(account.stripe_account_id, None);
+        accounts.start_stripe("1", "acct_1".to_string()).unwrap();
+        accounts.stripe_ready("1", "acct_1", true).unwrap();
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        assert!(accounts.get("1").unwrap().stripe_ready);
+        database::remove(&path);
     }
 
     #[test]

@@ -74,6 +74,9 @@ class Config:
     def paypal(self) -> dict | None:
         return self._config.get("paypal")
 
+    def stripe(self) -> dict | None:
+        return self._config.get("stripe")
+
     def _device(self, device_name: str) -> dict:
         device = self._config.get("device", {}).get(device_name)
         if device is None:
@@ -104,3 +107,10 @@ class Config:
             ]:
                 if key not in paypal:
                     raise Exception(f"[paypal] {key} missing in '{self.config_toml}'.")
+        stripe = self.stripe()
+        if stripe is not None:
+            for key in ["secret-key", "publishable-key"]:
+                if key not in stripe:
+                    raise Exception(f"[stripe] {key} missing in '{self.config_toml}'.")
+            if not stripe["secret-key"].startswith("sk_test_"):
+                raise Exception(f"[stripe] secret-key must be a test mode key in '{self.config_toml}'.")

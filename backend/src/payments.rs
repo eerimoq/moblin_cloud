@@ -23,11 +23,26 @@ impl Item {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Payee {
+    PayPal(String),
+    Stripe(String),
+}
+
+impl Payee {
+    pub fn provider(&self) -> &'static str {
+        match self {
+            Payee::PayPal(_) => "PayPal",
+            Payee::Stripe(_) => "Stripe",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Order {
     pub streamer: String,
     pub item: Item,
     pub user: String,
-    pub merchant_id: String,
+    pub payee: Payee,
     pub price: u32,
     pub currency: String,
 }

@@ -30,6 +30,7 @@ export type IconName =
   | "music"
   | "tip-jar"
   | "wallet"
+  | "card"
   | "globe";
 
 type Props = {
@@ -85,6 +86,10 @@ export default function Icon(props: Props) {
         <Match when={props.name === "wallet"}>
           <path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2" />
           <path d="M16.5 13.5h.01" />
+        </Match>
+        <Match when={props.name === "card"}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M3 10h18M7 15h4" />
         </Match>
         <Match when={props.name === "plug"}>
           <path d="M9 3v5M15 3v5" />

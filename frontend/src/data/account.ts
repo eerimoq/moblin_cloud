@@ -82,6 +82,62 @@ export const checkPayPal = (session: string) =>
 export const disconnectPayPal = (session: string) =>
   call<Settings>(session, "/account/paypal/disconnect", { method: "POST" });
 
+export const stripeCountries = [
+  "AE",
+  "AT",
+  "AU",
+  "BE",
+  "BG",
+  "BR",
+  "CA",
+  "CH",
+  "CY",
+  "CZ",
+  "DE",
+  "DK",
+  "EE",
+  "ES",
+  "FI",
+  "FR",
+  "GB",
+  "GI",
+  "GR",
+  "HK",
+  "HR",
+  "HU",
+  "IE",
+  "IT",
+  "JP",
+  "LI",
+  "LT",
+  "LU",
+  "LV",
+  "MT",
+  "MX",
+  "MY",
+  "NL",
+  "NO",
+  "NZ",
+  "PL",
+  "PT",
+  "RO",
+  "SE",
+  "SG",
+  "SI",
+  "SK",
+  "TH",
+  "US",
+];
+
+export const connectStripe = async (session: string, country: string) =>
+  (await call<{ url: string }>(session, "/account/stripe/connect", post({ country }))).url;
+
+export const checkStripe = (session: string) =>
+  call<Settings>(session, "/account/stripe/check", { method: "POST" });
+
+export const disconnectStripe = (session: string) =>
+  call<Settings>(session, "/account/stripe/disconnect", { method: "POST" });
+
 export type SettingsChanges = Page & Pick<Settings, "currency" | "paywall" | "tips" | "spin">;
 
 export const saveAccountSettings = (session: string, settings: SettingsChanges) =>

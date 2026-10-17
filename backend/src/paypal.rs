@@ -17,7 +17,7 @@ use crate::payments::{CaptureError, Order};
 pub const LIVE_URL: &str = "https://api-m.paypal.com";
 pub const SANDBOX_URL: &str = "https://api-m.sandbox.paypal.com";
 
-fn order_body(order: &Order) -> Value {
+fn order_body(order: &Order, merchant_id: &str) -> Value {
     json!({
         "intent": "CAPTURE",
         "purchase_units": [{
@@ -25,7 +25,7 @@ fn order_body(order: &Order) -> Value {
                 "currency_code": order.currency,
                 "value": format_price(order.price),
             },
-            "payee": {"merchant_id": order.merchant_id},
+            "payee": {"merchant_id": merchant_id},
             "description": order.description(),
         }],
         "application_context": {"shipping_preference": "NO_SHIPPING"},
@@ -328,27 +328,24 @@ impl PayPal {
         format!("{header}.{payload}.")
     }
 
-    async fn post_order(&self, order: &Order) -> Result<reqwest::Response> {
+    async fn post_order(&self, order: &Order, merchant_id: &str) -> Result<reqwest::Response> {
         let token = self.token().await?;
         Ok(self
             .partner(self.client.post(format!("{}/v2/checkout/orders", self.url)))
             .bearer_auth(&token)
-            .header(
-                "PayPal-Auth-Assertion",
-                self.auth_assertion(&order.merchant_id),
-            )
-            .json(&order_body(order))
+            .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
+            .json(&order_body(order, merchant_id))
             .send()
             .await?)
     }
 
-    pub async fn create_order(&self, order: &Order) -> Result<String> {
+    pub async fn create_order(&self, order: &Order, merchant_id: &str) -> Result<String> {
         #[derive(Deserialize)]
         struct Body {
             id: String,
         }
         let response = self
-            .post_order(order)
+            .post_order(order, merchant_id)
             .await
             .context("failed to create a PayPal order")?;
         let status = response.status();
@@ -365,11 +362,19 @@ impl PayPal {
         Ok(body.id)
     }
 
-    pub async fn capture(&self, order_id: &str, order: &Order) -> Result<(), CaptureError> {
-        let response = self.post_capture(order_id, order).await.map_err(|error| {
-            info!("capturing PayPal order {order_id} failed: {error:#}");
-            CaptureError::Failed
-        })?;
+    pub async fn capture(
+        &self,
+        order_id: &str,
+        order: &Order,
+        merchant_id: &str,
+    ) -> Result<(), CaptureError> {
+        let response = self
+            .post_capture(order_id, merchant_id)
+            .await
+            .map_err(|error| {
+                info!("capturing PayPal order {order_id} failed: {error:#}");
+                CaptureError::Failed
+            })?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or_default();
         if !status.is_success() {
@@ -400,7 +405,7 @@ impl PayPal {
         }
     }
 
-    async fn post_capture(&self, order_id: &str, order: &Order) -> Result<reqwest::Response> {
+    async fn post_capture(&self, order_id: &str, merchant_id: &str) -> Result<reqwest::Response> {
         if !order_id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-')
@@ -414,10 +419,7 @@ impl PayPal {
                 self.url
             )))
             .bearer_auth(&token)
-            .header(
-                "PayPal-Auth-Assertion",
-                self.auth_assertion(&order.merchant_id),
-            )
+            .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
             .header(CONTENT_TYPE, "application/json")
             .send()
             .await?)

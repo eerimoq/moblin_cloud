@@ -17,8 +17,11 @@ import {
 } from "../components/PageParts";
 import {
   checkPayPal,
+  checkStripe,
   connectPayPal,
+  connectStripe,
   disconnectPayPal,
+  disconnectStripe,
   fetchAccount,
   createStreamer,
   newMoblinCloudKey,
@@ -27,6 +30,7 @@ import {
   saveSession,
   signInUrl,
   signOutEverywhere,
+  stripeCountries,
   takeSignInResult,
   type Account,
   type SettingsChanges,
@@ -44,7 +48,7 @@ import {
   type Spin,
   type Tips,
 } from "../data/remoteControl";
-import { t, tRich } from "../i18n";
+import { language, t, tRich } from "../i18n";
 
 const accentNames: Record<string, string> = {
   green: t("Green"),
@@ -66,9 +70,7 @@ function paymentErrorText(error: unknown, invalid: string) {
       case 400:
         return invalid;
       case 409:
-        return t("Connect your PayPal account first.");
-      case 502:
-        return t("PayPal could not be reached. Try again.");
+        return t("Connect PayPal or Stripe first.");
       case 503:
         return t("Payments are unavailable right now.");
     }
@@ -96,6 +98,26 @@ function payPalErrorText(error: unknown) {
         );
       case 502:
         return t("PayPal could not be reached. Try again.");
+      case 503:
+        return t("Payments are unavailable right now.");
+    }
+  }
+  return t("Something went wrong. Try again.");
+}
+
+function stripeErrorText(error: unknown) {
+  if (error instanceof BackendError) {
+    switch (error.status) {
+      case 400:
+        return t("Pick your country.");
+      case 403:
+        return t("To connect Stripe, sign in again first.");
+      case 422:
+        return t(
+          "Stripe can't take payments for your account yet. Finish setting it up on Stripe, then check again.",
+        );
+      case 502:
+        return t("Something went wrong on Stripe. Try again.");
       case 503:
         return t("Payments are unavailable right now.");
     }
@@ -131,20 +153,19 @@ function CurrencySettings(props: {
   };
 
   return (
-    <form class="flex flex-col gap-4" onSubmit={submit}>
-      <label class="flex w-32 flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">{t("Currency")}</span>
-        <select
-          value={currency()}
-          onChange={(event) => setCurrency(event.currentTarget.value)}
-          class={inputClass}
-        >
-          <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
-        </select>
-      </label>
-      <p class="text-[15px] text-muted">
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">{t("Currency")}</h2>
+      <p class="text-ink-2">
         {t("Viewers pay all tips, song requests and wheel spins in this currency.")}
       </p>
+      <select
+        aria-label={t("Currency")}
+        value={currency()}
+        onChange={(event) => setCurrency(event.currentTarget.value)}
+        class={`${inputClass} max-w-32`}
+      >
+        <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
+      </select>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
@@ -156,8 +177,6 @@ function CurrencySettings(props: {
 function PayPalAccount(props: {
   session: string;
   settings: Settings;
-  busy: boolean;
-  onSave: (changes: { currency: string }) => Promise<void>;
   onSettings: (settings: Settings) => void;
   onSignOut: () => void;
 }) {
@@ -203,11 +222,7 @@ function PayPalAccount(props: {
 
   const disconnect = async () => {
     if (
-      !confirm(
-        t(
-          "Viewers can't send you tips, with or without a song or wheel spin, until you connect a PayPal account again.",
-        ),
-      )
+      !confirm(t("Viewers can't pay you with PayPal until you connect a PayPal account again."))
     ) {
       return;
     }
@@ -298,13 +313,200 @@ function PayPalAccount(props: {
           </a>
         </Show>
       </div>
-      <Show when={props.settings.merchantId}>
-        <CurrencySettings
-          currency={props.settings.currency}
-          busy={props.busy}
-          onSave={props.onSave}
-        />
+    </div>
+  );
+}
+
+const countryNames = new Intl.DisplayNames([language, "en"], { type: "region" });
+
+const sortedStripeCountries = stripeCountries
+  .map((code) => ({ code, name: countryNames.of(code) ?? code }))
+  .sort((a, b) => a.name.localeCompare(b.name, language));
+
+function guessStripeCountry() {
+  for (const tag of navigator.languages) {
+    try {
+      const region = new Intl.Locale(tag).maximize().region;
+      if (region && stripeCountries.includes(region)) {
+        return region;
+      }
+    } catch {}
+  }
+  return "";
+}
+
+function StripeAccount(props: {
+  session: string;
+  settings: Settings;
+  onSettings: (settings: Settings) => void;
+  onSignOut: () => void;
+}) {
+  const [country, setCountry] = createSignal(guessStripeCountry());
+  const [working, setWorking] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [signInAgain, setSignInAgain] = createSignal(false);
+
+  const failed = (error: unknown) => {
+    if (signedOut(error)) {
+      props.onSignOut();
+      return;
+    }
+    setError(stripeErrorText(error));
+    setSignInAgain(error instanceof BackendError && error.status === 403);
+  };
+
+  const connect = async () => {
+    setError(null);
+    setSignInAgain(false);
+    setWorking(true);
+    try {
+      location.href = await connectStripe(props.session, country());
+    } catch (error) {
+      failed(error);
+      setWorking(false);
+    }
+  };
+
+  const check = async (quiet: boolean) => {
+    setError(null);
+    setSignInAgain(false);
+    setWorking(true);
+    try {
+      props.onSettings(await checkStripe(props.session));
+    } catch (error) {
+      if (!quiet) {
+        failed(error);
+      }
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (
+      !confirm(t("Viewers can't pay you with Stripe until you connect a Stripe account again."))
+    ) {
+      return;
+    }
+    setError(null);
+    setSignInAgain(false);
+    setWorking(true);
+    try {
+      props.onSettings(await disconnectStripe(props.session));
+    } catch (error) {
+      failed(error);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  onMount(() => {
+    const search = new URLSearchParams(location.search);
+    const returned = search.has("stripe");
+    if (returned) {
+      history.replaceState(null, "", location.pathname + location.hash);
+    }
+    if (props.settings.stripePending) {
+      void check(!returned);
+    }
+  });
+
+  return (
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">Stripe</h2>
+      <Show when={props.settings.stripeTest}>
+        <Notice status>
+          {t("Stripe is in test mode. Payments are for testing only and no real money is moved.")}
+        </Notice>
       </Show>
+      <Show
+        when={props.settings.stripeAccountId}
+        fallback={
+          <p class="text-ink-2">
+            {tRich(
+              "Connect a Stripe account to let viewers pay with a card, Apple Pay or Google Pay. You " +
+                "sign up or sign in on Stripe, which asks about you and your bank account so it can pay " +
+                "you out. By connecting Stripe you agree to the {terms}.",
+              {
+                terms: (
+                  <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
+                    {t("terms")}
+                  </a>
+                ),
+              },
+            )}
+          </p>
+        }
+      >
+        {(accountId) => (
+          <p class="flex items-center gap-2.5 text-ink-2">
+            <span class="size-2.5 shrink-0 rounded-full bg-leaf" />
+            <span>
+              {tRich("Connected to the Stripe account {accountId}.", {
+                accountId: <span class="font-mono">{accountId()}</span>,
+              })}
+            </span>
+          </p>
+        )}
+      </Show>
+      <Show when={props.settings.stripePending}>
+        <p class="text-ink-2">{t("Finish setting up your account on Stripe, then check again.")}</p>
+      </Show>
+      <Show when={!props.settings.stripeAccountId && !props.settings.stripePending}>
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">{t("Country")}</span>
+          <select
+            value={country()}
+            onChange={(event) => setCountry(event.currentTarget.value)}
+            class={`${inputClass} max-w-80`}
+          >
+            <option value="" disabled>
+              {t("Pick your country")}
+            </option>
+            <For each={sortedStripeCountries}>
+              {(item) => <option value={item.code}>{item.name}</option>}
+            </For>
+          </select>
+          <span class="text-[15px] text-muted">
+            {t(
+              "Where you or your business are based. Stripe can't change it later, and isn't available in other countries yet.",
+            )}
+          </span>
+        </label>
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <Show when={!props.settings.stripeAccountId}>
+          <button
+            type="button"
+            class={buttonClass}
+            disabled={working() || (!props.settings.stripePending && !country())}
+            onClick={connect}
+          >
+            {props.settings.stripePending ? t("Continue on Stripe") : t("Connect Stripe")}
+          </button>
+        </Show>
+        <Show when={props.settings.stripePending}>
+          <button
+            type="button"
+            class={ghostButtonClass}
+            disabled={working()}
+            onClick={() => void check(false)}
+          >
+            {t("Check again")}
+          </button>
+        </Show>
+        <Show when={props.settings.stripeAccountId || props.settings.stripePending}>
+          <button type="button" class={ghostButtonClass} disabled={working()} onClick={disconnect}>
+            {t("Disconnect Stripe")}
+          </button>
+        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+        <Show when={signInAgain()}>
+          <a href={signInUrl} class={ghostButtonClass}>
+            {t("Sign in again")}
+          </a>
+        </Show>
+      </div>
     </div>
   );
 }
@@ -572,7 +774,7 @@ function TipSettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Tips")}</h2>
       <p class="text-ink-2">
         {t(
-          "Let viewers send you just a tip with PayPal. Viewers pick one of your amounts or enter their " +
+          "Let viewers send you just a tip. Viewers pick one of your amounts or enter their " +
             "own, and can add a message. Tips show up in Moblin's chat, also those sent while Moblin is " +
             "not connected.",
         )}
@@ -701,7 +903,7 @@ function SpinSettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Wheel of luck")}</h2>
       <p class="text-ink-2">
         {t(
-          "Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin " +
+          "Let viewers spin your wheel by sending you a tip, with a smaller tip per spin " +
             "when they buy more. Moblin spins the wheel you pick in its Moblin Cloud settings, showing " +
             "the viewer's name and message.",
         )}
@@ -851,6 +1053,8 @@ function Admin(props: {
     }
   };
 
+  const payments = () => settings().paypal || settings().stripe;
+  const connected = () => settings().merchantId !== null || settings().stripeAccountId !== null;
   const sections: {
     id: string;
     label: string;
@@ -869,29 +1073,29 @@ function Admin(props: {
       id: "tips",
       label: t("Tips"),
       icon: "heart",
-      shown: () => settings().paypal || settings().tips !== null,
+      shown: () => payments() || settings().tips !== null,
       status: () => onOff(settings().tips !== null),
     },
     {
       id: "wheel",
       label: t("Wheel of luck"),
       icon: "wheel",
-      shown: () => settings().paypal || settings().spin !== null,
+      shown: () => payments() || settings().spin !== null,
       status: () => onOff(settings().spin !== null),
     },
     {
       id: "songs",
       label: t("Song requests"),
       icon: "music",
-      shown: () => settings().paypal || settings().paywall !== null,
+      shown: () => payments() || settings().paywall !== null,
       status: () => onOff(settings().paywall !== null),
     },
     {
-      id: "paypal",
-      label: "PayPal",
+      id: "payments",
+      label: t("Payments"),
       icon: "wallet",
-      shown: () => settings().paypal,
-      status: () => connectedOrNot(settings().merchantId !== null),
+      shown: payments,
+      status: () => connectedOrNot(connected()),
     },
     {
       id: "moblin",
@@ -902,9 +1106,11 @@ function Admin(props: {
     },
   ];
   const visible = () => sections.filter((section) => section.shown());
-  const initial = new URLSearchParams(location.search).has("merchantIdInPayPal")
-    ? "paypal"
-    : location.hash.slice(1);
+  const search = new URLSearchParams(location.search);
+  const initial =
+    search.has("merchantIdInPayPal") || search.has("stripe") || location.hash === "#paypal"
+      ? "payments"
+      : location.hash.slice(1);
   const [chosen, setChosen] = createSignal(initial);
   const active = () =>
     visible().some((section) => section.id === chosen()) ? chosen() : visible()[0].id;
@@ -912,7 +1118,7 @@ function Admin(props: {
     setChosen(id);
     history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
   };
-  const paid = (configured: boolean) => settings().merchantId !== null || configured;
+  const paid = (configured: boolean) => connected() || configured;
 
   return (
     <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
@@ -956,7 +1162,7 @@ function Admin(props: {
         <div hidden={active() !== "tips"}>
           <Show
             when={paid(settings().tips !== null)}
-            fallback={<NeedsPayPal title={t("Tips")} onConnect={() => select("paypal")} />}
+            fallback={<NeedsPayments title={t("Tips")} onConnect={() => select("payments")} />}
           >
             <TipSettings
               tips={settings().tips}
@@ -969,7 +1175,9 @@ function Admin(props: {
         <div hidden={active() !== "wheel"}>
           <Show
             when={paid(settings().spin !== null)}
-            fallback={<NeedsPayPal title={t("Wheel of luck")} onConnect={() => select("paypal")} />}
+            fallback={
+              <NeedsPayments title={t("Wheel of luck")} onConnect={() => select("payments")} />
+            }
           >
             <SpinSettings
               spin={settings().spin}
@@ -982,7 +1190,9 @@ function Admin(props: {
         <div hidden={active() !== "songs"}>
           <Show
             when={paid(settings().paywall !== null)}
-            fallback={<NeedsPayPal title={t("Song requests")} onConnect={() => select("paypal")} />}
+            fallback={
+              <NeedsPayments title={t("Song requests")} onConnect={() => select("payments")} />
+            }
           >
             <SongSettings
               paywall={settings().paywall}
@@ -992,16 +1202,27 @@ function Admin(props: {
             />
           </Show>
         </div>
-        <Show when={settings().paypal}>
-          <div hidden={active() !== "paypal"}>
-            <PayPalAccount
-              session={props.session}
-              settings={settings()}
-              busy={busy()}
-              onSave={save}
-              onSettings={setSettings}
-              onSignOut={props.onSignOut}
-            />
+        <Show when={payments()}>
+          <div hidden={active() !== "payments"} class="flex flex-col gap-6">
+            <Show when={settings().paypal}>
+              <PayPalAccount
+                session={props.session}
+                settings={settings()}
+                onSettings={setSettings}
+                onSignOut={props.onSignOut}
+              />
+            </Show>
+            <Show when={settings().stripe}>
+              <StripeAccount
+                session={props.session}
+                settings={settings()}
+                onSettings={setSettings}
+                onSignOut={props.onSignOut}
+              />
+            </Show>
+            <Show when={connected()}>
+              <CurrencySettings currency={settings().currency} busy={busy()} onSave={save} />
+            </Show>
           </div>
         </Show>
         <div hidden={active() !== "moblin"}>
@@ -1022,16 +1243,16 @@ const onOff = (on: boolean) => ({ on, text: on ? t("On") : t("Off") });
 
 const connectedOrNot = (on: boolean) => ({ on, text: on ? t("Connected") : t("Not connected") });
 
-function NeedsPayPal(props: { title: string; onConnect: () => void }) {
+function NeedsPayments(props: { title: string; onConnect: () => void }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{props.title}</h2>
       <p class="text-ink-2">
-        {t("Connect your PayPal account first, so the money goes straight to you.")}
+        {t("Connect PayPal or Stripe first, so the money goes straight to you.")}
       </p>
       <div>
         <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
-          {t("Go to PayPal")}
+          {t("Go to payments")}
         </button>
       </div>
     </div>
@@ -1178,6 +1399,10 @@ function Preview(props: { failed: boolean }) {
               merchantId: "preview",
               paypalPending: false,
               paypalSandbox: false,
+              stripe: true,
+              stripeAccountId: null,
+              stripePending: false,
+              stripeTest: false,
             }}
             onAccount={() => {}}
             onSignOut={() => {}}
@@ -1287,8 +1512,8 @@ export default function Dashboard() {
             <Hero title={t("Let viewers tip you.")}>
               <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
                 {t(
-                  "Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its " +
-                    "usual fees.",
+                  "Tips go straight to your PayPal or Stripe account. Moblin takes nothing, PayPal and " +
+                    "Stripe charge their usual fees.",
                 )}
               </p>
               {terms()}

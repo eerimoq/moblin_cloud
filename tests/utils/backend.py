@@ -150,6 +150,14 @@ class Backend:
                 arguments += ["--paypal-attribution-id", paypal["attribution-id"]]
             if "webhook-id" in paypal:
                 arguments += ["--paypal-webhook-id", paypal["webhook-id"]]
+        stripe = self.config.stripe()
+        if stripe is not None:
+            arguments += [
+                "--stripe-secret-key",
+                stripe["secret-key"],
+                "--stripe-publishable-key",
+                stripe["publishable-key"],
+            ]
         return arguments
 
     def _wait_until_ready(self):

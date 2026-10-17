@@ -1,14 +1,17 @@
+import { loadCoreSdkScript, type OneTimePaymentSession } from "@paypal/paypal-js/sdk-v6";
 import {
-  loadCoreSdkScript,
-  type OnApproveDataOneTimePayments,
-  type OneTimePaymentSession,
-} from "@paypal/paypal-js/sdk-v6";
+  loadStripe,
+  type Stripe,
+  type StripeElements,
+  type StripePaymentElement,
+} from "@stripe/stripe-js";
 import {
   createEffect,
   createMemo,
   createSignal,
   For,
   Match,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -16,7 +19,13 @@ import {
 } from "solid-js";
 import { asset } from "../asset";
 import Icon from "../components/Icon";
-import { cardClass, inputClass, Notice } from "../components/PageParts";
+import {
+  buttonClass,
+  cardClass,
+  ghostButtonClass,
+  inputClass,
+  Notice,
+} from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
   BackendError,
@@ -36,11 +45,15 @@ import {
   streamerSpin,
   streamerTips,
   type MusicStatus,
+  type Order,
   type PayPalConfig,
   type Profile,
+  type Provider,
+  type PublicPayment,
   type PublicPaywall,
   type PublicSpin,
   type PublicTips,
+  type StripeConfig,
   type Wheel,
 } from "../data/remoteControl";
 import { t, tRich } from "../i18n";
@@ -69,15 +82,37 @@ function errorText(error: unknown) {
     : t("Something went wrong. Try again.");
 }
 
-type PayPalOptions = {
-  start: () => boolean;
-  createOrder: () => Promise<{ orderId: string }>;
-  onApprove: (data: OnApproveDataOneTimePayments) => Promise<void>;
-  onCancel: () => void;
-  onError: () => void;
+type Payment = {
+  paypal: PayPalConfig | null;
+  stripe: StripeConfig | null;
 };
 
-function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; disabled: boolean }) {
+function paymentOf(current: PublicPayment): Payment | null {
+  const paypal =
+    current.clientId && current.merchantId && current.environment
+      ? {
+          clientId: current.clientId,
+          merchantId: current.merchantId,
+          environment: current.environment,
+        }
+      : null;
+  const stripe = current.stripe ?? null;
+  return paypal || stripe ? { paypal, stripe } : null;
+}
+
+const sameData = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+const providerName = (provider: Provider) => (provider === "stripe" ? "Stripe" : "PayPal");
+
+type PayOptions = {
+  start: () => boolean;
+  createOrder: (provider: Provider) => Promise<Order>;
+  complete: (orderId: string) => Promise<void>;
+  onCancel: () => void;
+  onError: (provider: Provider) => void;
+};
+
+function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabled: boolean }) {
   let container: HTMLDivElement | undefined;
   let button: HTMLElement | undefined;
   let session: OneTimePaymentSession | undefined;
@@ -94,9 +129,9 @@ function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; dis
       return;
     }
     try {
-      await session.start({ presentationMode: "auto" }, props.options.createOrder());
+      await session.start({ presentationMode: "auto" }, props.options.createOrder("paypal"));
     } catch {
-      props.options.onError();
+      props.options.onError("paypal");
     }
   };
 
@@ -115,9 +150,9 @@ function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; dis
         throw new Error("no PayPal");
       }
       session = instance.createPayPalOneTimePaymentSession({
-        onApprove: props.options.onApprove,
+        onApprove: (data) => props.options.complete(data.orderId),
         onCancel: props.options.onCancel,
-        onError: props.options.onError,
+        onError: () => props.options.onError("paypal"),
       });
       button = document.createElement("paypal-button");
       button.setAttribute("type", "pay");
@@ -146,6 +181,198 @@ function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; dis
         <Notice status>{t("PayPal could not be loaded. Reload the page to try again.")}</Notice>
       </Show>
     </>
+  );
+}
+
+type CardPayment = {
+  order: Order;
+  stripe: Stripe;
+  elements: StripeElements;
+  element: StripePaymentElement;
+};
+
+function StripeCard(props: {
+  config: StripeConfig;
+  options: PayOptions;
+  disabled: boolean;
+  resetKey: string;
+}) {
+  let container: HTMLDivElement | undefined;
+  const [payment, setPayment] = createSignal<CardPayment | null>(null);
+  const [working, setWorking] = createSignal(false);
+  const [cardError, setCardError] = createSignal<string | null>(null);
+  const [failed, setFailed] = createSignal(false);
+
+  const close = () => {
+    payment()?.element.destroy();
+    setPayment(null);
+    setCardError(null);
+  };
+  onCleanup(close);
+  createEffect(on(() => props.resetKey, close, { defer: true }));
+
+  const appearance = () => {
+    const style = getComputedStyle(container!);
+    const color = (name: string) => style.getPropertyValue(`--color-${name}`).trim();
+    return {
+      theme: matchMedia("(prefers-color-scheme: light)").matches
+        ? ("stripe" as const)
+        : ("night" as const),
+      variables: {
+        colorPrimary: color("moss"),
+        colorBackground: color("well"),
+        colorText: color("ink"),
+        colorTextSecondary: color("muted"),
+        borderRadius: "16px",
+      },
+    };
+  };
+
+  const open = async () => {
+    if (props.disabled || working() || !props.options.start()) {
+      return;
+    }
+    setWorking(true);
+    setFailed(false);
+    let order: Order;
+    try {
+      order = await props.options.createOrder("stripe");
+    } catch {
+      props.options.onError("stripe");
+      setWorking(false);
+      return;
+    }
+    try {
+      const stripe = await loadStripe(props.config.publishableKey, {
+        stripeAccount: props.config.accountId,
+      });
+      if (!stripe || !container || !order.clientSecret) {
+        throw new Error("no Stripe");
+      }
+      const elements = stripe.elements({
+        clientSecret: order.clientSecret,
+        appearance: appearance(),
+      });
+      const element = elements.create("payment", { layout: "tabs" });
+      element.mount(container);
+      setPayment({ order, stripe, elements, element });
+    } catch {
+      setFailed(true);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const pay = async () => {
+    const current = payment();
+    if (!current || working()) {
+      return;
+    }
+    setWorking(true);
+    setCardError(null);
+    try {
+      const { error } = await current.stripe.confirmPayment({
+        elements: current.elements,
+        redirect: "if_required",
+        confirmParams: { return_url: location.href },
+      });
+      if (error?.type === "card_error" || error?.type === "validation_error") {
+        setCardError(error.message ?? t("The payment did not go through. Try another card."));
+        return;
+      }
+      close();
+      if (error) {
+        props.options.onError("stripe");
+        return;
+      }
+      await props.options.complete(current.order.orderId);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const cancel = () => {
+    close();
+    props.options.onCancel();
+  };
+
+  return (
+    <div class="flex flex-col gap-3">
+      <Show when={!payment()}>
+        <button
+          type="button"
+          class={`${buttonClass} w-full`}
+          disabled={props.disabled || working()}
+          onClick={() => void open()}
+        >
+          <Icon name="card" class="size-5" />
+          {working() ? t("Loading…") : t("Pay with card")}
+        </button>
+      </Show>
+      <div ref={(element) => (container = element)} class={payment() ? "" : "hidden"} />
+      <Show when={payment()}>
+        {(current) => (
+          <>
+            <Show when={cardError()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+            <div class="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                class={buttonClass}
+                disabled={working()}
+                onClick={() => void pay()}
+              >
+                {current().order.price !== undefined && current().order.currency
+                  ? t("Pay {price}", {
+                      price: formatPrice({
+                        price: current().order.price!,
+                        currency: current().order.currency!,
+                      }),
+                    })
+                  : t("Pay")}
+              </button>
+              <button type="button" class={ghostButtonClass} disabled={working()} onClick={cancel}>
+                {t("Cancel")}
+              </button>
+            </div>
+          </>
+        )}
+      </Show>
+      <Show when={props.config.publishableKey.startsWith("pk_test_")}>
+        <Notice status>
+          {t("Stripe test mode. This is a test payment and no real money is moved.")}
+        </Notice>
+      </Show>
+      <Show when={failed()}>
+        <Notice status>{t("Stripe could not be loaded. Reload the page to try again.")}</Notice>
+      </Show>
+    </div>
+  );
+}
+
+function PayButtons(props: {
+  payment: Payment;
+  options: PayOptions;
+  disabled: boolean;
+  resetKey: string;
+}) {
+  return (
+    <div class="flex flex-col gap-3">
+      <Show when={props.payment.paypal}>
+        {(paypal) => (
+          <PayPalButton config={paypal()} options={props.options} disabled={props.disabled} />
+        )}
+      </Show>
+      <Show when={props.payment.stripe}>
+        {(stripe) => (
+          <StripeCard
+            config={stripe()}
+            options={props.options}
+            disabled={props.disabled}
+            resetKey={props.resetKey}
+          />
+        )}
+      </Show>
+    </div>
   );
 }
 
@@ -259,7 +486,7 @@ function MessageField(props: {
 
 function TipJar(props: {
   id: string;
-  tips: PublicTips & PayPalConfig;
+  tips: PublicTips & { payment: Payment };
   name: string;
   onName: (name: string) => void;
   onError: (error: unknown) => void;
@@ -288,7 +515,7 @@ function TipJar(props: {
     props.onError(error);
   };
 
-  const options: PayPalOptions = {
+  const options: PayOptions = {
     start: () => {
       setResult(null);
       if (busy() || amount() === null || !form?.reportValidity()) {
@@ -297,22 +524,26 @@ function TipJar(props: {
       saveName(props.name.trim());
       return true;
     },
-    createOrder: async () => {
+    createOrder: async (provider) => {
       orderError = null;
       try {
-        return {
-          orderId: await orderTip(props.id, amount() ?? 0, props.name.trim(), message().trim()),
-        };
+        return await orderTip(
+          props.id,
+          amount() ?? 0,
+          props.name.trim(),
+          message().trim(),
+          provider,
+        );
       } catch (error) {
         orderError = error;
         throw error;
       }
     },
-    onApprove: async (data) => {
+    complete: async (orderId) => {
       setBusy(true);
       setResult({ ok: true, text: t("Payment approved. Completing it…") });
       try {
-        await captureTip(props.id, data.orderId);
+        await captureTip(props.id, orderId);
         setResult({ ok: true, text: t("Thanks for the tip!") });
         setMessage("");
       } catch (error) {
@@ -324,11 +555,16 @@ function TipJar(props: {
     onCancel: () => {
       setResult({ ok: false, text: t("Payment cancelled. No tip was sent.") });
     },
-    onError: () => {
+    onError: (provider) => {
       if (orderError) {
         showError(orderError);
       } else {
-        setResult({ ok: false, text: t("PayPal could not complete the payment. Try again.") });
+        setResult({
+          ok: false,
+          text: t("{provider} could not complete the payment. Try again.", {
+            provider: providerName(provider),
+          }),
+        });
       }
     },
   };
@@ -394,10 +630,11 @@ function TipJar(props: {
               : formatPrice({ price: amount()!, currency: props.tips.currency })}
           </span>
         </p>
-        <PayPalButton
-          config={props.tips}
+        <PayButtons
+          payment={props.tips.payment}
           options={options}
           disabled={busy() || amount() === null}
+          resetKey={`${amount()}\n${props.name}\n${message()}`}
         />
         <p class="text-[15px] text-muted">
           {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
@@ -624,7 +861,7 @@ function WheelPicture(props: { wheel: Wheel }) {
 
 function SpinWheel(props: {
   id: string;
-  spin: PublicSpin & PayPalConfig;
+  spin: PublicSpin & { payment: Payment };
   wheel: Wheel | null;
   name: string;
   onName: (name: string) => void;
@@ -641,7 +878,7 @@ function SpinWheel(props: {
     props.onError(error);
   };
 
-  const options: PayPalOptions = {
+  const options: PayOptions = {
     start: () => {
       setResult(null);
       if (busy()) {
@@ -650,22 +887,26 @@ function SpinWheel(props: {
       saveName(props.name.trim());
       return true;
     },
-    createOrder: async () => {
+    createOrder: async (provider) => {
       orderError = null;
       try {
-        return {
-          orderId: await orderSpin(props.id, choice().spins, props.name.trim(), message().trim()),
-        };
+        return await orderSpin(
+          props.id,
+          choice().spins,
+          props.name.trim(),
+          message().trim(),
+          provider,
+        );
       } catch (error) {
         orderError = error;
         throw error;
       }
     },
-    onApprove: async (data) => {
+    complete: async (orderId) => {
       setBusy(true);
       setResult({ ok: true, text: t("Payment approved. Completing it…") });
       try {
-        await captureSpin(props.id, data.orderId);
+        await captureSpin(props.id, orderId);
         setResult({
           ok: true,
           text:
@@ -686,11 +927,16 @@ function SpinWheel(props: {
         text: t("Payment cancelled. No tip was sent and the wheel was not spun."),
       });
     },
-    onError: () => {
+    onError: (provider) => {
       if (orderError) {
         showError(orderError);
       } else {
-        setResult({ ok: false, text: t("PayPal could not complete the payment. Try again.") });
+        setResult({
+          ok: false,
+          text: t("{provider} could not complete the payment. Try again.", {
+            provider: providerName(provider),
+          }),
+        });
       }
     },
   };
@@ -768,7 +1014,12 @@ function SpinWheel(props: {
             {formatPrice({ price: choice().price, currency: props.spin.currency })}
           </span>
         </p>
-        <PayPalButton config={props.spin} options={options} disabled={busy() || !props.wheel} />
+        <PayButtons
+          payment={props.spin.payment}
+          options={options}
+          disabled={busy() || !props.wheel}
+          resetKey={`${choice().spins}\n${props.name}\n${message()}`}
+        />
         <p class="text-[15px] text-muted">
           {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
         </p>
@@ -919,62 +1170,13 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     history.replaceState(null, "", `${location.pathname}${location.search}#${next}`);
   };
   let form: HTMLFormElement | undefined;
-  const payable = createMemo(
-    () => {
-      const current = paywall();
-      return current?.clientId && current.merchantId && current.environment
-        ? {
-            ...current,
-            clientId: current.clientId,
-            merchantId: current.merchantId,
-            environment: current.environment,
-          }
-        : null;
-    },
-    null,
-    {
-      equals: (a, b) =>
-        a?.clientId === b?.clientId &&
-        a?.merchantId === b?.merchantId &&
-        a?.environment === b?.environment &&
-        a?.currency === b?.currency &&
-        a?.price === b?.price,
-    },
-  );
-  const tipJar = createMemo(
-    () => {
-      const current = tips();
-      return current?.clientId && current.environment
-        ? { ...current, clientId: current.clientId, environment: current.environment }
-        : null;
-    },
-    null,
-    {
-      equals: (a, b) =>
-        a?.clientId === b?.clientId &&
-        a?.merchantId === b?.merchantId &&
-        a?.environment === b?.environment &&
-        a?.currency === b?.currency &&
-        a?.amounts.join() === b?.amounts.join(),
-    },
-  );
-  const wheel = createMemo(
-    () => {
-      const current = spin();
-      return current?.clientId && current.environment
-        ? { ...current, clientId: current.clientId, environment: current.environment }
-        : null;
-    },
-    null,
-    {
-      equals: (a, b) =>
-        a?.clientId === b?.clientId &&
-        a?.merchantId === b?.merchantId &&
-        a?.environment === b?.environment &&
-        a?.currency === b?.currency &&
-        JSON.stringify(a?.options) === JSON.stringify(b?.options),
-    },
-  );
+  const withPayment = <T extends PublicPayment>(current: T | null) => {
+    const payment = current && paymentOf(current);
+    return current && payment ? { ...current, payment } : null;
+  };
+  const payable = createMemo(() => withPayment(paywall()), null, { equals: sameData });
+  const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
+  const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
   let orderError: unknown = null;
 
   const refreshPaywall = async () => {
@@ -1046,22 +1248,22 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
   };
 
-  const payPalOptions: PayPalOptions = {
+  const payOptions: PayOptions = {
     start,
-    createOrder: async () => {
+    createOrder: async (provider) => {
       orderError = null;
       try {
-        return { orderId: await orderSong(id() ?? "", song().trim(), name().trim()) };
+        return await orderSong(id() ?? "", song().trim(), name().trim(), provider);
       } catch (error) {
         orderError = error;
         throw error;
       }
     },
-    onApprove: async (data) => {
+    complete: async (orderId) => {
       setBusy(true);
       setResult({ ok: true, text: t("Payment approved. Completing it…") });
       try {
-        await captureSong(id() ?? "", data.orderId);
+        await captureSong(id() ?? "", orderId);
         requested();
       } catch (error) {
         showError(error);
@@ -1075,11 +1277,16 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         text: t("Payment cancelled. No tip was sent and no song was added."),
       });
     },
-    onError: () => {
+    onError: (provider) => {
       if (orderError) {
         showError(orderError);
       } else {
-        setResult({ ok: false, text: t("PayPal could not complete the payment. Try again.") });
+        setResult({
+          ok: false,
+          text: t("{provider} could not complete the payment. Try again.", {
+            provider: providerName(provider),
+          }),
+        });
       }
     },
   };
@@ -1220,10 +1427,11 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                           })}
                         </span>
                       </p>
-                      <PayPalButton
-                        config={current}
-                        options={payPalOptions}
+                      <PayButtons
+                        payment={current.payment}
+                        options={payOptions}
                         disabled={busy() || typeof status() === "string" || !song().trim()}
+                        resetKey={`${song()}\n${name()}`}
                       />
                       <p class="text-[15px] text-muted">
                         {tRich(

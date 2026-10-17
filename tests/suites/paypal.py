@@ -12,6 +12,16 @@ TIPS = {"amounts": [500, 100, 100, 1000]}
 SPIN = {"options": [{"spins": 3, "price": 500}, {"spins": 1, "price": 200}]}
 
 
+def public_stripe(context: Context, settings: dict) -> dict | None:
+    """What viewers get to pay with Stripe, when the streamer has set up Stripe too."""
+    if settings["stripeAccountId"] is None:
+        return None
+    return {
+        "publishableKey": (context.config.stripe() or {})["publishable-key"],
+        "accountId": settings["stripeAccountId"],
+    }
+
+
 class PayPalTestCase(TestCase):
     def setup(self):
         self.skip_if_no_paypal()
@@ -65,6 +75,7 @@ class PayPalPaidSettings(PayPalTestCase):
         )
         viewer = self.website.viewer(settings["id"])
         client_id = (self.context.config.paypal() or {})["client-id"]
+        stripe = public_stripe(self.context, settings)
         self.assert_equal(
             viewer.paywall(),
             {
@@ -73,6 +84,7 @@ class PayPalPaidSettings(PayPalTestCase):
                 "clientId": client_id,
                 "merchantId": merchant_id,
                 "environment": "sandbox",
+                "stripe": stripe,
             },
         )
         self.assert_equal(
@@ -83,6 +95,7 @@ class PayPalPaidSettings(PayPalTestCase):
                 "clientId": client_id,
                 "merchantId": merchant_id,
                 "environment": "sandbox",
+                "stripe": stripe,
             },
         )
         self.assert_equal(viewer.spin()["spin"]["options"], settings["spin"]["options"])
@@ -138,7 +151,7 @@ class PayPalDisconnect(PayPalTestCase):
             503, lambda: viewer.order_tip(100), "Payments are unavailable right now. Try again later."
         )
         self.assert_backend_error(
-            409, lambda: dashboard.save_settings(tips={"amounts": [200]}), "connect PayPal first"
+            409, lambda: dashboard.save_settings(tips={"amounts": [200]}), "connect PayPal or Stripe first"
         )
         dashboard.save_settings()
         self.context.page_with_paypal(dashboard)

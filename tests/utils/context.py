@@ -1,6 +1,7 @@
 import logging
 import re
 
+import systest
 from playwright.sync_api import Page
 
 from .backend import Backend
@@ -10,6 +11,8 @@ from .config import Config
 from .moblin import Moblin
 from .paypal import PayPalSandbox
 from .paypal import onboard_seller
+from .stripe import StripeTestMode
+from .stripe import onboard_account
 from .utils import manual_requirement
 from .website import Dashboard
 from .website import Website
@@ -27,6 +30,7 @@ class Context:
         self.moblin = moblin
         self.interactive = interactive
         self.paypal_sandbox = PayPalSandbox(config) if config.paypal() is not None else None
+        self.stripe_test_mode = StripeTestMode(config) if config.stripe() is not None else None
         self._browser: Browser | None = None
 
     def close(self):
@@ -62,3 +66,17 @@ class Context:
         action_url = dashboard.connect_paypal()
         onboard_seller(self.browser(), self.config, action_url, self.interactive)
         return dashboard.check_paypal()
+
+    def page_with_stripe(self, dashboard: Dashboard) -> dict:
+        """Gives the signed in streamer a page with a Stripe test account set up, if not already.
+
+        A new account must be set up by hand in Stripe's onboarding, once per run, so it is
+        skipped unless interactive.
+        """
+        account = dashboard.create_page()
+        if account["settings"]["stripeAccountId"] is not None:
+            return account["settings"]
+        if not self.interactive:
+            raise systest.TestCaseSkippedError("Setting up a Stripe test account needs --interactive.")
+        onboard_account(self.browser(), dashboard.connect_stripe)
+        return dashboard.check_stripe()

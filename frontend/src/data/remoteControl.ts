@@ -59,6 +59,10 @@ export type Settings = Page & {
   merchantId: string | null;
   paypalPending: boolean;
   paypalSandbox: boolean;
+  stripe: boolean;
+  stripeAccountId: string | null;
+  stripePending: boolean;
+  stripeTest: boolean;
 };
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];
@@ -70,32 +74,43 @@ export type Price = {
   currency: string;
 };
 
-export type PublicPaywall = Price & {
-  clientId: string | null;
-  merchantId: string | null;
-  environment: "production" | "sandbox" | null;
-};
-
 export type PayPalConfig = {
   clientId: string;
   merchantId: string;
   environment: "production" | "sandbox";
 };
 
-export type PublicTips = {
-  amounts: number[];
-  currency: string;
-  clientId: string | null;
-  merchantId: string;
-  environment: "production" | "sandbox" | null;
+export type StripeConfig = {
+  publishableKey: string;
+  accountId: string;
 };
 
-export type PublicSpin = {
+export type Provider = "paypal" | "stripe";
+
+export type PublicPayment = {
+  clientId: string | null;
+  merchantId: string | null;
+  environment: "production" | "sandbox" | null;
+  stripe?: StripeConfig | null;
+};
+
+export type PublicPaywall = Price & PublicPayment;
+
+export type PublicTips = PublicPayment & {
+  amounts: number[];
+  currency: string;
+};
+
+export type PublicSpin = PublicPayment & {
   options: SpinOption[];
   currency: string;
-  clientId: string | null;
-  merchantId: string;
-  environment: "production" | "sandbox" | null;
+};
+
+export type Order = {
+  orderId: string;
+  clientSecret?: string;
+  price?: number;
+  currency?: string;
 };
 
 export const currencies = [
@@ -145,10 +160,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const musicStatus = (id: string) =>
   call<MusicStatus>(`/${encodeURIComponent(id)}/songs/queue`);
 
-const songRequest = (song: string, user: string) => ({
+const post = (body: unknown) => ({
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ song, user: user || null }),
+  body: JSON.stringify(body),
 });
 
 export type Profile = Page & {
@@ -162,13 +177,11 @@ export const streamerProfile = (id: string) => call<Profile>(`/${encodeURICompon
 export const streamerPaywall = async (id: string) =>
   (await call<{ paywall: PublicPaywall | null }>(`/${encodeURIComponent(id)}/songs`)).paywall;
 
-export const orderSong = async (id: string, song: string, user: string) =>
-  (
-    await call<{ orderId: string }>(
-      `/${encodeURIComponent(id)}/songs/orders`,
-      songRequest(song, user),
-    )
-  ).orderId;
+export const orderSong = (id: string, song: string, user: string, provider: Provider) =>
+  call<Order>(
+    `/${encodeURIComponent(id)}/songs/orders`,
+    post({ song, user: user || null, provider }),
+  );
 
 export const captureSong = (id: string, orderId: string) =>
   call<object>(`/${encodeURIComponent(id)}/songs/orders/${encodeURIComponent(orderId)}/capture`, {
@@ -178,14 +191,17 @@ export const captureSong = (id: string, orderId: string) =>
 export const streamerTips = async (id: string) =>
   (await call<{ tips: PublicTips | null }>(`/${encodeURIComponent(id)}/tips`)).tips;
 
-export const orderTip = async (id: string, amount: number, user: string, message: string) =>
-  (
-    await call<{ orderId: string }>(`/${encodeURIComponent(id)}/tips/orders`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount, user: user || null, message: message || null }),
-    })
-  ).orderId;
+export const orderTip = (
+  id: string,
+  amount: number,
+  user: string,
+  message: string,
+  provider: Provider,
+) =>
+  call<Order>(
+    `/${encodeURIComponent(id)}/tips/orders`,
+    post({ amount, user: user || null, message: message || null, provider }),
+  );
 
 export const captureTip = (id: string, orderId: string) =>
   call<object>(`/${encodeURIComponent(id)}/tips/orders/${encodeURIComponent(orderId)}/capture`, {
@@ -199,14 +215,17 @@ export type Wheel = {
 export const streamerSpin = (id: string) =>
   call<{ spin: PublicSpin | null; wheel: Wheel | null }>(`/${encodeURIComponent(id)}/spin`);
 
-export const orderSpin = async (id: string, spins: number, user: string, message: string) =>
-  (
-    await call<{ orderId: string }>(`/${encodeURIComponent(id)}/spin/orders`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ spins, user: user || null, message: message || null }),
-    })
-  ).orderId;
+export const orderSpin = (
+  id: string,
+  spins: number,
+  user: string,
+  message: string,
+  provider: Provider,
+) =>
+  call<Order>(
+    `/${encodeURIComponent(id)}/spin/orders`,
+    post({ spins, user: user || null, message: message || null, provider }),
+  );
 
 export const captureSpin = (id: string, orderId: string) =>
   call<object>(`/${encodeURIComponent(id)}/spin/orders/${encodeURIComponent(orderId)}/capture`, {

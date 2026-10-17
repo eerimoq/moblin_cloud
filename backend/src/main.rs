@@ -14,6 +14,7 @@ mod paypal;
 mod profiles;
 mod remote_control;
 mod store;
+mod stripe;
 mod twitch;
 
 use std::net::SocketAddr;
@@ -42,6 +43,7 @@ use crate::paypal::PayPal;
 use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
 use crate::store::Store;
+use crate::stripe::Stripe;
 use crate::twitch::Twitch;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -112,6 +114,17 @@ struct Cli {
     /// Use the PayPal sandbox.
     #[arg(long, env = "PAYPAL_SANDBOX")]
     paypal_sandbox: bool,
+    /// Stripe platform secret key. A test mode key takes test payments.
+    #[arg(
+        long,
+        env = "STRIPE_SECRET_KEY",
+        hide_env_values = true,
+        requires = "stripe_publishable_key"
+    )]
+    stripe_secret_key: Option<String>,
+    /// Stripe platform publishable key.
+    #[arg(long, env = "STRIPE_PUBLISHABLE_KEY", requires = "stripe_secret_key")]
+    stripe_publishable_key: Option<String>,
     /// Session signing secret. Random without it.
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
@@ -242,7 +255,26 @@ async fn main() -> Result<()> {
             ))
         }
         _ => {
-            warn!("no PayPal client ID and secret, payments are unavailable");
+            warn!("no PayPal client ID and secret, PayPal payments are unavailable");
+            None
+        }
+    };
+    let stripe = match (cli.stripe_secret_key, cli.stripe_publishable_key) {
+        (Some(secret_key), Some(publishable_key)) => {
+            let stripe = Stripe::new(
+                http_client(),
+                stripe::URL.to_string(),
+                secret_key,
+                publishable_key,
+            );
+            info!(
+                "taking Stripe payments in {} mode",
+                if stripe.is_test() { "test" } else { "live" }
+            );
+            Some(stripe)
+        }
+        _ => {
+            warn!("no Stripe keys, Stripe payments are unavailable");
             None
         }
     };
@@ -254,6 +286,7 @@ async fn main() -> Result<()> {
         remote_control: Streamers::new(),
         pages,
         paypal,
+        stripe,
         orders: Orders::new(),
         deliveries,
         auth,

@@ -20,6 +20,10 @@ class TestCase(systest.TestCase):
         if self.context.config.paypal() is None:
             raise systest.TestCaseSkippedError("No [paypal] in the configuration.")
 
+    def skip_if_no_stripe(self):
+        if self.context.config.stripe() is None:
+            raise systest.TestCaseSkippedError("No [stripe] in the configuration.")
+
     def skip_if_no_twitch(self):
         if self.context.config.twitch() is None:
             raise systest.TestCaseSkippedError("No [twitch] in the configuration.")

@@ -155,6 +155,15 @@ class Dashboard(Client):
     def disconnect_paypal(self) -> dict:
         return self.post("/account/paypal/disconnect")
 
+    def connect_stripe(self, country: str | None = "US") -> str:
+        return self.post("/account/stripe/connect", {"country": country})["url"]
+
+    def check_stripe(self) -> dict:
+        return self.post("/account/stripe/check")
+
+    def disconnect_stripe(self) -> dict:
+        return self.post("/account/stripe/disconnect")
+
     def sign_out_everywhere(self):
         response = self.request("POST", "/account/sign-out")
         if not response.ok:
@@ -186,8 +195,9 @@ class Viewer(Client):
     def queue(self) -> dict:
         return self.get(self._path("/songs/queue"))
 
-    def order_song(self, song: str, user: str | None = None) -> str:
-        return self.post(self._path("/songs/orders"), {"song": song, "user": user})["orderId"]
+    def order_song(self, song: str, user: str | None = None, provider: str | None = None) -> str:
+        body = {"song": song, "user": user, "provider": provider}
+        return self.post(self._path("/songs/orders"), body)["orderId"]
 
     def capture_song(self, order_id: str) -> dict:
         return self.post(self._path(f"/songs/orders/{quote(order_id, safe='')}/capture"))
@@ -195,9 +205,16 @@ class Viewer(Client):
     def tips(self) -> dict | None:
         return self.get(self._path("/tips"))["tips"]
 
-    def order_tip(self, amount: int, user: str | None = None, message: str | None = None) -> str:
-        body = {"amount": amount, "user": user, "message": message}
-        return self.post(self._path("/tips/orders"), body)["orderId"]
+    def tip_order(
+        self, amount: int, user: str | None = None, message: str | None = None, provider: str | None = None
+    ) -> dict:
+        body = {"amount": amount, "user": user, "message": message, "provider": provider}
+        return self.post(self._path("/tips/orders"), body)
+
+    def order_tip(
+        self, amount: int, user: str | None = None, message: str | None = None, provider: str | None = None
+    ) -> str:
+        return self.tip_order(amount, user, message, provider)["orderId"]
 
     def capture_tip(self, order_id: str) -> dict:
         return self.post(self._path(f"/tips/orders/{quote(order_id, safe='')}/capture"))
@@ -205,8 +222,10 @@ class Viewer(Client):
     def spin(self) -> dict:
         return self.get(self._path("/spin"))
 
-    def order_spin(self, spins: int, user: str | None = None, message: str | None = None) -> str:
-        body = {"spins": spins, "user": user, "message": message}
+    def order_spin(
+        self, spins: int, user: str | None = None, message: str | None = None, provider: str | None = None
+    ) -> str:
+        body = {"spins": spins, "user": user, "message": message, "provider": provider}
         return self.post(self._path("/spin/orders"), body)["orderId"]
 
     def capture_spin(self, order_id: str) -> dict:
