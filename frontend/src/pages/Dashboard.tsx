@@ -20,7 +20,7 @@ import {
   disconnectPayPal,
   fetchAccount,
   createStreamer,
-  newSecretKey,
+  newMoblinCloudKey,
   readSession,
   saveAccountSettings,
   saveSession,
@@ -798,7 +798,7 @@ function SpinSettings(props: {
 function Admin(props: {
   session: string;
   account: Account;
-  secretKey: string;
+  moblinCloudKey: string;
   settings: Settings;
   onAccount: (account: Account) => void;
   onSignOut: () => void;
@@ -810,7 +810,7 @@ function Admin(props: {
   const newKey = async () => {
     if (
       !confirm(
-        "Moblin disconnects and the current secret key stops working. Paste the new one in Moblin to reconnect.",
+        "Moblin disconnects and the current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.",
       )
     ) {
       return;
@@ -818,7 +818,7 @@ function Admin(props: {
     setBusy(true);
     setNewKeyFailed(false);
     try {
-      props.onAccount(await newSecretKey(props.session));
+      props.onAccount(await newMoblinCloudKey(props.session));
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
@@ -1015,7 +1015,7 @@ function Admin(props: {
         </Show>
         <div hidden={active() !== "moblin"}>
           <MoblinSettings
-            secretKey={props.secretKey}
+            moblinCloudKey={props.moblinCloudKey}
             connected={settings().connected}
             busy={busy()}
             newKeyFailed={newKeyFailed()}
@@ -1048,7 +1048,7 @@ function NeedsPayPal(props: { title: string; onConnect: () => void }) {
 }
 
 function MoblinSettings(props: {
-  secretKey: string;
+  moblinCloudKey: string;
   connected: boolean;
   busy: boolean;
   newKeyFailed: boolean;
@@ -1066,7 +1066,7 @@ function MoblinSettings(props: {
       <p class="text-ink-2">
         In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.
       </p>
-      <Value label="Secret key" text={props.secretKey} secret />
+      <Value label="Moblin Cloud key" text={props.moblinCloudKey} secret />
       <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
         <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
         Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.
@@ -1078,7 +1078,7 @@ function MoblinSettings(props: {
           disabled={props.busy}
           onClick={() => props.onNewKey()}
         >
-          Reset secret key
+          Reset Moblin Cloud key
         </button>
         <Show when={props.newKeyFailed}>
           <p role="status" class="text-amber">
@@ -1112,14 +1112,14 @@ function SignedIn(props: {
   };
 
   onMount(() => {
-    if (!props.account.secretKey) {
+    if (!props.account.moblinCloudKey) {
       void create();
     }
   });
 
   return (
     <Show
-      when={props.account.secretKey && props.account.settings ? props.account : null}
+      when={props.account.moblinCloudKey && props.account.settings ? props.account : null}
       keyed
       fallback={
         <Show when={failed()} fallback={<Spinner />}>
@@ -1138,7 +1138,7 @@ function SignedIn(props: {
         <Admin
           session={props.session}
           account={account}
-          secretKey={account.secretKey!}
+          moblinCloudKey={account.moblinCloudKey!}
           settings={account.settings!}
           onAccount={props.onAccount}
           onSignOut={props.onSignOut}

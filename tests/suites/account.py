@@ -14,7 +14,7 @@ from ..utils.context import Context
 from ..utils.test_case import TestCase
 from ..utils.website import Dashboard
 
-RE_SECRET_KEY = re.compile(r"^[A-Za-z0-9_-]{43}$")
+RE_MOBLIN_CLOUD_KEY = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 
 def unpadded_base64url(data: bytes) -> str:
@@ -62,7 +62,9 @@ class AccountSignIn(AccountTestCase):
         dashboard_url = self.website.finish_sign_in(callback_url, browser)
         self.assert_true(dashboard_url.startswith(f"{FRONTEND_URL}/dashboard/#session="))
         account = self.website.dashboard_of(dashboard_url).account()
-        self.assert_equal(account, {"name": "signin", "login": "signin", "secretKey": None, "settings": None})
+        self.assert_equal(
+            account, {"name": "signin", "login": "signin", "moblinCloudKey": None, "settings": None}
+        )
 
 
 class AccountSignInWithTwitch(TestCase):
@@ -102,7 +104,7 @@ class AccountNotSignedIn(TestCase):
             dashboard = Dashboard(self.backend.url, session)
             self.assert_backend_error(401, dashboard.account, "not signed in")
             self.assert_backend_error(401, dashboard.create_page, "not signed in")
-            self.assert_backend_error(401, dashboard.new_secret_key, "not signed in")
+            self.assert_backend_error(401, dashboard.new_moblin_cloud_key, "not signed in")
             self.assert_backend_error(401, dashboard.save_settings, "not signed in")
             self.assert_backend_error(401, dashboard.check_paypal, "not signed in")
             self.assert_backend_error(401, dashboard.disconnect_paypal, "not signed in")
@@ -127,9 +129,9 @@ class AccountCreatePage(AccountTestCase):
         self.assert_backend_error(404, dashboard.save_settings, "no page")
         self.assert_backend_error(404, dashboard.check_paypal, "no page")
         self.assert_backend_error(404, dashboard.disconnect_paypal, "no page")
-        self.assert_backend_error(404, dashboard.new_secret_key, "no page")
+        self.assert_backend_error(404, dashboard.new_moblin_cloud_key, "no page")
         account = dashboard.create_page()
-        self.assert_regex(account["secretKey"], RE_SECRET_KEY)
+        self.assert_regex(account["moblinCloudKey"], RE_MOBLIN_CLOUD_KEY)
         settings = account["settings"]
         self.assert_equal(
             {
@@ -175,20 +177,20 @@ class AccountUnknownPage(TestCase):
         )
 
 
-class AccountNewSecretKey(AccountTestCase):
-    """Replace the secret key, which stops the old one from working but keeps the page."""
+class AccountNewMoblinCloudKey(AccountTestCase):
+    """Replace the Moblin Cloud key, which stops the old one from working but keeps the page."""
 
     def run(self):
-        dashboard = self.sign_in("newsecretkey")
+        dashboard = self.sign_in("newcloudkey")
         account = dashboard.create_page()
         port = self.backend.port
-        old_key = account["secretKey"]
+        old_key = account["moblinCloudKey"]
         self.assert_true(streamer_connects(port, old_key))
-        new_account = dashboard.new_secret_key()
-        new_key = new_account["secretKey"]
+        new_account = dashboard.new_moblin_cloud_key()
+        new_key = new_account["moblinCloudKey"]
         self.assert_not_equal(new_key, old_key)
         self.assert_equal(new_account["settings"]["id"], account["settings"]["id"])
-        self.assert_equal(dashboard.account()["secretKey"], new_key)
+        self.assert_equal(dashboard.account()["moblinCloudKey"], new_key)
         self.assert_false(streamer_connects(port, old_key))
         self.assert_true(streamer_connects(port, new_key))
         self.assert_false(streamer_connects(port, "x"))
@@ -304,7 +306,7 @@ def tests(context: Context):
         AccountExpiredSession(context),
         AccountCreatePage(context),
         AccountUnknownPage(context),
-        AccountNewSecretKey(context),
+        AccountNewMoblinCloudKey(context),
         AccountSignOutEverywhere(context),
         AccountPageLook(context),
         AccountCurrency(context),

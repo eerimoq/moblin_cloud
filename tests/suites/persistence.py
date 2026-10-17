@@ -11,10 +11,10 @@ class PersistenceBackendRestart(TestCase):
         dashboard.save_settings(title="Still here", accent="blue")
         account = dashboard.account()
         if self.context.moblin is not None:
-            self.context.moblin.connect_to_backend(account["secretKey"])
+            self.context.moblin.connect_to_backend(account["moblinCloudKey"])
         self.backend.restart()
         restarted = dashboard.account()
-        self.assert_equal(restarted["secretKey"], account["secretKey"])
+        self.assert_equal(restarted["moblinCloudKey"], account["moblinCloudKey"])
         self.assert_equal(restarted["settings"]["id"], account["settings"]["id"])
         self.assert_equal(restarted["settings"]["merchantId"], account["settings"]["merchantId"])
         profile = self.website.viewer(account["settings"]["id"]).profile()

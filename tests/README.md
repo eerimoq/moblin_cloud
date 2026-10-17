@@ -39,7 +39,7 @@ PayPal's popup does, so no buyer account or browser is needed for payments.
 
 Moblin's remote control streamer connects to the tester at `remote-control-port`. The tester
 acts as Moblin's assistant and sets Moblin up by importing settings. When a test gives Moblin a
-secret key from the dashboard, Moblin Cloud connects to the tester at the same port too, and
+Moblin Cloud key from the dashboard, Moblin Cloud connects to the tester at the same port too, and
 the tester relays that connection to the backend while watching what they send each other. That
 is how the tests see the songs, tips and wheel spins the backend delivers.
 

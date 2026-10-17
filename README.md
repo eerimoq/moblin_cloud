@@ -35,8 +35,8 @@ just frontend-run
 and open http://localhost:5173. The backend runs in development mode: it is
 filled with made-up streamers and signing in with Twitch is faked, so no
 credentials are needed. To try a streamer page, sign in at
-http://localhost:5173/dashboard/, copy the secret key and run
-`just backend-fake-streamer <secret key>` to connect a made-up Moblin.
+http://localhost:5173/dashboard/, copy the Moblin Cloud key and run
+`just backend-fake-streamer <Moblin Cloud key>` to connect a made-up Moblin.
 
 ## Checks
 

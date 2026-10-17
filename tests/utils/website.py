@@ -113,8 +113,8 @@ class Dashboard(Client):
     def create_page(self) -> dict:
         return self.post("/account/page")
 
-    def new_secret_key(self) -> dict:
-        return self.post("/account/secret-key")
+    def new_moblin_cloud_key(self) -> dict:
+        return self.post("/account/moblin-cloud-key")
 
     def save_settings(
         self,
@@ -163,8 +163,8 @@ class Dashboard(Client):
     def page_id(self) -> str:
         return self.account()["settings"]["id"]
 
-    def secret_key(self) -> str:
-        return self.account()["secretKey"]
+    def moblin_cloud_key(self) -> str:
+        return self.account()["moblinCloudKey"]
 
 
 class Viewer(Client):

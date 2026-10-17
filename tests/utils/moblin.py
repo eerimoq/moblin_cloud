@@ -92,7 +92,9 @@ class StreamerConnection:
         except InvalidStatus as error:
             if error.response.status_code != 404:
                 raise
-            LOGGER.debug("The backend does not know secret key %s, closing Moblin's connection", self.key)
+            LOGGER.debug(
+                "The backend does not know Moblin Cloud key %s, closing Moblin's connection", self.key
+            )
             self.moblin.add_rejected_key(self.key)
             return
         except OSError:
@@ -207,7 +209,7 @@ class Moblin:
 
     Its remote control streamer connects to the tester, which acts as Moblin's assistant and
     sends its own requests to Moblin, like moblin_assistant does, to set it up and look at it.
-    Its Moblin Cloud connection, made when it has a secret key from the dashboard, is relayed
+    Its Moblin Cloud connection, made when it has a Moblin Cloud key from the dashboard, is relayed
     to the backend, so the backend talks to the real Moblin while the tester watches.
     """
 
@@ -328,7 +330,7 @@ class Moblin:
         return capability in self.capabilities
 
     def connected_key(self) -> str | None:
-        """The secret key of Moblin's Moblin Cloud connection to the backend, if any."""
+        """The key of Moblin's Moblin Cloud connection to the backend, if any."""
         with self._lock:
             connection = self._cloud
         if connection is None or not connection.identified.is_set():
@@ -367,7 +369,7 @@ class Moblin:
     def wait_for_rejected_key(self, key: str, start: int = 0, timeout: float = 60):
         self._wait(
             lambda: key in self._rejected_keys[start:],
-            f"the backend to refuse Moblin Cloud with the secret key {key}",
+            f"the backend to refuse Moblin Cloud with the key {key}",
             timeout,
         )
 
@@ -395,7 +397,7 @@ class Moblin:
 
     def import_settings(self, key: str | None, wheel: list[dict] | None = None):
         """Imports test settings, which also set where the remote control streamer connects and
-        Moblin Cloud's secret key."""
+        Moblin Cloud's key."""
         settings = settings_for(self.remote_control_url(), key, wheel)
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "settings.zip"
@@ -417,7 +419,7 @@ class Moblin:
         return control, cloud
 
     def connect_to_backend(self, key: str, wheel: list[dict] | None = None):
-        """Gives Moblin the secret key from the dashboard, like a streamer pasting it into Moblin."""
+        """Gives Moblin the Moblin Cloud key from the dashboard, like a streamer pasting it into Moblin."""
         with self._lock:
             self._wheel = None
         self.import_settings(key, wheel)
