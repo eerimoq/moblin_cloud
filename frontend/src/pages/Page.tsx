@@ -378,7 +378,7 @@ function TipJar(props: {
         />
       </label>
       <MessageField message={message()} onMessage={setMessage} placeholder="Love the stream!" />
-      <div class="flex w-full max-w-sm flex-col gap-3">
+      <div class="flex w-full flex-col gap-3">
         <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
           <span class="text-ink-2">Your tip</span>
           <span class="font-display text-2xl font-semibold">
@@ -736,7 +736,7 @@ function SpinWheel(props: {
         />
       </label>
       <MessageField message={message()} onMessage={setMessage} placeholder="Land on the big one!" />
-      <div class="flex w-full max-w-sm flex-col gap-3">
+      <div class="flex w-full flex-col gap-3">
         <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
           <span class="text-ink-2">Your tip · {spinsText(choice().spins)}</span>
           <span class="font-display text-2xl font-semibold">
@@ -1163,7 +1163,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
               <div class="flex flex-wrap items-center gap-4">
                 <Show when={payable()} keyed>
                   {(current) => (
-                    <div class="flex w-full max-w-sm flex-col gap-3">
+                    <div class="flex w-full flex-col gap-3">
                       <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
                         <span class="text-ink-2">Your tip</span>
                         <span>
