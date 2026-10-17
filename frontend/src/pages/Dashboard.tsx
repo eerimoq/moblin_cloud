@@ -1101,7 +1101,12 @@ function SignedIn(props: {
   const create = async () => {
     setFailed(false);
     try {
-      props.onAccount(await createStreamer(props.session));
+      const account = await createStreamer(props.session);
+      if (account.moblinCloudKey && account.settings) {
+        props.onAccount(account);
+      } else {
+        setFailed(true);
+      }
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
