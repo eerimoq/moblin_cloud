@@ -868,7 +868,7 @@ function Admin(props: {
     {
       id: "page",
       label: "Tip page",
-      icon: "person",
+      icon: "tip-jar",
       shown: () => true,
       status: () => null,
     },

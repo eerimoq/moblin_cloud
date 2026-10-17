@@ -28,7 +28,7 @@ export type IconName =
   | "eye"
   | "eye-off"
   | "music"
-  | "person"
+  | "tip-jar"
   | "wallet";
 
 type Props = {
@@ -72,9 +72,10 @@ export default function Icon(props: Props) {
           <path d="M8 21h8M12 17v4" />
           <circle cx="12" cy="11" r="2.5" />
         </Match>
-        <Match when={props.name === "person"}>
-          <circle cx="12" cy="8" r="4" />
-          <path d="M4 21a8 8 0 0 1 16 0" />
+        <Match when={props.name === "tip-jar"}>
+          <path d="M4 10h16M5 10v8a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-8" />
+          <path d="M7 10a3 3 0 0 1 6 0" />
+          <circle cx="15.5" cy="5" r="2" />
         </Match>
         <Match when={props.name === "wallet"}>
           <path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2" />
