@@ -33,6 +33,7 @@ import {
   removeDevice,
   saveAccountSettings,
   saveSession,
+  sendTest,
   signInUrl,
   signOutEverywhere,
   stripeCountries,
@@ -988,6 +989,103 @@ function SpinSettings(props: {
   );
 }
 
+function TestSend(props: {
+  kind: "song" | "tip" | "spin";
+  session: string;
+  preview?: boolean;
+  onSignOut: () => void;
+}) {
+  const [song, setSong] = createSignal("");
+  const [message, setMessage] = createSignal("");
+  const [sending, setSending] = createSignal(false);
+  const [sent, flashSent] = createFlash(3000);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.preview || sending()) {
+      return;
+    }
+    setError(null);
+    setSending(true);
+    try {
+      await sendTest(
+        props.session,
+        props.kind,
+        props.kind === "song" ? { song: song() } : { message: message() },
+      );
+      flashSent();
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setError(
+        error instanceof BackendError && error.status >= 400 && error.status < 500
+          ? error.message
+          : t("Something went wrong. Try again."),
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">{t("Test it")}</h2>
+      <p class="text-ink-2">
+        {props.kind === "song"
+          ? t("Add a song to Moblin's queue for free, to check that song requests work.")
+          : props.kind === "tip"
+            ? t("Send yourself a tip for free, to check that tips show up in Moblin.")
+            : t("Spin your wheel in Moblin for free, to check that it works.")}
+      </p>
+      <Show
+        when={props.kind === "song"}
+        fallback={
+          <input
+            type="text"
+            maxLength={200}
+            aria-label={t("Message (optional)")}
+            placeholder={t("Message (optional)")}
+            value={message()}
+            onInput={(event) => setMessage(event.currentTarget.value)}
+            class={inputClass}
+          />
+        }
+      >
+        <input
+          type="url"
+          required
+          aria-label={t("Apple Music song link")}
+          placeholder="https://music.apple.com/…"
+          value={song()}
+          onInput={(event) => setSong(event.currentTarget.value)}
+          class={inputClass}
+        />
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <button type="submit" class={buttonClass} disabled={sending()}>
+          <Show when={sent()}>
+            <Icon name="check" class="size-5" />
+          </Show>
+          <span aria-live="polite">
+            {sending()
+              ? t("Sending…")
+              : sent()
+                ? t("Sent to Moblin")
+                : props.kind === "song"
+                  ? t("Send test song")
+                  : props.kind === "tip"
+                    ? t("Send test tip")
+                    : t("Send test spin")}
+          </span>
+        </button>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      </div>
+    </form>
+  );
+}
+
 function Admin(props: {
   session: string;
   account: Account;
@@ -1153,7 +1251,7 @@ function Admin(props: {
         <div hidden={active() !== "page"}>
           <YourPage account={account()} page={settings()} busy={busy()} onSave={save} />
         </div>
-        <div hidden={active() !== "tips"}>
+        <div hidden={active() !== "tips"} class="flex flex-col gap-6">
           <Show
             when={paid(settings().tips !== null)}
             fallback={<NeedsPayments title={t("Tips")} onConnect={() => select("payments")} />}
@@ -1165,8 +1263,14 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
+          <TestSend
+            kind="tip"
+            session={props.session}
+            preview={props.preview}
+            onSignOut={props.onSignOut}
+          />
         </div>
-        <div hidden={active() !== "wheel"}>
+        <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
           <Show
             when={paid(settings().spin !== null)}
             fallback={
@@ -1180,8 +1284,14 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
+          <TestSend
+            kind="spin"
+            session={props.session}
+            preview={props.preview}
+            onSignOut={props.onSignOut}
+          />
         </div>
-        <div hidden={active() !== "songs"}>
+        <div hidden={active() !== "songs"} class="flex flex-col gap-6">
           <Show
             when={paid(settings().paywall !== null)}
             fallback={
@@ -1195,6 +1305,12 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
+          <TestSend
+            kind="song"
+            session={props.session}
+            preview={props.preview}
+            onSignOut={props.onSignOut}
+          />
         </div>
         <Show when={payments()}>
           <div hidden={active() !== "payments"} class="flex flex-col gap-6">

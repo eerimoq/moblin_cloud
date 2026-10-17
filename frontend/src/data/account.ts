@@ -162,6 +162,12 @@ export const disconnectStripe = (session: string) =>
 
 export type SettingsChanges = Page & Pick<Settings, "currency" | "paywall" | "tips" | "spin">;
 
+export const sendTest = (
+  session: string,
+  kind: "song" | "tip" | "spin",
+  body: { song?: string; message?: string },
+) => call<object>(session, `/account/test/${kind}`, post(body));
+
 export const saveAccountSettings = (session: string, settings: SettingsChanges) =>
   call<Settings>(
     session,

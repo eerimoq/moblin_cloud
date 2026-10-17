@@ -100,6 +100,9 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_account_stripe_disconnect),
         )
         .route("/account/sign-out", post(handle_account_sign_out))
+        .route("/account/test/song", post(handle_account_test_song))
+        .route("/account/test/tip", post(handle_account_test_tip))
+        .route("/account/test/spin", post(handle_account_test_spin))
         .route("/pages/{id}/songs", get(handle_songs))
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/songs/queue", get(handle_queue))
@@ -270,14 +273,18 @@ struct SettingsResponse {
     accent: Option<String>,
 }
 
+fn any_connected(api: &Api, account: &Account) -> bool {
+    account
+        .page
+        .iter()
+        .flat_map(|page| &page.devices)
+        .any(|device| api.remote_control.is_connected(&device.id))
+}
+
 fn settings_response(api: &Api, id: String, settings: Settings) -> Json<SettingsResponse> {
     let account = api.accounts.of_page(&id).unwrap_or_default();
     Json(SettingsResponse {
-        connected: account
-            .page
-            .iter()
-            .flat_map(|page| &page.devices)
-            .any(|device| api.remote_control.is_connected(&device.id)),
+        connected: any_connected(api, &account),
         id,
         currency: settings.currency().to_string(),
         paywall: settings.paywall,
@@ -1812,6 +1819,111 @@ async fn capture_spin(
     Ok(accepted())
 }
 
+#[derive(Deserialize)]
+struct TestRequest {
+    #[serde(default)]
+    song: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+fn test_page(api: &Api, headers: &HeaderMap) -> Result<(String, Account, String), Failure> {
+    let account = signed_in(api, headers)?.account;
+    let id = account.page.as_ref().ok_or_else(no_page)?.id.clone();
+    let request_id = api.remote_control.new_request_id().ok_or(failure(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "The test could not be sent. Try again.",
+    ))?;
+    Ok((id, account, request_id))
+}
+
+fn moblin_not_connected() -> Failure {
+    failure(StatusCode::CONFLICT, "Connect Moblin first.")
+}
+
+async fn handle_account_test_song(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (id, account, request_id) = test_page(&api, &headers)?;
+    if !api.remote_control.is_connected(&music_device(&api, &id)) {
+        return Err(moblin_not_connected());
+    }
+    let request = SongRequest {
+        song: request.song.unwrap_or_default(),
+        user: Some(account.name),
+        provider: None,
+    };
+    let song = requested_song(&api, &id, song_and_user(request)?).await?;
+    Ok(queue(&api, id, request_id, song))
+}
+
+async fn handle_account_test_tip(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (id, account, request_id) = test_page(&api, &headers)?;
+    if !any_connected(&api, &account) {
+        return Err(moblin_not_connected());
+    }
+    let settings = api.pages.get(&id);
+    let amount = settings
+        .tips
+        .as_ref()
+        .and_then(|tips| tips.amounts.first().copied())
+        .unwrap_or(500);
+    info!("queued a test tip in request {request_id} for remote control streamer {id}");
+    api.deliveries.add(
+        id,
+        request_id,
+        deliveries::Item::Tip {
+            user: account.name,
+            message: viewer_message(request.message)?.unwrap_or_default(),
+            amount,
+            currency: settings.currency().to_string(),
+        },
+    );
+    Ok(accepted())
+}
+
+async fn handle_account_test_spin(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (id, account, request_id) = test_page(&api, &headers)?;
+    let device = wheel_device(&api, &id);
+    if api.remote_control.wheel(&device).is_none() {
+        return Err(if api.remote_control.is_connected(&device) {
+            failure(
+                StatusCode::CONFLICT,
+                "Pick a wheel of luck in Moblin's Moblin Cloud settings first.",
+            )
+        } else {
+            moblin_not_connected()
+        });
+    }
+    let spins = api
+        .pages
+        .get(&id)
+        .spin
+        .and_then(|spin| spin.options.first().map(|option| option.spins))
+        .unwrap_or(1);
+    info!("queued a test spin in request {request_id} for remote control streamer {id}");
+    api.deliveries.add(
+        id,
+        request_id,
+        deliveries::Item::Spin {
+            user: account.name,
+            message: viewer_message(request.message)?.unwrap_or_default(),
+            spins,
+        },
+    );
+    Ok(accepted())
+}
+
 fn verify(
     app_attest: &AppAttest,
     challenges: &Challenges,
@@ -3310,6 +3422,87 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn streamers_send_themselves_free_tests() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, _) = streamer(&address, &api).await;
+        let test = |kind: &str, body: Value| {
+            client
+                .post(format!("http://{address}/account/test/{kind}"))
+                .bearer_auth(&session)
+                .json(&body)
+                .send()
+        };
+        let response = client
+            .post(format!("http://{address}/account/test/tip"))
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        for kind in ["song", "tip", "spin"] {
+            let response = test(kind, json!({"song": LINK})).await.unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            assert_eq!(response.text().await.unwrap(), "Connect Moblin first.");
+        }
+        let mut socket = connect(&address, &key).await;
+        let response = test("tip", json!({"message": " Testing "})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let request = receive(&mut socket).await;
+        let tip = &request["request"]["data"]["tip"];
+        assert_eq!(tip["name"], "Erik");
+        assert_eq!(tip["message"], "Testing");
+        assert_eq!(tip["amount"], "5.00");
+        assert_eq!(tip["currency"], "USD");
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        let response = test("spin", json!({})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let response = test("spin", json!({})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let request = receive(&mut socket).await;
+        let spin = &request["request"]["data"]["spinWheelOfLuck"];
+        assert_eq!(spin["name"], "Erik");
+        assert_eq!(spin["count"], 1);
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        let response = test("song", json!({"song": "nope"})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let created = tokio::spawn(test("song", json!({"song": LINK})));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"music": {"command": {"find": {"title": LINK}}}})
+        );
+        answer(
+            &mut socket,
+            &request,
+            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band"}}}),
+        )
+        .await;
+        assert_eq!(
+            created.await.unwrap().unwrap().status(),
+            StatusCode::ACCEPTED
+        );
+        let request = receive(&mut socket).await;
+        let add = &request["request"]["data"]["music"]["command"]["add"];
+        assert_eq!(add["title"], LINK);
+        assert_eq!(add["user"], "Erik");
     }
 
     #[tokio::test]
