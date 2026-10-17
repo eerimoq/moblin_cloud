@@ -883,22 +883,20 @@ function Admin(props: {
         />
       </Show>
       <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Connect Moblin</h2>
+        <h2 class="text-[23px] font-semibold">Configure Moblin</h2>
         <p class="flex items-center gap-2.5 text-[15px] text-muted">
           <span
             class={`size-2.5 shrink-0 rounded-full ${settings().connected ? "bg-leaf" : "bg-muted"}`}
           />
-          {settings().connected ? "Moblin is connected." : "Moblin is not connected right now."}
+          {settings().connected ? "Moblin is connected." : "Moblin is not connected."}
         </p>
         <p class="text-ink-2">
-          In Moblin, go to Settings → Moblin cloud and paste the secret key as Secret key. Then turn
-          Enabled on.
+          In Moblin, go to Settings → Moblin cloud, paste the key below and turn on Enabled.
         </p>
-        <Value label="Secret key for Moblin" text={props.secretKey} secret />
+        <Value label="Secret key" text={props.secretKey} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
           <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
-          Keep the secret key to yourself. Anyone who has it can connect as your Moblin and receive
-          your song requests, tips and wheel spins. Reset it if it leaked.
+          Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.
         </p>
         <div class="flex flex-wrap items-center gap-4">
           <button type="button" class={ghostButtonClass} disabled={busy()} onClick={newKey}>
