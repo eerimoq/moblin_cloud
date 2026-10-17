@@ -1287,6 +1287,7 @@ function MoblinSettings(props: {
 }) {
   const [name, setName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
+  const [opened, setOpened] = createSignal<string | null>(null);
   const devices = () => props.account.devices;
   const full = () => devices().length >= 5;
 
@@ -1304,110 +1305,121 @@ function MoblinSettings(props: {
   const add = (event: SubmitEvent) => {
     event.preventDefault();
     void run(async () => {
+      const before = devices().map((device) => device.id);
       await props.onAdd(name().trim());
       setName("");
+      setOpened(devices().find((device) => !before.includes(device.id))?.id ?? null);
     });
   };
 
   const choose = (music: string, wheel: string) => void run(() => props.onChoose(music, wheel));
 
   return (
-    <div class="flex flex-col gap-6">
-      <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Moblin</h2>
-        <p class="text-ink-2">
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">Moblin</h2>
+      <p class="text-ink-2">
+        {t(
+          "Connect up to 5 devices running Moblin. Each device has its own Moblin Cloud key. In Moblin, go to Settings → Moblin Cloud, paste the key and turn on Enabled.",
+        )}
+      </p>
+      <Show when={devices().length > 0}>
+        <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
+          <For each={devices().map((device) => device.id)}>
+            {(id) => (
+              <Show when={devices().find((device) => device.id === id)}>
+                {(device) => (
+                  <DeviceSettings
+                    device={device()}
+                    busy={props.busy}
+                    open={opened() === id}
+                    onToggle={() => setOpened(opened() === id ? null : id)}
+                    onNewKey={() => run(() => props.onNewKey(id))}
+                    onRemove={() => run(() => props.onRemove(id))}
+                  />
+                )}
+              </Show>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <form class="flex flex-wrap items-center gap-4" onSubmit={add}>
+        <input
+          type="text"
+          maxLength={30}
+          required
+          aria-label={t("Device name")}
+          placeholder={t("Device name")}
+          value={name()}
+          onInput={(event) => setName(event.currentTarget.value)}
+          disabled={full()}
+          class={`${inputClass} max-w-64`}
+        />
+        <button
+          type="submit"
+          class={ghostButtonClass}
+          disabled={props.busy || full() || name().trim() === ""}
+        >
+          {t("Add device")}
+        </button>
+      </form>
+      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      <Show when={devices().length > 1}>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="flex flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">{t("Song requests")}</span>
+            <select
+              disabled={props.busy}
+              onChange={(event) =>
+                choose(event.currentTarget.value, props.account.wheelDevice ?? "")
+              }
+              class={inputClass}
+            >
+              <For each={devices()}>
+                {(device) => (
+                  <option value={device.id} selected={device.id === props.account.musicDevice}>
+                    {device.name}
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+          <label class="flex flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">{t("Wheel of luck")}</span>
+            <select
+              disabled={props.busy}
+              onChange={(event) =>
+                choose(props.account.musicDevice ?? "", event.currentTarget.value)
+              }
+              class={inputClass}
+            >
+              <For each={devices()}>
+                {(device) => (
+                  <option value={device.id} selected={device.id === props.account.wheelDevice}>
+                    {device.name}
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+        </div>
+        <p class="text-[15px] text-muted">
           {t(
-            "Connect up to 5 devices running Moblin. Each device has its own Moblin Cloud key. In Moblin, go to Settings → Moblin Cloud, paste the key and turn on Enabled.",
+            "Song requests and wheel spins go to the device picked for them. Tips go to every device.",
           )}
         </p>
-        <Show when={devices().length > 1}>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <label class="flex flex-col gap-2">
-              <span class="text-[15px] font-semibold text-ink-2">{t("Song requests")}</span>
-              <select
-                disabled={props.busy}
-                onChange={(event) =>
-                  choose(event.currentTarget.value, props.account.wheelDevice ?? "")
-                }
-                class={inputClass}
-              >
-                <For each={devices()}>
-                  {(device) => (
-                    <option value={device.id} selected={device.id === props.account.musicDevice}>
-                      {device.name}
-                    </option>
-                  )}
-                </For>
-              </select>
-            </label>
-            <label class="flex flex-col gap-2">
-              <span class="text-[15px] font-semibold text-ink-2">{t("Wheel of luck")}</span>
-              <select
-                disabled={props.busy}
-                onChange={(event) =>
-                  choose(props.account.musicDevice ?? "", event.currentTarget.value)
-                }
-                class={inputClass}
-              >
-                <For each={devices()}>
-                  {(device) => (
-                    <option value={device.id} selected={device.id === props.account.wheelDevice}>
-                      {device.name}
-                    </option>
-                  )}
-                </For>
-              </select>
-            </label>
-          </div>
-          <p class="text-[15px] text-muted">
-            {t(
-              "Song requests and wheel spins go to the device picked for them. Tips go to every device.",
-            )}
-          </p>
-        </Show>
-        <form class="flex flex-wrap items-center gap-4" onSubmit={add}>
-          <input
-            type="text"
-            maxLength={30}
-            required
-            aria-label={t("Device name")}
-            placeholder={t("Device name")}
-            value={name()}
-            onInput={(event) => setName(event.currentTarget.value)}
-            disabled={full()}
-            class={`${inputClass} max-w-64`}
-          />
-          <button
-            type="submit"
-            class={ghostButtonClass}
-            disabled={props.busy || full() || name().trim() === ""}
-          >
-            {t("Add device")}
-          </button>
-        </form>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </div>
-      <For each={devices().map((device) => device.id)}>
-        {(id) => (
-          <Show when={devices().find((device) => device.id === id)}>
-            {(device) => (
-              <DeviceSettings
-                device={device()}
-                busy={props.busy}
-                onNewKey={() => run(() => props.onNewKey(id))}
-                onRemove={() => run(() => props.onRemove(id))}
-              />
-            )}
-          </Show>
-        )}
-      </For>
+      </Show>
     </div>
   );
 }
 
+const smallButtonClass =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
+
 function DeviceSettings(props: {
   device: Device;
   busy: boolean;
+  open: boolean;
+  onToggle: () => void;
   onNewKey: () => void;
   onRemove: () => void;
 }) {
@@ -1447,45 +1459,60 @@ function DeviceSettings(props: {
   };
 
   return (
-    <div class={cardClass}>
-      <h3 class="text-[20px] font-semibold">{props.device.name}</h3>
-      <p class="flex items-center gap-2.5 text-ink-2">
+    <li>
+      <button
+        type="button"
+        aria-expanded={props.open}
+        onClick={props.onToggle}
+        class="flex w-full items-center gap-3 px-4 py-3 text-left"
+      >
         <span
           class={`size-2.5 shrink-0 rounded-full ${props.device.connected ? "bg-leaf" : "bg-muted"}`}
         />
-        {props.device.connected ? t("Connected") : t("Not connected")}
-      </p>
-      <Value label={t("Moblin Cloud key")} text={props.device.key} secret />
-      <Notice>
-        {t("Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.")}
-      </Notice>
-      <p class="text-ink-2">
-        {t(
-          "Or set it all up at once on the device running Moblin: scan the QR code with its camera or open the deep link there.",
-        )}
-      </p>
-      <div class="flex flex-wrap items-center gap-4">
-        <button type="button" class={ghostButtonClass} onClick={() => setQrShown(!qrShown())}>
-          <Icon name={qrShown() ? "eye-off" : "eye"} class="size-5" />
-          {qrShown() ? t("Hide QR code") : t("Show QR code")}
-        </button>
-        <button type="button" class={ghostButtonClass} onClick={copyDeepLink}>
-          <Icon name={copied() ? "check" : "copy"} class="size-4" />
-          {copied() ? t("Copied") : t("Copy deep link")}
-        </button>
-      </div>
-      <Show when={qrShown()}>
-        <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
+        <span class="min-w-0 flex-1 truncate font-semibold">{props.device.name}</span>
+        <span class="text-[15px] text-muted">
+          {props.device.connected ? t("Connected") : t("Not connected")}
+        </span>
+        <Icon
+          name="chevron-down"
+          class={`size-5 shrink-0 text-muted transition-transform ${props.open ? "rotate-180" : ""}`}
+        />
+      </button>
+      <Show when={props.open}>
+        <div class="flex flex-col gap-4 px-4 pb-4">
+          <Value label={t("Moblin Cloud key")} text={props.device.key} secret />
+          <Notice>
+            {t(
+              "Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.",
+            )}
+          </Notice>
+          <p class="text-[15px] text-ink-2">
+            {t(
+              "Or set it all up at once on the device running Moblin: scan the QR code with its camera or open the deep link there.",
+            )}
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" class={smallButtonClass} onClick={() => setQrShown(!qrShown())}>
+              <Icon name={qrShown() ? "eye-off" : "eye"} class="size-4" />
+              {qrShown() ? t("Hide QR code") : t("Show QR code")}
+            </button>
+            <button type="button" class={smallButtonClass} onClick={copyDeepLink}>
+              <Icon name={copied() ? "check" : "copy"} class="size-4" />
+              {copied() ? t("Copied") : t("Copy deep link")}
+            </button>
+            <button type="button" class={smallButtonClass} disabled={props.busy} onClick={newKey}>
+              {t("Reset Moblin Cloud key")}
+            </button>
+            <button type="button" class={smallButtonClass} disabled={props.busy} onClick={remove}>
+              {t("Remove device")}
+            </button>
+          </div>
+          <Show when={qrShown()}>
+            <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
+          </Show>
+        </div>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
-        <button type="button" class={ghostButtonClass} disabled={props.busy} onClick={newKey}>
-          {t("Reset Moblin Cloud key")}
-        </button>
-        <button type="button" class={ghostButtonClass} disabled={props.busy} onClick={remove}>
-          {t("Remove device")}
-        </button>
-      </div>
-    </div>
+    </li>
   );
 }
 
