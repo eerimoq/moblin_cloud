@@ -1,10 +1,19 @@
 import { backendUrl } from "./backend";
 import { BackendError, type Page, type Settings } from "./remoteControl";
 
+export type Device = {
+  id: string;
+  name: string;
+  key: string;
+  connected: boolean;
+};
+
 export type Account = {
   name: string;
   login: string;
-  moblinCloudKey: string | null;
+  devices: Device[];
+  musicDevice: string | null;
+  wheelDevice: string | null;
   settings: Settings | null;
 };
 
@@ -70,8 +79,21 @@ export async function signOutEverywhere(session: string) {
 export const createStreamer = (session: string) =>
   call<Account>(session, "/account/page", { method: "POST" });
 
-export const newMoblinCloudKey = (session: string) =>
-  call<Account>(session, "/account/moblin-cloud-key", { method: "POST" });
+export const addDevice = (session: string, name: string) =>
+  call<Account>(session, "/account/devices", post({ name }));
+
+export const chooseDevices = (session: string, music: string, wheel: string) =>
+  call<Account>(session, "/account/devices/choose", post({ music, wheel }));
+
+export const newDeviceKey = (session: string, device: string) =>
+  call<Account>(session, `/account/devices/${encodeURIComponent(device)}/key`, {
+    method: "POST",
+  });
+
+export const removeDevice = (session: string, device: string) =>
+  call<Account>(session, `/account/devices/${encodeURIComponent(device)}/remove`, {
+    method: "POST",
+  });
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>(session, "/account/paypal/connect", { method: "POST" })).url;

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::time::sleep;
 
+use crate::accounts::Accounts;
 use crate::database::Database;
 use crate::pages::format_price;
 use crate::remote_control::{MusicCommand, RequestError, Streamers};
@@ -18,6 +19,7 @@ pub struct Delivery {
     pub request_id: String,
     pub requested_at: u64,
     pub item: Item,
+    pub delivered: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -39,6 +41,8 @@ pub enum Item {
         currency: String,
     },
 }
+
+type Targeted = (Delivery, Vec<String>);
 
 pub struct Deliveries {
     database: Arc<Database>,
@@ -86,6 +90,28 @@ impl Deliveries {
         query(&database, "SELECT * FROM deliveries ORDER BY rowid", [])
     }
 
+    fn delivered(&self, request_id: &str, device: &str, devices: &[String]) {
+        let database = self.database.lock();
+        let delivered = database
+            .query_row(
+                "UPDATE deliveries SET delivered = json_insert(delivered, '$[#]', ?2) WHERE request_id = ?1 RETURNING delivered",
+                [request_id, device],
+                |row| row.get::<_, String>(0),
+            )
+            .map(|delivered| serde_json::from_str::<Vec<String>>(&delivered).unwrap_or_default());
+        match delivered {
+            Ok(delivered) if devices.iter().all(|device| delivered.contains(device)) => {
+                if let Err(error) =
+                    database.execute("DELETE FROM deliveries WHERE request_id = ?1", [request_id])
+                {
+                    warn!("failed to remove delivery {request_id}: {error:#}");
+                }
+            }
+            Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => {}
+            Err(error) => warn!("failed to save delivery {request_id}: {error:#}"),
+        }
+    }
+
     fn remove(&self, request_id: &str) {
         if let Err(error) = self
             .database
@@ -96,25 +122,51 @@ impl Deliveries {
         }
     }
 
-    pub async fn run(&self, streamers: &Streamers) {
+    pub async fn run(&self, streamers: &Streamers, accounts: &Accounts) {
         loop {
-            let mut by_streamer: Vec<(String, Vec<Delivery>)> = Vec::new();
+            let mut by_device: Vec<(String, Vec<Targeted>)> = Vec::new();
             for delivery in self.pending() {
-                if !streamers.is_connected(&delivery.streamer) {
+                let page = accounts
+                    .of_page(&delivery.streamer)
+                    .and_then(|account| account.page);
+                let devices: Vec<String> = match (&delivery.item, &page) {
+                    (_, None) => Vec::new(),
+                    (Item::Song { .. }, Some(page)) => page
+                        .music_device()
+                        .map(|device| device.id.clone())
+                        .into_iter()
+                        .collect(),
+                    (Item::Spin { .. }, Some(page)) => page
+                        .wheel_device()
+                        .map(|device| device.id.clone())
+                        .into_iter()
+                        .collect(),
+                    (Item::Tip { .. }, Some(page)) => page
+                        .devices
+                        .iter()
+                        .map(|device| device.id.clone())
+                        .filter(|device| !delivery.delivered.contains(device))
+                        .collect(),
+                };
+                if devices.is_empty() && !delivery.delivered.is_empty() {
+                    self.remove(&delivery.request_id);
                     continue;
                 }
-                match by_streamer
-                    .iter_mut()
-                    .find(|(streamer, _)| *streamer == delivery.streamer)
-                {
-                    Some((_, deliveries)) => deliveries.push(delivery),
-                    None => by_streamer.push((delivery.streamer.clone(), vec![delivery])),
+                for device in &devices {
+                    if !streamers.is_connected(device) {
+                        continue;
+                    }
+                    let delivery = (delivery.clone(), devices.clone());
+                    match by_device.iter_mut().find(|(other, _)| other == device) {
+                        Some((_, deliveries)) => deliveries.push(delivery),
+                        None => by_device.push((device.clone(), vec![delivery])),
+                    }
                 }
             }
             join_all(
-                by_streamer
+                by_device
                     .into_iter()
-                    .map(|(_, deliveries)| self.deliver_all(streamers, deliveries)),
+                    .map(|(device, deliveries)| self.deliver_all(streamers, device, deliveries)),
             )
             .await;
             tokio::select! {
@@ -125,27 +177,27 @@ impl Deliveries {
         }
     }
 
-    async fn deliver_all(&self, streamers: &Streamers, deliveries: Vec<Delivery>) {
-        for delivery in deliveries {
-            match deliver(streamers, &delivery).await {
+    async fn deliver_all(&self, streamers: &Streamers, device: String, deliveries: Vec<Targeted>) {
+        for (delivery, devices) in deliveries {
+            match deliver(streamers, &device, &delivery).await {
                 Ok(Outcome::Delivered) => info!(
-                    "delivered {:?} in request {} to remote control streamer {}",
-                    delivery.item, delivery.request_id, delivery.streamer
+                    "delivered {:?} in request {} to remote control streamer {device}",
+                    delivery.item, delivery.request_id
                 ),
                 Ok(Outcome::NotFound) => warn!(
-                    "{:?} in request {} was not found by remote control streamer {}",
-                    delivery.item, delivery.request_id, delivery.streamer
+                    "{:?} in request {} was not found by remote control streamer {device}",
+                    delivery.item, delivery.request_id
                 ),
                 Err(RequestError::Offline | RequestError::Timeout) => return,
                 Err(error) => {
                     info!(
-                        "delivering request {} to remote control streamer {} failed: {error:?}",
-                        delivery.request_id, delivery.streamer
+                        "delivering request {} to remote control streamer {device} failed: {error:?}",
+                        delivery.request_id
                     );
                     continue;
                 }
             }
-            self.remove(&delivery.request_id);
+            self.delivered(&delivery.request_id, &device, &devices);
         }
     }
 }
@@ -159,6 +211,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     row.get("streamer")?,
                     row.get("requested_at")?,
                     row.get::<_, String>("item")?,
+                    row.get::<_, String>("delivered")?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -166,13 +219,14 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
     match deliveries {
         Ok(deliveries) => deliveries
             .into_iter()
-            .filter_map(|(request_id, streamer, requested_at, item)| {
+            .filter_map(|(request_id, streamer, requested_at, item, delivered)| {
                 match serde_json::from_str(&item) {
                     Ok(item) => Some(Delivery {
                         streamer,
                         request_id,
                         requested_at,
                         item,
+                        delivered: serde_json::from_str(&delivered).unwrap_or_default(),
                     }),
                     Err(error) => {
                         warn!("failed to parse delivery {request_id}: {error}");
@@ -193,8 +247,11 @@ enum Outcome {
     NotFound,
 }
 
-async fn deliver(streamers: &Streamers, delivery: &Delivery) -> Result<Outcome, RequestError> {
-    let id = &delivery.streamer;
+async fn deliver(
+    streamers: &Streamers,
+    id: &str,
+    delivery: &Delivery,
+) -> Result<Outcome, RequestError> {
     let request_id = delivery.request_id.clone();
     match &delivery.item {
         Item::Song { link, user } => {

@@ -407,7 +407,7 @@ impl Streamers {
 
     fn add(&self, id: &str, sender: mpsc::UnboundedSender<MessageToStreamer>) -> Option<u64> {
         let mut sessions = self.sessions.lock().unwrap();
-        if sessions.by_id.len() >= 1000 && !sessions.by_id.contains_key(id) {
+        if sessions.by_id.len() >= 5000 && !sessions.by_id.contains_key(id) {
             return None;
         }
         sessions.next_number += 1;

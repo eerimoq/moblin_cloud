@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import re
 import time
+from functools import partial
 
 import requests
 from websockets.exceptions import InvalidStatus
@@ -63,7 +64,15 @@ class AccountSignIn(AccountTestCase):
         self.assert_true(dashboard_url.startswith(f"{FRONTEND_URL}/dashboard/#session="))
         account = self.website.dashboard_of(dashboard_url).account()
         self.assert_equal(
-            account, {"name": "signin", "login": "signin", "moblinCloudKey": None, "settings": None}
+            account,
+            {
+                "name": "signin",
+                "login": "signin",
+                "devices": [],
+                "musicDevice": None,
+                "wheelDevice": None,
+                "settings": None,
+            },
         )
 
 
@@ -104,7 +113,9 @@ class AccountNotSignedIn(TestCase):
             dashboard = Dashboard(self.backend.url, session)
             self.assert_backend_error(401, dashboard.account, "not signed in")
             self.assert_backend_error(401, dashboard.create_page, "not signed in")
-            self.assert_backend_error(401, dashboard.new_moblin_cloud_key, "not signed in")
+            self.assert_backend_error(401, partial(dashboard.new_moblin_cloud_key, "d"), "not signed in")
+            self.assert_backend_error(401, partial(dashboard.add_device, "Moblin"), "not signed in")
+            self.assert_backend_error(401, partial(dashboard.remove_device, "d"), "not signed in")
             self.assert_backend_error(401, dashboard.save_settings, "not signed in")
             self.assert_backend_error(401, dashboard.check_paypal, "not signed in")
             self.assert_backend_error(401, dashboard.disconnect_paypal, "not signed in")
@@ -129,9 +140,10 @@ class AccountCreatePage(AccountTestCase):
         self.assert_backend_error(404, dashboard.save_settings, "no page")
         self.assert_backend_error(404, dashboard.check_paypal, "no page")
         self.assert_backend_error(404, dashboard.disconnect_paypal, "no page")
-        self.assert_backend_error(404, dashboard.new_moblin_cloud_key, "no page")
+        self.assert_backend_error(404, lambda: dashboard.add_device("Moblin"), "no page")
         account = dashboard.create_page()
-        self.assert_regex(account["moblinCloudKey"], RE_MOBLIN_CLOUD_KEY)
+        self.assert_equal(len(account["devices"]), 1)
+        self.assert_regex(account["devices"][0]["key"], RE_MOBLIN_CLOUD_KEY)
         settings = account["settings"]
         self.assert_equal(
             {
@@ -184,16 +196,49 @@ class AccountNewMoblinCloudKey(AccountTestCase):
         dashboard = self.sign_in("newcloudkey")
         account = dashboard.create_page()
         port = self.backend.port
-        old_key = account["moblinCloudKey"]
+        old_key = account["devices"][0]["key"]
         self.assert_true(streamer_connects(port, old_key))
         new_account = dashboard.new_moblin_cloud_key()
-        new_key = new_account["moblinCloudKey"]
+        new_key = new_account["devices"][0]["key"]
         self.assert_not_equal(new_key, old_key)
         self.assert_equal(new_account["settings"]["id"], account["settings"]["id"])
-        self.assert_equal(dashboard.account()["moblinCloudKey"], new_key)
+        self.assert_equal(dashboard.moblin_cloud_key(), new_key)
         self.assert_false(streamer_connects(port, old_key))
         self.assert_true(streamer_connects(port, new_key))
         self.assert_false(streamer_connects(port, "x"))
+
+
+class AccountDevices(AccountTestCase):
+    """Add up to 5 Moblin devices, each with its own Moblin Cloud key, pick devices and remove them."""
+
+    def run(self):
+        dashboard = self.sign_in("devices")
+        account = dashboard.create_page()
+        first = account["devices"][0]["id"]
+        self.assert_backend_error(
+            400, lambda: dashboard.add_device(" "), "the name must be 1 to 30 characters"
+        )
+        for number in range(2, 6):
+            account = dashboard.add_device(f"Phone {number}")
+        self.assert_equal(
+            [device["name"] for device in account["devices"]][1:],
+            ["Phone 2", "Phone 3", "Phone 4", "Phone 5"],
+        )
+        self.assert_backend_error(409, lambda: dashboard.add_device("Phone 6"), "at most 5 Moblin devices")
+        keys = [device["key"] for device in account["devices"]]
+        self.assert_equal(len(set(keys)), 5)
+        port = self.backend.port
+        self.assert_true(all(streamer_connects(port, key) for key in keys))
+        second = account["devices"][1]["id"]
+        self.assert_equal((account["musicDevice"], account["wheelDevice"]), (first, first))
+        self.assert_backend_error(404, lambda: dashboard.choose_devices(second, "x"), "no such device")
+        account = dashboard.choose_devices(second, first)
+        self.assert_equal((account["musicDevice"], account["wheelDevice"]), (second, first))
+        account = dashboard.remove_device(second)
+        self.assert_equal(len(account["devices"]), 4)
+        self.assert_equal(account["musicDevice"], first)
+        self.assert_false(streamer_connects(port, keys[1]))
+        self.assert_backend_error(404, lambda: dashboard.remove_device(second), "no such device")
 
 
 class AccountSignOutEverywhere(AccountTestCase):
@@ -307,6 +352,7 @@ def tests(context: Context):
         AccountCreatePage(context),
         AccountUnknownPage(context),
         AccountNewMoblinCloudKey(context),
+        AccountDevices(context),
         AccountSignOutEverywhere(context),
         AccountPageLook(context),
         AccountCurrency(context),

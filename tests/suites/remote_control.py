@@ -89,7 +89,7 @@ class RemoteControlNewMoblinCloudKeyDisconnects(RemoteControlTestCase):
         old_key = self.moblin.connected_key()
         assert old_key is not None
         position = self.moblin.rejected_keys_position()
-        new_key = self.dashboard.new_moblin_cloud_key()["moblinCloudKey"]
+        new_key = self.dashboard.new_moblin_cloud_key()["devices"][0]["key"]
         self.assert_false(self.dashboard.account()["settings"]["connected"])
         self.moblin.wait_for_rejected_key(old_key, start=position)
         self.assert_false(self.connected())

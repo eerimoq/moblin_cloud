@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::accounts::{Account, AccountError, Accounts, Page};
+use crate::accounts::{Account, AccountError, Accounts, Device, Page};
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
@@ -66,9 +66,18 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/auth/twitch/callback", get(handle_callback))
         .route("/account", get(handle_account))
         .route("/account/page", post(handle_account_page))
+        .route("/account/devices", post(handle_account_devices))
         .route(
-            "/account/moblin-cloud-key",
-            post(handle_account_moblin_cloud_key),
+            "/account/devices/choose",
+            post(handle_account_devices_choose),
+        )
+        .route(
+            "/account/devices/{device}/key",
+            post(handle_account_device_key),
+        )
+        .route(
+            "/account/devices/{device}/remove",
+            post(handle_account_device_remove),
         )
         .route("/account/settings", post(handle_account_settings))
         .route(
@@ -213,9 +222,25 @@ async fn handle_remote_control_streamer(
 ) -> Result<Response, StatusCode> {
     let id = api
         .accounts
-        .page_of_key(&key)
+        .device_of_key(&key)
         .ok_or(StatusCode::NOT_FOUND)?;
     Ok(upgrade.on_upgrade(move |socket| async move { api.remote_control.serve(id, socket).await }))
+}
+
+fn page_of(api: &Api, id: &str) -> Option<Page> {
+    api.accounts.of_page(id).and_then(|account| account.page)
+}
+
+fn music_device(api: &Api, id: &str) -> String {
+    page_of(api, id)
+        .and_then(|page| page.music_device().map(|device| device.id.clone()))
+        .unwrap_or_default()
+}
+
+fn wheel_device(api: &Api, id: &str) -> String {
+    page_of(api, id)
+        .and_then(|page| page.wheel_device().map(|device| device.id.clone()))
+        .unwrap_or_default()
 }
 
 #[derive(Serialize)]
@@ -248,7 +273,11 @@ struct SettingsResponse {
 fn settings_response(api: &Api, id: String, settings: Settings) -> Json<SettingsResponse> {
     let account = api.accounts.of_page(&id).unwrap_or_default();
     Json(SettingsResponse {
-        connected: api.remote_control.is_connected(&id),
+        connected: account
+            .page
+            .iter()
+            .flat_map(|page| &page.devices)
+            .any(|device| api.remote_control.is_connected(&device.id)),
         id,
         currency: settings.currency().to_string(),
         paywall: settings.paywall,
@@ -498,8 +527,18 @@ async fn signed_in_redirect(
 struct AccountResponse {
     name: String,
     login: String,
-    moblin_cloud_key: Option<String>,
+    devices: Vec<DeviceResponse>,
+    music_device: Option<String>,
+    wheel_device: Option<String>,
     settings: Option<SettingsResponse>,
+}
+
+#[derive(Serialize)]
+struct DeviceResponse {
+    id: String,
+    name: String,
+    key: String,
+    connected: bool,
 }
 
 fn not_signed_in() -> (StatusCode, String) {
@@ -536,10 +575,26 @@ fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
         let settings = api.pages.get(&page.id);
         settings_response(api, page.id.clone(), settings).0
     });
+    let page = account.page.as_ref();
     Json(AccountResponse {
         name: account.name,
         login: account.login,
-        moblin_cloud_key: account.page.map(|page| page.key),
+        devices: page
+            .iter()
+            .flat_map(|page| &page.devices)
+            .map(|device| DeviceResponse {
+                id: device.id.clone(),
+                name: device.name.clone(),
+                key: device.key.clone(),
+                connected: api.remote_control.is_connected(&device.id),
+            })
+            .collect(),
+        music_device: page
+            .and_then(Page::music_device)
+            .map(|device| device.id.clone()),
+        wheel_device: page
+            .and_then(Page::wheel_device)
+            .map(|device| device.id.clone()),
         settings,
     })
 }
@@ -552,6 +607,10 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
             StatusCode::SERVICE_UNAVAILABLE,
             "too many accounts".to_string(),
         ),
+        AccountError::TooManyDevices => {
+            (StatusCode::CONFLICT, "at most 5 Moblin devices".to_string())
+        }
+        AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
         AccountError::NotSaved => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "the account could not be saved".to_string(),
@@ -587,25 +646,104 @@ async fn handle_account_page(
         return Ok(account_response(&api, account));
     }
     let (key, page) = new_key(&api)?;
+    let device = Device {
+        id: page.clone(),
+        name: "Moblin".to_string(),
+        key,
+    };
     let account = api
         .accounts
-        .give_page(&id, Page { id: page, key })
+        .give_page(&id, Page::new(page, device))
         .map_err(account_error)?;
     info!("{id} got a page");
     Ok(account_response(&api, account))
 }
 
-async fn handle_account_moblin_cloud_key(
+#[derive(Deserialize)]
+struct DeviceRequest {
+    name: String,
+}
+
+async fn handle_account_devices(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
+    Json(request): Json<DeviceRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?.id;
+    let name = request.name.trim();
+    if name.is_empty() || name.chars().count() > 30 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "the name must be 1 to 30 characters".to_string(),
+        ));
+    }
+    let (key, _) = new_key(&api)?;
+    let device = api.remote_control.new_request_id().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no device could be created".to_string(),
+    ))?;
+    let account = api
+        .accounts
+        .add_device(
+            &id,
+            Device {
+                id: device.clone(),
+                name: name.to_string(),
+                key,
+            },
+        )
+        .map_err(account_error)?;
+    info!("{id} added Moblin device {device}");
+    Ok(account_response(&api, account))
+}
+
+#[derive(Deserialize)]
+struct ChooseDevicesRequest {
+    music: String,
+    wheel: String,
+}
+
+async fn handle_account_devices_choose(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<ChooseDevicesRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?.id;
+    let account = api
+        .accounts
+        .choose_devices(&id, request.music, request.wheel)
+        .map_err(account_error)?;
+    Ok(account_response(&api, account))
+}
+
+async fn handle_account_device_key(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Path(device): Path<String>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let id = signed_in(&api, &headers)?.id;
     let (key, _) = new_key(&api)?;
-    let account = api.accounts.replace_key(&id, key).map_err(account_error)?;
-    if let Some(page) = &account.page {
-        api.remote_control.disconnect(&page.id);
-        info!("{id} got a new Moblin Cloud key for page {}", page.id);
-    }
+    let account = api
+        .accounts
+        .replace_key(&id, &device, key)
+        .map_err(account_error)?;
+    api.remote_control.disconnect(&device);
+    info!("{id} got a new Moblin Cloud key for device {device}");
+    Ok(account_response(&api, account))
+}
+
+async fn handle_account_device_remove(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Path(device): Path<String>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?.id;
+    let account = api
+        .accounts
+        .remove_device(&id, &device)
+        .map_err(account_error)?;
+    api.remote_control.disconnect(&device);
+    info!("{id} removed Moblin device {device}");
     Ok(account_response(&api, account))
 }
 
@@ -1118,8 +1256,8 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
             environment: api.paypal.as_ref().map(PayPal::environment),
             stripe,
         }),
-        wheel: api.remote_control.wheel(&id),
-        connected: api.remote_control.is_connected(&id),
+        wheel: api.remote_control.wheel(&wheel_device(&api, &id)),
+        connected: api.remote_control.is_connected(&wheel_device(&api, &id)),
     })
 }
 
@@ -1158,14 +1296,15 @@ async fn handle_queue(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Result<Json<QueueResponse>, Failure> {
+    let device = music_device(&api, &id);
     let status = api
         .remote_control
-        .music(&id, MusicCommand::Status {})
+        .music(&device, MusicCommand::Status {})
         .await
         .map_err(music_error)?;
     Ok(Json(QueueResponse {
         status,
-        song_requests: api.remote_control.takes_song_requests(&id),
+        song_requests: api.remote_control.takes_song_requests(&device),
     }))
 }
 
@@ -1203,7 +1342,9 @@ async fn requested_song(
     id: &str,
     (link, user): (String, String),
 ) -> Result<RequestedSong, Failure> {
-    if api.remote_control.is_connected(id) && !api.remote_control.takes_song_requests(id) {
+    let device = music_device(api, id);
+    if api.remote_control.is_connected(&device) && !api.remote_control.takes_song_requests(&device)
+    {
         return Err(failure(
             StatusCode::CONFLICT,
             "The streamer is not taking song requests right now.",
@@ -1211,7 +1352,7 @@ async fn requested_song(
     }
     let song = api
         .remote_control
-        .find(id, link.clone())
+        .find(&device, link.clone())
         .await
         .map_err(music_error)?
         .ok_or(failure(
@@ -1377,17 +1518,18 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
             StatusCode::GONE,
             "This payment is unknown or expired, so no money was taken.",
         ))?;
-    let refusal = if kind == "song" && !api.remote_control.is_connected(id) {
+    let music = music_device(api, id);
+    let refusal = if kind == "song" && !api.remote_control.is_connected(&music) {
         Some((
             StatusCode::NOT_FOUND,
             "The streamer went offline, so your payment was not taken.",
         ))
-    } else if kind == "song" && !api.remote_control.takes_song_requests(id) {
+    } else if kind == "song" && !api.remote_control.takes_song_requests(&music) {
         Some((
             StatusCode::CONFLICT,
             "The streamer stopped taking song requests, so your payment was not taken.",
         ))
-    } else if kind == "spin" && api.remote_control.wheel(id).is_none() {
+    } else if kind == "spin" && api.remote_control.wheel(&wheel_device(api, id)).is_none() {
         Some((
             StatusCode::NOT_FOUND,
             "The streamer's wheel is gone, so your payment was not taken.",
@@ -1599,8 +1741,9 @@ async fn handle_spin_order(
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
-    if api.remote_control.wheel(&id).is_none() {
-        return Err(if api.remote_control.is_connected(&id) {
+    let device = wheel_device(&api, &id);
+    if api.remote_control.wheel(&device).is_none() {
+        return Err(if api.remote_control.is_connected(&device) {
             failure(
                 StatusCode::CONFLICT,
                 "The streamer is not taking wheel spins right now.",
@@ -1766,7 +1909,7 @@ mod tests {
         });
         tokio::spawn({
             let api = api.clone();
-            async move { api.deliveries.run(&api.remote_control).await }
+            async move { api.deliveries.run(&api.remote_control, &api.accounts).await }
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -2454,7 +2597,7 @@ mod tests {
     }
 
     fn key_of(account: &Value) -> String {
-        account["moblinCloudKey"].as_str().unwrap().to_string()
+        account["devices"][0]["key"].as_str().unwrap().to_string()
     }
 
     async fn streamer(address: &str, api: &Api) -> (String, String, String) {
@@ -3170,6 +3313,120 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn devices_take_music_and_wheel_as_chosen_and_all_get_tips() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let devices_url = format!("http://{address}/account/devices");
+        let response = client
+            .post(&devices_url)
+            .bearer_auth(&session)
+            .json(&json!({"name": " "}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let account: Value = client
+            .post(&devices_url)
+            .bearer_auth(&session)
+            .json(&json!({"name": " Backup "}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let backup = account["devices"][1].clone();
+        assert_eq!(backup["name"], "Backup");
+        assert_eq!(account["musicDevice"], id);
+        let backup_id = backup["id"].as_str().unwrap().to_string();
+        let account: Value = client
+            .post(format!("{devices_url}/choose"))
+            .bearer_auth(&session)
+            .json(&json!({"music": backup_id, "wheel": id}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["musicDevice"], backup_id);
+        assert_eq!(account["wheelDevice"], id);
+        let mut main = connect(&address, &key).await;
+        let mut other = connect(&address, backup["key"].as_str().unwrap()).await;
+        main.send(Message::text(
+            json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+        other
+            .send(Message::text(
+                json!({"event": {"data": {"songRequests": {"enabled": false}}}}).to_string(),
+            ))
+            .await
+            .unwrap();
+        for socket in [&mut main, &mut other] {
+            socket
+                .send(Message::text(json!({"ping": {}}).to_string()))
+                .await
+                .unwrap();
+            assert_eq!(receive(socket).await, json!({"pong": {}}));
+        }
+        let spin: Value = client
+            .get(format!("http://{address}/pages/{id}/spin"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(spin["wheel"]["options"][0]["text"], "A");
+        let queue = tokio::spawn({
+            let url = format!("http://{address}/pages/{id}/songs/queue");
+            async move {
+                reqwest::get(url)
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()
+            }
+        });
+        let request = receive(&mut other).await;
+        answer(&mut other, &request, music(json!([]))).await;
+        assert_eq!(queue.await.unwrap()["songRequests"], false);
+        api.deliveries.add(
+            id.clone(),
+            "TIP1".to_string(),
+            deliveries::Item::Tip {
+                user: "Viewer".to_string(),
+                message: String::new(),
+                amount: 500,
+                currency: "USD".to_string(),
+            },
+        );
+        for socket in [&mut main, &mut other] {
+            let request = receive(socket).await;
+            assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
+            answer(socket, &request, Value::Null).await;
+        }
+        wait_until_added(&api).await;
+        let account: Value = client
+            .post(format!("{devices_url}/{backup_id}/remove"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["devices"].as_array().unwrap().len(), 1);
+        assert_eq!(account["musicDevice"], id);
+        assert!(!api.remote_control.is_connected(&backup_id));
+    }
+
+    #[tokio::test]
     async fn music_status_comes_from_the_streamer() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
@@ -3475,7 +3732,14 @@ mod tests {
             .unwrap();
         assert_eq!(
             account,
-            json!({"name": "Erik", "login": "erik", "moblinCloudKey": null, "settings": null})
+            json!({
+                "name": "Erik",
+                "login": "erik",
+                "devices": [],
+                "musicDevice": null,
+                "wheelDevice": null,
+                "settings": null,
+            })
         );
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -3597,7 +3861,7 @@ mod tests {
         let mut socket = connect(&address, &key).await;
         assert!(api.remote_control.is_connected(&id));
         let account: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/moblin-cloud-key"))
+            .post(format!("http://{address}/account/devices/{id}/key"))
             .bearer_auth(&session)
             .send()
             .await
@@ -3923,7 +4187,10 @@ mod tests {
         for (method, path) in [
             ("GET", "/account"),
             ("POST", "/account/page"),
-            ("POST", "/account/moblin-cloud-key"),
+            ("POST", "/account/devices"),
+            ("POST", "/account/devices/choose"),
+            ("POST", "/account/devices/d/key"),
+            ("POST", "/account/devices/d/remove"),
             ("POST", "/account/settings"),
             ("POST", "/account/paypal/connect"),
             ("POST", "/account/paypal/check"),
@@ -3938,7 +4205,7 @@ mod tests {
             ] {
                 let mut request = client
                     .request(method.parse().unwrap(), format!("http://{address}{path}"))
-                    .json(&json!({"paywall": null}));
+                    .json(&json!({"paywall": null, "name": "Moblin", "music": "d", "wheel": "d"}));
                 if let Some(token) = token {
                     request = request.bearer_auth(token);
                 }

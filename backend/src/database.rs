@@ -23,7 +23,9 @@ impl Database {
                      login TEXT NOT NULL,
                      avatar TEXT,
                      page_id TEXT,
-                     page_key TEXT,
+                     page_devices TEXT,
+                     music_device TEXT,
+                     wheel_device TEXT,
                      sessions INTEGER NOT NULL,
                      merchant_id TEXT,
                      paypal_tracking_id TEXT,
@@ -31,7 +33,6 @@ impl Database {
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
-                 CREATE INDEX IF NOT EXISTS accounts_page_key ON accounts (page_key);
                  CREATE TABLE IF NOT EXISTS pages (
                      id TEXT PRIMARY KEY,
                      settings TEXT NOT NULL
@@ -40,7 +41,8 @@ impl Database {
                      request_id TEXT PRIMARY KEY,
                      streamer TEXT NOT NULL,
                      requested_at INTEGER NOT NULL,
-                     item TEXT NOT NULL
+                     item TEXT NOT NULL,
+                     delivered TEXT NOT NULL DEFAULT '[]'
                  );
                  CREATE TABLE IF NOT EXISTS streamers (
                      position INTEGER PRIMARY KEY,
@@ -48,24 +50,29 @@ impl Database {
                  );",
             )
             .context("failed to create the database tables")?;
-        for (column, definition) in [
-            ("stripe_account_id", "TEXT"),
-            ("stripe_ready", "INTEGER NOT NULL DEFAULT 0"),
+        for (table, column, definition) in [
+            ("accounts", "stripe_account_id", "TEXT"),
+            ("accounts", "stripe_ready", "INTEGER NOT NULL DEFAULT 0"),
+            ("accounts", "page_devices", "TEXT"),
+            ("accounts", "music_device", "TEXT"),
+            ("accounts", "wheel_device", "TEXT"),
+            ("deliveries", "delivered", "TEXT NOT NULL DEFAULT '[]'"),
         ] {
-            let exists: bool = connection
-                .query_row(
-                    "SELECT count(*) > 0 FROM pragma_table_info('accounts') WHERE name = ?1",
-                    [column],
-                    |row| row.get(0),
-                )
-                .context("failed to read the accounts table")?;
-            if !exists {
+            if !has_column(&connection, table, column)? {
                 connection
                     .execute_batch(&format!(
-                        "ALTER TABLE accounts ADD COLUMN {column} {definition}"
+                        "ALTER TABLE {table} ADD COLUMN {column} {definition}"
                     ))
-                    .with_context(|| format!("failed to add {column} to the accounts table"))?;
+                    .with_context(|| format!("failed to add {column} to the {table} table"))?;
             }
+        }
+        if has_column(&connection, "accounts", "page_key")? {
+            connection
+                .execute_batch(
+                    "DROP INDEX IF EXISTS accounts_page_key;
+                     ALTER TABLE accounts DROP COLUMN page_key;",
+                )
+                .context("failed to remove the old Moblin Cloud keys")?;
         }
         Ok(Arc::new(Self(Mutex::new(connection))))
     }
@@ -78,6 +85,16 @@ impl Database {
     pub fn lock(&self) -> MutexGuard<'_, Connection> {
         self.0.lock().unwrap()
     }
+}
+
+fn has_column(connection: &Connection, table: &str, column: &str) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT count(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2",
+            [table, column],
+            |row| row.get(0),
+        )
+        .with_context(|| format!("failed to read the {table} table"))
 }
 
 #[cfg(test)]

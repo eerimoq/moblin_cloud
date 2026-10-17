@@ -301,7 +301,7 @@ async fn main() -> Result<()> {
     });
     tokio::spawn({
         let api = api.clone();
-        async move { api.deliveries.run(&api.remote_control).await }
+        async move { api.deliveries.run(&api.remote_control, &api.accounts).await }
     });
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await

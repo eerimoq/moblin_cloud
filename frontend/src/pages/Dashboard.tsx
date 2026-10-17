@@ -18,7 +18,9 @@ import {
   Value,
 } from "../components/PageParts";
 import {
+  addDevice,
   checkPayPal,
+  chooseDevices,
   checkStripe,
   connectPayPal,
   connectStripe,
@@ -26,8 +28,9 @@ import {
   disconnectStripe,
   fetchAccount,
   createStreamer,
-  newMoblinCloudKey,
+  newDeviceKey,
   readSession,
+  removeDevice,
   saveAccountSettings,
   saveSession,
   signInUrl,
@@ -35,6 +38,7 @@ import {
   stripeCountries,
   takeSignInResult,
   type Account,
+  type Device,
   type SettingsChanges,
 } from "../data/account";
 import { pages } from "../data/links";
@@ -987,36 +991,23 @@ function SpinSettings(props: {
 function Admin(props: {
   session: string;
   account: Account;
-  moblinCloudKey: string;
   settings: Settings;
-  onAccount: (account: Account) => void;
   onSignOut: () => void;
   preview?: boolean;
 }) {
+  const [account, setAccount] = createSignal(props.account);
   const [settings, setSettings] = createSignal(props.settings);
   const [busy, setBusy] = createSignal(false);
-  const [newKeyFailed, setNewKeyFailed] = createSignal(false);
 
-  const newKey = async () => {
-    if (
-      !confirm(
-        t(
-          "Moblin disconnects and the current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.",
-        ),
-      )
-    ) {
-      return;
-    }
+  const changeDevices = async (change: () => Promise<Account>) => {
     setBusy(true);
-    setNewKeyFailed(false);
     try {
-      props.onAccount(await newMoblinCloudKey(props.session));
+      setAccount(await change());
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
-      } else {
-        setNewKeyFailed(true);
       }
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -1029,6 +1020,7 @@ function Admin(props: {
     const timer = setInterval(async () => {
       try {
         const account = await fetchAccount(props.session);
+        setAccount(account);
         if (account.settings) {
           setSettings(account.settings);
         }
@@ -1159,7 +1151,7 @@ function Admin(props: {
       </nav>
       <div class="min-w-0">
         <div hidden={active() !== "page"}>
-          <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
+          <YourPage account={account()} page={settings()} busy={busy()} onSave={save} />
         </div>
         <div hidden={active() !== "tips"}>
           <Show
@@ -1229,11 +1221,14 @@ function Admin(props: {
         </Show>
         <div hidden={active() !== "moblin"}>
           <MoblinSettings
-            moblinCloudKey={props.moblinCloudKey}
-            connected={settings().connected}
+            account={account()}
             busy={busy()}
-            newKeyFailed={newKeyFailed()}
-            onNewKey={newKey}
+            onAdd={(name) => changeDevices(() => addDevice(props.session, name))}
+            onChoose={(music, wheel) =>
+              changeDevices(() => chooseDevices(props.session, music, wheel))
+            }
+            onNewKey={(device) => changeDevices(() => newDeviceKey(props.session, device))}
+            onRemove={(device) => changeDevices(() => removeDevice(props.session, device))}
           />
         </div>
       </div>
@@ -1283,16 +1278,143 @@ function QrCode(props: { text: string; label: string }) {
 }
 
 function MoblinSettings(props: {
-  moblinCloudKey: string;
-  connected: boolean;
+  account: Account;
   busy: boolean;
-  newKeyFailed: boolean;
+  onAdd: (name: string) => Promise<void>;
+  onChoose: (music: string, wheel: string) => Promise<void>;
+  onNewKey: (device: string) => Promise<void>;
+  onRemove: (device: string) => Promise<void>;
+}) {
+  const [name, setName] = createSignal("");
+  const [error, setError] = createSignal<string | null>(null);
+  const devices = () => props.account.devices;
+  const full = () => devices().length >= 5;
+
+  const run = async (action: () => Promise<void>) => {
+    setError(null);
+    try {
+      await action();
+    } catch (error) {
+      if (!signedOut(error)) {
+        setError(t("Something went wrong. Try again."));
+      }
+    }
+  };
+
+  const add = (event: SubmitEvent) => {
+    event.preventDefault();
+    void run(async () => {
+      await props.onAdd(name().trim());
+      setName("");
+    });
+  };
+
+  const choose = (music: string, wheel: string) => void run(() => props.onChoose(music, wheel));
+
+  return (
+    <div class="flex flex-col gap-6">
+      <div class={cardClass}>
+        <h2 class="text-[23px] font-semibold">Moblin</h2>
+        <p class="text-ink-2">
+          {t(
+            "Connect up to 5 devices running Moblin. Each device has its own Moblin Cloud key. In Moblin, go to Settings → Moblin Cloud, paste the key and turn on Enabled.",
+          )}
+        </p>
+        <Show when={devices().length > 1}>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label class="flex flex-col gap-2">
+              <span class="text-[15px] font-semibold text-ink-2">{t("Song requests")}</span>
+              <select
+                disabled={props.busy}
+                onChange={(event) =>
+                  choose(event.currentTarget.value, props.account.wheelDevice ?? "")
+                }
+                class={inputClass}
+              >
+                <For each={devices()}>
+                  {(device) => (
+                    <option value={device.id} selected={device.id === props.account.musicDevice}>
+                      {device.name}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </label>
+            <label class="flex flex-col gap-2">
+              <span class="text-[15px] font-semibold text-ink-2">{t("Wheel of luck")}</span>
+              <select
+                disabled={props.busy}
+                onChange={(event) =>
+                  choose(props.account.musicDevice ?? "", event.currentTarget.value)
+                }
+                class={inputClass}
+              >
+                <For each={devices()}>
+                  {(device) => (
+                    <option value={device.id} selected={device.id === props.account.wheelDevice}>
+                      {device.name}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </label>
+          </div>
+          <p class="text-[15px] text-muted">
+            {t(
+              "Song requests and wheel spins go to the device picked for them. Tips go to every device.",
+            )}
+          </p>
+        </Show>
+        <form class="flex flex-wrap items-center gap-4" onSubmit={add}>
+          <input
+            type="text"
+            maxLength={30}
+            required
+            aria-label={t("Device name")}
+            placeholder={t("Device name")}
+            value={name()}
+            onInput={(event) => setName(event.currentTarget.value)}
+            disabled={full()}
+            class={`${inputClass} max-w-64`}
+          />
+          <button
+            type="submit"
+            class={ghostButtonClass}
+            disabled={props.busy || full() || name().trim() === ""}
+          >
+            {t("Add device")}
+          </button>
+        </form>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      </div>
+      <For each={devices().map((device) => device.id)}>
+        {(id) => (
+          <Show when={devices().find((device) => device.id === id)}>
+            {(device) => (
+              <DeviceSettings
+                device={device()}
+                busy={props.busy}
+                onNewKey={() => run(() => props.onNewKey(id))}
+                onRemove={() => run(() => props.onRemove(id))}
+              />
+            )}
+          </Show>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function DeviceSettings(props: {
+  device: Device;
+  busy: boolean;
   onNewKey: () => void;
+  onRemove: () => void;
 }) {
   const [qrShown, setQrShown] = createSignal(false);
   const [copied, flashCopied] = createFlash(1500);
   const deepLink = () => {
-    const settings = { moblinCloud: { enabled: true, key: props.moblinCloudKey } };
+    const settings = { moblinCloud: { enabled: true, key: props.device.key } };
     return `moblin://?${encodeURIComponent(JSON.stringify(settings))}`;
   };
   const copyDeepLink = async () => {
@@ -1300,20 +1422,40 @@ function MoblinSettings(props: {
       flashCopied();
     }
   };
+  const newKey = () => {
+    if (
+      confirm(
+        t(
+          "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.",
+          { name: props.device.name },
+        ),
+      )
+    ) {
+      props.onNewKey();
+    }
+  };
+  const remove = () => {
+    if (
+      confirm(
+        t("{name} disconnects and its Moblin Cloud key stops working.", {
+          name: props.device.name,
+        }),
+      )
+    ) {
+      props.onRemove();
+    }
+  };
 
   return (
     <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">Moblin</h2>
+      <h3 class="text-[20px] font-semibold">{props.device.name}</h3>
       <p class="flex items-center gap-2.5 text-ink-2">
         <span
-          class={`size-2.5 shrink-0 rounded-full ${props.connected ? "bg-leaf" : "bg-muted"}`}
+          class={`size-2.5 shrink-0 rounded-full ${props.device.connected ? "bg-leaf" : "bg-muted"}`}
         />
-        {props.connected ? t("Moblin is connected.") : t("Moblin is not connected.")}
+        {props.device.connected ? t("Connected") : t("Not connected")}
       </p>
-      <p class="text-ink-2">
-        {t("In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.")}
-      </p>
-      <Value label={t("Moblin Cloud key")} text={props.moblinCloudKey} secret />
+      <Value label={t("Moblin Cloud key")} text={props.device.key} secret />
       <Notice>
         {t("Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.")}
       </Notice>
@@ -1336,17 +1478,12 @@ function MoblinSettings(props: {
         <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
       </Show>
       <div class="flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          class={ghostButtonClass}
-          disabled={props.busy}
-          onClick={() => props.onNewKey()}
-        >
+        <button type="button" class={ghostButtonClass} disabled={props.busy} onClick={newKey}>
           {t("Reset Moblin Cloud key")}
         </button>
-        <Show when={props.newKeyFailed}>
-          <Notice status>{t("Something went wrong. Try again.")}</Notice>
-        </Show>
+        <button type="button" class={ghostButtonClass} disabled={props.busy} onClick={remove}>
+          {t("Remove device")}
+        </button>
       </div>
     </div>
   );
@@ -1364,7 +1501,7 @@ function SignedIn(props: {
     setFailed(false);
     try {
       const account = await createStreamer(props.session);
-      if (account.moblinCloudKey && account.settings) {
+      if (account.settings) {
         props.onAccount(account);
       } else {
         setFailed(true);
@@ -1379,14 +1516,14 @@ function SignedIn(props: {
   };
 
   onMount(() => {
-    if (!props.account.moblinCloudKey) {
+    if (!props.account.settings) {
       void create();
     }
   });
 
   return (
     <Show
-      when={props.account.moblinCloudKey && props.account.settings ? props.account : null}
+      when={props.account.settings ? props.account : null}
       keyed
       fallback={
         <Show when={failed()} fallback={<Spinner />}>
@@ -1403,9 +1540,7 @@ function SignedIn(props: {
         <Admin
           session={props.session}
           account={account}
-          moblinCloudKey={account.moblinCloudKey!}
           settings={account.settings!}
-          onAccount={props.onAccount}
           onSignOut={props.onSignOut}
         />
       )}
@@ -1431,8 +1566,16 @@ function Preview(props: { failed: boolean }) {
           <Admin
             preview
             session=""
-            account={{ name: "", login: "", moblinCloudKey: null, settings: null }}
-            moblinCloudKey="moblin-cloud-key-preview"
+            account={{
+              name: "",
+              login: "",
+              devices: [
+                { id: "", name: "Moblin", key: "moblin-cloud-key-preview", connected: true },
+              ],
+              musicDevice: null,
+              wheelDevice: null,
+              settings: null,
+            }}
             settings={{
               id: "",
               title: null,
@@ -1457,7 +1600,6 @@ function Preview(props: { failed: boolean }) {
               stripePending: false,
               stripeTest: false,
             }}
-            onAccount={() => {}}
             onSignOut={() => {}}
           />
         </div>
