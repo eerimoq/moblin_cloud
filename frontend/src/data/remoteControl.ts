@@ -121,6 +121,9 @@ export const formatPrice = (price: Price) =>
     price.price / 100,
   );
 
+export const hundredths = (amount: string) =>
+  Math.round(Number.parseFloat(amount.trim().replace(",", ".")) * 100);
+
 export class BackendError extends Error {
   constructor(
     readonly status: number,

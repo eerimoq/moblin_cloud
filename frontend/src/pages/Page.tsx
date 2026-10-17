@@ -25,6 +25,7 @@ import {
   captureTip,
   formatDuration,
   formatPrice,
+  hundredths,
   idOfTwitchLogin,
   musicStatus,
   orderSong,
@@ -279,7 +280,7 @@ function TipJar(props: {
     if (current !== "other") {
       return current;
     }
-    const cents = Math.round(Number.parseFloat(other()) * 100);
+    const cents = hundredths(other());
     return cents >= 50 && cents <= 100_000 ? cents : null;
   };
 
@@ -356,11 +357,9 @@ function TipJar(props: {
               Your amount in {props.tips.currency}
             </span>
             <input
-              type="number"
+              type="text"
               required
-              min="0.5"
-              max="1000"
-              step="0.01"
+              pattern="\d+([.,]\d{1,2})?"
               inputmode="decimal"
               value={other()}
               onInput={(event) => setOther(event.currentTarget.value)}

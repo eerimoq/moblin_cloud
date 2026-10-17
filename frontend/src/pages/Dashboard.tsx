@@ -35,6 +35,7 @@ import {
   BackendError,
   currencies,
   defaultTitle,
+  hundredths,
   type Page,
   type Paywall,
   type Settings,
@@ -527,9 +528,6 @@ function MoneyInput(props: {
     />
   );
 }
-
-const hundredths = (amount: string) =>
-  Math.round(Number.parseFloat(amount.trim().replace(",", ".")) * 100);
 
 const amountsOf = (amounts: string[]) => amounts.filter((amount) => amount.trim()).map(hundredths);
 
