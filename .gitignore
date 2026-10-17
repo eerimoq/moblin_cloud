@@ -6,3 +6,6 @@ tests/cache/
 tests/logs/
 logs/
 __pycache__/
+backend/database.sqlite
+backend/database.sqlite-shm
+backend/database.sqlite-wal
