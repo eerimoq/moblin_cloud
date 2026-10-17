@@ -1464,7 +1464,7 @@ mod tests {
         pages: Pages,
     ) -> (String, Arc<Api>) {
         let api = Arc::new(Api {
-            store: Arc::new(Store::new(6)),
+            store: Arc::new(Store::new(6, Database::memory())),
             challenges: Challenges::new(),
             app_attest: None,
             live: None,

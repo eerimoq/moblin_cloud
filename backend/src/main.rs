@@ -89,9 +89,10 @@ struct Cli {
     /// use the development environment, distributed apps the production one.
     #[arg(long, env = "APP_ATTEST_ENVIRONMENT", value_enum, default_value_t = Environment::Production)]
     app_attest_environment: Environment,
-    /// The SQLite database streamer accounts, their page settings (song
-    /// requests, tips, the wheel and the look of the page) and requested
-    /// songs, tips and wheel spins not yet delivered to Moblin are saved in.
+    /// The SQLite database the list of streamers, streamer accounts, their
+    /// page settings (song requests, tips, the wheel and the look of the
+    /// page) and requested songs, tips and wheel spins not yet delivered to
+    /// Moblin are saved in.
     /// Without one they are forgotten when the backend restarts.
     #[arg(long, env = "DATABASE")]
     database: Option<PathBuf>,
@@ -170,7 +171,6 @@ fn http_client() -> Client {
 async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
-    let store = Arc::new(Store::new(cli.max_streamers));
     let client = http_client();
     let twitch_app = match (&cli.twitch_client_id, &cli.twitch_client_secret) {
         (Some(client_id), Some(client_secret)) => {
@@ -194,10 +194,11 @@ async fn main() -> Result<()> {
     )?;
     if cli.database.is_none() {
         warn!(
-            "no database, forgetting accounts, page settings and undelivered requests on restart"
+            "no database, forgetting streamers, accounts, page settings and undelivered requests on restart"
         );
     }
     let database = Database::open(cli.database.as_deref())?;
+    let store = Arc::new(Store::new(cli.max_streamers, database.clone()));
     let accounts = Accounts::new(database.clone());
     let twitch = match (cli.twitch_client_id, cli.twitch_client_secret) {
         (Some(client_id), Some(client_secret)) => Some(Arc::new(Twitch::new(

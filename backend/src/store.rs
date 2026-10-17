@@ -1,12 +1,16 @@
 use std::fmt;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Result, bail};
+use log::warn;
+use rusqlite::params;
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::Notify;
 use tokio::sync::futures::Notified;
 use tokio::time::Instant;
+
+use crate::database::Database;
 
 const MAX_CHANNELS: usize = 5;
 const MAX_NAME_LENGTH: usize = 40;
@@ -66,7 +70,7 @@ impl fmt::Display for Channel {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
     pub avatar: Option<String>,
@@ -106,7 +110,7 @@ impl Serialize for Lookup {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Stream {
     pub category: Option<String>,
     pub title: Option<String>,
@@ -127,6 +131,39 @@ pub struct ListedChannel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Streamer {
     pub channels: Vec<ListedChannel>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedChannel {
+    channel: Channel,
+    profile: Option<Profile>,
+    live: bool,
+    stream: Stream,
+}
+
+impl From<&ListedChannel> for SavedChannel {
+    fn from(listed: &ListedChannel) -> Self {
+        Self {
+            channel: listed.channel.clone(),
+            profile: match &listed.lookup {
+                Lookup::Done(profile) => Some(profile.clone()),
+                Lookup::Pending { .. } => None,
+            },
+            live: listed.live,
+            stream: listed.stream.clone(),
+        }
+    }
+}
+
+impl From<SavedChannel> for ListedChannel {
+    fn from(saved: SavedChannel) -> Self {
+        Self {
+            channel: saved.channel,
+            lookup: saved.profile.map_or_else(Lookup::pending, Lookup::Done),
+            live: saved.live,
+            stream: saved.stream,
+        }
+    }
 }
 
 impl Streamer {
@@ -153,18 +190,87 @@ impl Streamer {
 pub struct Store {
     max_streamers: usize,
     streamers: Mutex<Vec<Streamer>>,
+    database: Arc<Database>,
     lookup_pending: Notify,
     went_live: Notify,
 }
 
 impl Store {
-    pub fn new(max_streamers: usize) -> Self {
-        Self {
+    pub fn new(max_streamers: usize, database: Arc<Database>) -> Self {
+        let store = Self {
             max_streamers,
             streamers: Mutex::new(Vec::new()),
+            database,
             lookup_pending: Notify::new(),
             went_live: Notify::new(),
+        };
+        let mut streamers = store.load();
+        if !streamers.is_empty() {
+            store.trim(&mut streamers);
+            store.save(&streamers);
+            store.went_live.notify_one();
         }
+        *store.streamers.lock().unwrap() = streamers;
+        store
+    }
+
+    fn load(&self) -> Vec<Streamer> {
+        let rows = self
+            .database
+            .lock()
+            .prepare("SELECT channels FROM streamers ORDER BY position")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            });
+        let rows = rows.unwrap_or_else(|error| {
+            warn!("failed to read the streamers: {error:#}");
+            Vec::new()
+        });
+        rows.into_iter()
+            .filter_map(
+                |row| match serde_json::from_str::<Vec<SavedChannel>>(&row) {
+                    Ok(channels) => Some(Streamer {
+                        channels: channels.into_iter().map(ListedChannel::from).collect(),
+                    }),
+                    Err(error) => {
+                        warn!("failed to parse a saved streamer: {error}");
+                        None
+                    }
+                },
+            )
+            .collect()
+    }
+
+    fn save(&self, streamers: &[Streamer]) {
+        let mut database = self.database.lock();
+        let saved = database.transaction().and_then(|transaction| {
+            transaction.execute("DELETE FROM streamers", [])?;
+            for (position, streamer) in streamers.iter().enumerate() {
+                let channels: Vec<SavedChannel> =
+                    streamer.channels.iter().map(SavedChannel::from).collect();
+                transaction.execute(
+                    "INSERT INTO streamers (position, channels) VALUES (?1, ?2)",
+                    params![position, serde_json::to_string(&channels).unwrap()],
+                )?;
+            }
+            transaction.commit()
+        });
+        if let Err(error) = saved {
+            warn!("failed to save the streamers: {error:#}");
+        }
+    }
+
+    fn trim(&self, streamers: &mut Vec<Streamer>) {
+        let recent_streamers_count = self.max_streamers.min(streamers.len());
+        let old_streamers = streamers.split_off(recent_streamers_count);
+        streamers.extend(
+            old_streamers
+                .into_iter()
+                .filter(Streamer::is_live)
+                .take(self.max_streamers),
+        );
     }
 
     pub fn streamers(&self) -> Vec<Streamer> {
@@ -199,14 +305,8 @@ impl Store {
             }
         }
         streamers.insert(0, streamer);
-        let recent_streamers_count = self.max_streamers.min(streamers.len());
-        let old_streamers = streamers.split_off(recent_streamers_count);
-        streamers.extend(
-            old_streamers
-                .into_iter()
-                .filter(Streamer::is_live)
-                .take(self.max_streamers),
-        );
+        self.trim(&mut streamers);
+        self.save(&streamers);
         self.lookup_pending.notify_one();
         self.went_live.notify_one();
     }
@@ -233,8 +333,13 @@ impl Store {
             .flat_map(|streamer| &mut streamer.channels)
             .find(|listed| listed.channel.same_as(channel))
         {
-            listed.live = stream.is_some();
-            listed.stream = stream.unwrap_or_default();
+            let live = stream.is_some();
+            let stream = stream.unwrap_or_default();
+            if listed.live != live || listed.stream != stream {
+                listed.live = live;
+                listed.stream = stream;
+                self.save(&streamers);
+            }
         }
     }
 
@@ -287,6 +392,7 @@ impl Store {
             .find(|listed| listed.channel.same_as(channel));
         if let Some(listed) = listed {
             listed.lookup = lookup(&listed.lookup);
+            self.save(&streamers);
         }
     }
 }
@@ -294,6 +400,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database;
 
     fn channel(platform: Platform, handle: &str) -> Channel {
         Channel {
@@ -373,7 +480,7 @@ mod tests {
 
     #[test]
     fn newest_first_and_one_entry_per_streamer() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         store.streamer_live(twitch("anna"));
         store.streamer_live(twitch("bob"));
         store.streamer_live(twitch("Anna"));
@@ -385,7 +492,7 @@ mod tests {
 
     #[test]
     fn sharing_a_channel_means_same_streamer() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         store.streamer_live(twitch("anna"));
         let mut channels = twitch("anna");
         channels.push(channel(Platform::Kick, "anna_irl"));
@@ -397,7 +504,7 @@ mod tests {
 
     #[test]
     fn list_is_capped() {
-        let store = Store::new(2);
+        let store = Store::new(2, Database::memory());
         for handle in ["a", "b", "c"] {
             store.streamer_live(twitch(handle));
         }
@@ -406,7 +513,7 @@ mod tests {
 
     #[test]
     fn live_streamers_are_listed_first_and_kept() {
-        let store = Store::new(2);
+        let store = Store::new(2, Database::memory());
         let live =
             |handle: &str| store.set_live(&channel(Platform::Twitch, handle), Some(stream("IRL")));
         for handle in ["anna", "bob", "carl"] {
@@ -432,7 +539,7 @@ mod tests {
 
     #[test]
     fn newcomers_are_kept_until_checked_and_older_live_streamers_are_capped() {
-        let store = Store::new(1);
+        let store = Store::new(1, Database::memory());
         for handle in ["anna", "bob", "carl", "dan", "erin"] {
             store.streamer_live(twitch(handle));
             assert_eq!(tracked(&store)[0], handle);
@@ -440,6 +547,31 @@ mod tests {
         }
         assert_eq!(handles(&store), ["erin"]);
         assert_eq!(tracked(&store), ["erin", "dan"]);
+    }
+
+    #[test]
+    fn streamers_are_kept_across_restarts() {
+        let path = database::temporary_path("streamers");
+        let anna = channel(Platform::Twitch, "anna");
+        let kick = channel(Platform::Kick, "anna_irl");
+        let store = Store::new(2, Database::open(Some(&path)).unwrap());
+        store.streamer_live(twitch("bob"));
+        store.set_live(&channel(Platform::Twitch, "bob"), Some(stream("IRL")));
+        store.streamer_live(twitch("carl"));
+        store.streamer_live(twitch("dan"));
+        store.streamer_live(vec![anna.clone(), kick.clone()]);
+        store.looked_up(&anna, profile("https://a/1.png", "Anna"));
+        let before = serde_json::to_value(store.streamers()).unwrap();
+        drop(store);
+        let store = Store::new(2, Database::open(Some(&path)).unwrap());
+        assert_eq!(serde_json::to_value(store.streamers()).unwrap(), before);
+        assert_eq!(handles(&store), ["bob", "anna"]);
+        assert_eq!(tracked(&store), ["anna", "dan", "bob"]);
+        assert_eq!(store.next_lookup().unwrap().0, kick);
+        drop(store);
+        let store = Store::new(1, Database::open(Some(&path)).unwrap());
+        assert_eq!(tracked(&store), ["anna", "bob"]);
+        database::remove(&path);
     }
 
     #[test]
@@ -462,7 +594,7 @@ mod tests {
 
     #[test]
     fn a_channel_is_looked_up_once() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         let anna = channel(Platform::Twitch, "anna");
         assert_eq!(store.next_lookup(), None);
         store.streamer_live(vec![anna.clone()]);
@@ -485,7 +617,7 @@ mod tests {
 
     #[test]
     fn no_profile_is_an_answer_too() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         let bob = channel(Platform::Twitch, "bob");
         store.streamer_live(vec![bob.clone()]);
         assert_eq!(
@@ -499,7 +631,7 @@ mod tests {
 
     #[test]
     fn a_new_channel_of_a_listed_streamer_is_looked_up() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         let anna = channel(Platform::Twitch, "anna");
         let kick = channel(Platform::Kick, "anna_irl");
         store.streamer_live(vec![anna.clone()]);
@@ -515,7 +647,7 @@ mod tests {
 
     #[test]
     fn failed_lookups_are_retried_ever_later() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         let anna = channel(Platform::Twitch, "anna");
         store.streamer_live(vec![anna.clone()]);
         let mut previous = Duration::ZERO;
@@ -534,7 +666,7 @@ mod tests {
 
     #[test]
     fn a_lookup_for_a_channel_no_longer_listed_is_discarded() {
-        let store = Store::new(1);
+        let store = Store::new(1, Database::memory());
         let anna = channel(Platform::Twitch, "anna");
         let bob = channel(Platform::Twitch, "bob");
         store.streamer_live(vec![anna.clone()]);
@@ -548,7 +680,7 @@ mod tests {
 
     #[test]
     fn live_status_is_kept_per_channel() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         let anna = channel(Platform::Twitch, "Anna");
         let kick = channel(Platform::Kick, "anna_irl");
         store.streamer_live(vec![anna.clone(), kick.clone()]);
@@ -573,7 +705,7 @@ mod tests {
 
     #[test]
     fn serializes_the_profile_flat_with_nulls_for_the_unknown() {
-        let store = Store::new(24);
+        let store = Store::new(24, Database::memory());
         let anna = channel(Platform::Twitch, "anna");
         let kick = channel(Platform::Kick, "anna_irl");
         store.streamer_live(vec![

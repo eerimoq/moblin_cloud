@@ -39,6 +39,10 @@ impl Database {
                      streamer TEXT NOT NULL,
                      requested_at INTEGER NOT NULL,
                      item TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS streamers (
+                     position INTEGER PRIMARY KEY,
+                     channels TEXT NOT NULL
                  );",
             )
             .context("failed to create the database tables")?;
