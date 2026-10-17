@@ -1,4 +1,4 @@
-"""Pretends to be Moblin's remote control streamer and Moblin cloud, for running the system tests without a device."""
+"""Pretends to be Moblin's remote control streamer and Moblin Cloud, for running the system tests without a device."""
 
 import argparse
 import base64
@@ -187,7 +187,7 @@ class FakeMoblin:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", help="Where the remote control streamer connects at first.")
-    parser.add_argument("api_url", help="Where Moblin cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
+    parser.add_argument("api_url", help="Where Moblin Cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     LOGGER.setLevel(logging.DEBUG)

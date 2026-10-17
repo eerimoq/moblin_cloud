@@ -207,7 +207,7 @@ class Moblin:
 
     Its remote control streamer connects to the tester, which acts as Moblin's assistant and
     sends its own requests to Moblin, like moblin_assistant does, to set it up and look at it.
-    Its Moblin cloud connection, made when it has a secret key from the dashboard, is relayed
+    Its Moblin Cloud connection, made when it has a secret key from the dashboard, is relayed
     to the backend, so the backend talks to the real Moblin while the tester watches.
     """
 
@@ -328,7 +328,7 @@ class Moblin:
         return capability in self.capabilities
 
     def connected_key(self) -> str | None:
-        """The secret key of Moblin's Moblin cloud connection to the backend, if any."""
+        """The secret key of Moblin's Moblin Cloud connection to the backend, if any."""
         with self._lock:
             connection = self._cloud
         if connection is None or not connection.identified.is_set():
@@ -359,15 +359,15 @@ class Moblin:
                 and connection.identified.is_set()
             )
 
-        self._wait(check, "Moblin cloud to connect to the backend", timeout)
+        self._wait(check, "Moblin Cloud to connect to the backend", timeout)
 
     def wait_for_no_backend_connection(self, timeout: float = 60):
-        self._wait(lambda: self._cloud is None, "Moblin cloud to disconnect from the backend", timeout)
+        self._wait(lambda: self._cloud is None, "Moblin Cloud to disconnect from the backend", timeout)
 
     def wait_for_rejected_key(self, key: str, start: int = 0, timeout: float = 60):
         self._wait(
             lambda: key in self._rejected_keys[start:],
-            f"the backend to refuse Moblin cloud with the secret key {key}",
+            f"the backend to refuse Moblin Cloud with the secret key {key}",
             timeout,
         )
 
@@ -390,12 +390,12 @@ class Moblin:
         return f"ws://{self._tester_ip_address}:{self._port}"
 
     def api_url(self) -> str:
-        """Where Moblin cloud connects, the MOBLIN_WEBSITE_API_URL of a Moblin debug build."""
+        """Where Moblin Cloud connects, the MOBLIN_WEBSITE_API_URL of a Moblin debug build."""
         return f"http://{self._tester_ip_address}:{self._port}"
 
     def import_settings(self, key: str | None, wheel: list[dict] | None = None):
         """Imports test settings, which also set where the remote control streamer connects and
-        Moblin cloud's secret key."""
+        Moblin Cloud's secret key."""
         settings = settings_for(self.remote_control_url(), key, wheel)
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "settings.zip"
@@ -434,9 +434,9 @@ class Moblin:
         if self._fake is not None:
             self._fake.change_wheel(wheel)
         elif wheel is None:
-            manual_confirmation("In Moblin's Moblin cloud settings, pick no wheel of luck.")
+            manual_confirmation("In Moblin's Moblin Cloud settings, pick no wheel of luck.")
         else:
-            manual_confirmation("In Moblin's Moblin cloud settings, pick the wheel of luck Wheel.")
+            manual_confirmation("In Moblin's Moblin Cloud settings, pick the wheel of luck Wheel.")
         with self._lock:
             if self._cloud is not connection:
                 raise MoblinError("Moblin reconnected when its wheel changed.")
@@ -450,7 +450,7 @@ class Moblin:
         self.wait_for_no_backend_connection()
 
     def disconnect(self) -> StreamerConnection | None:
-        """Closes Moblin cloud's connection, which makes Moblin connect again, and returns the
+        """Closes Moblin Cloud's connection, which makes Moblin connect again, and returns the
         closed connection."""
         with self._lock:
             connection = self._cloud

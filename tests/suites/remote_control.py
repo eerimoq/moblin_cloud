@@ -53,7 +53,7 @@ class RemoteControlReconnects(RemoteControlTestCase):
 
 
 class RemoteControlWheel(RemoteControlTestCase):
-    """Show the wheel picked in Moblin's Moblin cloud settings on the page, and no wheel without one."""
+    """Show the wheel picked in Moblin's Moblin Cloud settings on the page, and no wheel without one."""
 
     def run(self):
         self.moblin.connect_to_backend(self.dashboard.secret_key(), WHEEL)

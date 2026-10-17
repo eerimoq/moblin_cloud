@@ -4,7 +4,7 @@ tip, spin the wheel and request songs on the page. Payments go through the PayPa
 Everything but the frontend is tested.
 
 The streamer's Moblin is the fake one in `tests/utils/fake_moblin.py` by default, which speaks
-Moblin's remote control protocol, both as its remote control streamer and as Moblin cloud.
+Moblin's remote control protocol, both as its remote control streamer and as Moblin Cloud.
 Give `--device` to test with a real Moblin device instead.
 
 All commands below are run from the repository root.
@@ -39,7 +39,7 @@ PayPal's popup does, so no buyer account or browser is needed for payments.
 
 Moblin's remote control streamer connects to the tester at `remote-control-port`. The tester
 acts as Moblin's assistant and sets Moblin up by importing settings. When a test gives Moblin a
-secret key from the dashboard, Moblin cloud connects to the tester at the same port too, and
+secret key from the dashboard, Moblin Cloud connects to the tester at the same port too, and
 the tester relays that connection to the backend while watching what they send each other. That
 is how the tests see the songs, tips and wheel spins the backend delivers.
 

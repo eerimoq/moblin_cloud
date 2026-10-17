@@ -698,7 +698,7 @@ function SpinSettings(props: {
       <h2 class="text-[23px] font-semibold">Wheel of luck</h2>
       <p class="text-ink-2">
         Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin
-        when they buy more. Moblin spins the wheel you pick in its Moblin cloud settings, showing
+        when they buy more. Moblin spins the wheel you pick in its Moblin Cloud settings, showing
         the viewer's name and message.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
@@ -891,7 +891,7 @@ function Admin(props: {
           {settings().connected ? "Moblin is connected." : "Moblin is not connected."}
         </p>
         <p class="text-ink-2">
-          In Moblin, go to Settings → Moblin cloud, paste the key below and turn on Enabled.
+          In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.
         </p>
         <Value label="Secret key" text={props.secretKey} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
@@ -1007,7 +1007,7 @@ export default function Dashboard() {
         top={
           <div class="flex flex-wrap items-center justify-between gap-4">
             <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-              Moblin cloud
+              Moblin Cloud
             </span>
             <Show when={session()}>
               {(current) => (
@@ -1033,7 +1033,7 @@ export default function Dashboard() {
           fees.
         </p>
         <p class="text-[15px] text-muted">
-          Using Moblin cloud and your page means you agree to the{" "}
+          Using Moblin Cloud and your page means you agree to the{" "}
           <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
             terms
           </a>
