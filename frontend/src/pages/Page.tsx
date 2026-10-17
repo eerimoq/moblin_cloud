@@ -659,7 +659,7 @@ function SpinWheel(props: {
         await captureSpin(props.id, data.orderId);
         setResult({
           ok: true,
-          text: `Thanks for the tip! ${choice().spins === 1 ? "Your spin starts" : "Your spins start"} in a moment.`,
+          text: `Thanks for the tip! ${choice().spins === 1 ? "Your spin starts" : "Your spins start"} on stream in a moment.`,
         });
         setMessage("");
       } catch (error) {
@@ -686,7 +686,8 @@ function SpinWheel(props: {
   return (
     <form class={cardClass} onSubmit={(event) => event.preventDefault()}>
       <p class="text-ink-2">
-        Pick how many spins you want and add a message if you like. The wheel spins live on stream.
+        Pick how many spins you want and add a message if you like. The wheel spins live on stream,
+        so watch the stream to see where it lands.
       </p>
       <Show
         when={props.wheel}
@@ -697,7 +698,14 @@ function SpinWheel(props: {
           </p>
         }
       >
-        {(wheel) => <WheelPicture wheel={wheel} />}
+        {(wheel) => (
+          <figure class="flex flex-col gap-2">
+            <WheelPicture wheel={wheel} />
+            <figcaption class="text-center text-sm text-muted">
+              This is what the wheel looks like. It only spins on stream, not here.
+            </figcaption>
+          </figure>
+        )}
       </Show>
       <Show when={props.spin.options.length > 1}>
         <fieldset class="flex flex-col gap-3">
