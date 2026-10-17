@@ -240,7 +240,14 @@ async fn main() -> Result<()> {
             } else {
                 paypal::LIVE_URL
             };
-            info!("taking payments through {url}");
+            info!(
+                "taking PayPal payments in {} mode",
+                if cli.paypal_sandbox {
+                    "sandbox"
+                } else {
+                    "live"
+                }
+            );
             if cli.paypal_webhook_id.is_none() {
                 warn!("no PayPal webhook ID, refusing PayPal webhooks");
             }
