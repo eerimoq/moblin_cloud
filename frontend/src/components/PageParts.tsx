@@ -50,23 +50,13 @@ export function SaveButton(props: { saving: boolean; saved: boolean; disabled: b
   );
 }
 
-export function Hero(props: {
-  eyebrow?: string;
-  top?: JSX.Element;
-  title: string;
-  children: JSX.Element;
-}) {
+export function Hero(props: { eyebrow?: string; title: string; children: JSX.Element }) {
   return (
     <section class="mx-auto flex max-w-[1120px] flex-col gap-4 px-5 pt-12 pb-10 sm:px-8 lg:pt-18">
-      <Show
-        when={props.top}
-        fallback={
-          <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-            {props.eyebrow ?? "Moblin Cloud"}
-          </span>
-        }
-      >
-        {props.top}
+      <Show when={props.eyebrow}>
+        <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
+          {props.eyebrow}
+        </span>
       </Show>
       <h1 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-6xl">{props.title}</h1>
       {props.children}

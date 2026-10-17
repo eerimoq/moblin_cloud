@@ -58,27 +58,6 @@ const accentNames: Record<string, string> = {
 const pageUrl = (account: Account) =>
   new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
 
-function TwitchSignIn(props: { failed: boolean }) {
-  return (
-    <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Sign in")}</h2>
-      <p class="text-ink-2">{t("Sign in with Twitch to create or manage your tip page.")}</p>
-      <div>
-        <a
-          href={signInUrl}
-          class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-twitch px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
-        >
-          <Icon name="twitch" class="size-5" />
-          {t("Sign in with Twitch")}
-        </a>
-      </div>
-      <Show when={props.failed}>
-        <Notice status>{t("Signing in did not work. Try again.")}</Notice>
-      </Show>
-    </div>
-  );
-}
-
 const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
 
 function paymentErrorText(error: unknown, invalid: string) {
@@ -808,6 +787,7 @@ function Admin(props: {
   settings: Settings;
   onAccount: (account: Account) => void;
   onSignOut: () => void;
+  preview?: boolean;
 }) {
   const [settings, setSettings] = createSignal(props.settings);
   const [busy, setBusy] = createSignal(false);
@@ -839,6 +819,9 @@ function Admin(props: {
   };
 
   onMount(() => {
+    if (props.preview) {
+      return;
+    }
     const timer = setInterval(async () => {
       try {
         const account = await fetchAccount(props.session);
@@ -1156,6 +1139,67 @@ function SignedIn(props: {
   );
 }
 
+function Preview(props: { failed: boolean }) {
+  return (
+    <div class="flex flex-col gap-6">
+      <Show when={props.failed}>
+        <Notice status>{t("Signing in did not work. Try again.")}</Notice>
+      </Show>
+      <div class="relative rounded-3xl border-[1.5px] border-dashed border-line p-4 sm:p-6">
+        <span class="absolute -top-3.5 left-6 rounded-full border-[1.5px] border-line bg-band px-3 py-0.5 font-display text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">
+          {t("Preview")}
+        </span>
+        <div
+          inert
+          aria-hidden="true"
+          class="max-h-[520px] overflow-hidden opacity-50 select-none [&_nav]:static [mask-image:linear-gradient(to_bottom,black_30%,transparent_80%)]"
+        >
+          <Admin
+            preview
+            session=""
+            account={{ name: "", login: "", moblinCloudKey: null, settings: null }}
+            moblinCloudKey="moblin-cloud-key-preview"
+            settings={{
+              id: "",
+              title: null,
+              message: null,
+              accent: null,
+              connected: true,
+              currency: "USD",
+              paywall: { price: 100 },
+              tips: { amounts: [300, 500, 1000] },
+              spin: {
+                options: [
+                  { spins: 1, price: 200 },
+                  { spins: 5, price: 800 },
+                ],
+              },
+              paypal: true,
+              merchantId: "preview",
+              paypalPending: false,
+              paypalSandbox: false,
+            }}
+            onAccount={() => {}}
+            onSignOut={() => {}}
+          />
+        </div>
+        <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 px-6 pb-10 text-center">
+          <p class="text-lg font-semibold text-balance">
+            {t("Sign in with Twitch to create or manage your tip page.")}
+          </p>
+          <a
+            href={signInUrl}
+            class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-twitch px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
+          >
+            <Icon name="twitch" class="size-5" />
+            {t("Sign in with Twitch")}
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
@@ -1199,60 +1243,82 @@ export default function Dashboard() {
 
   return (
     <>
-      <Show
-        when={session()}
-        fallback={
-          <Hero title={t("Let viewers tip you.")}>
-            <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-              {t(
-                "Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its " +
-                  "usual fees.",
-              )}
-            </p>
-            {terms()}
-          </Hero>
-        }
-      >
-        {(current) => (
-          <section class="mx-auto flex max-w-[1120px] flex-wrap items-end justify-between gap-4 px-5 pt-10 pb-8 sm:px-8">
-            <div class="flex min-w-0 flex-col gap-2">
-              <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-                Moblin Cloud
-              </span>
+      <header class="sticky top-0 z-20 bg-page/92 backdrop-blur border-b border-line/40">
+        <div class="mx-auto flex h-16 max-w-[1120px] items-center justify-between gap-4 px-5 sm:px-8 lg:h-18">
+          <a href={asset("/")} class="flex items-center gap-3">
+            <img src={asset("logos/logo-default.png")} alt="" class="h-9 w-auto" />
+            <span class="font-display text-2xl font-bold">Moblin Cloud</span>
+          </a>
+          <Show
+            when={session()}
+            fallback={
+              <Show when={!loading()}>
+                <a
+                  href={signInUrl}
+                  class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
+                >
+                  <Icon name="twitch" class="size-5" />
+                  {t("Sign in")}
+                </a>
+              </Show>
+            }
+          >
+            {(current) => (
+              <button
+                type="button"
+                class={`${ghostButtonClass} h-11! px-5! text-base!`}
+                onClick={async () => {
+                  try {
+                    await signOutEverywhere(current().session);
+                  } catch {}
+                  signOut();
+                }}
+              >
+                {t("Sign out")}
+              </button>
+            )}
+          </Show>
+        </div>
+      </header>
+      <main>
+        <Show
+          when={session()}
+          fallback={
+            <Hero title={t("Let viewers tip you.")}>
+              <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
+                {t(
+                  "Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its " +
+                    "usual fees.",
+                )}
+              </p>
+              {terms()}
+            </Hero>
+          }
+        >
+          {(current) => (
+            <section class="mx-auto flex max-w-[1120px] flex-col gap-2 px-5 pt-10 pb-8 sm:px-8">
               <h1 class="text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
                 {t("Hi, {name}", { name: current().account.name })}
               </h1>
               {terms()}
-            </div>
-            <button
-              type="button"
-              class={ghostButtonClass}
-              onClick={async () => {
-                try {
-                  await signOutEverywhere(current().session);
-                } catch {}
-                signOut();
-              }}
-            >
-              {t("Sign out everywhere")}
-            </button>
-          </section>
-        )}
-      </Show>
-      <Band tight={session() !== null}>
-        <Show when={!loading()} fallback={<Spinner />}>
-          <Show when={session()} keyed fallback={<TwitchSignIn failed={signInFailed()} />}>
-            {(current) => (
-              <SignedIn
-                session={current.session}
-                account={current.account}
-                onAccount={(account) => setSession({ ...current, account })}
-                onSignOut={signOut}
-              />
-            )}
-          </Show>
+            </section>
+          )}
         </Show>
-      </Band>
+        <Band tight={session() !== null}>
+          <Show when={!loading()} fallback={<Spinner />}>
+            <Show when={session()} keyed fallback={<Preview failed={signInFailed()} />}>
+              {(current) => (
+                <SignedIn
+                  session={current.session}
+                  account={current.account}
+                  onAccount={(account) => setSession({ ...current, account })}
+                  onSignOut={signOut}
+                />
+              )}
+            </Show>
+          </Show>
+        </Band>
+      </main>
     </>
   );
 }
