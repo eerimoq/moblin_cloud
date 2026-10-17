@@ -146,21 +146,21 @@ class PaymentsTipNotApproved(PaymentTestCase):
 
 
 class PaymentsInvalidTip(PaymentTestCase):
-    """Refuse tips out of range, with too long messages, or when tips are off."""
+    """Refuse tips below the lowest amount, with too long messages, or when tips are off."""
 
     def run(self):
         self.assert_backend_error(
             400, lambda: self.order_tip(100), "The streamer no longer takes tips. Reload the page."
         )
         self.dashboard.save_settings(tips=TIPS)
-        self.assert_backend_error(400, lambda: self.order_tip(49), "Tip from 0.50 to 1000.")
-        self.assert_backend_error(400, lambda: self.order_tip(100_001), "Tip from 0.50 to 1000.")
+        self.assert_backend_error(400, lambda: self.order_tip(99), "Tip at least 1.00.")
         self.assert_backend_error(
             400,
             lambda: self.order_tip(100, message=201 * "x"),
             "The message can be at most 200 characters.",
         )
         self.order_tip(333, message=200 * "x")
+        self.order_tip(100_001)
 
 
 class PaymentsTipPaid(PaymentTestCase):

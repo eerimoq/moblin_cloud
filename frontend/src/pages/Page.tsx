@@ -507,7 +507,7 @@ function TipJar(props: {
       return current;
     }
     const cents = hundredths(other());
-    return cents >= 50 && cents <= 100_000 ? cents : null;
+    return cents >= Math.min(...props.tips.amounts) ? cents : null;
   };
 
   const showError = (error: unknown) => {
@@ -575,7 +575,6 @@ function TipJar(props: {
       class={cardClass}
       onSubmit={(event) => event.preventDefault()}
     >
-      <p class="text-ink-2">{t("Pick an amount and add a message if you like.")}</p>
       <fieldset class="flex flex-col gap-3">
         <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Amount")}</legend>
         <AmountChips
@@ -598,7 +597,9 @@ function TipJar(props: {
               inputmode="decimal"
               value={other()}
               onInput={(event) => setOther(event.currentTarget.value)}
-              placeholder={t("{minimum} to {maximum}", { minimum: "0.50", maximum: "1000" })}
+              placeholder={t("At least {minimum}", {
+                minimum: (Math.min(...props.tips.amounts) / 100).toFixed(2),
+              })}
               class={inputClass}
             />
           </label>
@@ -944,10 +945,7 @@ function SpinWheel(props: {
   return (
     <form class={cardClass} onSubmit={(event) => event.preventDefault()}>
       <p class="text-ink-2">
-        {t(
-          "Pick how many spins you want and add a message if you like. " +
-            "The wheel spins live on stream, so watch the stream to see where it lands.",
-        )}
+        {t("The wheel spins live on stream, so watch the stream to see where it lands.")}
       </p>
       <Show
         when={props.wheel}
@@ -1357,9 +1355,6 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
               class={`${cardClass} ${shown() === "songs" ? "" : "hidden"}`}
               onSubmit={(event) => event.preventDefault()}
             >
-              <p class="text-ink-2">
-                {t("Paste the Apple Music link of a song and it goes straight into the queue.")}
-              </p>
               <Show when={status() === "offline"}>
                 <Notice>
                   {t(

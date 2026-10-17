@@ -110,7 +110,7 @@ pub fn format_price(price: u32) -> String {
     format!("{}.{:02}", price / 100, price % 100)
 }
 
-pub fn valid_price(price: u32) -> bool {
+fn valid_price(price: u32) -> bool {
     (50..=100_000).contains(&price)
 }
 

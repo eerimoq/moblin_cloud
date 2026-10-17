@@ -23,7 +23,6 @@ use crate::deliveries::{self, Deliveries};
 use crate::live::Live;
 use crate::pages::{
     CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
-    valid_price,
 };
 use crate::payments::{CaptureError, Item, Order, Orders, Payee};
 use crate::paypal::{PayPal, Seller};
@@ -1482,13 +1481,17 @@ async fn handle_tip_order(
 ) -> Result<Json<OrderResponse>, Failure> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    settings.tips.ok_or(failure(
+    let tips = settings.tips.ok_or(failure(
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
     ))?;
     let payee = payee(&api, &id, request.provider.as_deref())?;
-    if !valid_price(request.amount) {
-        return Err(failure(StatusCode::BAD_REQUEST, "Tip from 0.50 to 1000."));
+    let minimum = tips.amounts.iter().copied().min().unwrap_or(50);
+    if request.amount < minimum {
+        return Err(failure(
+            StatusCode::BAD_REQUEST,
+            &format!("Tip at least {}.", format_price(minimum)),
+        ));
     }
     let message = viewer_message(request.message)?;
     let order = Order {
@@ -3019,7 +3022,7 @@ mod tests {
             }})
         );
         for request in [
-            json!({"amount": 49}),
+            json!({"amount": 199}),
             json!({"amount": 700, "message": "a".repeat(201)}),
         ] {
             let response = client
