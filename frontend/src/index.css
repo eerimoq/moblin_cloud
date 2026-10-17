@@ -131,6 +131,7 @@
 @layer base {
   html {
     background-color: var(--color-page);
+    scrollbar-gutter: stable;
   }
   body {
     margin: 0;

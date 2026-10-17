@@ -1,7 +1,7 @@
 import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
-import Icon from "../components/Icon";
+import Icon, { type IconName } from "../components/Icon";
 import {
   Band,
   buttonClass,
@@ -581,7 +581,7 @@ function TipSettings(props: {
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">
             Suggested amounts ({props.currency})
           </legend>
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-wrap gap-3">
             <Index each={amounts()}>
               {(amount, index) => (
                 <div class="flex items-center gap-3">
@@ -845,71 +845,233 @@ function Admin(props: {
     }
   };
 
+  const sections: {
+    id: string;
+    label: string;
+    icon: IconName;
+    shown: () => boolean;
+    status: () => { on: boolean; text: string } | null;
+  }[] = [
+    {
+      id: "page",
+      label: "Your page",
+      icon: "person",
+      shown: () => true,
+      status: () => null,
+    },
+    {
+      id: "tips",
+      label: "Tips",
+      icon: "heart",
+      shown: () => settings().paypal || settings().tips !== null,
+      status: () => onOff(settings().tips !== null),
+    },
+    {
+      id: "wheel",
+      label: "Wheel of luck",
+      icon: "wheel",
+      shown: () => settings().paypal || settings().spin !== null,
+      status: () => onOff(settings().spin !== null),
+    },
+    {
+      id: "songs",
+      label: "Song requests",
+      icon: "music",
+      shown: () => settings().paypal || settings().paywall !== null,
+      status: () => onOff(settings().paywall !== null),
+    },
+    {
+      id: "paypal",
+      label: "PayPal",
+      icon: "wallet",
+      shown: () => settings().paypal,
+      status: () => connectedOrNot(settings().merchantId !== null),
+    },
+    {
+      id: "moblin",
+      label: "Moblin",
+      icon: "remote",
+      shown: () => true,
+      status: () => connectedOrNot(settings().connected),
+    },
+  ];
+  const visible = () => sections.filter((section) => section.shown());
+  const initial = new URLSearchParams(location.search).has("merchantIdInPayPal")
+    ? "paypal"
+    : location.hash.slice(1);
+  const [chosen, setChosen] = createSignal(initial);
+  const active = () =>
+    visible().some((section) => section.id === chosen()) ? chosen() : visible()[0].id;
+  const select = (id: string) => {
+    setChosen(id);
+    history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
+  };
+  const paid = (configured: boolean) => settings().merchantId !== null || configured;
+
   return (
-    <>
-      <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
-      <Show when={settings().merchantId || settings().tips}>
-        <TipSettings
-          tips={settings().tips}
-          currency={settings().currency}
-          busy={busy()}
-          onSave={save}
-        />
-      </Show>
-      <Show when={settings().merchantId || settings().spin}>
-        <SpinSettings
-          spin={settings().spin}
-          currency={settings().currency}
-          busy={busy()}
-          onSave={save}
-        />
-      </Show>
-      <Show when={settings().merchantId || settings().paywall}>
-        <SongSettings
-          paywall={settings().paywall}
-          currency={settings().currency}
-          busy={busy()}
-          onSave={save}
-        />
-      </Show>
-      <Show when={settings().paypal}>
-        <PayPalAccount
-          session={props.session}
-          settings={settings()}
-          busy={busy()}
-          onSave={save}
-          onSettings={setSettings}
-          onSignOut={props.onSignOut}
-        />
-      </Show>
-      <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">Configure Moblin</h2>
-        <p class="flex items-center gap-2.5 text-[15px] text-muted">
-          <span
-            class={`size-2.5 shrink-0 rounded-full ${settings().connected ? "bg-leaf" : "bg-muted"}`}
-          />
-          {settings().connected ? "Moblin is connected." : "Moblin is not connected."}
-        </p>
-        <p class="text-ink-2">
-          In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.
-        </p>
-        <Value label="Secret key" text={props.secretKey} secret />
-        <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
-          <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
-          Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.
-        </p>
-        <div class="flex flex-wrap items-center gap-4">
-          <button type="button" class={ghostButtonClass} disabled={busy()} onClick={newKey}>
-            Reset secret key
-          </button>
-          <Show when={newKeyFailed()}>
-            <p role="status" class="text-amber">
-              Something went wrong. Try again.
-            </p>
+    <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+      <nav
+        aria-label="Dashboard"
+        class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:-mx-8 sm:px-8 lg:sticky lg:top-24 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0"
+      >
+        <For each={visible()}>
+          {(section) => (
+            <button
+              type="button"
+              aria-current={active() === section.id ? "page" : undefined}
+              onClick={() => select(section.id)}
+              class="flex shrink-0 items-center gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-left whitespace-nowrap transition-colors"
+              classList={{
+                "border-line bg-card text-ink": active() === section.id,
+                "border-transparent text-ink-2 hover:bg-ghost hover:text-ink":
+                  active() !== section.id,
+              }}
+            >
+              <Icon name={section.icon} class="size-5 shrink-0" />
+              <span class="font-display text-[17px] font-semibold">{section.label}</span>
+              <Show when={section.status()}>
+                {(status) => (
+                  <span class="ml-auto flex items-center gap-1.5 pl-1 text-[13px] text-muted">
+                    <span
+                      class={`size-2 shrink-0 rounded-full ${status().on ? "bg-leaf" : "bg-muted/50"}`}
+                    />
+                    <span class="hidden lg:inline">{status().text}</span>
+                  </span>
+                )}
+              </Show>
+            </button>
+          )}
+        </For>
+      </nav>
+      <div class="min-w-0">
+        <div hidden={active() !== "page"}>
+          <YourPage account={props.account} page={settings()} busy={busy()} onSave={save} />
+        </div>
+        <div hidden={active() !== "tips"}>
+          <Show
+            when={paid(settings().tips !== null)}
+            fallback={<NeedsPayPal title="Tips" onConnect={() => select("paypal")} />}
+          >
+            <TipSettings
+              tips={settings().tips}
+              currency={settings().currency}
+              busy={busy()}
+              onSave={save}
+            />
           </Show>
         </div>
+        <div hidden={active() !== "wheel"}>
+          <Show
+            when={paid(settings().spin !== null)}
+            fallback={<NeedsPayPal title="Wheel of luck" onConnect={() => select("paypal")} />}
+          >
+            <SpinSettings
+              spin={settings().spin}
+              currency={settings().currency}
+              busy={busy()}
+              onSave={save}
+            />
+          </Show>
+        </div>
+        <div hidden={active() !== "songs"}>
+          <Show
+            when={paid(settings().paywall !== null)}
+            fallback={<NeedsPayPal title="Song requests" onConnect={() => select("paypal")} />}
+          >
+            <SongSettings
+              paywall={settings().paywall}
+              currency={settings().currency}
+              busy={busy()}
+              onSave={save}
+            />
+          </Show>
+        </div>
+        <Show when={settings().paypal}>
+          <div hidden={active() !== "paypal"}>
+            <PayPalAccount
+              session={props.session}
+              settings={settings()}
+              busy={busy()}
+              onSave={save}
+              onSettings={setSettings}
+              onSignOut={props.onSignOut}
+            />
+          </div>
+        </Show>
+        <div hidden={active() !== "moblin"}>
+          <MoblinSettings
+            secretKey={props.secretKey}
+            connected={settings().connected}
+            busy={busy()}
+            newKeyFailed={newKeyFailed()}
+            onNewKey={newKey}
+          />
+        </div>
       </div>
-    </>
+    </div>
+  );
+}
+
+const onOff = (on: boolean) => ({ on, text: on ? "On" : "Off" });
+
+const connectedOrNot = (on: boolean) => ({ on, text: on ? "Connected" : "Not connected" });
+
+function NeedsPayPal(props: { title: string; onConnect: () => void }) {
+  return (
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">{props.title}</h2>
+      <p class="text-ink-2">
+        Connect your PayPal account first, so the money goes straight to you.
+      </p>
+      <div>
+        <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
+          Go to PayPal
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MoblinSettings(props: {
+  secretKey: string;
+  connected: boolean;
+  busy: boolean;
+  newKeyFailed: boolean;
+  onNewKey: () => void;
+}) {
+  return (
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">Configure Moblin</h2>
+      <p class="flex items-center gap-2.5 text-[15px] text-muted">
+        <span
+          class={`size-2.5 shrink-0 rounded-full ${props.connected ? "bg-leaf" : "bg-muted"}`}
+        />
+        {props.connected ? "Moblin is connected." : "Moblin is not connected."}
+      </p>
+      <p class="text-ink-2">
+        In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.
+      </p>
+      <Value label="Secret key" text={props.secretKey} secret />
+      <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
+        <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
+        Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.
+      </p>
+      <div class="flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          class={ghostButtonClass}
+          disabled={props.busy}
+          onClick={() => props.onNewKey()}
+        >
+          Reset secret key
+        </button>
+        <Show when={props.newKeyFailed}>
+          <p role="status" class="text-amber">
+            Something went wrong. Try again.
+          </p>
+        </Show>
+      </div>
+    </div>
   );
 }
 
@@ -1000,47 +1162,57 @@ export default function Dashboard() {
     setSession(null);
   };
 
+  const terms = () => (
+    <p class="text-[15px] text-muted">
+      Using Moblin Cloud and your page means you agree to the{" "}
+      <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
+        terms
+      </a>
+      .
+    </p>
+  );
+
   return (
     <>
-      <Hero
-        title="Let viewers tip you."
-        top={
-          <div class="flex flex-wrap items-center justify-between gap-4">
-            <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-              Moblin Cloud
-            </span>
-            <Show when={session()}>
-              {(current) => (
-                <button
-                  type="button"
-                  class={ghostButtonClass}
-                  onClick={async () => {
-                    try {
-                      await signOutEverywhere(current().session);
-                    } catch {}
-                    signOut();
-                  }}
-                >
-                  Sign out everywhere
-                </button>
-              )}
-            </Show>
-          </div>
+      <Show
+        when={session()}
+        fallback={
+          <Hero title="Let viewers tip you.">
+            <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
+              Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its
+              usual fees.
+            </p>
+            {terms()}
+          </Hero>
         }
       >
-        <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-          Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its usual
-          fees.
-        </p>
-        <p class="text-[15px] text-muted">
-          Using Moblin Cloud and your page means you agree to the{" "}
-          <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
-            terms
-          </a>
-          .
-        </p>
-      </Hero>
-      <Band>
+        {(current) => (
+          <section class="mx-auto flex max-w-[1120px] flex-wrap items-end justify-between gap-4 px-5 pt-10 pb-8 sm:px-8">
+            <div class="flex min-w-0 flex-col gap-2">
+              <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
+                Moblin Cloud
+              </span>
+              <h1 class="text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
+                Hi, {current().account.name}
+              </h1>
+              {terms()}
+            </div>
+            <button
+              type="button"
+              class={ghostButtonClass}
+              onClick={async () => {
+                try {
+                  await signOutEverywhere(current().session);
+                } catch {}
+                signOut();
+              }}
+            >
+              Sign out everywhere
+            </button>
+          </section>
+        )}
+      </Show>
+      <Band tight={session() !== null}>
         <Show when={!loading()} fallback={<Spinner />}>
           <Show when={session()} keyed fallback={<TwitchSignIn failed={signInFailed()} />}>
             {(current) => (

@@ -60,9 +60,9 @@ export function Hero(props: {
   );
 }
 
-export function Band(props: { children: JSX.Element }) {
+export function Band(props: { children: JSX.Element; tight?: boolean }) {
   return (
-    <section class="bg-band py-16 lg:py-20">
+    <section class={`bg-band ${props.tight ? "py-8 lg:py-12" : "py-16 lg:py-20"}`}>
       <div class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 sm:px-8">{props.children}</div>
     </section>
   );
