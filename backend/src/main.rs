@@ -9,6 +9,7 @@ mod kick;
 mod live;
 mod live_status;
 mod pages;
+mod payments;
 mod paypal;
 mod profiles;
 mod remote_control;
@@ -36,6 +37,7 @@ use crate::kick::Kick;
 use crate::live::Live;
 use crate::live_status::LiveStatus;
 use crate::pages::Pages;
+use crate::payments::Orders;
 use crate::paypal::PayPal;
 use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
@@ -252,6 +254,7 @@ async fn main() -> Result<()> {
         remote_control: Streamers::new(),
         pages,
         paypal,
+        orders: Orders::new(),
         deliveries,
         auth,
         accounts,

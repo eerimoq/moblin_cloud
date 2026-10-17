@@ -25,7 +25,8 @@ use crate::pages::{
     CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
     valid_price,
 };
-use crate::paypal::{CaptureError, Item, Order, PayPal, Seller};
+use crate::payments::{CaptureError, Item, Order, Orders};
+use crate::paypal::{PayPal, Seller};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
 use crate::store::{Channel, Store, Streamer};
 
@@ -39,6 +40,7 @@ pub struct Api {
     pub remote_control: Streamers,
     pub pages: Pages,
     pub paypal: Option<PayPal>,
+    pub orders: Orders,
     pub deliveries: Deliveries,
     pub auth: Auth,
     pub accounts: Accounts,
@@ -1097,7 +1099,7 @@ async fn handle_song_order(
         price: song_price(paywall.price, song.duration),
         currency,
     };
-    let order_id = paypal.create_order(order).await.map_err(|error| {
+    let order_id = start_order(&api, paypal, order).await.map_err(|error| {
         warn!("creating a PayPal order for remote control streamer {id} failed: {error:#}");
         failure(
             StatusCode::BAD_GATEWAY,
@@ -1116,6 +1118,13 @@ async fn handle_song_capture(
         .unwrap_or_else(|_| Err(capture_crashed()))
 }
 
+async fn start_order(api: &Api, paypal: &PayPal, order: Order) -> Result<String> {
+    api.orders.make_room()?;
+    let order_id = paypal.create_order(&order).await?;
+    api.orders.insert(order_id.clone(), order);
+    Ok(order_id)
+}
+
 fn capture_crashed() -> Failure {
     failure(
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1132,8 +1141,9 @@ fn paypal_unavailable() -> Failure {
 
 async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Order, Failure> {
     let paypal = api.paypal.as_ref().ok_or_else(paypal_unavailable)?;
-    let order = paypal
-        .order(order_id)
+    let order = api
+        .orders
+        .get(order_id)
         .filter(|order| order.streamer == id && order.item.kind() == kind)
         .ok_or(failure(
             StatusCode::GONE,
@@ -1151,10 +1161,14 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
             "The streamer's wheel is gone, so your payment was not taken.",
         ));
     }
-    paypal
-        .capture(order_id, &order)
-        .await
-        .map_err(|error| match error {
+    let captured = paypal.capture(order_id, &order).await;
+    if !matches!(
+        captured,
+        Err(CaptureError::NotApproved | CaptureError::Failed)
+    ) {
+        api.orders.remove(order_id);
+    }
+    captured.map_err(|error| match error {
             CaptureError::NotApproved if kind == "song" => failure(
                 StatusCode::PAYMENT_REQUIRED,
                 "The payment was not completed. No song was added.",
@@ -1178,7 +1192,7 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
                 StatusCode::PAYMENT_REQUIRED,
                 "PayPal is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund.",
             ),
-            CaptureError::Failed => failure(
+            CaptureError::Failed | CaptureError::Unexpected => failure(
                 StatusCode::BAD_GATEWAY,
                 "PayPal could not complete the payment.",
             ),
@@ -1258,7 +1272,7 @@ async fn handle_tip_order(
         price: request.amount,
         currency,
     };
-    let order_id = paypal.create_order(order).await.map_err(|error| {
+    let order_id = start_order(&api, paypal, order).await.map_err(|error| {
         warn!("creating a PayPal tip order for remote control streamer {id} failed: {error:#}");
         failure(
             StatusCode::BAD_GATEWAY,
@@ -1357,7 +1371,7 @@ async fn handle_spin_order(
         price: option.price,
         currency,
     };
-    let order_id = paypal.create_order(order).await.map_err(|error| {
+    let order_id = start_order(&api, paypal, order).await.map_err(|error| {
         warn!("creating a PayPal spin order for remote control streamer {id} failed: {error:#}");
         failure(
             StatusCode::BAD_GATEWAY,
@@ -1481,6 +1495,7 @@ mod tests {
             remote_control: Streamers::new(),
             pages,
             paypal,
+            orders: Orders::new(),
             deliveries: Deliveries::new(Database::memory()),
             auth: Auth::new(
                 reqwest::Client::new(),

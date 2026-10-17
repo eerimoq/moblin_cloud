@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -13,68 +12,24 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use crate::pages::format_price;
+use crate::payments::{CaptureError, Order};
 
 pub const LIVE_URL: &str = "https://api-m.paypal.com";
 pub const SANDBOX_URL: &str = "https://api-m.sandbox.paypal.com";
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Item {
-    Song { link: String, name: String },
-    Tip { message: Option<String> },
-    Spin { spins: u32, message: Option<String> },
-}
-
-impl Item {
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Item::Song { .. } => "song",
-            Item::Tip { .. } => "tip",
-            Item::Spin { .. } => "spin",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Order {
-    pub streamer: String,
-    pub item: Item,
-    pub user: String,
-    pub merchant_id: String,
-    pub price: u32,
-    pub currency: String,
-}
-
-impl Order {
-    fn body(&self) -> Value {
-        let (description, message) = match &self.item {
-            Item::Song { name, .. } => (format!("Song request: {name}"), None),
-            Item::Tip { message } => (format!("Tip from {}", self.user), message.as_ref()),
-            Item::Spin { spins: 1, message } => {
-                (format!("Wheel spin by {}", self.user), message.as_ref())
-            }
-            Item::Spin { spins, message } => (
-                format!("{spins} wheel spins by {}", self.user),
-                message.as_ref(),
-            ),
-        };
-        let description = match message {
-            Some(message) => format!("{description}: {message}"),
-            None => description,
-        };
-        let description: String = description.chars().take(127).collect();
-        json!({
-            "intent": "CAPTURE",
-            "purchase_units": [{
-                "amount": {
-                    "currency_code": self.currency,
-                    "value": format_price(self.price),
-                },
-                "payee": {"merchant_id": self.merchant_id},
-                "description": description,
-            }],
-            "application_context": {"shipping_preference": "NO_SHIPPING"},
-        })
-    }
+fn order_body(order: &Order) -> Value {
+    json!({
+        "intent": "CAPTURE",
+        "purchase_units": [{
+            "amount": {
+                "currency_code": order.currency,
+                "value": format_price(order.price),
+            },
+            "payee": {"merchant_id": order.merchant_id},
+            "description": order.description(),
+        }],
+        "application_context": {"shipping_preference": "NO_SHIPPING"},
+    })
 }
 
 trait Checked: Sized {
@@ -107,14 +62,6 @@ pub struct Seller {
     pub permissions_granted: bool,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum CaptureError {
-    NotApproved,
-    AlreadyCaptured,
-    Pending,
-    Failed,
-}
-
 pub struct PayPal {
     client: Client,
     url: String,
@@ -124,7 +71,6 @@ pub struct PayPal {
     attribution_id: Option<String>,
     webhook_id: Option<String>,
     token: tokio::sync::Mutex<Option<Token>>,
-    orders: Mutex<HashMap<String, (Instant, Order)>>,
 }
 
 struct Token {
@@ -151,7 +97,6 @@ impl PayPal {
             attribution_id,
             webhook_id,
             token: tokio::sync::Mutex::new(None),
-            orders: Mutex::new(HashMap::new()),
         }
     }
 
@@ -392,33 +337,18 @@ impl PayPal {
                 "PayPal-Auth-Assertion",
                 self.auth_assertion(&order.merchant_id),
             )
-            .json(&order.body())
+            .json(&order_body(order))
             .send()
             .await?)
     }
 
-    pub fn order(&self, order_id: &str) -> Option<Order> {
-        self.orders
-            .lock()
-            .unwrap()
-            .get(order_id)
-            .map(|(_, order)| order.clone())
-    }
-
-    pub async fn create_order(&self, order: Order) -> Result<String> {
+    pub async fn create_order(&self, order: &Order) -> Result<String> {
         #[derive(Deserialize)]
         struct Body {
             id: String,
         }
-        {
-            let mut orders = self.orders.lock().unwrap();
-            orders.retain(|_, (created, _)| created.elapsed() < Duration::from_secs(3 * 60 * 60));
-            if orders.len() >= 10000 {
-                bail!("too many unfinished payments");
-            }
-        }
         let response = self
-            .post_order(&order)
+            .post_order(order)
             .await
             .context("failed to create a PayPal order")?;
         let status = response.status();
@@ -432,10 +362,6 @@ impl PayPal {
             .json()
             .await
             .context("unexpected answer to a PayPal order")?;
-        self.orders
-            .lock()
-            .unwrap()
-            .insert(body.id.clone(), (Instant::now(), order));
         Ok(body.id)
     }
 
@@ -451,17 +377,13 @@ impl PayPal {
             info!("PayPal refused to capture order {order_id} ({status}): {issue}");
             return Err(match issue {
                 "ORDER_NOT_APPROVED" | "PAYER_ACTION_REQUIRED" => CaptureError::NotApproved,
-                "ORDER_ALREADY_CAPTURED" => {
-                    self.orders.lock().unwrap().remove(order_id);
-                    CaptureError::AlreadyCaptured
-                }
+                "ORDER_ALREADY_CAPTURED" => CaptureError::AlreadyCaptured,
                 _ => CaptureError::Failed,
             });
         }
         let capture = &body["purchase_units"][0]["payments"]["captures"][0];
         let amount_matches = capture["amount"]["currency_code"] == order.currency.as_str()
             && capture["amount"]["value"] == format_price(order.price).as_str();
-        self.orders.lock().unwrap().remove(order_id);
         match capture["status"].as_str() {
             Some("COMPLETED") if body["status"] == "COMPLETED" && amount_matches => Ok(()),
             Some("PENDING") if amount_matches => {
@@ -473,7 +395,7 @@ impl PayPal {
             }
             _ => {
                 info!("unexpected capture of PayPal order {order_id}: {body}");
-                Err(CaptureError::Failed)
+                Err(CaptureError::Unexpected)
             }
         }
     }
