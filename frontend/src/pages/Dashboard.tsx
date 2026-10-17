@@ -50,7 +50,7 @@ function Steps() {
   return (
     <ol class="flex list-decimal flex-col gap-2 pl-6 text-ink-2">
       <li>
-        In Moblin, go to Settings, Moblin cloud and paste the secret key as Secret key. Then turn
+        In Moblin, go to Settings → Moblin cloud and paste the secret key as Secret key. Then turn
         Enabled on.
       </li>
       <li>For song requests, make sure Moblin may use Apple Music.</li>
