@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { links } from "../data/links";
 import { appStoreRating, reviews } from "../data/reviews";
 import Icon from "./Icon";
@@ -50,6 +50,11 @@ export default function Reviews() {
               )}
             </For>
           </ul>
+          <Show when={language !== "en"}>
+            <p class="mt-5 text-sm text-muted">
+              {t("Reviews are machine translated from English.")}
+            </p>
+          </Show>
         </div>
       </div>
     </section>

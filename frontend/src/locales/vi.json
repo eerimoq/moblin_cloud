@@ -355,6 +355,7 @@
   "Resolution, FPS and codec are in Settings → Streams → <your stream> → Video.": "Độ phân giải, FPS và codec nằm trong Cài đặt → Stream → <stream của bạn> → Video.",
   "Results for “{query}”": "Kết quả cho “{query}”",
   "Reviews": "Đánh giá",
+  "Reviews are machine translated from English.": "Các đánh giá được dịch tự động từ tiếng Anh.",
   "Run OBS at home from your phone, or let a friend keep an eye on your stream while you walk.": "Điều khiển OBS ở nhà từ điện thoại, hoặc nhờ bạn bè để mắt đến stream của bạn khi bạn đi bộ.",
   "Run given macro.": "Chạy macro đã cho.",
   "Save": "Lưu",

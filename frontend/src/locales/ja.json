@@ -355,6 +355,7 @@
   "Resolution, FPS and codec are in Settings → Streams → <your stream> → Video.": "解像度、FPS、コーデックは設定 → 配信 → <あなたの配信> → ビデオ にあります。",
   "Results for “{query}”": "「{query}」の検索結果",
   "Reviews": "レビュー",
+  "Reviews are machine translated from English.": "レビューは英語から機械翻訳されています。",
   "Run OBS at home from your phone, or let a friend keep an eye on your stream while you walk.": "自宅のOBSをスマホから操作したり、歩いている間は友達に配信を見てもらったりできます。",
   "Run given macro.": "指定したマクロを実行します。",
   "Save": "保存",

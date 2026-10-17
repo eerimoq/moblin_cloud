@@ -355,6 +355,7 @@
   "Resolution, FPS and codec are in Settings → Streams → <your stream> → Video.": "Resoluutio, FPS ja koodekki ovat kohdassa Asetukset → Striimit → <striimisi> → Video.",
   "Results for “{query}”": "Tulokset haulle “{query}”",
   "Reviews": "Arvostelut",
+  "Reviews are machine translated from English.": "Arvostelut on käännetty englannista konekääntämällä.",
   "Run OBS at home from your phone, or let a friend keep an eye on your stream while you walk.": "Hallitse kotona olevaa OBS:ää puhelimelta tai pyydä kaveria seuraamaan lähetystäsi kävellessäsi.",
   "Run given macro.": "Suorita annettu makro.",
   "Save": "Tallenna",

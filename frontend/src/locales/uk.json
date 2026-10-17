@@ -355,6 +355,7 @@
   "Resolution, FPS and codec are in Settings → Streams → <your stream> → Video.": "Роздільна здатність, FPS і кодек — у Налаштування → Стріми → <ваш стрім> → Відео.",
   "Results for “{query}”": "Результати за запитом «{query}»",
   "Reviews": "Відгуки",
+  "Reviews are machine translated from English.": "Відгуки перекладено з англійської машинним перекладом.",
   "Run OBS at home from your phone, or let a friend keep an eye on your stream while you walk.": "Керуй OBS удома зі свого телефона або попроси друга наглядати за стрімом, поки ти гуляєш.",
   "Run given macro.": "Запустити заданий макрос.",
   "Save": "Зберегти",
