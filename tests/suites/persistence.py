@@ -2,7 +2,7 @@ from ..utils.context import Context
 from ..utils.test_case import TestCase
 
 
-class BackendRestart(TestCase):
+class PersistenceBackendRestart(TestCase):
     """Keep accounts, sessions, pages and their settings when the backend restarts, and let Moblin reconnect."""
 
     def run(self):
@@ -26,4 +26,4 @@ class BackendRestart(TestCase):
 
 
 def tests(context: Context):
-    return [BackendRestart(context)]
+    return [PersistenceBackendRestart(context)]

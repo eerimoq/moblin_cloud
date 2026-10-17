@@ -76,7 +76,7 @@ class PaymentTestCase(TestCase):
         self.assert_not_equal(order["status"], "COMPLETED")
 
 
-class TipNotApproved(PaymentTestCase):
+class PaymentsTipNotApproved(PaymentTestCase):
     """Refuse to capture a tip the viewer never paid, and captures of the order as something else."""
 
     def run(self):
@@ -94,7 +94,7 @@ class TipNotApproved(PaymentTestCase):
         self.assert_not_paid(order_id)
 
 
-class InvalidTip(PaymentTestCase):
+class PaymentsInvalidTip(PaymentTestCase):
     """Refuse tips out of range, with too long messages, or when tips are off."""
 
     def run(self):
@@ -112,7 +112,7 @@ class InvalidTip(PaymentTestCase):
         self.viewer.order_tip(333, message=200 * "x")
 
 
-class TipPaid(PaymentTestCase):
+class PaymentsTipPaid(PaymentTestCase):
     """Tip with PayPal, which pays the streamer's PayPal account and shows the tip in Moblin."""
 
     def run(self):
@@ -146,7 +146,7 @@ class TipPaid(PaymentTestCase):
         )
 
 
-class AnonymousTipPaid(PaymentTestCase):
+class PaymentsAnonymousTipPaid(PaymentTestCase):
     """Tip without a name or message."""
 
     def run(self):
@@ -160,7 +160,7 @@ class AnonymousTipPaid(PaymentTestCase):
         self.assert_equal([tip.body["name"], tip.body["message"]], ["Someone", ""])
 
 
-class TipDeliveredWhenMoblinConnects(PaymentTestCase):
+class PaymentsTipDeliveredWhenMoblinConnects(PaymentTestCase):
     """Take a tip while Moblin is offline and show it in Moblin when it connects."""
 
     def run(self):
@@ -177,7 +177,7 @@ class TipDeliveredWhenMoblinConnects(PaymentTestCase):
         self.assert_equal(tip.body["name"], "Early")
 
 
-class TipDeliveredAfterBackendRestart(PaymentTestCase):
+class PaymentsTipDeliveredAfterBackendRestart(PaymentTestCase):
     """Keep a tip that Moblin has not got yet when the backend restarts, and deliver it afterwards."""
 
     def run(self):
@@ -192,7 +192,7 @@ class TipDeliveredAfterBackendRestart(PaymentTestCase):
         self.moblin.wait_for_backend_request("tip", order_id)
 
 
-class SpinNeedsWheel(PaymentTestCase):
+class PaymentsSpinNeedsWheel(PaymentTestCase):
     """Refuse wheel spins when the wheel is off in the dashboard or Moblin has no wheel."""
 
     def run(self):
@@ -210,7 +210,7 @@ class SpinNeedsWheel(PaymentTestCase):
         )
 
 
-class SpinPaid(PaymentTestCase):
+class PaymentsSpinPaid(PaymentTestCase):
     """Buy wheel spins with PayPal, which spins the wheel in Moblin."""
 
     def run(self):
@@ -238,7 +238,7 @@ class SpinPaid(PaymentTestCase):
         )
 
 
-class SpinWhenWheelIsGone(PaymentTestCase):
+class PaymentsSpinWhenWheelIsGone(PaymentTestCase):
     """Do not take the money for spins when Moblin's wheel is gone before the capture."""
 
     def run(self):
@@ -264,7 +264,7 @@ class SongRequestTestCase(PaymentTestCase):
         self.dashboard.save_settings(paywall={"price": 150})
 
 
-class InvalidSongRequest(SongRequestTestCase):
+class PaymentsInvalidSongRequest(SongRequestTestCase):
     """Refuse song requests that are not Apple Music song links, or when the streamer is offline."""
 
     def run(self):
@@ -291,7 +291,7 @@ class InvalidSongRequest(SongRequestTestCase):
         )
 
 
-class SongNotOnAppleMusic(SongRequestTestCase):
+class PaymentsSongNotOnAppleMusic(SongRequestTestCase):
     """Refuse requests of songs the streamer's Apple Music can't find, before the viewer pays."""
 
     def run(self):
@@ -306,7 +306,7 @@ class SongNotOnAppleMusic(SongRequestTestCase):
         self.assert_equal(find.body, {"title": "https://music.apple.com/song/99999999999?i=99999999999"})
 
 
-class SongRequestPaid(SongRequestTestCase):
+class PaymentsSongRequestPaid(SongRequestTestCase):
     """Request a song with PayPal, which adds it to the queue in Moblin and on the page."""
 
     def run(self):
@@ -337,7 +337,7 @@ class SongRequestPaid(SongRequestTestCase):
         super().teardown()
 
 
-class SongRequestWhenStreamerGoesOffline(SongRequestTestCase):
+class PaymentsSongRequestWhenStreamerGoesOffline(SongRequestTestCase):
     """Do not take the money for a song when Moblin disconnects between ordering and paying."""
 
     def run(self):
@@ -357,17 +357,17 @@ class SongRequestWhenStreamerGoesOffline(SongRequestTestCase):
 
 def tests(context: Context):
     return [
-        TipNotApproved(context),
-        InvalidTip(context),
-        TipPaid(context),
-        AnonymousTipPaid(context),
-        TipDeliveredWhenMoblinConnects(context),
-        TipDeliveredAfterBackendRestart(context),
-        SpinNeedsWheel(context),
-        SpinPaid(context),
-        SpinWhenWheelIsGone(context),
-        InvalidSongRequest(context),
-        SongNotOnAppleMusic(context),
-        SongRequestPaid(context),
-        SongRequestWhenStreamerGoesOffline(context),
+        PaymentsTipNotApproved(context),
+        PaymentsInvalidTip(context),
+        PaymentsTipPaid(context),
+        PaymentsAnonymousTipPaid(context),
+        PaymentsTipDeliveredWhenMoblinConnects(context),
+        PaymentsTipDeliveredAfterBackendRestart(context),
+        PaymentsSpinNeedsWheel(context),
+        PaymentsSpinPaid(context),
+        PaymentsSpinWhenWheelIsGone(context),
+        PaymentsInvalidSongRequest(context),
+        PaymentsSongNotOnAppleMusic(context),
+        PaymentsSongRequestPaid(context),
+        PaymentsSongRequestWhenStreamerGoesOffline(context),
     ]

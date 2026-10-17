@@ -52,7 +52,7 @@ class AccountTestCase(TestCase):
         self.assert_backend_error(401, dashboard.account, "not signed in")
 
 
-class SignIn(AccountTestCase):
+class AccountSignIn(AccountTestCase):
     """Sign in with Twitch from the dashboard and get the account, which has no page yet."""
 
     def run(self):
@@ -65,7 +65,7 @@ class SignIn(AccountTestCase):
         self.assert_equal(account, {"name": "signin", "login": "signin", "secretKey": None, "settings": None})
 
 
-class SignInWithTwitch(TestCase):
+class AccountSignInWithTwitch(TestCase):
     """Sign in with a real Twitch account in a browser and get the account."""
 
     def run(self):
@@ -77,7 +77,7 @@ class SignInWithTwitch(TestCase):
         self.assert_not_equal(account["name"], "")
 
 
-class SignInFromAnotherBrowser(AccountTestCase):
+class AccountSignInFromAnotherBrowser(AccountTestCase):
     """Fail to sign in when the callback is opened in another browser than the one that started it, or twice."""
 
     def run(self):
@@ -94,7 +94,7 @@ class SignInFromAnotherBrowser(AccountTestCase):
         self.assert_equal(dashboard_url, f"{FRONTEND_URL}/dashboard/#signInFailed")
 
 
-class NotSignedIn(TestCase):
+class AccountNotSignedIn(TestCase):
     """Refuse every account request without a valid session."""
 
     def run(self):
@@ -109,7 +109,7 @@ class NotSignedIn(TestCase):
             self.assert_backend_error(401, dashboard.sign_out_everywhere, "not signed in")
 
 
-class ExpiredSession(AccountTestCase):
+class AccountExpiredSession(AccountTestCase):
     """Refuse a session issued more than 30 days ago."""
 
     def run(self):
@@ -119,7 +119,7 @@ class ExpiredSession(AccountTestCase):
         self.assert_signed_out(Dashboard(self.backend.url, old))
 
 
-class CreatePage(AccountTestCase):
+class AccountCreatePage(AccountTestCase):
     """Create the streamer's page on the first visit, and get the same page on later visits."""
 
     def run(self):
@@ -160,7 +160,7 @@ class CreatePage(AccountTestCase):
         self.assert_true(regex.match(text) is not None, f"{text!r} matches {regex.pattern!r}")
 
 
-class UnknownPage(TestCase):
+class AccountUnknownPage(TestCase):
     """Answer not found for pages and logins nobody has."""
 
     def run(self):
@@ -175,7 +175,7 @@ class UnknownPage(TestCase):
         )
 
 
-class NewSecretKey(AccountTestCase):
+class AccountNewSecretKey(AccountTestCase):
     """Replace the secret key, which stops the old one from working but keeps the page."""
 
     def run(self):
@@ -194,7 +194,7 @@ class NewSecretKey(AccountTestCase):
         self.assert_false(streamer_connects(port, "x"))
 
 
-class SignOutEverywhere(AccountTestCase):
+class AccountSignOutEverywhere(AccountTestCase):
     """Sign out everywhere, which ends all sessions, and sign in again."""
 
     def run(self):
@@ -208,7 +208,7 @@ class SignOutEverywhere(AccountTestCase):
         self.assert_equal(third.account()["settings"]["id"], page_id)
 
 
-class PageLook(AccountTestCase):
+class AccountPageLook(AccountTestCase):
     """Change the look of the page in the dashboard and see it on the page."""
 
     def run(self):
@@ -238,7 +238,7 @@ class PageLook(AccountTestCase):
         self.assert_equal(dashboard.account()["settings"]["title"], 60 * "å")
 
 
-class Currency(AccountTestCase):
+class AccountCurrency(AccountTestCase):
     """Change the currency of a page without paid features, which needs no PayPal."""
 
     def run(self):
@@ -252,7 +252,7 @@ class Currency(AccountTestCase):
         self.assert_equal(dashboard.save_settings(currency="USD")["currency"], "USD")
 
 
-class PaidFeaturesNeedPayPal(AccountTestCase):
+class AccountPaidFeaturesNeedPayPal(AccountTestCase):
     """Refuse to turn song requests, tips or the wheel on before PayPal is connected."""
 
     def run(self):
@@ -276,7 +276,7 @@ class PaidFeaturesNeedPayPal(AccountTestCase):
         self.assert_equal(viewer.spin()["spin"], None)
 
 
-class Cors(TestCase):
+class AccountCors(TestCase):
     """Only let https://moblin.app call the backend from a browser."""
 
     def run(self):
@@ -297,17 +297,17 @@ class Cors(TestCase):
 
 def tests(context: Context):
     return [
-        SignIn(context),
-        SignInWithTwitch(context),
-        SignInFromAnotherBrowser(context),
-        NotSignedIn(context),
-        ExpiredSession(context),
-        CreatePage(context),
-        UnknownPage(context),
-        NewSecretKey(context),
-        SignOutEverywhere(context),
-        PageLook(context),
-        Currency(context),
-        PaidFeaturesNeedPayPal(context),
-        Cors(context),
+        AccountSignIn(context),
+        AccountSignInWithTwitch(context),
+        AccountSignInFromAnotherBrowser(context),
+        AccountNotSignedIn(context),
+        AccountExpiredSession(context),
+        AccountCreatePage(context),
+        AccountUnknownPage(context),
+        AccountNewSecretKey(context),
+        AccountSignOutEverywhere(context),
+        AccountPageLook(context),
+        AccountCurrency(context),
+        AccountPaidFeaturesNeedPayPal(context),
+        AccountCors(context),
     ]

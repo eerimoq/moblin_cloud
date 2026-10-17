@@ -33,7 +33,7 @@ class StreamersTestCase(TestCase):
             raise systest.TestCaseSkippedError("The backend only accepts attested live posts.")
 
 
-class Challenge(StreamersTestCase):
+class StreamersChallenge(StreamersTestCase):
     """Get one-time challenges for live posts."""
 
     def run(self):
@@ -43,7 +43,7 @@ class Challenge(StreamersTestCase):
         self.assert_not_equal(first, second)
 
 
-class UnattestedLivePostRefused(StreamersTestCase):
+class StreamersUnattestedLivePostRefused(StreamersTestCase):
     """Refuse live posts that are not signed by the Moblin app with App Attest."""
 
     def run(self):
@@ -65,7 +65,7 @@ class UnattestedLivePostRefused(StreamersTestCase):
         self.assert_is_none(self.listed(name))
 
 
-class StreamerGoesLive(StreamersTestCase):
+class StreamersStreamerGoesLive(StreamersTestCase):
     """List a streamer who went live on several platforms as one streamer."""
 
     def run(self):
@@ -85,7 +85,7 @@ class StreamerGoesLive(StreamersTestCase):
             self.assert_in("live", channel)
 
 
-class SameStreamerGoesLiveAgain(StreamersTestCase):
+class StreamersSameStreamerGoesLiveAgain(StreamersTestCase):
     """Move a streamer who goes live again to the top, matching channels case-insensitively."""
 
     def run(self):
@@ -100,7 +100,7 @@ class SameStreamerGoesLiveAgain(StreamersTestCase):
         self.assert_equal(names.count(first), 1)
 
 
-class StreamersAreCapped(StreamersTestCase):
+class StreamersCapped(StreamersTestCase):
     """List at most six streamers, newest first."""
 
     def run(self):
@@ -114,7 +114,7 @@ class StreamersAreCapped(StreamersTestCase):
             self.assert_not_in(name, listed)
 
 
-class InvalidLivePost(StreamersTestCase):
+class StreamersInvalidLivePost(StreamersTestCase):
     """Refuse live posts with no, too many or badly named channels."""
 
     def run(self):
@@ -133,7 +133,7 @@ class InvalidLivePost(StreamersTestCase):
             self.assert_equal(response.status_code, 400, f"{body}: {response.text}")
 
 
-class TwitchProfileLookedUp(StreamersTestCase):
+class StreamersTwitchProfileLookedUp(StreamersTestCase):
     """Look up the display name and avatar of a listed Twitch streamer and whether they are live."""
 
     def run(self):
@@ -154,7 +154,7 @@ class TwitchProfileLookedUp(StreamersTestCase):
         self.assert_in(channel["live"], [True, False])
 
 
-class KickProfileLookedUp(StreamersTestCase):
+class StreamersKickProfileLookedUp(StreamersTestCase):
     """Look up the display name and avatar of a listed Kick streamer."""
 
     def run(self):
@@ -171,7 +171,7 @@ class KickProfileLookedUp(StreamersTestCase):
         self.wait_until(looked_up, "the Kick profile to be looked up", timeout=120)
 
 
-class MoblinGoesLive(StreamersTestCase):
+class StreamersMoblinGoesLive(StreamersTestCase):
     """List the streamer when Moblin goes live with listing on moblin.app turned on, attested with App Attest."""
 
     def run(self):
@@ -193,7 +193,7 @@ class MoblinGoesLive(StreamersTestCase):
         self.assert_is_not_none(self.listed(mo.group(1)))
 
 
-class TwitchLive(StreamersTestCase):
+class StreamersTwitchLive(StreamersTestCase):
     """Tell whether Erik is live on Twitch, or that it can't be known without Twitch credentials."""
 
     def run(self):
@@ -207,14 +207,14 @@ class TwitchLive(StreamersTestCase):
 
 def tests(context: Context):
     return [
-        Challenge(context),
-        UnattestedLivePostRefused(context),
-        StreamerGoesLive(context),
-        SameStreamerGoesLiveAgain(context),
-        StreamersAreCapped(context),
-        InvalidLivePost(context),
-        TwitchProfileLookedUp(context),
-        KickProfileLookedUp(context),
-        MoblinGoesLive(context),
-        TwitchLive(context),
+        StreamersChallenge(context),
+        StreamersUnattestedLivePostRefused(context),
+        StreamersStreamerGoesLive(context),
+        StreamersSameStreamerGoesLiveAgain(context),
+        StreamersCapped(context),
+        StreamersInvalidLivePost(context),
+        StreamersTwitchProfileLookedUp(context),
+        StreamersKickProfileLookedUp(context),
+        StreamersMoblinGoesLive(context),
+        StreamersTwitchLive(context),
     ]

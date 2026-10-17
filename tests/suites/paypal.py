@@ -17,7 +17,7 @@ class PayPalTestCase(TestCase):
         self.skip_if_no_paypal()
 
 
-class ConnectPayPal(PayPalTestCase):
+class PayPalConnect(PayPalTestCase):
     """Connect the streamer's PayPal account through PayPal's seller onboarding in the dashboard."""
 
     def run(self):
@@ -38,7 +38,7 @@ class ConnectPayPal(PayPalTestCase):
         self.assert_equal(dashboard.check_paypal()["merchantId"], settings["merchantId"])
 
 
-class ConnectPayPalNeedsFreshSignIn(PayPalTestCase):
+class PayPalConnectNeedsFreshSignIn(PayPalTestCase):
     """Ask the streamer to sign in again to connect PayPal when signed in more than 10 minutes ago."""
 
     def run(self):
@@ -49,7 +49,7 @@ class ConnectPayPalNeedsFreshSignIn(PayPalTestCase):
         self.assert_backend_error(403, stale.connect_paypal, "sign in again to connect PayPal")
 
 
-class PaidSettings(PayPalTestCase):
+class PayPalPaidSettings(PayPalTestCase):
     """Turn song requests, tips and the wheel on, which viewers see with what they need to pay with PayPal."""
 
     def run(self):
@@ -93,7 +93,7 @@ class PaidSettings(PayPalTestCase):
         self.assert_equal(viewer.spin()["spin"], None)
 
 
-class InvalidPaidSettings(PayPalTestCase):
+class PayPalInvalidPaidSettings(PayPalTestCase):
     """Refuse prices, tips and wheel options out of range."""
 
     def run(self):
@@ -119,7 +119,7 @@ class InvalidPaidSettings(PayPalTestCase):
         dashboard.save_settings()
 
 
-class DisconnectPayPal(PayPalTestCase):
+class PayPalDisconnect(PayPalTestCase):
     """Disconnect PayPal, which takes the paid features off the page until connected again."""
 
     def run(self):
@@ -144,7 +144,7 @@ class DisconnectPayPal(PayPalTestCase):
         self.context.page_with_paypal(dashboard)
 
 
-class WebhookWithBadSignature(PayPalTestCase):
+class PayPalWebhookWithBadSignature(PayPalTestCase):
     """Refuse PayPal webhooks whose signature PayPal does not verify."""
 
     def run(self):
@@ -175,10 +175,10 @@ class WebhookWithBadSignature(PayPalTestCase):
 
 def tests(context: Context):
     return [
-        ConnectPayPal(context),
-        ConnectPayPalNeedsFreshSignIn(context),
-        PaidSettings(context),
-        InvalidPaidSettings(context),
-        DisconnectPayPal(context),
-        WebhookWithBadSignature(context),
+        PayPalConnect(context),
+        PayPalConnectNeedsFreshSignIn(context),
+        PayPalPaidSettings(context),
+        PayPalInvalidPaidSettings(context),
+        PayPalDisconnect(context),
+        PayPalWebhookWithBadSignature(context),
     ]

@@ -25,7 +25,7 @@ class RemoteControlTestCase(TestCase):
         return self.dashboard.account()["settings"]["connected"]
 
 
-class MoblinConnects(RemoteControlTestCase):
+class RemoteControlConnects(RemoteControlTestCase):
     """Show in the dashboard that Moblin is connected, and Moblin's song queue on the page."""
 
     def run(self):
@@ -42,7 +42,7 @@ class MoblinConnects(RemoteControlTestCase):
         self.wait_until(lambda: not self.connected(), "Moblin to be disconnected")
 
 
-class MoblinReconnects(RemoteControlTestCase):
+class RemoteControlReconnects(RemoteControlTestCase):
     """Show Moblin as connected again after its connection drops."""
 
     def run(self):
@@ -52,7 +52,7 @@ class MoblinReconnects(RemoteControlTestCase):
         self.wait_until(self.connected, "Moblin to be connected again")
 
 
-class MoblinWheel(RemoteControlTestCase):
+class RemoteControlWheel(RemoteControlTestCase):
     """Show the wheel picked in Moblin's Moblin cloud settings on the page, and no wheel without one."""
 
     def run(self):
@@ -66,7 +66,7 @@ class MoblinWheel(RemoteControlTestCase):
         self.wait_until(lambda: self.viewer.spin()["wheel"] is None, "the wheel to be gone")
 
 
-class MoblinWheelChanges(RemoteControlTestCase):
+class RemoteControlWheelChanges(RemoteControlTestCase):
     """Follow changes to Moblin's wheel while it stays connected."""
 
     def run(self):
@@ -81,7 +81,7 @@ class MoblinWheelChanges(RemoteControlTestCase):
         self.wait_until(lambda: self.viewer.spin()["wheel"] == expected, "the wheel to be back on the page")
 
 
-class NewSecretKeyDisconnectsMoblin(RemoteControlTestCase):
+class RemoteControlNewSecretKeyDisconnects(RemoteControlTestCase):
     """Disconnect Moblin when the streamer replaces the secret key, until it gets the new one."""
 
     def run(self):
@@ -99,9 +99,9 @@ class NewSecretKeyDisconnectsMoblin(RemoteControlTestCase):
 
 def tests(context: Context):
     return [
-        MoblinConnects(context),
-        MoblinReconnects(context),
-        MoblinWheel(context),
-        MoblinWheelChanges(context),
-        NewSecretKeyDisconnectsMoblin(context),
+        RemoteControlConnects(context),
+        RemoteControlReconnects(context),
+        RemoteControlWheel(context),
+        RemoteControlWheelChanges(context),
+        RemoteControlNewSecretKeyDisconnects(context),
     ]
