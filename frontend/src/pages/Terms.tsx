@@ -13,7 +13,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
     body: [
       <>
         Tip pages on moblin.app let viewers tip streamers. Every payment on a tip page is a tip,
-        sent directly to the streamer's PayPal or Stripe account. Nothing is sold or bought.
+        sent directly to the streamer's PayPal or Stripe account. Tips do not constitute the
+        purchase of physical goods.
       </>,
       <>
         Moblin only provides the software. Moblin does not receive, hold or forward the money and
@@ -25,8 +26,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
     title: "Viewers",
     body: [
       <>
-        Tips are voluntary gifts to the streamer. They are not charitable donations and you are not
-        owed anything in return.
+        Tips are voluntary financial contributions to the streamer. They are not charitable
+        donations and you are not owed anything in return.
       </>,
       <>
         A streamer may thank you for a tip, for example by playing a song you request, but doesn't
