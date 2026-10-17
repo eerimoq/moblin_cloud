@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import { asset } from "../asset";
 import { features } from "../data/features";
 import Icon from "./Icon";
+import { t } from "../i18n";
 
 export default function Features() {
   return (
@@ -9,10 +10,10 @@ export default function Features() {
       <div class="mx-auto flex max-w-[1120px] flex-col gap-10 px-5 sm:px-8">
         <div class="flex max-w-[640px] flex-col gap-2.5">
           <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-            Features
+            {t("Features")}
           </span>
           <h2 class="text-4xl font-bold sm:text-[46px]">
-            Everything a walk-and-talk stream needs.
+            {t("Everything a walk-and-talk stream needs.")}
           </h2>
         </div>
         <ul class="grid gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">

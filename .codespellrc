@@ -1,3 +1,3 @@
 [codespell]
-skip = .git,node_modules,dist,target,package-lock.json,*.lock,*.pem,*.base64
+skip = .git,node_modules,dist,target,package-lock.json,*.lock,*.pem,*.base64,locales
 ignore-words-list = soop,crate,keypair

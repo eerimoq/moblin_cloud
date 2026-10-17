@@ -1,6 +1,7 @@
 import { createSignal, Show, type JSX } from "solid-js";
 import CopyButton from "./CopyButton";
 import Icon from "./Icon";
+import { t } from "../i18n";
 
 export const inputClass =
   "h-13 w-full rounded-2xl border-[1.5px] border-line bg-well px-4 text-[17px] text-ink placeholder:text-muted focus:border-leaf focus:outline-none";
@@ -27,7 +28,7 @@ export function Notice(props: { status?: boolean; children: JSX.Element }) {
 
 export function Spinner() {
   return (
-    <div role="status" aria-label="Loading" class="flex justify-center py-12">
+    <div role="status" aria-label={t("Loading")} class="flex justify-center py-12">
       <span
         class="size-10 animate-spin rounded-full border-4 border-line border-t-leaf"
         style={{ "animation-delay": `-${performance.now() % 1000}ms` }}
@@ -42,7 +43,9 @@ export function SaveButton(props: { saving: boolean; saved: boolean; disabled: b
       <Show when={props.saved}>
         <Icon name="check" class="size-5" />
       </Show>
-      <span aria-live="polite">{props.saving ? "Saving…" : props.saved ? "Saved" : "Save"}</span>
+      <span aria-live="polite">
+        {props.saving ? t("Saving…") : props.saved ? t("Saved") : t("Save")}
+      </span>
     </button>
   );
 }
@@ -114,9 +117,13 @@ export function Value(props: {
           <button
             type="button"
             class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-ghost hover:text-ink"
-            aria-label={`${shown() ? "Hide" : "Show"} ${props.label}`}
+            aria-label={
+              shown()
+                ? t("Hide {label}", { label: props.label })
+                : t("Show {label}", { label: props.label })
+            }
             aria-pressed={shown()}
-            title={shown() ? "Hide" : "Show"}
+            title={shown() ? t("Hide") : t("Show")}
             onClick={() => setShown(!shown())}
           >
             <Icon name={shown() ? "eye-off" : "eye"} class="size-4" />

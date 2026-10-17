@@ -2,6 +2,7 @@ import { links } from "../data/links";
 import Button from "./Button";
 import Icon from "./Icon";
 import Mascot from "./Mascot";
+import { t } from "../i18n";
 
 export default function Community() {
   return (
@@ -9,29 +10,31 @@ export default function Community() {
       <div class="mx-auto flex max-w-[1120px] flex-col gap-10 px-5 sm:px-8">
         <div class="flex max-w-[640px] flex-col gap-2.5">
           <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-            Community
+            {t("Community")}
           </span>
           <h2 class="text-4xl font-bold sm:text-[46px]">
-            Stuck? Someone on Discord has been there.
+            {t("Stuck? Someone on Discord has been there.")}
           </h2>
         </div>
         <div class="relative grid items-start gap-10 overflow-hidden rounded-3xl border-[1.5px] border-line bg-card p-8 sm:p-12 md:grid-cols-2 lg:px-16">
           <div class="flex flex-col gap-5">
             <p class="max-w-[480px] text-lg text-ink-2">
-              Thousands of IRL streamers share setups, fix problems and vote on what Moblin does
-              next. The developer hangs out there too.
+              {t(
+                "Thousands of IRL streamers share setups, fix problems and vote on what Moblin does " +
+                  "next. The developer hangs out there too.",
+              )}
             </p>
             <div class="flex flex-wrap gap-3">
               <Button href={links.discord}>
                 <Icon name="discord" class="size-[22px]" />
-                Join our Discord
+                {t("Join our Discord")}
               </Button>
               <Button href={links.github} variant="ghost">
                 <Icon name="github" class="size-[22px]" />
-                Star on GitHub
+                {t("Star on GitHub")}
               </Button>
               <Button href={links.testFlight} variant="ghost">
-                Try the beta
+                {t("Try the beta")}
               </Button>
             </div>
           </div>

@@ -5,6 +5,7 @@ import Button from "./Button";
 import BrandIcon from "./BrandIcon";
 import Icon from "./Icon";
 import Mascot from "./Mascot";
+import { t, tRich } from "../i18n";
 
 type Confetti = {
   /** Shape and color classes. */
@@ -156,39 +157,43 @@ export default function Hero() {
       <div class="mx-auto grid max-w-[1120px] items-center gap-12 px-5 pt-12 pb-16 sm:px-8 lg:grid-cols-2 lg:pt-18 lg:pb-22">
         <div class="flex flex-col gap-6">
           <span class="font-display text-sm font-semibold uppercase tracking-[0.08em] text-leaf sm:text-[15px]">
-            Free · Open source · iPhone, iPad and Mac
+            {t("Free · Open source · iPhone, iPad and Mac")}
           </span>
           <h1 class="text-[46px] leading-[1.02] font-bold text-balance sm:text-6xl lg:text-[76px] lg:leading-none">
-            Stream IRL straight from your iPhone.
+            {t("Stream IRL straight from your iPhone.")}
           </h1>
           <p class="max-w-[520px] text-lg leading-normal text-ink-2 text-pretty sm:text-[21px]">
-            Moblin is a free app for going live on Twitch, YouTube, Kick and more. Chat on your
-            screen, bonding for bad signal, and a friendly green face to keep you company.
+            {t(
+              "Moblin is a free app for going live on Twitch, YouTube, Kick and more. Chat on your " +
+                "screen, bonding for bad signal, and a friendly green face to keep you company.",
+            )}
           </p>
           <div class="mt-1 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
             <a href={links.appStore} target="_blank" rel="noopener" class="shrink-0">
               <img
                 src={asset("badges/app-store.svg")}
-                alt="Download on the App Store"
+                alt={t("Download on the App Store")}
                 class="h-14 w-auto"
               />
             </a>
             <Button href={links.discord} variant="ghost" class="h-14">
               <Icon name="discord" class="size-[22px]" />
-              Join our Discord
+              {t("Join our Discord")}
             </Button>
           </div>
           <p class="text-[15px] text-muted">
-            Want the newest features first?{" "}
-            <a
-              href={links.testFlight}
-              target="_blank"
-              rel="noopener"
-              class="text-leaf hover:text-leaf-bright"
-            >
-              Join the TestFlight beta
-            </a>
-            .
+            {tRich("Want the newest features first? {link}.", {
+              link: (
+                <a
+                  href={links.testFlight}
+                  target="_blank"
+                  rel="noopener"
+                  class="text-leaf hover:text-leaf-bright"
+                >
+                  {t("Join the TestFlight beta")}
+                </a>
+              ),
+            })}
           </p>
         </div>
         <div class="relative mx-auto w-full max-w-[600px] lg:flex lg:flex-col lg:justify-center lg:self-stretch">
@@ -216,7 +221,7 @@ export default function Hero() {
               src={asset("screenshots/moblin.webp")}
               srcset={`${asset("screenshots/moblin-800.webp")} 800w, ${asset("screenshots/moblin.webp")} 1146w`}
               sizes="(min-width: 1024px) 500px, 90vw"
-              alt="Moblin streaming with chat, bitrate and controls on screen"
+              alt={t("Moblin streaming with chat, bitrate and controls on screen")}
               class="w-full -rotate-[4deg] drop-shadow-[0_30px_60px_rgba(0,0,0,0.55)]"
               width="1146"
               height="557"
@@ -231,7 +236,7 @@ export default function Hero() {
         </div>
       </div>
       <div class="mx-auto flex max-w-[1120px] flex-wrap items-center gap-3 px-5 pb-16 sm:px-8 lg:pb-18">
-        <span class="mr-1 text-[15px] font-bold text-muted">Goes live on</span>
+        <span class="mr-1 text-[15px] font-bold text-muted">{t("Goes live on")}</span>
         <For each={platforms}>
           {(p) => (
             <span class="inline-flex h-10 items-center gap-2 rounded-full border-[1.5px] border-line bg-card pr-4 pl-2.5 text-[15px] font-bold text-ink-3">
@@ -240,7 +245,9 @@ export default function Hero() {
             </span>
           )}
         </For>
-        <span class="ml-1 text-[15px] text-muted">and anything that speaks RTMP or SRT.</span>
+        <span class="ml-1 text-[15px] text-muted">
+          {t("and anything that speaks RTMP or SRT.")}
+        </span>
       </div>
     </section>
   );

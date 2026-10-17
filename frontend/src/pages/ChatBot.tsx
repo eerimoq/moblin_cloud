@@ -6,6 +6,7 @@ import Mascot from "../components/Mascot";
 import Nav from "../components/Nav";
 import { commandGroups } from "../data/chatBot";
 import { links } from "../data/links";
+import { t, tRich } from "../i18n";
 
 /** A command exactly as typed in chat, with a button that copies it to the clipboard. */
 function Command(props: { text: string }) {
@@ -26,19 +27,24 @@ export default function ChatBot() {
           <div class="flex items-start justify-between gap-6">
             <div class="flex max-w-[640px] flex-col gap-4">
               <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-                Chat bot
+                {t("Chat bot")}
               </span>
               <h1 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-6xl">
-                Let chat run the show.
+                {t("Let chat run the show.")}
               </h1>
               <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-                Viewers type commands in Twitch, YouTube or Kick chat and Moblin does the rest. Turn
-                the bot on under Settings, Chat, Bot, and pick who may use each command: moderators,
-                subscribers or everyone.
+                {t(
+                  "Viewers type commands in Twitch, YouTube or Kick chat and Moblin does the rest. " +
+                    "Turn the bot on under Settings, Chat, Bot, and pick who may use each command: " +
+                    "moderators, subscribers or everyone.",
+                )}
               </p>
               <p class="text-[15px] text-muted">
-                Replace placeholders like <code class="text-ink-2">&lt;name&gt;</code> with your own
-                text. Parts in square brackets are optional.
+                {tRich(
+                  "Replace placeholders like {placeholder} with your own text. Parts in square " +
+                    "brackets are optional.",
+                  { placeholder: <code class="text-ink-2">&lt;name&gt;</code> },
+                )}
               </p>
             </div>
             <Mascot
@@ -57,8 +63,8 @@ export default function ChatBot() {
                   <table class="w-full border-collapse text-base">
                     <thead class="sr-only">
                       <tr>
-                        <th scope="col">Command</th>
-                        <th scope="col">Description</th>
+                        <th scope="col">{t("Command")}</th>
+                        <th scope="col">{t("Description")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -76,14 +82,16 @@ export default function ChatBot() {
                       </For>
                     </tbody>
                   </table>
-                  <Show when={group.more}>
-                    {(more) => (
+                  <Show when={group.pageHref}>
+                    {(href) => (
                       <p class="border-t border-line pt-4 text-ink-2">
-                        {more().text}{" "}
-                        <a href={asset(more().href)} class="text-leaf hover:text-leaf-bright">
-                          {more().link}
-                        </a>
-                        .
+                        {tRich("Viewers can also add songs without chat, on your own {link}.", {
+                          link: (
+                            <a href={asset(href())} class="text-leaf hover:text-leaf-bright">
+                              {t("page")}
+                            </a>
+                          ),
+                        })}
                       </p>
                     )}
                   </Show>
@@ -95,25 +103,28 @@ export default function ChatBot() {
 
         <section class="mx-auto max-w-[1120px] px-5 py-12 sm:px-8">
           <p class="text-[15px] text-muted">
-            Kept in sync with the{" "}
-            <a
-              href={links.chatBotHelp}
-              target="_blank"
-              rel="noopener"
-              class="text-leaf hover:text-leaf-bright"
-            >
-              command list on GitHub
-            </a>
-            . Something missing? Ask on{" "}
-            <a
-              href={links.discord}
-              target="_blank"
-              rel="noopener"
-              class="text-leaf hover:text-leaf-bright"
-            >
-              Discord
-            </a>
-            .
+            {tRich("Kept in sync with the {list}. Something missing? Ask on {discord}.", {
+              list: (
+                <a
+                  href={links.chatBotHelp}
+                  target="_blank"
+                  rel="noopener"
+                  class="text-leaf hover:text-leaf-bright"
+                >
+                  {t("command list on GitHub")}
+                </a>
+              ),
+              discord: (
+                <a
+                  href={links.discord}
+                  target="_blank"
+                  rel="noopener"
+                  class="text-leaf hover:text-leaf-bright"
+                >
+                  Discord
+                </a>
+              ),
+            })}
           </p>
         </section>
       </main>

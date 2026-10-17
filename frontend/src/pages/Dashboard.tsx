@@ -44,6 +44,16 @@ import {
   type Spin,
   type Tips,
 } from "../data/remoteControl";
+import { t, tRich } from "../i18n";
+
+const accentNames: Record<string, string> = {
+  green: t("Green"),
+  purple: t("Purple"),
+  blue: t("Blue"),
+  pink: t("Pink"),
+  orange: t("Orange"),
+  red: t("Red"),
+};
 
 const pageUrl = (account: Account) =>
   new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
@@ -51,19 +61,19 @@ const pageUrl = (account: Account) =>
 function TwitchSignIn(props: { failed: boolean }) {
   return (
     <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">Sign in</h2>
-      <p class="text-ink-2">Sign in with Twitch to create or manage your tip page.</p>
+      <h2 class="text-[23px] font-semibold">{t("Sign in")}</h2>
+      <p class="text-ink-2">{t("Sign in with Twitch to create or manage your tip page.")}</p>
       <div>
         <a
           href={signInUrl}
           class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-twitch px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
         >
           <Icon name="twitch" class="size-5" />
-          Sign in with Twitch
+          {t("Sign in with Twitch")}
         </a>
       </div>
       <Show when={props.failed}>
-        <Notice status>Signing in did not work. Try again.</Notice>
+        <Notice status>{t("Signing in did not work. Try again.")}</Notice>
       </Show>
     </div>
   );
@@ -77,34 +87,41 @@ function paymentErrorText(error: unknown, invalid: string) {
       case 400:
         return invalid;
       case 409:
-        return "Connect your PayPal account first.";
+        return t("Connect your PayPal account first.");
       case 502:
-        return "PayPal could not be reached. Try again.";
+        return t("PayPal could not be reached. Try again.");
       case 503:
-        return "Payments are unavailable right now.";
+        return t("Payments are unavailable right now.");
     }
   }
-  return "Something went wrong. Try again.";
+  return t("Something went wrong. Try again.");
 }
 
 function payPalErrorText(error: unknown) {
   if (error instanceof BackendError) {
     switch (error.status) {
       case 403:
-        return "To connect PayPal, sign in again first.";
+        return t("To connect PayPal, sign in again first.");
       case 404:
-        return "PayPal has not connected your account yet. Finish signing up on PayPal, then check again.";
+        return t(
+          "PayPal has not connected your account yet. Finish signing up on PayPal, then check again.",
+        );
       case 409:
-        return "You did not give Moblin permission to take payments for you on PayPal. Connect PayPal again and accept the permissions.";
+        return t(
+          "You did not give Moblin permission to take payments for you on PayPal. " +
+            "Connect PayPal again and accept the permissions.",
+        );
       case 422:
-        return "PayPal can't send payments to your account yet. Confirm your email address on PayPal, then check again.";
+        return t(
+          "PayPal can't send payments to your account yet. Confirm your email address on PayPal, then check again.",
+        );
       case 502:
-        return "PayPal could not be reached. Try again.";
+        return t("PayPal could not be reached. Try again.");
       case 503:
-        return "Payments are unavailable right now.";
+        return t("Payments are unavailable right now.");
     }
   }
-  return "Something went wrong. Try again.";
+  return t("Something went wrong. Try again.");
 }
 
 function CurrencySettings(props: {
@@ -128,7 +145,7 @@ function CurrencySettings(props: {
       await props.onSave({ currency: currency() });
       flashSaved();
     } catch (error) {
-      setError(paymentErrorText(error, "Pick one of the currencies."));
+      setError(paymentErrorText(error, t("Pick one of the currencies.")));
     } finally {
       setSaving(false);
     }
@@ -137,7 +154,7 @@ function CurrencySettings(props: {
   return (
     <form class="flex flex-col gap-4" onSubmit={submit}>
       <label class="flex w-32 flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">Currency</span>
+        <span class="text-[15px] font-semibold text-ink-2">{t("Currency")}</span>
         <select
           value={currency()}
           onChange={(event) => setCurrency(event.currentTarget.value)}
@@ -147,7 +164,7 @@ function CurrencySettings(props: {
         </select>
       </label>
       <p class="text-[15px] text-muted">
-        Viewers pay all tips, song requests and wheel spins in this currency.
+        {t("Viewers pay all tips, song requests and wheel spins in this currency.")}
       </p>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
@@ -208,7 +225,9 @@ function PayPalAccount(props: {
   const disconnect = async () => {
     if (
       !confirm(
-        "Viewers can't send you tips, with or without a song or wheel spin, until you connect a PayPal account again.",
+        t(
+          "Viewers can't send you tips, with or without a song or wheel spin, until you connect a PayPal account again.",
+        ),
       )
     ) {
       return;
@@ -241,21 +260,28 @@ function PayPalAccount(props: {
       <h2 class="text-[23px] font-semibold">PayPal</h2>
       <Show when={props.settings.paypalSandbox}>
         <Notice status>
-          PayPal is in sandbox mode. Payments are for testing only and no real money is moved.
+          {t(
+            "PayPal is in sandbox mode. Payments are for testing only and no real money is moved.",
+          )}
         </Notice>
       </Show>
       <Show
         when={props.settings.merchantId}
         fallback={
           <p class="text-ink-2">
-            Connect your PayPal account to let viewers send you tips, on their own or with a song
-            request or wheel spin. You sign in or sign up on PayPal with a personal or business
-            account (in some countries PayPal asks for a business account). By connecting PayPal you
-            agree to the{" "}
-            <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
-              terms
-            </a>
-            .
+            {tRich(
+              "Connect your PayPal account to let viewers send you tips, on their own or with a song " +
+                "request or wheel spin. You sign in or sign up on PayPal with a personal or business " +
+                "account (in some countries PayPal asks for a business account). By connecting PayPal you " +
+                "agree to the {terms}.",
+              {
+                terms: (
+                  <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
+                    {t("terms")}
+                  </a>
+                ),
+              },
+            )}
           </p>
         }
       >
@@ -263,30 +289,33 @@ function PayPalAccount(props: {
           <p class="flex items-center gap-2.5 text-ink-2">
             <span class="size-2.5 shrink-0 rounded-full bg-leaf" />
             <span>
-              Connected to the PayPal account with merchant ID{" "}
-              <span class="font-mono">{merchantId()}</span>.
+              {tRich("Connected to the PayPal account with merchant ID {merchantId}.", {
+                merchantId: <span class="font-mono">{merchantId()}</span>,
+              })}
             </span>
           </p>
         )}
       </Show>
       <Show when={props.settings.paypalPending}>
-        <p class="text-ink-2">Finish connecting your account on PayPal, then reload this page.</p>
+        <p class="text-ink-2">
+          {t("Finish connecting your account on PayPal, then reload this page.")}
+        </p>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <Show when={!props.settings.merchantId}>
           <button type="button" class={buttonClass} disabled={working()} onClick={connect}>
-            Connect PayPal
+            {t("Connect PayPal")}
           </button>
         </Show>
         <Show when={props.settings.merchantId || props.settings.paypalPending}>
           <button type="button" class={ghostButtonClass} disabled={working()} onClick={disconnect}>
-            Disconnect PayPal
+            {t("Disconnect PayPal")}
           </button>
         </Show>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
-            Sign in again
+            {t("Sign in again")}
           </a>
         </Show>
       </div>
@@ -332,7 +361,7 @@ function YourPage(props: {
       await props.onSave({ title: title(), message: message(), accent: accent() });
       flashSaved();
     } catch {
-      setError("Something went wrong. Try again.");
+      setError(t("Something went wrong. Try again."));
     } finally {
       setSaving(false);
     }
@@ -340,12 +369,14 @@ function YourPage(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Your tip page</h2>
+      <h2 class="text-[23px] font-semibold">{t("Your tip page")}</h2>
       <p class="text-ink-2">
-        Share it with your viewers so they can send you tips, request songs and spin your wheel.
+        {t(
+          "Share it with your viewers so they can send you tips, request songs and spin your wheel.",
+        )}
       </p>
       <label class="flex flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">Headline (optional)</span>
+        <span class="text-[15px] font-semibold text-ink-2">{t("Headline (optional)")}</span>
         <input
           type="text"
           maxLength={60}
@@ -356,25 +387,27 @@ function YourPage(props: {
         />
       </label>
       <label class="flex flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">Message to your viewers (optional)</span>
+        <span class="text-[15px] font-semibold text-ink-2">
+          {t("Message to your viewers (optional)")}
+        </span>
         <textarea
           maxLength={300}
           rows={3}
           value={message()}
           onInput={(event) => setMessage(event.currentTarget.value)}
-          placeholder="Thanks for hanging out! Say hi in chat!"
+          placeholder={t("Thanks for hanging out! Say hi in chat!")}
           class={`${inputClass} h-auto resize-y py-3`}
         />
       </label>
       <fieldset class="flex flex-col gap-2">
-        <legend class="mb-2 text-[15px] font-semibold text-ink-2">Color</legend>
+        <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Color")}</legend>
         <div class="flex flex-wrap gap-3">
           <For each={accents}>
             {(name) => (
               <label
                 data-accent={name}
                 class="relative flex size-11 cursor-pointer items-center justify-center rounded-full bg-moss text-white has-[:checked]:ring-3 has-[:checked]:ring-ink has-[:checked]:ring-offset-3 has-[:checked]:ring-offset-card has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-6 has-[:focus-visible]:outline-ink"
-                title={name[0].toUpperCase() + name.slice(1)}
+                title={accentNames[name]}
               >
                 <input
                   type="radio"
@@ -384,7 +417,7 @@ function YourPage(props: {
                   onChange={() => setAccent(name)}
                   class="sr-only"
                 />
-                <span class="sr-only">{name}</span>
+                <span class="sr-only">{accentNames[name]}</span>
                 <Show when={accent() === name}>
                   <Icon name="check" class="size-5" />
                 </Show>
@@ -396,11 +429,11 @@ function YourPage(props: {
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
         <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
-          Open tip page
+          {t("Open tip page")}
         </a>
         <button type="button" class={ghostButtonClass} onClick={copyLink}>
           <Icon name={copied() ? "check" : "copy"} class="size-4" />
-          {copied() ? "Copied" : "Copy link"}
+          {copied() ? t("Copied") : t("Copy link")}
         </button>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
@@ -437,7 +470,7 @@ function SongSettings(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(paymentErrorText(error, "Enter a price from 0.50 to 1000."));
+      setError(paymentErrorText(error, t("Enter a price from 0.50 to 1000.")));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -446,13 +479,17 @@ function SongSettings(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Song requests</h2>
+      <h2 class="text-[23px] font-semibold">{t("Song requests")}</h2>
       <p class="text-ink-2">
-        Let viewers add songs from Apple Music to the queue of Moblin's music player with a tip.
+        {t(
+          "Let viewers add songs from Apple Music to the queue of Moblin's music player with a tip.",
+        )}
       </p>
       <p class="text-ink-2">
-        Moblin plays the songs with Apple Music, so you need an Apple Music subscription and must
-        allow Moblin to use Apple Music. Viewers do not need an Apple Music subscription.
+        {t(
+          "Moblin plays the songs with Apple Music, so you need an Apple Music subscription and must " +
+            "allow Moblin to use Apple Music. Viewers do not need an Apple Music subscription.",
+        )}
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -461,20 +498,22 @@ function SongSettings(props: {
           onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        Viewers can request songs
+        {t("Viewers can request songs")}
       </label>
       <Show when={enabled()}>
         <label class="flex flex-col gap-2">
           <span class="text-[15px] font-semibold text-ink-2">
-            Tip per 5 minutes of song ({props.currency})
+            {t("Tip per 5 minutes of song ({currency})", { currency: props.currency })}
           </span>
           <span class="flex items-center gap-3">
             <MoneyInput value={price()} onValue={setPrice} required />
-            <span class="text-ink-2">per started 5 minutes</span>
+            <span class="text-ink-2">{t("per started 5 minutes")}</span>
           </span>
           <span class="text-[15px] text-muted">
-            A song up to 5 minutes long costs this once, a song of 5 to 10 minutes twice, and so on.
-            Songs always play in full.
+            {t(
+              "A song up to 5 minutes long costs this once, a song of 5 to 10 minutes twice, and so on. " +
+                "Songs always play in full.",
+            )}
           </span>
         </label>
       </Show>
@@ -483,7 +522,7 @@ function SongSettings(props: {
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
-            Sign in again
+            {t("Sign in again")}
           </a>
         </Show>
       </div>
@@ -542,7 +581,7 @@ function TipSettings(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(paymentErrorText(error, "Enter amounts from 0.50 to 1000."));
+      setError(paymentErrorText(error, t("Enter amounts from 0.50 to 1000.")));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -551,11 +590,13 @@ function TipSettings(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Tips</h2>
+      <h2 class="text-[23px] font-semibold">{t("Tips")}</h2>
       <p class="text-ink-2">
-        Let viewers send you just a tip with PayPal. Viewers pick one of your amounts or enter their
-        own, and can add a message. Tips show up in Moblin's chat, also those sent while Moblin is
-        not connected.
+        {t(
+          "Let viewers send you just a tip with PayPal. Viewers pick one of your amounts or enter their " +
+            "own, and can add a message. Tips show up in Moblin's chat, also those sent while Moblin is " +
+            "not connected.",
+        )}
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -564,12 +605,12 @@ function TipSettings(props: {
           onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        Viewers can send tips
+        {t("Viewers can send tips")}
       </label>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">
-            Suggested amounts ({props.currency})
+            {t("Suggested amounts ({currency})", { currency: props.currency })}
           </legend>
           <div class="flex flex-col items-start gap-3">
             <Index each={amounts()}>
@@ -581,13 +622,13 @@ function TipSettings(props: {
                       setAmounts(amounts().map((old, at) => (at === index ? value : old)))
                     }
                     required
-                    label={`Amount ${index + 1}`}
+                    label={t("Amount {number}", { number: index + 1 })}
                   />
                   <Show when={amounts().length > 1}>
                     <button
                       type="button"
                       class="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ghost hover:text-ink"
-                      aria-label={`Remove amount ${index + 1}`}
+                      aria-label={t("Remove amount {number}", { number: index + 1 })}
                       onClick={() => setAmounts(amounts().filter((_, at) => at !== index))}
                     >
                       <Icon name="close" class="size-5" />
@@ -604,7 +645,7 @@ function TipSettings(props: {
               disabled={amounts().length >= 5}
               onClick={() => setAmounts([...amounts(), ""])}
             >
-              Add amount
+              {t("Add amount")}
             </button>
           </div>
         </fieldset>
@@ -614,7 +655,7 @@ function TipSettings(props: {
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
-            Sign in again
+            {t("Sign in again")}
           </a>
         </Show>
       </div>
@@ -669,7 +710,7 @@ function SpinSettings(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(paymentErrorText(error, "Enter 1 to 10 spins for 0.50 to 1000 per price."));
+      setError(paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 1000 per price.")));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -678,11 +719,13 @@ function SpinSettings(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Wheel of luck</h2>
+      <h2 class="text-[23px] font-semibold">{t("Wheel of luck")}</h2>
       <p class="text-ink-2">
-        Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin
-        when they buy more. Moblin spins the wheel you pick in its Moblin Cloud settings, showing
-        the viewer's name and message.
+        {t(
+          "Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin " +
+            "when they buy more. Moblin spins the wheel you pick in its Moblin Cloud settings, showing " +
+            "the viewer's name and message.",
+        )}
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -691,11 +734,13 @@ function SpinSettings(props: {
           onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        Viewers tip to spin the wheel
+        {t("Viewers tip to spin the wheel")}
       </label>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
-          <legend class="mb-2 text-[15px] font-semibold text-ink-2">Tips ({props.currency})</legend>
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">
+            {t("Tips ({currency})", { currency: props.currency })}
+          </legend>
           <div class="flex flex-col gap-3">
             <Index each={options()}>
               {(option, index) => (
@@ -705,23 +750,23 @@ function SpinSettings(props: {
                     required
                     pattern="\d+"
                     inputmode="numeric"
-                    aria-label={`Spins ${index + 1}`}
+                    aria-label={t("Spins {number}", { number: index + 1 })}
                     value={option().spins}
                     onInput={(event) => changeOption(index, { spins: event.currentTarget.value })}
                     class={`${inputClass} max-w-20`}
                   />
-                  <span class="shrink-0">spins for</span>
+                  <span class="shrink-0">{t("spins for")}</span>
                   <MoneyInput
                     value={option().price}
                     onValue={(price) => changeOption(index, { price })}
                     required
-                    label={`Tip ${index + 1}`}
+                    label={t("Tip {number}", { number: index + 1 })}
                   />
                   <Show when={options().length > 1}>
                     <button
                       type="button"
                       class="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ghost hover:text-ink"
-                      aria-label={`Remove option ${index + 1}`}
+                      aria-label={t("Remove option {number}", { number: index + 1 })}
                       onClick={() => setOptions(options().filter((_, at) => at !== index))}
                     >
                       <Icon name="close" class="size-5" />
@@ -738,7 +783,7 @@ function SpinSettings(props: {
               disabled={options().length >= 5}
               onClick={() => setOptions([...options(), { spins: "", price: "" }])}
             >
-              Add option
+              {t("Add option")}
             </button>
           </div>
         </fieldset>
@@ -748,7 +793,7 @@ function SpinSettings(props: {
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
-            Sign in again
+            {t("Sign in again")}
           </a>
         </Show>
       </div>
@@ -771,7 +816,9 @@ function Admin(props: {
   const newKey = async () => {
     if (
       !confirm(
-        "Moblin disconnects and the current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.",
+        t(
+          "Moblin disconnects and the current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.",
+        ),
       )
     ) {
       return;
@@ -830,28 +877,28 @@ function Admin(props: {
   }[] = [
     {
       id: "page",
-      label: "Tip page",
+      label: t("Tip page"),
       icon: "tip-jar",
       shown: () => true,
       status: () => null,
     },
     {
       id: "tips",
-      label: "Tips",
+      label: t("Tips"),
       icon: "heart",
       shown: () => settings().paypal || settings().tips !== null,
       status: () => onOff(settings().tips !== null),
     },
     {
       id: "wheel",
-      label: "Wheel of luck",
+      label: t("Wheel of luck"),
       icon: "wheel",
       shown: () => settings().paypal || settings().spin !== null,
       status: () => onOff(settings().spin !== null),
     },
     {
       id: "songs",
-      label: "Song requests",
+      label: t("Song requests"),
       icon: "music",
       shown: () => settings().paypal || settings().paywall !== null,
       status: () => onOff(settings().paywall !== null),
@@ -887,7 +934,7 @@ function Admin(props: {
   return (
     <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
       <nav
-        aria-label="Dashboard"
+        aria-label={t("Dashboard")}
         class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:-mx-8 sm:px-8 lg:sticky lg:top-24 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0"
       >
         <For each={visible()}>
@@ -926,7 +973,7 @@ function Admin(props: {
         <div hidden={active() !== "tips"}>
           <Show
             when={paid(settings().tips !== null)}
-            fallback={<NeedsPayPal title="Tips" onConnect={() => select("paypal")} />}
+            fallback={<NeedsPayPal title={t("Tips")} onConnect={() => select("paypal")} />}
           >
             <TipSettings
               tips={settings().tips}
@@ -939,7 +986,7 @@ function Admin(props: {
         <div hidden={active() !== "wheel"}>
           <Show
             when={paid(settings().spin !== null)}
-            fallback={<NeedsPayPal title="Wheel of luck" onConnect={() => select("paypal")} />}
+            fallback={<NeedsPayPal title={t("Wheel of luck")} onConnect={() => select("paypal")} />}
           >
             <SpinSettings
               spin={settings().spin}
@@ -952,7 +999,7 @@ function Admin(props: {
         <div hidden={active() !== "songs"}>
           <Show
             when={paid(settings().paywall !== null)}
-            fallback={<NeedsPayPal title="Song requests" onConnect={() => select("paypal")} />}
+            fallback={<NeedsPayPal title={t("Song requests")} onConnect={() => select("paypal")} />}
           >
             <SongSettings
               paywall={settings().paywall}
@@ -988,20 +1035,20 @@ function Admin(props: {
   );
 }
 
-const onOff = (on: boolean) => ({ on, text: on ? "On" : "Off" });
+const onOff = (on: boolean) => ({ on, text: on ? t("On") : t("Off") });
 
-const connectedOrNot = (on: boolean) => ({ on, text: on ? "Connected" : "Not connected" });
+const connectedOrNot = (on: boolean) => ({ on, text: on ? t("Connected") : t("Not connected") });
 
 function NeedsPayPal(props: { title: string; onConnect: () => void }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{props.title}</h2>
       <p class="text-ink-2">
-        Connect your PayPal account first, so the money goes straight to you.
+        {t("Connect your PayPal account first, so the money goes straight to you.")}
       </p>
       <div>
         <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
-          Go to PayPal
+          {t("Go to PayPal")}
         </button>
       </div>
     </div>
@@ -1017,19 +1064,19 @@ function MoblinSettings(props: {
 }) {
   return (
     <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">Configure Moblin</h2>
+      <h2 class="text-[23px] font-semibold">{t("Configure Moblin")}</h2>
       <p class="flex items-center gap-2.5 text-ink-2">
         <span
           class={`size-2.5 shrink-0 rounded-full ${props.connected ? "bg-leaf" : "bg-muted"}`}
         />
-        {props.connected ? "Moblin is connected." : "Moblin is not connected."}
+        {props.connected ? t("Moblin is connected.") : t("Moblin is not connected.")}
       </p>
       <p class="text-ink-2">
-        In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.
+        {t("In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.")}
       </p>
-      <Value label="Moblin Cloud key" text={props.moblinCloudKey} secret />
+      <Value label={t("Moblin Cloud key")} text={props.moblinCloudKey} secret />
       <Notice>
-        Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.
+        {t("Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.")}
       </Notice>
       <div class="flex flex-wrap items-center gap-4">
         <button
@@ -1038,10 +1085,10 @@ function MoblinSettings(props: {
           disabled={props.busy}
           onClick={() => props.onNewKey()}
         >
-          Reset Moblin Cloud key
+          {t("Reset Moblin Cloud key")}
         </button>
         <Show when={props.newKeyFailed}>
-          <Notice status>Something went wrong. Try again.</Notice>
+          <Notice status>{t("Something went wrong. Try again.")}</Notice>
         </Show>
       </div>
     </div>
@@ -1087,9 +1134,9 @@ function SignedIn(props: {
       fallback={
         <Show when={failed()} fallback={<Spinner />}>
           <div class="flex flex-wrap items-center gap-4">
-            <Notice status>Could not create your tip page.</Notice>
+            <Notice status>{t("Could not create your tip page.")}</Notice>
             <button type="button" class={ghostButtonClass} onClick={create}>
-              Try again
+              {t("Try again")}
             </button>
           </div>
         </Show>
@@ -1140,11 +1187,13 @@ export default function Dashboard() {
 
   const terms = () => (
     <p class="text-[15px] text-muted">
-      Using Moblin Cloud and your tip page means you agree to the{" "}
-      <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
-        terms
-      </a>
-      .
+      {tRich("Using Moblin Cloud and your tip page means you agree to the {terms}.", {
+        terms: (
+          <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
+            {t("terms")}
+          </a>
+        ),
+      })}
     </p>
   );
 
@@ -1153,10 +1202,12 @@ export default function Dashboard() {
       <Show
         when={session()}
         fallback={
-          <Hero title="Let viewers tip you.">
+          <Hero title={t("Let viewers tip you.")}>
             <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-              Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its
-              usual fees.
+              {t(
+                "Tips go straight to your PayPal account. Moblin takes nothing, PayPal charges its " +
+                  "usual fees.",
+              )}
             </p>
             {terms()}
           </Hero>
@@ -1169,7 +1220,7 @@ export default function Dashboard() {
                 Moblin Cloud
               </span>
               <h1 class="text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
-                Hi, {current().account.name}
+                {t("Hi, {name}", { name: current().account.name })}
               </h1>
               {terms()}
             </div>
@@ -1183,7 +1234,7 @@ export default function Dashboard() {
                 signOut();
               }}
             >
-              Sign out everywhere
+              {t("Sign out everywhere")}
             </button>
           </section>
         )}

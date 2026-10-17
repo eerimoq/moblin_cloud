@@ -6,6 +6,7 @@ import { createTwitchLive } from "../twitch";
 import Button from "./Button";
 import Icon from "./Icon";
 import Mascot from "./Mascot";
+import { t } from "../i18n";
 
 export default function Support() {
   const live = createTwitchLive();
@@ -14,9 +15,9 @@ export default function Support() {
       <div class="mx-auto flex max-w-[1120px] flex-col gap-10 px-5 sm:px-8">
         <div class="flex max-w-[640px] flex-col gap-2.5">
           <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-            Support Moblin
+            {t("Support Moblin")}
           </span>
-          <h2 class="text-4xl font-bold sm:text-[46px]">Like Moblin? Help keep it free.</h2>
+          <h2 class="text-4xl font-bold sm:text-[46px]">{t("Like Moblin? Help keep it free.")}</h2>
         </div>
         <div class="relative flex flex-col gap-5 overflow-hidden rounded-3xl border-[1.5px] border-line bg-card p-8 sm:p-12 md:flex-row md:items-center md:justify-between md:gap-10 lg:px-16">
           <Mascot
@@ -25,15 +26,19 @@ export default function Support() {
           />
           <div class="flex max-w-[560px] flex-col gap-4">
             <p class="text-lg text-ink-2">
-              Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop
-              by the stream and say hi.
+              {t(
+                "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just " +
+                  "drop by the stream and say hi.",
+              )}
             </p>
             <div class="flex flex-col gap-4">
               <div class="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
                 <div class="relative shrink-0 overflow-hidden rounded-xl border-[1.5px] border-line">
                   <img
                     src={asset("screenshots/icon-shop.webp")}
-                    alt="Top right corner of Moblin, with the app icon button next to the settings gear"
+                    alt={t(
+                      "Top right corner of Moblin, with the app icon button next to the settings gear",
+                    )}
                     class="h-36 w-auto sm:h-40"
                     width="426"
                     height="225"
@@ -56,9 +61,11 @@ export default function Support() {
                   />
                 </div>
                 <p class="text-[15px] text-ink-2">
-                  <strong class="font-bold text-ink">Buy app icons.</strong> Tap the Moblin icon in
-                  the top right corner of the app to open the store. Every icon helps keep Moblin
-                  free.
+                  <strong class="font-bold text-ink">{t("Buy app icons.")}</strong>{" "}
+                  {t(
+                    "Tap the Moblin icon in the top right corner of the app to open the store. " +
+                      "Every icon helps keep Moblin free.",
+                  )}
                 </p>
               </div>
               <div class="flex flex-wrap items-end gap-2.5">
@@ -71,7 +78,7 @@ export default function Support() {
           <div class="flex flex-wrap gap-3 md:shrink-0 md:flex-col md:items-stretch">
             <Button href={links.paypal}>
               <Icon name="heart" class="size-[22px]" />
-              Tip on PayPal
+              {t("Tip on PayPal")}
             </Button>
             <Button href={links.sponsor} variant="ghost">
               <Icon name="github" class="size-5" />
@@ -83,7 +90,7 @@ export default function Support() {
                 fallback={
                   <>
                     <Icon name="twitch" class="size-5" />
-                    Watch Erik on Twitch
+                    {t("Watch Erik on Twitch")}
                   </>
                 }
               >
@@ -91,7 +98,7 @@ export default function Support() {
                   <span class="absolute inline-flex size-full animate-ping rounded-full bg-live opacity-75 motion-reduce:animate-none" />
                   <span class="relative inline-flex size-3 rounded-full bg-live" />
                 </span>
-                Erik is live on Twitch
+                {t("Erik is live on Twitch")}
               </Show>
             </Button>
           </div>

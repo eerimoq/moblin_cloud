@@ -1,4 +1,5 @@
 import { backendUrl } from "./backend";
+import { t } from "../i18n";
 
 export type Song = {
   id: string;
@@ -62,7 +63,7 @@ export type Settings = Page & {
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];
 
-export const defaultTitle = "Thanks for watching!";
+export const defaultTitle = t("Thanks for watching!");
 
 export type Price = {
   price: number;

@@ -1,5 +1,6 @@
 import { createFlash } from "../flash";
 import Icon from "./Icon";
+import { t } from "../i18n";
 
 function copyWithExecCommand(text: string): boolean {
   const textarea = document.createElement("textarea");
@@ -45,8 +46,8 @@ export default function CopyButton(props: { text: string; label?: string }) {
       class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors ${
         copied() ? "text-leaf" : "text-muted hover:bg-ghost hover:text-ink"
       }`}
-      aria-label={copied() ? "Copied" : `Copy ${props.label ?? props.text}`}
-      title={copied() ? "Copied" : "Copy"}
+      aria-label={copied() ? t("Copied") : t("Copy {label}", { label: props.label ?? props.text })}
+      title={copied() ? t("Copied") : t("Copy")}
       onClick={copy}
     >
       <Icon name={copied() ? "check" : "copy"} class="size-4" />

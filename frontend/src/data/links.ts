@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 export const links = {
   api: "https://api.moblin.app",
   appStore: "https://apps.apple.com/app/id6466745933",
@@ -31,12 +33,12 @@ export const links = {
 
 /** Section links, anchored to the home page so they work from every page. */
 export const navItems = [
-  { label: "Get started", href: "/#get-started" },
-  { label: "Features", href: "/#features" },
-  { label: "Streamers", href: "/#streamers" },
-  { label: "Support", href: "/#support" },
-  { label: "Ecosystem", href: "/#ecosystem" },
-  { label: "Community", href: "/#community" },
+  { label: t("Get started"), href: "/#get-started" },
+  { label: t("Features"), href: "/#features" },
+  { label: t("Streamers"), href: "/#streamers" },
+  { label: t("Support"), href: "/#support" },
+  { label: t("Ecosystem"), href: "/#ecosystem" },
+  { label: t("Community"), href: "/#community" },
 ] as const;
 
 /** Pages other than the home page, relative to the site root. */

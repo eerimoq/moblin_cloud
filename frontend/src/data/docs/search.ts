@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { guides } from "./guides";
 import { settings } from "./settings";
 
@@ -49,7 +50,7 @@ function buildIndex(): SearchEntry[] {
   const entries: SearchEntry[] = [];
   for (const guide of guides) {
     entries.push(
-      entry("guide", guide.title, ["Guides"], guide.summary, { kind: "guide", id: guide.id }, 6),
+      entry("guide", guide.title, [t("Guides")], guide.summary, { kind: "guide", id: guide.id }, 6),
     );
     let heading = "";
     guide.blocks.forEach((block, index) => {
@@ -61,8 +62,8 @@ function buildIndex(): SearchEntry[] {
       entries.push(
         entry(
           "guide",
-          heading ? `${guide.title}: ${heading}` : guide.title,
-          ["Guides", guide.title],
+          heading ? t("{guide}: {heading}", { guide: guide.title, heading }) : guide.title,
+          [t("Guides"), guide.title],
           text,
           { kind: "guide", id: guide.id, anchor: `block-${index}` },
           0,
@@ -109,6 +110,8 @@ function buildIndex(): SearchEntry[] {
 
 let index: SearchEntry[] | undefined;
 
+const unspaced = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export function queryWords(query: string): string[] {
@@ -140,7 +143,7 @@ export function search(query: string, limit = 60): SearchResult[] {
         score += 3;
       } else if (starts[i].test(candidate.textKey)) {
         score += 1;
-      } else if (word.length > 3 && candidate.textKey.includes(word)) {
+      } else if ((word.length > 3 || unspaced.test(word)) && candidate.textKey.includes(word)) {
         score += 0.5;
       } else {
         matched = false;

@@ -86,6 +86,11 @@ docs-generate moblin="../moblin":
 	python3 scripts/generate_docs.py {{moblin}} frontend/src/data/docs/settings.json
 	cd frontend && oxfmt src/data/docs/settings.json
 
+# Translates new strings of the website to all languages with Claude.
+machine-translate:
+	python3 scripts/translate.py
+	cd frontend && oxfmt src/locales
+
 # Renders every trading card as a 300 dpi PNG with bleed, sized for poker cards at makeplayingcards.com.
 cards-print out="cards-print":
 	cd frontend && npm run build

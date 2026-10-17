@@ -1,15 +1,16 @@
 import { asset } from "../asset";
 import { links, pages } from "../data/links";
+import { language, languages, setLanguage, t } from "../i18n";
 import Icon, { type IconName } from "./Icon";
 
 const footerLinks: { label: string; href: string; icon?: IconName }[] = [
-  { label: "Docs", href: asset(pages.docs) },
-  { label: "Chat bot", href: asset(pages.chatBot) },
+  { label: t("Docs"), href: asset(pages.docs) },
+  { label: t("Chat bot"), href: asset(pages.chatBot) },
   { label: "Moblin Cloud", href: asset(pages.dashboard) },
-  { label: "Trading cards", href: asset(pages.cards) },
+  { label: t("Trading cards"), href: asset(pages.cards) },
   { label: "GitHub", href: links.github, icon: "github" },
   { label: "Discord", href: links.discord, icon: "discord" },
-  { label: "Privacy policy", href: links.privacyPolicy },
+  { label: t("Privacy policy"), href: links.privacyPolicy },
 ];
 
 const isExternal = (href: string) => /^https?:/.test(href);
@@ -31,6 +32,20 @@ export default function Footer() {
             </a>
           ))}
         </nav>
+        <label class="mt-6 flex items-center gap-2 text-[15px] font-bold text-muted">
+          <Icon name="globe" class="size-4" />
+          <span class="sr-only">{t("Language")}</span>
+          <select
+            class="cursor-pointer rounded-lg border-[1.5px] border-line bg-card px-2 py-1 text-ink"
+            onChange={(event) => setLanguage(event.currentTarget.value)}
+          >
+            {languages.map((l) => (
+              <option value={l.code} selected={l.code === language}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
     </footer>
   );

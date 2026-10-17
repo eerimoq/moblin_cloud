@@ -2,9 +2,10 @@ import { For } from "solid-js";
 import { links } from "../data/links";
 import { appStoreRating, reviews } from "../data/reviews";
 import Icon from "./Icon";
+import { language, t } from "../i18n";
 
 const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  new Date(iso).toLocaleDateString(language, { month: "long", year: "numeric" });
 
 export default function Reviews() {
   return (
@@ -13,9 +14,9 @@ export default function Reviews() {
         <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between md:gap-6">
           <div class="flex max-w-[640px] flex-col gap-2.5">
             <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-              Reviews
+              {t("Reviews")}
             </span>
-            <h2 class="text-4xl font-bold sm:text-[46px]">What streamers say.</h2>
+            <h2 class="text-4xl font-bold sm:text-[46px]">{t("What streamers say.")}</h2>
           </div>
           <a
             href={links.appStore}
@@ -27,8 +28,11 @@ export default function Reviews() {
               <For each={[1, 2, 3, 4, 5]}>{() => <Icon name="star" class="size-5" />}</For>
             </span>
             <span class="text-[15px] font-bold">
-              {appStoreRating.score} out of 5 on the App Store
-              <span class="font-normal text-muted"> · {appStoreRating.count} ratings</span>
+              {t("{score} out of 5 on the App Store", { score: appStoreRating.score })}
+              <span class="font-normal text-muted">
+                {" · "}
+                {t("{count} ratings", { count: appStoreRating.count })}
+              </span>
             </span>
           </a>
         </div>

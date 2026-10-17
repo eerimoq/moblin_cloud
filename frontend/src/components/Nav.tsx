@@ -1,6 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { asset } from "../asset";
 import { links, navItems } from "../data/links";
+import { t } from "../i18n";
 import Button from "./Button";
 import Icon from "./Icon";
 
@@ -14,7 +15,7 @@ export default function Nav() {
           <img src={asset("logos/logo-default.png")} alt="" class="h-9 w-auto" />
           <span class="font-display text-2xl font-bold">Moblin</span>
         </a>
-        <nav class="hidden items-center gap-8 md:flex" aria-label="Sections">
+        <nav class="hidden items-center gap-8 md:flex" aria-label={t("Sections")}>
           <For each={navItems}>
             {(item) => (
               <a href={asset(item.href)} class="font-bold text-ink-3 hover:text-ink">
@@ -25,12 +26,12 @@ export default function Nav() {
         </nav>
         <div class="flex items-center gap-2">
           <Button href={links.appStore} size="sm">
-            Download
+            {t("Download")}
           </Button>
           <button
             type="button"
             class="flex size-11 items-center justify-center rounded-full text-ink hover:bg-ghost md:hidden"
-            aria-label={open() ? "Close menu" : "Open menu"}
+            aria-label={open() ? t("Close menu") : t("Open menu")}
             aria-expanded={open()}
             onClick={() => setOpen(!open())}
           >
@@ -39,7 +40,7 @@ export default function Nav() {
         </div>
       </div>
       <Show when={open()}>
-        <nav class="border-t border-line bg-page px-5 py-3 md:hidden" aria-label="Sections">
+        <nav class="border-t border-line bg-page px-5 py-3 md:hidden" aria-label={t("Sections")}>
           <For each={navItems}>
             {(item) => (
               <a

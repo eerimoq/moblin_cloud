@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import { asset } from "../asset";
 import type { Product } from "../data/products";
+import { fill } from "../i18n";
 import Button from "./Button";
 import Icon from "./Icon";
 
@@ -41,17 +42,14 @@ export default function ProductCard(props: { product: Product }) {
               <Show when={step.lead}>
                 <strong class="font-bold text-ink">{step.lead} </strong>
               </Show>
-              {step.text}
-              <Show when={step.code}>
-                {" "}
-                <code class="rounded-lg border border-line bg-well px-2 py-0.5 font-mono text-[13.5px] whitespace-nowrap text-ink">
-                  {step.code}
-                </code>
-              </Show>
-              <Show when={step.path}>
-                {" "}
-                <strong class="font-bold text-ink">{step.path}</strong>
-              </Show>
+              {fill(step.text, {
+                code: (
+                  <code class="rounded-lg border border-line bg-well px-2 py-0.5 font-mono text-[13.5px] whitespace-nowrap text-ink">
+                    {step.code}
+                  </code>
+                ),
+                path: <strong class="font-bold text-ink">{step.path}</strong>,
+              })}
             </li>
           )}
         </For>

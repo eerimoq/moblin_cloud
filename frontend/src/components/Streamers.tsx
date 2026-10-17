@@ -9,6 +9,7 @@ import {
   type StreamerPlatform,
 } from "../data/streamers";
 import BrandIcon from "./BrandIcon";
+import { t } from "../i18n";
 
 const platformName: Record<StreamerPlatform, string> = {
   twitch: "Twitch",
@@ -87,7 +88,10 @@ function ChannelRow(props: { channel: StreamerChannel }) {
           class="pointer-events-none absolute bottom-full left-0 z-10 mb-2 hidden w-max max-w-lg rounded-xl border-[1.5px] border-line bg-card px-4 py-2 font-bold text-ink shadow-lg group-hover:block"
         >
           {props.channel.title ??
-            `${channelLabel(props.channel)} on ${platformName[props.channel.platform]}`}
+            t("{name} on {platform}", {
+              name: channelLabel(props.channel),
+              platform: platformName[props.channel.platform],
+            })}
         </span>
         <span class="relative shrink-0">
           <Avatar channel={props.channel} />
@@ -116,7 +120,7 @@ function Snapshot(props: { streamer: Streamer }) {
       {(src) => (
         <img
           src={src()}
-          alt={`${channelLabel(props.streamer.channels[0]!)}'s stream`}
+          alt={t("{name}'s stream", { name: channelLabel(props.streamer.channels[0]!) })}
           loading="lazy"
           referrerpolicy="no-referrer"
           class="aspect-video w-full rounded-2xl bg-ghost object-contain"
@@ -159,12 +163,14 @@ export default function Streamers() {
         <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between md:gap-6">
           <div class="flex max-w-[640px] flex-col gap-2.5">
             <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-              Streamers
+              {t("Streamers")}
             </span>
-            <h2 class="text-4xl font-bold sm:text-[46px]">Who's streaming with Moblin.</h2>
+            <h2 class="text-4xl font-bold sm:text-[46px]">{t("Who's streaming with Moblin.")}</h2>
           </div>
           <p class="max-w-[440px] text-lg text-muted">
-            IRL streamers who recently went live with Moblin. Drop by their channels and say hi.
+            {t(
+              "IRL streamers who recently went live with Moblin. Drop by their channels and say hi.",
+            )}
           </p>
         </div>
         <Switch>
@@ -174,10 +180,14 @@ export default function Streamers() {
             </ul>
           </Match>
           <Match when={streamers.error}>
-            <p class="text-lg text-muted">Couldn't load streamers right now. Try again in a bit.</p>
+            <p class="text-lg text-muted">
+              {t("Couldn't load streamers right now. Try again in a bit.")}
+            </p>
           </Match>
           <Match when={streamers()?.length === 0}>
-            <p class="text-lg text-muted">Nobody has gone live with Moblin lately. Be the first!</p>
+            <p class="text-lg text-muted">
+              {t("Nobody has gone live with Moblin lately. Be the first!")}
+            </p>
           </Match>
           <Match when={streamers()}>
             <ul class="grid gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
