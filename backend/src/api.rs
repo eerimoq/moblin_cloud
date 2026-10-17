@@ -782,7 +782,7 @@ async fn handle_account_sign_out(
 fn invalid_spin() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the spin wheel needs one to four options of 1 to 10 spins for 0.50 to 1000".to_string(),
+        "the spin wheel needs one to five options of 1 to 10 spins for 0.50 to 1000".to_string(),
     )
 }
 
@@ -796,7 +796,7 @@ fn invalid_currency() -> (StatusCode, String) {
 fn invalid_tips() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "tips need one to four amounts of 0.50 to 1000".to_string(),
+        "tips need one to five amounts of 0.50 to 1000".to_string(),
     )
 }
 

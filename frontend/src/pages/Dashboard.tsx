@@ -596,7 +596,7 @@ function TipSettings(props: {
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">
             Suggested amounts ({props.currency})
           </legend>
-          <div class="flex flex-wrap gap-3">
+          <div class="flex flex-col items-start gap-3">
             <Index each={amounts()}>
               {(amount, index) => (
                 <div class="flex items-center gap-3">
@@ -622,17 +622,16 @@ function TipSettings(props: {
               )}
             </Index>
           </div>
-          <Show when={amounts().length < 4}>
-            <div class="mt-1">
-              <button
-                type="button"
-                class={ghostButtonClass}
-                onClick={() => setAmounts([...amounts(), ""])}
-              >
-                Add amount
-              </button>
-            </div>
-          </Show>
+          <div class="mt-1">
+            <button
+              type="button"
+              class={ghostButtonClass}
+              disabled={amounts().length >= 5}
+              onClick={() => setAmounts([...amounts(), ""])}
+            >
+              Add amount
+            </button>
+          </div>
         </fieldset>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
@@ -763,17 +762,16 @@ function SpinSettings(props: {
               )}
             </Index>
           </div>
-          <Show when={options().length < 4}>
-            <div class="mt-1">
-              <button
-                type="button"
-                class={ghostButtonClass}
-                onClick={() => setOptions([...options(), { spins: "", price: "" }])}
-              >
-                Add option
-              </button>
-            </div>
-          </Show>
+          <div class="mt-1">
+            <button
+              type="button"
+              class={ghostButtonClass}
+              disabled={options().length >= 5}
+              onClick={() => setOptions([...options(), { spins: "", price: "" }])}
+            >
+              Add option
+            </button>
+          </div>
         </fieldset>
       </Show>
       <div class="flex flex-wrap items-center gap-4">

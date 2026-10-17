@@ -126,7 +126,7 @@ impl Tips {
         amounts.sort_unstable();
         amounts.dedup();
         let valid =
-            (1..=4).contains(&amounts.len()) && amounts.iter().all(|amount| valid_price(*amount));
+            (1..=5).contains(&amounts.len()) && amounts.iter().all(|amount| valid_price(*amount));
         valid.then_some(Self { amounts })
     }
 }
@@ -135,7 +135,7 @@ impl Spin {
     pub fn normalize(self) -> Option<Self> {
         let mut options = self.options;
         options.sort_unstable_by_key(|option| option.spins);
-        let valid = (1..=4).contains(&options.len())
+        let valid = (1..=5).contains(&options.len())
             && options
                 .iter()
                 .all(|option| (1..=10).contains(&option.spins) && valid_price(option.price))
@@ -303,7 +303,12 @@ mod tests {
             tips(&[200, 500, 1000])
         );
         assert_eq!(pages.get("a").tips.unwrap().amounts, [200, 500, 1000]);
-        for amounts in [&[][..], &[100, 200, 300, 400, 500], &[49, 200], &[100_001]] {
+        for amounts in [
+            &[][..],
+            &[100, 200, 300, 400, 500, 600],
+            &[49, 200],
+            &[100_001],
+        ] {
             assert_eq!(
                 pages.set("a", tips(amounts)),
                 Err(SettingsError::InvalidTips)
@@ -336,7 +341,7 @@ mod tests {
             &[(11, 500)],
             &[(1, 500), (1, 800)],
             &[],
-            &[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)],
+            &[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)],
         ] {
             assert_eq!(
                 pages.set("a", spin(options)),

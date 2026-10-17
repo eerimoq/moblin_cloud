@@ -100,13 +100,13 @@ class PayPalInvalidPaidSettings(PayPalTestCase):
         dashboard = self.sign_in()
         self.context.page_with_paypal(dashboard)
         paywall = "the paywall needs a price of 0.50 to 1000"
-        tips = "tips need one to four amounts of 0.50 to 1000"
-        spin = "the spin wheel needs one to four options of 1 to 10 spins for 0.50 to 1000"
+        tips = "tips need one to five amounts of 0.50 to 1000"
+        spin = "the spin wheel needs one to five options of 1 to 10 spins for 0.50 to 1000"
         for changes, text in [
             ({"paywall": {"price": 49}}, paywall),
             ({"paywall": {"price": 100_001}}, paywall),
             ({"tips": {"amounts": []}}, tips),
-            ({"tips": {"amounts": [100, 200, 300, 400, 500]}}, tips),
+            ({"tips": {"amounts": [100, 200, 300, 400, 500, 600]}}, tips),
             ({"tips": {"amounts": [49]}}, tips),
             ({"spin": {"options": []}}, spin),
             ({"spin": {"options": [{"spins": 11, "price": 100}]}}, spin),
