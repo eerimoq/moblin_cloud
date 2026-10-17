@@ -1,8 +1,7 @@
 import { For, type JSX } from "solid-js";
 import { asset } from "../asset";
 import Footer from "../components/Footer";
-import Nav from "../components/Nav";
-import { Band, cardClass, Hero } from "../components/PageParts";
+import { Band, cardClass, CloudHeader, Hero } from "../components/PageParts";
 import { links, pages } from "../data/links";
 
 const linkClass = "text-leaf hover:text-leaf-bright";
@@ -106,7 +105,7 @@ const sections: { title: string; body: JSX.Element[] }[] = [
 export default function Terms() {
   return (
     <>
-      <Nav />
+      <CloudHeader />
       <main>
         <Hero eyebrow="Terms" title="Terms for tip pages">
           <p class="max-w-[640px] text-lg text-ink-2 text-pretty sm:text-[21px]">

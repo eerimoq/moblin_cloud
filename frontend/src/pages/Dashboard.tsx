@@ -7,6 +7,7 @@ import {
   Band,
   buttonClass,
   cardClass,
+  CloudHeader,
   ghostButtonClass,
   Hero,
   inputClass,
@@ -1468,43 +1469,37 @@ export default function Dashboard() {
 
   return (
     <>
-      <header class="sticky top-0 z-20 bg-page/92 backdrop-blur border-b border-line/40">
-        <div class="mx-auto flex h-16 max-w-[1120px] items-center justify-between gap-4 px-5 sm:px-8 lg:h-18">
-          <a href={asset(pages.dashboard)} class="flex items-center gap-3">
-            <img src={asset("logos/logo-default.png")} alt="" class="h-9 w-auto" />
-            <span class="font-display text-2xl font-bold">Moblin Cloud</span>
-          </a>
-          <Show
-            when={session()}
-            fallback={
-              <Show when={!loading()}>
-                <a
-                  href={signInUrl}
-                  class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
-                >
-                  <Icon name="twitch" class="size-5" />
-                  {t("Sign in")}
-                </a>
-              </Show>
-            }
-          >
-            {(current) => (
-              <button
-                type="button"
-                class={`${ghostButtonClass} h-11! px-5! text-base!`}
-                onClick={async () => {
-                  try {
-                    await signOutEverywhere(current().session);
-                  } catch {}
-                  signOut();
-                }}
+      <CloudHeader>
+        <Show
+          when={session()}
+          fallback={
+            <Show when={!loading()}>
+              <a
+                href={signInUrl}
+                class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
               >
-                {t("Sign out")}
-              </button>
-            )}
-          </Show>
-        </div>
-      </header>
+                <Icon name="twitch" class="size-5" />
+                {t("Sign in")}
+              </a>
+            </Show>
+          }
+        >
+          {(current) => (
+            <button
+              type="button"
+              class={`${ghostButtonClass} h-11! px-5! text-base!`}
+              onClick={async () => {
+                try {
+                  await signOutEverywhere(current().session);
+                } catch {}
+                signOut();
+              }}
+            >
+              {t("Sign out")}
+            </button>
+          )}
+        </Show>
+      </CloudHeader>
       <main>
         <Show
           when={session()}
