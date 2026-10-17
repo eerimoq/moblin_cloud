@@ -1144,16 +1144,27 @@ fn music_error(error: RequestError) -> Failure {
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QueueResponse {
+    #[serde(flatten)]
+    status: MusicStatus,
+    song_requests: bool,
+}
+
 async fn handle_queue(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
-) -> Result<Json<MusicStatus>, Failure> {
+) -> Result<Json<QueueResponse>, Failure> {
     let status = api
         .remote_control
         .music(&id, MusicCommand::Status {})
         .await
         .map_err(music_error)?;
-    Ok(Json(status))
+    Ok(Json(QueueResponse {
+        status,
+        song_requests: api.remote_control.takes_song_requests(&id),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -1190,6 +1201,12 @@ async fn requested_song(
     id: &str,
     (link, user): (String, String),
 ) -> Result<RequestedSong, Failure> {
+    if api.remote_control.is_connected(id) && !api.remote_control.takes_song_requests(id) {
+        return Err(failure(
+            StatusCode::CONFLICT,
+            "The streamer is not taking song requests right now.",
+        ));
+    }
     let song = api
         .remote_control
         .find(id, link.clone())
@@ -1359,13 +1376,24 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
             "This payment is unknown or expired, so no money was taken.",
         ))?;
     let refusal = if kind == "song" && !api.remote_control.is_connected(id) {
-        Some("The streamer went offline, so your payment was not taken.")
+        Some((
+            StatusCode::NOT_FOUND,
+            "The streamer went offline, so your payment was not taken.",
+        ))
+    } else if kind == "song" && !api.remote_control.takes_song_requests(id) {
+        Some((
+            StatusCode::CONFLICT,
+            "The streamer stopped taking song requests, so your payment was not taken.",
+        ))
     } else if kind == "spin" && api.remote_control.wheel(id).is_none() {
-        Some("The streamer's wheel is gone, so your payment was not taken.")
+        Some((
+            StatusCode::NOT_FOUND,
+            "The streamer's wheel is gone, so your payment was not taken.",
+        ))
     } else {
         None
     };
-    if let Some(refusal) = refusal {
+    if let Some((status, refusal)) = refusal {
         if let Payee::Stripe(account) = &order.payee
             && let Some(stripe) = &api.stripe
         {
@@ -1374,7 +1402,7 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
                 warn!("cancelling Stripe payment {order_id} failed: {error:#}");
             }
         }
-        return Err(failure(StatusCode::NOT_FOUND, refusal));
+        return Err(failure(status, refusal));
     }
     let provider = order.payee.provider();
     let captured = match &order.payee {
@@ -3142,8 +3170,10 @@ mod tests {
             music(json!([{"id": "q1", "title": "Song", "duration": 213, "user": "Viewer"}])),
         )
         .await;
+        let status = status.await.unwrap();
+        assert_eq!(status["songRequests"], true);
         assert_eq!(
-            status.await.unwrap()["songs"],
+            status["songs"],
             json!([{"id": "q1", "title": "Song", "artist": null, "duration": 213, "user": "Viewer"}])
         );
         socket.close(None).await.unwrap();
@@ -3168,6 +3198,72 @@ mod tests {
             response.text().await.unwrap(),
             "The streamer no longer takes song requests. Reload the page."
         );
+    }
+
+    #[tokio::test]
+    async fn song_requests_can_be_turned_off_by_the_streamer() {
+        let (address, api, _) = start_paid().await;
+        let (key, id) = paid_streamer(&address, &api).await;
+        let client = reqwest::Client::new();
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
+        let mut socket = connect(&address, &key).await;
+        assert_eq!(
+            request_song(&mut socket, &orders_url).await,
+            json!({"orderId": "ORDER1"})
+        );
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"songRequests": {"enabled": false}}}}).to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let response = client
+            .post(&orders_url)
+            .json(&json!({"song": LINK}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer is not taking song requests right now."
+        );
+        let response = client
+            .post(format!("{orders_url}/ORDER1/capture"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer stopped taking song requests, so your payment was not taken."
+        );
+        let status = tokio::spawn({
+            let music_url = format!("http://{address}/pages/{id}/songs/queue");
+            async move {
+                reqwest::get(music_url)
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()
+            }
+        });
+        let request = receive(&mut socket).await;
+        answer(
+            &mut socket,
+            &request,
+            music(json!([{"id": "q1", "title": "Song"}])),
+        )
+        .await;
+        let status = status.await.unwrap();
+        assert_eq!(status["songRequests"], false);
+        assert_eq!(status["songs"][0]["title"], "Song");
     }
 
     #[tokio::test]

@@ -71,6 +71,7 @@ enum MessageToAssistant {
 #[serde(rename_all = "camelCase")]
 enum Event {
     WheelOfLuck { wheel: Option<Wheel> },
+    SongRequests { enabled: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -195,6 +196,7 @@ struct Session {
     pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
     status: Option<(Instant, MusicStatus)>,
     wheel: Option<Wheel>,
+    song_requests: bool,
 }
 
 #[derive(Default)]
@@ -388,6 +390,16 @@ impl Streamers {
                     session.wheel = wheel.and_then(Wheel::normalize);
                 }
             }
+            Ok(MessageToAssistant::Event {
+                data: Event::SongRequests { enabled },
+            }) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                if let Some(session) = sessions.by_id.get_mut(id)
+                    && session.number == number
+                {
+                    session.song_requests = enabled;
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -409,6 +421,7 @@ impl Streamers {
                 pending: HashMap::new(),
                 status: None,
                 wheel: None,
+                song_requests: true,
             },
         );
         Some(number)
@@ -432,6 +445,15 @@ impl Streamers {
             .by_id
             .get(id)
             .and_then(|session| session.wheel.clone())
+    }
+
+    pub fn takes_song_requests(&self, id: &str) -> bool {
+        self.sessions
+            .lock()
+            .unwrap()
+            .by_id
+            .get(id)
+            .is_some_and(|session| session.song_requests)
     }
 
     pub async fn music(
@@ -782,6 +804,12 @@ mod tests {
             decode(r#"{"event":{"data":{"wheelOfLuck":{}}}}"#),
             MessageToAssistant::Event {
                 data: Event::WheelOfLuck { wheel: None },
+            }
+        );
+        assert_eq!(
+            decode(r#"{"event":{"data":{"songRequests":{"enabled":false}}}}"#),
+            MessageToAssistant::Event {
+                data: Event::SongRequests { enabled: false },
             }
         );
         assert!(

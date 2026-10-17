@@ -14,6 +14,7 @@ export type MusicStatus = {
   currentSongIndex: number | null;
   songs: Song[];
   songNotFound: boolean | null;
+  songRequests: boolean;
 };
 
 export const formatDuration = (duration: number) => {

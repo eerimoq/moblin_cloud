@@ -1132,6 +1132,10 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     ...(songs() ? (["songs"] as const) : []),
   ];
   const songs = () => payable() !== null;
+  const closed = () => {
+    const current = status();
+    return typeof current !== "string" && !current.songRequests;
+  };
   const shown = () => {
     const current = section();
     return current && sections().includes(current) ? current : sections()[0];
@@ -1243,6 +1247,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
     if (error instanceof BackendError && [400, 402].includes(error.status)) {
       void refreshPaywall();
+    }
+    if (error instanceof BackendError && error.status === 409) {
+      void refresh();
     }
   };
 
@@ -1362,6 +1369,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   )}
                 </Notice>
               </Show>
+              <Show when={closed()}>
+                <Notice>{t("The streamer is not taking song requests right now.")}</Notice>
+              </Show>
               <label class="flex flex-col gap-2">
                 <span class="text-[15px] font-semibold text-ink-2">
                   {t("Apple Music song link")}
@@ -1425,7 +1435,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                       <PayButtons
                         payment={current.payment}
                         options={payOptions}
-                        disabled={busy() || typeof status() === "string" || !song().trim()}
+                        disabled={
+                          busy() || typeof status() === "string" || closed() || !song().trim()
+                        }
                         resetKey={`${song()}\n${name()}`}
                       />
                       <p class="text-[15px] text-muted">
