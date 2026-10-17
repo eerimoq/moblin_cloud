@@ -6,6 +6,7 @@ export type IconName =
   | "bonding"
   | "watch"
   | "remote"
+  | "smartphone"
   | "plug"
   | "star"
   | "tap"
@@ -73,6 +74,10 @@ export default function Icon(props: Props) {
           <rect x="3" y="5" width="18" height="12" rx="2" />
           <path d="M8 21h8M12 17v4" />
           <circle cx="12" cy="11" r="2.5" />
+        </Match>
+        <Match when={props.name === "smartphone"}>
+          <rect x="6" y="2" width="12" height="20" rx="2.5" />
+          <path d="M11 18h2" />
         </Match>
         <Match when={props.name === "tip-jar"}>
           <path d="M4 10h16M5 10v8a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-8" />

@@ -1102,7 +1102,7 @@ function Admin(props: {
     {
       id: "moblin",
       label: "Moblin",
-      icon: "remote",
+      icon: "smartphone",
       shown: () => true,
       status: () => connectedOrNot(settings().connected),
     },
