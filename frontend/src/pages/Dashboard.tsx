@@ -51,7 +51,7 @@ function TwitchSignIn(props: { failed: boolean }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Sign in</h2>
-      <p class="text-ink-2">Sign in with Twitch to create or manage your page.</p>
+      <p class="text-ink-2">Sign in with Twitch to create or manage your tip page.</p>
       <div>
         <a
           href={signInUrl}
@@ -353,7 +353,7 @@ function YourPage(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">Your page</h2>
+      <h2 class="text-[23px] font-semibold">Your tip page</h2>
       <p class="text-ink-2">
         Share it with your viewers so they can send you tips, request songs and spin your wheel.
       </p>
@@ -409,7 +409,7 @@ function YourPage(props: {
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
         <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
-          Open your page
+          Open tip page
         </a>
         <button type="button" class={ghostButtonClass} onClick={copyLink}>
           <Icon name={copied() ? "check" : "copy"} class="size-4" />
@@ -867,7 +867,7 @@ function Admin(props: {
   }[] = [
     {
       id: "page",
-      label: "Your page",
+      label: "Tip page",
       icon: "person",
       shown: () => true,
       status: () => null,
@@ -1128,7 +1128,7 @@ function SignedIn(props: {
         <Show when={failed()} fallback={<Spinner />}>
           <div class="flex flex-wrap items-center gap-4">
             <p role="status" class="text-amber">
-              Could not create your page.
+              Could not create your tip page.
             </p>
             <button type="button" class={ghostButtonClass} onClick={create}>
               Try again
@@ -1182,7 +1182,7 @@ export default function Dashboard() {
 
   const terms = () => (
     <p class="text-[15px] text-muted">
-      Using Moblin Cloud and your page means you agree to the{" "}
+      Using Moblin Cloud and your tip page means you agree to the{" "}
       <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
         terms
       </a>

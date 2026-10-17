@@ -12,8 +12,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
     title: "Tips go straight to the streamer",
     body: [
       <>
-        Streamer pages on moblin.app let viewers tip streamers. Every payment on a streamer page is
-        a tip, sent directly to the streamer's PayPal account. Nothing is sold or bought.
+        Tip pages on moblin.app let viewers tip streamers. Every payment on a tip page is a tip,
+        sent directly to the streamer's PayPal account. Nothing is sold or bought.
       </>,
       <>
         Moblin only provides the software. Moblin does not receive, hold or forward the money and
@@ -47,8 +47,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
         You can remove the permission in your PayPal settings at any time.
       </>,
       <>
-        You are responsible for what your page says, for refunds and disputes with your viewers, for
-        any taxes on what you receive, and for following PayPal's terms and the rules of the
+        You are responsible for what your tip page says, for refunds and disputes with your viewers,
+        for any taxes on what you receive, and for following PayPal's terms and the rules of the
         platforms you stream on.
       </>,
       <>
@@ -62,8 +62,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
     title: "Fair use",
     body: [
       <>
-        Don't use Moblin for fraud, for anything illegal or to sell anything; your page is for tips
-        only. Moblin may remove pages and disconnect accounts that do.
+        Don't use Moblin for fraud, for anything illegal or to sell anything; your tip page is for
+        tips only. Moblin may remove tip pages and disconnect accounts that do.
       </>,
     ],
   },
@@ -101,9 +101,9 @@ export default function Terms() {
     <>
       <Nav />
       <main>
-        <Hero eyebrow="Terms" title="Terms for streamer pages">
+        <Hero eyebrow="Terms" title="Terms for tip pages">
           <p class="max-w-[640px] text-lg text-ink-2 text-pretty sm:text-[21px]">
-            For everyone who uses a streamer page on moblin.app or the{" "}
+            For everyone who uses a tip page on moblin.app or the{" "}
             <a href={asset(pages.dashboard)} class={linkClass}>
               dashboard
             </a>
