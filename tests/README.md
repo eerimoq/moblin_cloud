@@ -4,7 +4,8 @@ tip, spin the wheel and request songs on the page. Payments go through the PayPa
 Everything but the frontend is tested.
 
 The streamer's Moblin is the fake one in `tests/utils/fake_moblin.py` by default, which speaks
-Moblin's remote control protocol. Give `--device` to test with a real Moblin device instead.
+Moblin's remote control protocol, both as its remote control streamer and as Moblin cloud.
+Give `--device` to test with a real Moblin device instead.
 
 All commands below are run from the repository root.
 
@@ -37,18 +38,22 @@ PayPal's popup does, so no buyer account or browser is needed for payments.
 # Real Moblin device configuration
 
 Moblin's remote control streamer connects to the tester at `remote-control-port`. The tester
-acts as Moblin's assistant, sets Moblin up by importing settings and, when a test gives Moblin
-a streamer URL from the dashboard, relays the connection to the backend while watching what they
-send each other. That is how the tests see the songs, tips and wheel spins the backend delivers.
+acts as Moblin's assistant and sets Moblin up by importing settings. When a test gives Moblin a
+secret key from the dashboard, Moblin cloud connects to the tester at the same port too, and
+the tester relays that connection to the backend while watching what they send each other. That
+is how the tests see the songs, tips and wheel spins the backend delivers.
 
 This is only needed for `--device`.
 
-1. Generate settings into clipboard.
+1. Build Moblin in debug with `MOBLIN_WEBSITE_API_URL` set to
+   `http://<tester-ip-address>:<remote-control-port>` in `Config/User.xcconfig`, so Moblin
+   cloud connects to the tester.
+2. Generate settings into clipboard.
    ```bash
    just system-test-generate-device-settings-clipboard
    ```
-2. Import the generated settings from clipboard into Moblin.
-3. Allow Moblin to access Apple Music and give the device the `apple-music` capability, for the
+3. Import the generated settings from clipboard into Moblin.
+4. Allow Moblin to access Apple Music and give the device the `apple-music` capability, for the
    song request tests.
 
 # Run the tests
@@ -61,4 +66,5 @@ just system-test --device iphone16pro --interactive
 ```
 
 `--interactive` also runs the tests needing a person, like going live in a Moblin debug build
-whose `MOBLIN_WEBSITE_API_URL` points at the backend under test (with `allow-unattested = false`).
+whose `MOBLIN_WEBSITE_API_URL` points at the backend under test instead of the tester (with
+`allow-unattested = false`).

@@ -8,7 +8,7 @@ WHEEL = [wheel_option("Dance"), wheel_option("Spin again", 4)]
 
 
 class RemoteControlTestCase(TestCase):
-    """The streamer's real Moblin connected to the backend with the streamer URL from the dashboard."""
+    """The streamer's Moblin connected to the backend with the secret key from the dashboard."""
 
     def setup(self):
         self.skip_if_no_moblin()
@@ -31,7 +31,7 @@ class MoblinConnects(RemoteControlTestCase):
     def run(self):
         self.moblin.disconnect_from_backend()
         self.wait_until(lambda: not self.connected(), "Moblin to be disconnected")
-        self.moblin.connect_to_backend(self.dashboard.streamer_url())
+        self.moblin.connect_to_backend(self.dashboard.secret_key())
         self.wait_until(self.connected, "Moblin to be connected")
         if self.moblin.has_capability(Capability.APPLE_MUSIC):
             queue = self.viewer.queue()
@@ -46,23 +46,23 @@ class MoblinReconnects(RemoteControlTestCase):
     """Show Moblin as connected again after its connection drops."""
 
     def run(self):
-        self.moblin.connect_to_backend(self.dashboard.streamer_url())
+        self.moblin.connect_to_backend(self.dashboard.secret_key())
         old = self.moblin.disconnect()
-        self.moblin.wait_for_connection(relayed=True, other_than=old)
+        self.moblin.wait_for_backend_connection(self.dashboard.secret_key(), other_than=old)
         self.wait_until(self.connected, "Moblin to be connected again")
 
 
 class MoblinWheel(RemoteControlTestCase):
-    """Show the wheel picked in Moblin's remote control settings on the page, and no wheel without one."""
+    """Show the wheel picked in Moblin's Moblin cloud settings on the page, and no wheel without one."""
 
     def run(self):
-        self.moblin.connect_to_backend(self.dashboard.streamer_url(), WHEEL)
+        self.moblin.connect_to_backend(self.dashboard.secret_key(), WHEEL)
         expected = {"options": [{"text": option["text"], "weight": option["weight"]} for option in WHEEL]}
         self.wait_until(lambda: self.viewer.spin()["wheel"] == expected, "the wheel to be on the page")
         wheel = self.moblin.wheel()
         assert wheel is not None
         self.assert_equal(wheel["options"][1]["text"], "Spin again")
-        self.moblin.connect_to_backend(self.dashboard.streamer_url())
+        self.moblin.connect_to_backend(self.dashboard.secret_key())
         self.wait_until(lambda: self.viewer.spin()["wheel"] is None, "the wheel to be gone")
 
 
@@ -72,7 +72,7 @@ class MoblinWheelChanges(RemoteControlTestCase):
     def run(self):
         if not self.moblin.is_fake():
             self.skip_if_not_interactive()
-        self.moblin.connect_to_backend(self.dashboard.streamer_url(), WHEEL)
+        self.moblin.connect_to_backend(self.dashboard.secret_key(), WHEEL)
         expected = {"options": [{"text": option["text"], "weight": option["weight"]} for option in WHEEL]}
         self.wait_until(lambda: self.viewer.spin()["wheel"] == expected, "the wheel to be on the page")
         self.moblin.change_wheel(None)
@@ -81,18 +81,20 @@ class MoblinWheelChanges(RemoteControlTestCase):
         self.wait_until(lambda: self.viewer.spin()["wheel"] == expected, "the wheel to be back on the page")
 
 
-class NewStreamerUrlDisconnectsMoblin(RemoteControlTestCase):
-    """Disconnect Moblin when the streamer replaces the streamer URL, until it gets the new one."""
+class NewSecretKeyDisconnectsMoblin(RemoteControlTestCase):
+    """Disconnect Moblin when the streamer replaces the secret key, until it gets the new one."""
 
     def run(self):
-        self.moblin.connect_to_backend(self.dashboard.streamer_url())
+        self.moblin.connect_to_backend(self.dashboard.secret_key())
         old_key = self.moblin.connected_key()
-        new_url = self.dashboard.new_streamer_url()["streamerUrl"]
+        assert old_key is not None
+        position = self.moblin.rejected_keys_position()
+        new_key = self.dashboard.new_secret_key()["secretKey"]
         self.assert_false(self.dashboard.account()["settings"]["connected"])
-        self.moblin.wait_for_connection(key=old_key, relayed=False)
+        self.moblin.wait_for_rejected_key(old_key, start=position)
         self.assert_false(self.connected())
-        self.moblin.connect_to_backend(new_url)
-        self.wait_until(self.connected, "Moblin to be connected with the new streamer URL")
+        self.moblin.connect_to_backend(new_key)
+        self.wait_until(self.connected, "Moblin to be connected with the new secret key")
 
 
 def tests(context: Context):
@@ -101,5 +103,5 @@ def tests(context: Context):
         MoblinReconnects(context),
         MoblinWheel(context),
         MoblinWheelChanges(context),
-        NewStreamerUrlDisconnectsMoblin(context),
+        NewSecretKeyDisconnectsMoblin(context),
     ]

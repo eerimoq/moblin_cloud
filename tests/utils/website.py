@@ -113,8 +113,8 @@ class Dashboard(Client):
     def create_page(self) -> dict:
         return self.post("/account/page")
 
-    def new_streamer_url(self) -> dict:
-        return self.post("/account/streamer-url")
+    def new_secret_key(self) -> dict:
+        return self.post("/account/secret-key")
 
     def save_settings(
         self,
@@ -163,8 +163,8 @@ class Dashboard(Client):
     def page_id(self) -> str:
         return self.account()["settings"]["id"]
 
-    def streamer_url(self) -> str:
-        return self.account()["streamerUrl"]
+    def secret_key(self) -> str:
+        return self.account()["secretKey"]
 
 
 class Viewer(Client):

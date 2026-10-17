@@ -15,7 +15,7 @@ def main():
     args = parser.parse_args()
     config = Config()
     url = f"ws://{config.tester_ip_address()}:{config.remote_control_port()}"
-    settings = json.dumps(settings_for(url, None), indent=4)
+    settings = json.dumps(settings_for(url, None, None), indent=4)
     if args.force_stdout:
         print(settings)
     else:

@@ -63,7 +63,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/auth/twitch/callback", get(handle_callback))
         .route("/account", get(handle_account))
         .route("/account/page", post(handle_account_page))
-        .route("/account/streamer-url", post(handle_account_streamer_url))
+        .route("/account/secret-key", post(handle_account_secret_key))
         .route("/account/settings", post(handle_account_settings))
         .route(
             "/account/paypal/connect",
@@ -460,7 +460,7 @@ async fn signed_in_redirect(
 struct AccountResponse {
     name: String,
     login: String,
-    streamer_url: Option<String>,
+    secret_key: Option<String>,
     settings: Option<SettingsResponse>,
 }
 
@@ -501,7 +501,7 @@ fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
     Json(AccountResponse {
         name: account.name,
         login: account.login,
-        streamer_url: account.page.map(|page| api.auth.streamer_url(&page.key)),
+        secret_key: account.page.map(|page| page.key),
         settings,
     })
 }
@@ -557,7 +557,7 @@ async fn handle_account_page(
     Ok(account_response(&api, account))
 }
 
-async fn handle_account_streamer_url(
+async fn handle_account_secret_key(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
@@ -566,7 +566,7 @@ async fn handle_account_streamer_url(
     let account = api.accounts.replace_key(&id, key).map_err(account_error)?;
     if let Some(page) = &account.page {
         api.remote_control.disconnect(&page.id);
-        info!("{id} got a new streamer URL for page {}", page.id);
+        info!("{id} got a new secret key for page {}", page.id);
     }
     Ok(account_response(&api, account))
 }
@@ -1800,9 +1800,7 @@ mod tests {
     }
 
     fn key_of(account: &Value) -> String {
-        let url = account["streamerUrl"].as_str().unwrap();
-        assert!(url.starts_with("ws://localhost/remote-control/streamer/"));
-        url.rsplit('/').next().unwrap().to_string()
+        account["secretKey"].as_str().unwrap().to_string()
     }
 
     async fn streamer(address: &str, api: &Api) -> (String, String, String) {
@@ -2682,7 +2680,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             account,
-            json!({"name": "Erik", "login": "erik", "streamerUrl": null, "settings": null})
+            json!({"name": "Erik", "login": "erik", "secretKey": null, "settings": null})
         );
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -2798,13 +2796,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn new_streamer_urls_keep_the_page() {
+    async fn new_secret_keys_keep_the_page() {
         let (address, api) = start_api(None).await;
         let (session, key, id) = streamer(&address, &api).await;
         let mut socket = connect(&address, &key).await;
         assert!(api.remote_control.is_connected(&id));
         let account: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/streamer-url"))
+            .post(format!("http://{address}/account/secret-key"))
             .bearer_auth(&session)
             .send()
             .await
@@ -3130,7 +3128,7 @@ mod tests {
         for (method, path) in [
             ("GET", "/account"),
             ("POST", "/account/page"),
-            ("POST", "/account/streamer-url"),
+            ("POST", "/account/secret-key"),
             ("POST", "/account/settings"),
             ("POST", "/account/paypal/connect"),
             ("POST", "/account/paypal/check"),

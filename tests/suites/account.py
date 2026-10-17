@@ -14,7 +14,7 @@ from ..utils.context import Context
 from ..utils.test_case import TestCase
 from ..utils.website import Dashboard
 
-RE_STREAMER_URL = re.compile(r"^ws://localhost:\d+/remote-control/streamer/([A-Za-z0-9_-]{43})$")
+RE_SECRET_KEY = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 
 def unpadded_base64url(data: bytes) -> str:
@@ -32,9 +32,9 @@ def session_issued_at(session: str | None, issued: int) -> str:
     return f"{unpadded_base64url(signed)}.{unpadded_base64url(tag)}"
 
 
-def streamer_connects(url: str) -> bool:
+def streamer_connects(port: int, key: str) -> bool:
     try:
-        with connect(url, open_timeout=10) as websocket:
+        with connect(f"ws://localhost:{port}/remote-control/streamer/{key}", open_timeout=10) as websocket:
             return "hello" in websocket.recv(timeout=10)
     except InvalidStatus as error:
         if error.response.status_code == 404:
@@ -62,9 +62,7 @@ class SignIn(AccountTestCase):
         dashboard_url = self.website.finish_sign_in(callback_url, browser)
         self.assert_true(dashboard_url.startswith(f"{FRONTEND_URL}/dashboard/#session="))
         account = self.website.dashboard_of(dashboard_url).account()
-        self.assert_equal(
-            account, {"name": "signin", "login": "signin", "streamerUrl": None, "settings": None}
-        )
+        self.assert_equal(account, {"name": "signin", "login": "signin", "secretKey": None, "settings": None})
 
 
 class SignInWithTwitch(TestCase):
@@ -104,7 +102,7 @@ class NotSignedIn(TestCase):
             dashboard = Dashboard(self.backend.url, session)
             self.assert_backend_error(401, dashboard.account, "not signed in")
             self.assert_backend_error(401, dashboard.create_page, "not signed in")
-            self.assert_backend_error(401, dashboard.new_streamer_url, "not signed in")
+            self.assert_backend_error(401, dashboard.new_secret_key, "not signed in")
             self.assert_backend_error(401, dashboard.save_settings, "not signed in")
             self.assert_backend_error(401, dashboard.check_paypal, "not signed in")
             self.assert_backend_error(401, dashboard.disconnect_paypal, "not signed in")
@@ -129,9 +127,9 @@ class CreatePage(AccountTestCase):
         self.assert_backend_error(404, dashboard.save_settings, "no page")
         self.assert_backend_error(404, dashboard.check_paypal, "no page")
         self.assert_backend_error(404, dashboard.disconnect_paypal, "no page")
-        self.assert_backend_error(404, dashboard.new_streamer_url, "no page")
+        self.assert_backend_error(404, dashboard.new_secret_key, "no page")
         account = dashboard.create_page()
-        self.assert_regex(account["streamerUrl"], RE_STREAMER_URL)
+        self.assert_regex(account["secretKey"], RE_SECRET_KEY)
         settings = account["settings"]
         self.assert_equal(
             {
@@ -177,22 +175,23 @@ class UnknownPage(TestCase):
         )
 
 
-class NewStreamerUrl(AccountTestCase):
-    """Replace the streamer URL, which stops the old one from working but keeps the page."""
+class NewSecretKey(AccountTestCase):
+    """Replace the secret key, which stops the old one from working but keeps the page."""
 
     def run(self):
-        dashboard = self.sign_in("newstreamerurl")
+        dashboard = self.sign_in("newsecretkey")
         account = dashboard.create_page()
-        old_url = account["streamerUrl"]
-        self.assert_true(streamer_connects(old_url))
-        new_account = dashboard.new_streamer_url()
-        new_url = new_account["streamerUrl"]
-        self.assert_not_equal(new_url, old_url)
+        port = self.backend.port
+        old_key = account["secretKey"]
+        self.assert_true(streamer_connects(port, old_key))
+        new_account = dashboard.new_secret_key()
+        new_key = new_account["secretKey"]
+        self.assert_not_equal(new_key, old_key)
         self.assert_equal(new_account["settings"]["id"], account["settings"]["id"])
-        self.assert_equal(dashboard.account()["streamerUrl"], new_url)
-        self.assert_false(streamer_connects(old_url))
-        self.assert_true(streamer_connects(new_url))
-        self.assert_false(streamer_connects(f"ws://localhost:{self.backend.port}/remote-control/streamer/x"))
+        self.assert_equal(dashboard.account()["secretKey"], new_key)
+        self.assert_false(streamer_connects(port, old_key))
+        self.assert_true(streamer_connects(port, new_key))
+        self.assert_false(streamer_connects(port, "x"))
 
 
 class SignOutEverywhere(AccountTestCase):
@@ -305,7 +304,7 @@ def tests(context: Context):
         ExpiredSession(context),
         CreatePage(context),
         UnknownPage(context),
-        NewStreamerUrl(context),
+        NewSecretKey(context),
         SignOutEverywhere(context),
         PageLook(context),
         Currency(context),

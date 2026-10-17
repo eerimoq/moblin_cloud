@@ -4,7 +4,7 @@ import { BackendError, type Page, type Settings } from "./remoteControl";
 export type Account = {
   name: string;
   login: string;
-  streamerUrl: string | null;
+  secretKey: string | null;
   settings: Settings | null;
 };
 
@@ -70,8 +70,8 @@ export async function signOutEverywhere(session: string) {
 export const createStreamer = (session: string) =>
   call<Account>(session, "/account/page", { method: "POST" });
 
-export const newStreamerUrl = (session: string) =>
-  call<Account>(session, "/account/streamer-url", { method: "POST" });
+export const newSecretKey = (session: string) =>
+  call<Account>(session, "/account/secret-key", { method: "POST" });
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>(session, "/account/paypal/connect", { method: "POST" })).url;

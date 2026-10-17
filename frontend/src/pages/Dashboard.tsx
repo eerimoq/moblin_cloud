@@ -19,7 +19,7 @@ import {
   disconnectPayPal,
   fetchAccount,
   createStreamer,
-  newStreamerUrl,
+  newSecretKey,
   readSession,
   saveAccountSettings,
   saveSession,
@@ -49,8 +49,8 @@ function Steps() {
   return (
     <ol class="flex list-decimal flex-col gap-2 pl-6 text-ink-2">
       <li>
-        In Moblin, go to Settings, Remote control, Streamer, Assistant and paste the streamer URL as
-        URL. Then turn Enabled on.
+        In Moblin, go to Settings, Moblin cloud and paste the secret key as Secret key. Then turn
+        Enabled on.
       </li>
       <li>For song requests, make sure Moblin may use Apple Music.</li>
     </ol>
@@ -708,7 +708,7 @@ function SpinSettings(props: {
       <h2 class="text-[23px] font-semibold">Wheel of luck</h2>
       <p class="text-ink-2">
         Let viewers spin your wheel by sending you a tip with PayPal, with a smaller tip per spin
-        when they buy more. Moblin spins the wheel you pick in its remote control settings, showing
+        when they buy more. Moblin spins the wheel you pick in its Moblin cloud settings, showing
         the viewer's name and message.
       </p>
       <label class="flex items-center gap-3 text-ink-2">
@@ -793,32 +793,32 @@ function SpinSettings(props: {
 function Admin(props: {
   session: string;
   account: Account;
-  streamerUrl: string;
+  secretKey: string;
   settings: Settings;
   onAccount: (account: Account) => void;
   onSignOut: () => void;
 }) {
   const [settings, setSettings] = createSignal(props.settings);
   const [busy, setBusy] = createSignal(false);
-  const [newUrlFailed, setNewUrlFailed] = createSignal(false);
+  const [newKeyFailed, setNewKeyFailed] = createSignal(false);
 
-  const newUrl = async () => {
+  const newKey = async () => {
     if (
       !confirm(
-        "Moblin disconnects and the current streamer URL stops working. Paste the new one in Moblin to reconnect.",
+        "Moblin disconnects and the current secret key stops working. Paste the new one in Moblin to reconnect.",
       )
     ) {
       return;
     }
     setBusy(true);
-    setNewUrlFailed(false);
+    setNewKeyFailed(false);
     try {
-      props.onAccount(await newStreamerUrl(props.session));
+      props.onAccount(await newSecretKey(props.session));
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
       } else {
-        setNewUrlFailed(true);
+        setNewKeyFailed(true);
       }
     } finally {
       setBusy(false);
@@ -901,17 +901,17 @@ function Admin(props: {
           {settings().connected ? "Moblin is connected." : "Moblin is not connected right now."}
         </p>
         <Steps />
-        <Value label="Streamer URL for Moblin" text={props.streamerUrl} secret />
+        <Value label="Secret key for Moblin" text={props.secretKey} secret />
         <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
           <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
-          Keep the streamer URL to yourself. Anyone who has it can connect as your Moblin and
-          receive your song requests and wheel spins. Reset it if it leaked.
+          Keep the secret key to yourself. Anyone who has it can connect as your Moblin and receive
+          your song requests, tips and wheel spins. Reset it if it leaked.
         </p>
         <div class="flex flex-wrap items-center gap-4">
-          <button type="button" class={ghostButtonClass} disabled={busy()} onClick={newUrl}>
-            Reset streamer URL
+          <button type="button" class={ghostButtonClass} disabled={busy()} onClick={newKey}>
+            Reset secret key
           </button>
-          <Show when={newUrlFailed()}>
+          <Show when={newKeyFailed()}>
             <p role="status" class="text-amber">
               Something went wrong. Try again.
             </p>
@@ -944,14 +944,14 @@ function SignedIn(props: {
   };
 
   onMount(() => {
-    if (!props.account.streamerUrl) {
+    if (!props.account.secretKey) {
       void create();
     }
   });
 
   return (
     <Show
-      when={props.account.streamerUrl && props.account.settings ? props.account : null}
+      when={props.account.secretKey && props.account.settings ? props.account : null}
       keyed
       fallback={
         <Show when={failed()} fallback={<Spinner />}>
@@ -970,7 +970,7 @@ function SignedIn(props: {
         <Admin
           session={props.session}
           account={account}
-          streamerUrl={account.streamerUrl!}
+          secretKey={account.secretKey!}
           settings={account.settings!}
           onAccount={props.onAccount}
           onSignOut={props.onSignOut}
@@ -1016,7 +1016,7 @@ export default function Dashboard() {
         top={
           <div class="flex flex-wrap items-center justify-between gap-4">
             <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-              Dashboard
+              Moblin cloud
             </span>
             <Show when={session()}>
               {(current) => (
@@ -1042,7 +1042,7 @@ export default function Dashboard() {
           fees.
         </p>
         <p class="text-[15px] text-muted">
-          Using the dashboard and your page means you agree to the{" "}
+          Using Moblin cloud and your page means you agree to the{" "}
           <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
             terms
           </a>

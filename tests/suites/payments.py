@@ -40,7 +40,7 @@ class PaymentTestCase(TestCase):
         return self.context.moblin
 
     def connect_moblin(self, wheel: list[dict] | None = None):
-        self.moblin.connect_to_backend(self.dashboard.streamer_url(), wheel)
+        self.moblin.connect_to_backend(self.dashboard.secret_key(), wheel)
         self.wait_until(lambda: self.dashboard.account()["settings"]["connected"], "Moblin to be connected")
 
     def pay(self, order_id: str):

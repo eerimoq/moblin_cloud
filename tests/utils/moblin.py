@@ -80,24 +80,25 @@ class StreamerConnection:
         return self.upstream is not None
 
     def serve(self):
-        if self.key is not None:
-            try:
-                self.upstream = connect(
-                    f"ws://localhost:{self.moblin.backend.port}/remote-control/streamer/{self.key}",
-                    max_size=None,
-                    open_timeout=10,
-                )
-            except InvalidStatus as error:
-                if error.response.status_code != 404:
-                    raise
-                LOGGER.debug("The backend does not know streamer key %s, acting as assistant", self.key)
-            except OSError:
-                LOGGER.debug("The backend is down, closing Moblin's connection so it retries")
-                return
-        if self.upstream is None:
+        if self.key is None:
             self._serve_locally()
-        else:
-            self._serve_relayed()
+            return
+        try:
+            self.upstream = connect(
+                f"ws://localhost:{self.moblin.backend.port}/remote-control/streamer/{self.key}",
+                max_size=None,
+                open_timeout=10,
+            )
+        except InvalidStatus as error:
+            if error.response.status_code != 404:
+                raise
+            LOGGER.debug("The backend does not know secret key %s, closing Moblin's connection", self.key)
+            self.moblin.add_rejected_key(self.key)
+            return
+        except OSError:
+            LOGGER.debug("The backend is down, closing Moblin's connection so it retries")
+            return
+        self._serve_relayed()
 
     def _serve_locally(self):
         self._send_to_moblin(
@@ -202,12 +203,12 @@ class StreamerConnection:
 
 
 class Moblin:
-    """A Moblin device, or the fake one in tests/utils/fake_moblin.py, whose remote control streamer connects to the tester.
+    """A Moblin device, or the fake one in tests/utils/fake_moblin.py, connected to the tester twice.
 
-    Its connection is relayed to the backend when its URL has the path of a streamer URL the
-    backend knows, so the backend talks to the real Moblin while the tester watches. Otherwise the
-    tester acts as Moblin's assistant. Either way the tester can send its own requests to Moblin,
-    like moblin_assistant does, to set it up and look at it.
+    Its remote control streamer connects to the tester, which acts as Moblin's assistant and
+    sends its own requests to Moblin, like moblin_assistant does, to set it up and look at it.
+    Its Moblin cloud connection, made when it has a secret key from the dashboard, is relayed
+    to the backend, so the backend talks to the real Moblin while the tester watches.
     """
 
     def __init__(self, config: Config, backend: Backend, device_name: str | None):
@@ -223,7 +224,9 @@ class Moblin:
         self._tester_ip_address = config.tester_ip_address()
         self._lock = threading.Lock()
         self._connected = threading.Condition(self._lock)
-        self._connection: StreamerConnection | None = None
+        self._control: StreamerConnection | None = None
+        self._cloud: StreamerConnection | None = None
+        self._rejected_keys: list[str] = []
         self._next_request_id = FIRST_OWN_REQUEST_ID
         self._backend_requests: list[BackendRequest] = []
         self._log_entries: list[str] = []
@@ -236,16 +239,15 @@ class Moblin:
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         if self.is_fake():
-            self._fake = FakeMoblin(self.streamer_url(None))
+            self._fake = FakeMoblin(self.remote_control_url(), self.api_url())
             self._fake.start()
         if not self.is_fake():
             LOGGER.info(
-                "Waiting for %s's remote control streamer to connect to ws://%s:%d...",
+                "Waiting for %s's remote control streamer to connect to %s...",
                 self.device_name,
-                self._tester_ip_address,
-                self._port,
+                self.remote_control_url(),
             )
-        self.wait_for_connection(timeout=300)
+        self.wait_for_control_connection(timeout=300)
         if not self.is_fake():
             LOGGER.info("Remote control streamer connected")
         return self
@@ -264,7 +266,10 @@ class Moblin:
         streamer = StreamerConnection(self, connection, mo.group(1) if mo else None)
         LOGGER.debug("Moblin connected to %s", connection.request.path)
         with self._lock:
-            self._connection = streamer
+            if streamer.key is None:
+                self._control = streamer
+            else:
+                self._cloud = streamer
         identifier = threading.Thread(target=self._notify_when_identified, args=(streamer,), daemon=True)
         identifier.start()
         try:
@@ -273,9 +278,12 @@ class Moblin:
             pass
         finally:
             streamer.fail_own_requests()
-            with self._lock:
-                if self._connection is streamer:
-                    self._connection = None
+            with self._connected:
+                if self._control is streamer:
+                    self._control = None
+                if self._cloud is streamer:
+                    self._cloud = None
+                self._connected.notify_all()
             LOGGER.debug("Moblin disconnected from %s", connection.request.path)
 
     def _notify_when_identified(self, streamer: StreamerConnection):
@@ -301,6 +309,11 @@ class Moblin:
                     request.answered.set()
                     return
 
+    def add_rejected_key(self, key: str):
+        with self._connected:
+            self._rejected_keys.append(key)
+            self._connected.notify_all()
+
     def handle_event(self, data: dict):
         with self._lock:
             if "log" in data:
@@ -315,36 +328,57 @@ class Moblin:
         return capability in self.capabilities
 
     def connected_key(self) -> str | None:
-        """The streamer key of the connection relayed to the backend, if any."""
+        """The secret key of Moblin's Moblin cloud connection to the backend, if any."""
         with self._lock:
-            connection = self._connection
-        if connection is None or not connection.relayed or not connection.identified.is_set():
+            connection = self._cloud
+        if connection is None or not connection.identified.is_set():
             return None
         return connection.key
 
-    def wait_for_connection(
-        self,
-        key: str | None = None,
-        relayed: bool | None = None,
-        timeout: float = 60,
-        other_than: StreamerConnection | None = None,
-    ):
-        def check() -> bool:
-            connection = self._connection
-            if connection is None or connection is other_than or not connection.identified.is_set():
-                return False
-            if key is not None and connection.key != key:
-                return False
-            return relayed is None or connection.relayed == relayed
-
+    def _wait(self, check, message: str, timeout: float):
         with self._connected:
             if not self._connected.wait_for(check, timeout):
-                raise MoblinError("Timeout waiting for Moblin's remote control streamer to connect.")
+                raise MoblinError(f"Timeout waiting for {message}.")
+
+    def wait_for_control_connection(self, timeout: float = 60, other_than: StreamerConnection | None = None):
+        def check() -> bool:
+            connection = self._control
+            return connection is not None and connection is not other_than and connection.identified.is_set()
+
+        self._wait(check, "Moblin's remote control streamer to connect", timeout)
+
+    def wait_for_backend_connection(
+        self, key: str, timeout: float = 60, other_than: StreamerConnection | None = None
+    ):
+        def check() -> bool:
+            connection = self._cloud
+            return (
+                connection is not None
+                and connection is not other_than
+                and connection.key == key
+                and connection.identified.is_set()
+            )
+
+        self._wait(check, "Moblin cloud to connect to the backend", timeout)
+
+    def wait_for_no_backend_connection(self, timeout: float = 60):
+        self._wait(lambda: self._cloud is None, "Moblin cloud to disconnect from the backend", timeout)
+
+    def wait_for_rejected_key(self, key: str, start: int = 0, timeout: float = 60):
+        self._wait(
+            lambda: key in self._rejected_keys[start:],
+            f"the backend to refuse Moblin cloud with the secret key {key}",
+            timeout,
+        )
+
+    def rejected_keys_position(self) -> int:
+        with self._lock:
+            return len(self._rejected_keys)
 
     def request(self, data: dict, timeout: float = 15) -> dict:
-        self.wait_for_connection()
+        self.wait_for_control_connection()
         with self._lock:
-            connection = self._connection
+            connection = self._control
         if connection is None:
             raise MoblinError("Moblin is not connected.")
         response = connection.request(data, timeout)
@@ -352,15 +386,17 @@ class Moblin:
             raise MoblinError(f"{next(iter(data))} failed: {response['result']}")
         return response
 
-    def streamer_url(self, key: str | None) -> str:
-        url = f"ws://{self._tester_ip_address}:{self._port}"
-        if key is not None:
-            url += f"/remote-control/streamer/{key}"
-        return url
+    def remote_control_url(self) -> str:
+        return f"ws://{self._tester_ip_address}:{self._port}"
+
+    def api_url(self) -> str:
+        """Where Moblin cloud connects, the MOBLIN_WEBSITE_API_URL of a Moblin debug build."""
+        return f"http://{self._tester_ip_address}:{self._port}"
 
     def import_settings(self, key: str | None, wheel: list[dict] | None = None):
-        """Imports test settings, which also set where the remote control streamer connects."""
-        settings = settings_for(self.streamer_url(key), wheel)
+        """Imports test settings, which also set where the remote control streamer connects and
+        Moblin cloud's secret key."""
+        settings = settings_for(self.remote_control_url(), key, wheel)
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "settings.zip"
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -371,40 +407,53 @@ class Moblin:
         except (MoblinError, ConnectionClosed) as error:
             LOGGER.debug("No answer to import settings: %s", error)
 
-    def connect_to_backend(self, streamer_url: str, wheel: list[dict] | None = None):
-        """Gives Moblin the streamer URL from the dashboard, like a streamer pasting it into Moblin."""
-        key = streamer_url.rstrip("/").split("/")[-1]
+    def _reconnect(self) -> tuple[StreamerConnection | None, StreamerConnection | None]:
+        with self._lock:
+            control = self._control
+            cloud = self._cloud
+        for connection in [control, cloud]:
+            if connection is not None:
+                connection.connection.close()
+        return control, cloud
+
+    def connect_to_backend(self, key: str, wheel: list[dict] | None = None):
+        """Gives Moblin the secret key from the dashboard, like a streamer pasting it into Moblin."""
         with self._lock:
             self._wheel = None
         self.import_settings(key, wheel)
-        self.wait_for_connection(key=key, relayed=True, other_than=self.disconnect())
+        control, cloud = self._reconnect()
+        self.wait_for_control_connection(other_than=control)
+        self.wait_for_backend_connection(key, other_than=cloud)
 
     def change_wheel(self, wheel: list[dict] | None):
         """Changes the wheel without reconnecting, like a streamer in Moblin's settings, as Moblin
         reconnects when settings are imported. A person does it on a real device, where the wheel
         can only be removed or set back to the one of the last imported settings."""
         with self._lock:
-            connection = self._connection
+            connection = self._cloud
         if self._fake is not None:
             self._fake.change_wheel(wheel)
         elif wheel is None:
-            manual_confirmation("In Moblin's remote control streamer settings, pick no wheel of luck.")
+            manual_confirmation("In Moblin's Moblin cloud settings, pick no wheel of luck.")
         else:
-            manual_confirmation("In Moblin's remote control streamer settings, pick the wheel of luck Wheel.")
+            manual_confirmation("In Moblin's Moblin cloud settings, pick the wheel of luck Wheel.")
         with self._lock:
-            if self._connection is not connection:
+            if self._cloud is not connection:
                 raise MoblinError("Moblin reconnected when its wheel changed.")
 
     def disconnect_from_backend(self):
         if self.connected_key() is None:
             return
         self.import_settings(None)
-        self.wait_for_connection(relayed=False, other_than=self.disconnect())
+        control, _ = self._reconnect()
+        self.wait_for_control_connection(other_than=control)
+        self.wait_for_no_backend_connection()
 
     def disconnect(self) -> StreamerConnection | None:
-        """Closes Moblin's connection, which makes it connect again, and returns the closed connection."""
+        """Closes Moblin cloud's connection, which makes Moblin connect again, and returns the
+        closed connection."""
         with self._lock:
-            connection = self._connection
+            connection = self._cloud
         if connection is not None:
             connection.connection.close()
         return connection
@@ -461,7 +510,7 @@ def wheel_option(text: str, weight: int = 1) -> dict:
     return {"id": str(uuid.uuid4()).upper(), "text": text, "weight": weight}
 
 
-def settings_for(remote_control_url: str, wheel: list[dict] | None) -> dict:
+def settings_for(remote_control_url: str, key: str | None, wheel: list[dict] | None) -> dict:
     remote_control: dict = {
         "server": {
             "enabled": True,
@@ -473,7 +522,9 @@ def settings_for(remote_control_url: str, wheel: list[dict] | None) -> dict:
         "hasMigratedAssistant": True,
     }
     scene = {"name": "Front", "cameraPosition": "Front", "enabled": True}
+    moblin_cloud: dict = {"enabled": key is not None, "key": key or ""}
     settings: dict = {
+        "moblinCloud": moblin_cloud,
         "scenes": [scene],
         "remoteControl": remote_control,
         "verboseStatuses": True,
@@ -502,5 +553,5 @@ def settings_for(remote_control_url: str, wheel: list[dict] | None) -> dict:
                 "migrated2": True,
             }
         ]
-        remote_control["server"]["wheelOfLuckWidgetId"] = widget_id
+        moblin_cloud["wheelOfLuckWidgetId"] = widget_id
     return settings

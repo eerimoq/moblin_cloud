@@ -94,15 +94,6 @@ impl Auth {
         })
     }
 
-    pub fn streamer_url(&self, key: &str) -> String {
-        let base = match self.public_url.split_once("://") {
-            Some(("https", rest)) => format!("wss://{rest}"),
-            Some((_, rest)) => format!("ws://{rest}"),
-            None => self.public_url.clone(),
-        };
-        format!("{base}/remote-control/streamer/{key}")
-    }
-
     fn redirect_uri(&self) -> String {
         format!("{}/auth/twitch/callback", self.public_url)
     }
@@ -331,14 +322,6 @@ mod tests {
         );
         assert_eq!(auth.session_of(&forged), None);
         assert_eq!(auth.session_of("garbage"), None);
-    }
-
-    #[test]
-    fn streamer_urls_use_websockets() {
-        assert_eq!(
-            new_auth("secret").streamer_url("k"),
-            "wss://api.example.com/remote-control/streamer/k"
-        );
     }
 
     #[test]

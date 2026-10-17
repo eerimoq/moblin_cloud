@@ -48,7 +48,7 @@ export function Hero(props: {
         when={props.top}
         fallback={
           <span class="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-leaf">
-            {props.eyebrow ?? "Dashboard"}
+            {props.eyebrow ?? "Moblin cloud"}
           </span>
         }
       >

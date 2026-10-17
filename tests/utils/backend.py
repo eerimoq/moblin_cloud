@@ -72,12 +72,6 @@ class Backend:
         shutil.rmtree(self.files_dir, ignore_errors=True)
         self.start()
 
-    def device_streamer_url(self, streamer_url: str) -> str:
-        """The streamer URL as the Moblin device reaches this backend."""
-        return re.sub(
-            r"^ws://localhost:\d+", f"ws://{self.config.tester_ip_address()}:{self.port}", streamer_url
-        )
-
     def log_position(self) -> int:
         with self._lines_lock:
             return len(self._lines)

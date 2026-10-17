@@ -113,10 +113,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="Pretends to be a Moblin streamer connected to the backend over remote control."
     )
-    parser.add_argument("url", nargs="?", help="Streamer URL. A new one is made up if not given.")
+    parser.add_argument("key", nargs="?", help="Secret key. A new one is made up if not given.")
     args = parser.parse_args()
-    key = (args.url or base64url(secrets.token_bytes(32))).rstrip("/").split("/")[-1]
-    print(f"Streamer URL: ws://{BACKEND}/remote-control/streamer/{key}")
+    key = args.key or base64url(secrets.token_bytes(32))
+    print(f"Secret key: {key}")
     print(f"Page: http://localhost:5173/page/?streamer={id_of(key)}")
     print("Songs with the id 404 are not found.")
     asyncio.run(run(key))

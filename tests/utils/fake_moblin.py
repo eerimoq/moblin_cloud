@@ -1,4 +1,4 @@
-"""Pretends to be Moblin's remote control streamer, for running the system tests without a device."""
+"""Pretends to be Moblin's remote control streamer and Moblin cloud, for running the system tests without a device."""
 
 import argparse
 import base64
@@ -32,46 +32,72 @@ def wheel_of(options: list[dict] | None) -> dict | None:
 
 
 class FakeMoblin:
-    def __init__(self, url: str):
+    def __init__(self, url: str, api_url: str):
         self.url = url
+        self.api_url = api_url
+        self.key: str | None = None
         self.wheel: dict | None = None
         self.songs: list[dict] = []
         self.next_song_id = 0
         self.handled_request_ids: set[str] = set()
         self._stopped = threading.Event()
-        self._websocket: ClientConnection | None = None
-        self._thread = threading.Thread(target=self.run, daemon=True)
+        self._lock = threading.Lock()
+        self._websockets: dict[str, ClientConnection] = {}
+        self._threads = [
+            threading.Thread(target=self.run, args=("control", self.control_url), daemon=True),
+            threading.Thread(target=self.run, args=("cloud", self.cloud_url), daemon=True),
+        ]
 
     def start(self):
-        self._thread.start()
+        for thread in self._threads:
+            thread.start()
 
     def stop(self):
         self._stopped.set()
-        websocket = self._websocket
+        self.close("control")
+        self.close("cloud")
+        for thread in self._threads:
+            thread.join(timeout=5)
+
+    def close(self, name: str):
+        with self._lock:
+            websocket = self._websockets.get(name)
         if websocket is not None:
             websocket.close()
-        self._thread.join(timeout=5)
 
-    def run(self):
+    def control_url(self) -> str | None:
+        return self.url
+
+    def cloud_url(self) -> str | None:
+        if self.key is None:
+            return None
+        return f"{self.api_url.replace('http', 'ws', 1)}/remote-control/streamer/{self.key}"
+
+    def run(self, name: str, url_of):
         while not self._stopped.is_set():
-            try:
-                with connect(self.url, max_size=None, open_timeout=10) as websocket:
-                    self._websocket = websocket
-                    LOGGER.debug("Connected to %s", self.url)
-                    self.serve(websocket)
-            except Exception as error:
-                LOGGER.debug("Disconnected from %s: %s", self.url, error)
-            finally:
-                self._websocket = None
+            url = url_of()
+            if url is not None:
+                try:
+                    with connect(url, max_size=None, open_timeout=10) as websocket:
+                        with self._lock:
+                            self._websockets[name] = websocket
+                        LOGGER.debug("Connected to %s", url)
+                        self.serve(name, websocket)
+                except Exception as error:
+                    LOGGER.debug("Disconnected from %s: %s", url, error)
+                finally:
+                    with self._lock:
+                        self._websockets.pop(name, None)
             self._stopped.wait(1)
 
-    def serve(self, websocket: ClientConnection):
+    def serve(self, name: str, websocket: ClientConnection):
         for text in websocket:
             message = json.loads(text)
             if "hello" in message:
                 self.send(websocket, {"identify": {"streamerId": "FAKE", "authentication": "fake"}})
             elif "identified" in message:
-                self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
+                if name == "cloud":
+                    self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
             elif "request" in message:
                 request = message["request"]
                 result, data = self.handle(request["data"])
@@ -82,7 +108,8 @@ class FakeMoblin:
 
     def change_wheel(self, options: list[dict] | None):
         self.wheel = wheel_of(options)
-        websocket = self._websocket
+        with self._lock:
+            websocket = self._websockets.get("cloud")
         if websocket is not None:
             self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
 
@@ -109,8 +136,11 @@ class FakeMoblin:
         archive = zipfile.ZipFile(io.BytesIO(base64.b64decode(data)))
         settings = json.loads(archive.read("settings.json"))
         self.url = settings["remoteControl"]["server"]["url"]
+        moblin_cloud = settings["moblinCloud"]
+        self.key = moblin_cloud["key"] if moblin_cloud["enabled"] else None
         widgets = settings.get("widgets") or []
         self.wheel = wheel_of(widgets[0]["wheelOfLuck"]["options"] if widgets else None)
+        self.close("cloud")
 
     def music(self, command: dict) -> tuple[dict, dict | None]:
         kind, body = next(iter(command.items()))
@@ -157,10 +187,13 @@ class FakeMoblin:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", help="Where the remote control streamer connects at first.")
+    parser.add_argument("api_url", help="Where Moblin cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     LOGGER.setLevel(logging.DEBUG)
-    FakeMoblin(args.url).run()
+    fake = FakeMoblin(args.url, args.api_url)
+    fake.start()
+    threading.Event().wait()
 
 
 if __name__ == "__main__":

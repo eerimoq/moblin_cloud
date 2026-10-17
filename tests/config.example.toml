@@ -3,8 +3,10 @@
 tester-ip-address = "macpro.home"
 # The port the backend under test listens on, on all interfaces.
 backend-port = 8090
-# The port Moblin's remote control streamer connects to. The tester relays the connection to
-# the backend when Moblin is given a streamer URL, and acts as Moblin's assistant otherwise.
+# The port Moblin's remote control streamer connects to, where the tester acts as Moblin's
+# assistant. Moblin cloud connects here too, with a Moblin debug build whose
+# MOBLIN_WEBSITE_API_URL is http://<tester-ip-address>:<remote-control-port>, and the tester
+# relays it to the backend.
 remote-control-port = 2345
 # Show the browser used for PayPal and Twitch. It is always shown with --interactive.
 headless-browser = true
