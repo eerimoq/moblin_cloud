@@ -14,6 +14,17 @@ export const ghostButtonClass =
 export const cardClass =
   "flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8";
 
+export function Notice(props: { status?: boolean; children: JSX.Element }) {
+  return (
+    <p
+      role={props.status ? "status" : undefined}
+      class="rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-[15px] font-semibold text-amber-ink"
+    >
+      {props.children}
+    </p>
+  );
+}
+
 export function Spinner() {
   return (
     <div role="status" aria-label="Loading" class="flex justify-center py-12">

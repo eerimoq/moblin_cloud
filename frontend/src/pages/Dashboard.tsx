@@ -10,6 +10,7 @@ import {
   ghostButtonClass,
   Hero,
   inputClass,
+  Notice,
   SaveButton,
   Spinner,
   Value,
@@ -62,9 +63,7 @@ function TwitchSignIn(props: { failed: boolean }) {
         </a>
       </div>
       <Show when={props.failed}>
-        <p role="status" class="text-amber">
-          Signing in did not work. Try again.
-        </p>
+        <Notice status>Signing in did not work. Try again.</Notice>
       </Show>
     </div>
   );
@@ -152,13 +151,7 @@ function CurrencySettings(props: {
       </p>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>
-          {(error) => (
-            <p role="status" class="text-amber">
-              {error()}
-            </p>
-          )}
-        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
     </form>
   );
@@ -247,9 +240,9 @@ function PayPalAccount(props: {
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">PayPal</h2>
       <Show when={props.settings.paypalSandbox}>
-        <p role="status" class="text-amber">
+        <Notice status>
           PayPal is in sandbox mode. Payments are for testing only and no real money is moved.
-        </p>
+        </Notice>
       </Show>
       <Show
         when={props.settings.merchantId}
@@ -290,13 +283,7 @@ function PayPalAccount(props: {
             Disconnect PayPal
           </button>
         </Show>
-        <Show when={error()}>
-          {(error) => (
-            <p role="status" class="text-amber">
-              {error()}
-            </p>
-          )}
-        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
             Sign in again
@@ -415,13 +402,7 @@ function YourPage(props: {
           <Icon name={copied() ? "check" : "copy"} class="size-4" />
           {copied() ? "Copied" : "Copy link"}
         </button>
-        <Show when={error()}>
-          {(error) => (
-            <p role="status" class="text-amber">
-              {error()}
-            </p>
-          )}
-        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
     </form>
   );
@@ -499,13 +480,7 @@ function SongSettings(props: {
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>
-          {(error) => (
-            <p role="status" class="text-amber">
-              {error()}
-            </p>
-          )}
-        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
             Sign in again
@@ -636,13 +611,7 @@ function TipSettings(props: {
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>
-          {(error) => (
-            <p role="status" class="text-amber">
-              {error()}
-            </p>
-          )}
-        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
             Sign in again
@@ -776,13 +745,7 @@ function SpinSettings(props: {
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>
-          {(error) => (
-            <p role="status" class="text-amber">
-              {error()}
-            </p>
-          )}
-        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
           <a href={signInUrl} class={ghostButtonClass}>
             Sign in again
@@ -1065,10 +1028,9 @@ function MoblinSettings(props: {
         In Moblin, go to Settings → Moblin Cloud, paste the key below and turn on Enabled.
       </p>
       <Value label="Moblin Cloud key" text={props.moblinCloudKey} secret />
-      <p class="flex items-start gap-3 rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-amber-ink">
-        <Icon name="warning" class="mt-0.5 size-5 shrink-0 text-amber" />
+      <Notice>
         Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.
-      </p>
+      </Notice>
       <div class="flex flex-wrap items-center gap-4">
         <button
           type="button"
@@ -1079,9 +1041,7 @@ function MoblinSettings(props: {
           Reset Moblin Cloud key
         </button>
         <Show when={props.newKeyFailed}>
-          <p role="status" class="text-amber">
-            Something went wrong. Try again.
-          </p>
+          <Notice status>Something went wrong. Try again.</Notice>
         </Show>
       </div>
     </div>
@@ -1127,9 +1087,7 @@ function SignedIn(props: {
       fallback={
         <Show when={failed()} fallback={<Spinner />}>
           <div class="flex flex-wrap items-center gap-4">
-            <p role="status" class="text-amber">
-              Could not create your tip page.
-            </p>
+            <Notice status>Could not create your tip page.</Notice>
             <button type="button" class={ghostButtonClass} onClick={create}>
               Try again
             </button>

@@ -16,7 +16,7 @@ import {
 } from "solid-js";
 import { asset } from "../asset";
 import Icon from "../components/Icon";
-import { cardClass, inputClass } from "../components/PageParts";
+import { cardClass, inputClass, Notice } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
   BackendError,
@@ -137,14 +137,10 @@ function PayPalButton(props: { config: PayPalConfig; options: PayPalOptions; dis
         }`}
       />
       <Show when={props.config.environment === "sandbox"}>
-        <p role="status" class="text-amber">
-          PayPal sandbox. This is a test payment and no real money is moved.
-        </p>
+        <Notice status>PayPal sandbox. This is a test payment and no real money is moved.</Notice>
       </Show>
       <Show when={failed()}>
-        <p role="status" class="text-amber">
-          PayPal could not be loaded. Reload the page to try again.
-        </p>
+        <Notice status>PayPal could not be loaded. Reload the page to try again.</Notice>
       </Show>
     </>
   );
@@ -174,7 +170,7 @@ function ResultLine(props: { result: Result | null }) {
         >
           <Icon
             name={result().ok ? "check" : "warning"}
-            class={`mt-0.5 size-5 shrink-0 ${result().ok ? "text-leaf" : "text-amber"}`}
+            class={`mt-0.5 size-5 shrink-0 ${result().ok ? "text-leaf" : ""}`}
           />
           {result().text}
         </p>
@@ -692,9 +688,9 @@ function SpinWheel(props: {
         when={props.wheel}
         keyed
         fallback={
-          <p class="text-amber">
+          <Notice>
             The wheel is not available right now. Try again when the streamer is live.
-          </p>
+          </Notice>
         }
       >
         {(wheel) => (
@@ -1122,9 +1118,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                 Paste the Apple Music link of a song and it goes straight into the queue.
               </p>
               <Show when={status() === "offline"}>
-                <p class="text-amber">
+                <Notice>
                   Song requests are not available right now. Try again when the streamer is live.
-                </p>
+                </Notice>
               </Show>
               <label class="flex flex-col gap-2">
                 <span class="text-[15px] font-semibold text-ink-2">Apple Music song link</span>
