@@ -1237,11 +1237,30 @@ function Admin(props: {
   );
 
   const loadRecent = async () => {
+    const shown = recent();
     try {
       const [song, tip, spin] = await Promise.all(
-        (["song", "tip", "spin"] as const).map((kind) => fetchRecent(props.session, kind, 5)),
+        (["song", "tip", "spin"] as const).map((kind) =>
+          fetchRecent(
+            props.session,
+            kind,
+            Math.min(Math.max(shown?.[kind].items.length ?? 0, 5), 50),
+          ),
+        ),
       );
-      setRecent({ song, tip, spin });
+      const merge = (page: RecentList, old: RecentList | undefined) => {
+        const last = page.items[page.items.length - 1]?.id;
+        const index = old && page.more ? old.items.findIndex((item) => item.id === last) : -1;
+        if (!old || index < 0 || index === old.items.length - 1) {
+          return page;
+        }
+        return { items: [...page.items, ...old.items.slice(index + 1)], more: old.more };
+      };
+      setRecent((old) => ({
+        song: merge(song, old?.song),
+        tip: merge(tip, old?.tip),
+        spin: merge(spin, old?.spin),
+      }));
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
@@ -1293,6 +1312,7 @@ function Admin(props: {
     }
     void loadRecent();
     const timer = setInterval(async () => {
+      void loadRecent();
       try {
         const account = await fetchAccount(props.session);
         setAccount(account);
