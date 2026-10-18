@@ -281,6 +281,10 @@ impl Streamers {
         self.sessions.lock().unwrap().by_id.contains_key(id)
     }
 
+    pub fn connected_count(&self) -> usize {
+        self.sessions.lock().unwrap().by_id.len()
+    }
+
     pub async fn serve(&self, id: String, mut socket: WebSocket) {
         if let Err(error) = self.handshake(&mut socket).await {
             info!("remote control streamer {id} failed to identify: {error:#}");

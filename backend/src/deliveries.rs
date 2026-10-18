@@ -9,6 +9,7 @@ use tokio::sync::Notify;
 use tokio::time::sleep;
 
 use crate::accounts::Accounts;
+use crate::counters;
 use crate::database::Database;
 use crate::pages::format_price;
 use crate::remote_control::{MusicCommand, RequestError, Streamers};
@@ -40,6 +41,16 @@ pub enum Item {
         amount: u32,
         currency: String,
     },
+}
+
+impl Item {
+    fn kind(&self) -> &'static str {
+        match self {
+            Item::Song { .. } => "song",
+            Item::Spin { .. } => "spin",
+            Item::Tip { .. } => "tip",
+        }
+    }
 }
 
 type Targeted = (Delivery, Vec<String>);
@@ -74,6 +85,16 @@ impl Deliveries {
         self.added.notify_one();
     }
 
+    pub fn count(&self) -> usize {
+        self.database
+            .lock()
+            .query_row("SELECT count(*) FROM deliveries", [], |row| row.get(0))
+            .unwrap_or_else(|error| {
+                warn!("failed to count deliveries: {error:#}");
+                0
+            })
+    }
+
     pub fn pending(&self) -> Vec<Delivery> {
         let database = self.database.lock();
         let expired = query(
@@ -83,14 +104,20 @@ impl Deliveries {
         );
         for delivery in expired {
             warn!(
-                "giving up delivering {:?} in request {} to remote control streamer {}",
-                delivery.item, delivery.request_id, delivery.streamer
+                "giving up delivering {:?} in request {} to remote control streamer {} after {} devices got it",
+                delivery.item,
+                delivery.request_id,
+                delivery.streamer,
+                delivery.delivered.len()
             );
+            if delivery.delivered.is_empty() {
+                counters::bump(&database, &format!("{}Expiries", delivery.item.kind()));
+            }
         }
         query(&database, "SELECT * FROM deliveries ORDER BY rowid", [])
     }
 
-    fn delivered(&self, request_id: &str, device: &str, devices: &[String]) {
+    fn delivered(&self, request_id: &str, counter: Option<&str>, device: &str, devices: &[String]) {
         let database = self.database.lock();
         let delivered = database
             .query_row(
@@ -106,10 +133,20 @@ impl Deliveries {
                 {
                     warn!("failed to remove delivery {request_id}: {error:#}");
                 }
+                if let Some(counter) = counter {
+                    counters::bump(&database, counter);
+                }
             }
             Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => {}
             Err(error) => warn!("failed to save delivery {request_id}: {error:#}"),
         }
+    }
+
+    fn failed(&self, kind: &str, reason: &str) {
+        counters::bump(
+            &self.database.lock(),
+            &format!("{kind}DeliveriesFailed:{reason}"),
+        );
     }
 
     fn remove(&self, request_id: &str) {
@@ -179,25 +216,34 @@ impl Deliveries {
 
     async fn deliver_all(&self, streamers: &Streamers, device: String, deliveries: Vec<Targeted>) {
         for (delivery, devices) in deliveries {
-            match deliver(streamers, &device, &delivery).await {
-                Ok(Outcome::Delivered) => info!(
-                    "delivered {:?} in request {} to remote control streamer {device}",
-                    delivery.item, delivery.request_id
-                ),
-                Ok(Outcome::NotFound) => warn!(
-                    "{:?} in request {} was not found by remote control streamer {device}",
-                    delivery.item, delivery.request_id
-                ),
+            let kind = delivery.item.kind();
+            let counter = match deliver(streamers, &device, &delivery).await {
+                Ok(Outcome::Delivered) => {
+                    info!(
+                        "delivered {:?} in request {} to remote control streamer {device}",
+                        delivery.item, delivery.request_id
+                    );
+                    Some(format!("{kind}Deliveries"))
+                }
+                Ok(Outcome::NotFound) => {
+                    warn!(
+                        "{:?} in request {} was not found by remote control streamer {device}",
+                        delivery.item, delivery.request_id
+                    );
+                    self.failed(kind, "not-found");
+                    None
+                }
                 Err(RequestError::Offline | RequestError::Timeout) => return,
                 Err(error) => {
                     info!(
                         "delivering request {} to remote control streamer {device} failed: {error:?}",
                         delivery.request_id
                     );
+                    self.failed(kind, "moblin-error");
                     continue;
                 }
-            }
-            self.delivered(&delivery.request_id, &device, &devices);
+            };
+            self.delivered(&delivery.request_id, counter.as_deref(), &device, &devices);
         }
     }
 }
@@ -367,6 +413,7 @@ mod tests {
             ("D", tip(), 6),
             ("E", spin(), 8),
             ("F", spin(), 6),
+            ("G", tip(), 8),
         ] {
             deliveries.add("S".to_string(), request_id.to_string(), item);
             deliveries
@@ -378,6 +425,29 @@ mod tests {
                 )
                 .unwrap();
         }
+        deliveries.delivered(
+            "G",
+            None,
+            "phone",
+            &["phone".to_string(), "tablet".to_string()],
+        );
         assert_eq!(request_ids(&deliveries), vec!["B", "D", "F"]);
+        let expiries: Vec<(String, u64)> = deliveries
+            .database
+            .lock()
+            .prepare("SELECT name, value FROM counters ORDER BY name")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            expiries,
+            [
+                ("songExpiries".to_string(), 1),
+                ("spinExpiries".to_string(), 1),
+                ("tipExpiries".to_string(), 1),
+            ]
+        );
     }
 }

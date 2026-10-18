@@ -3,6 +3,7 @@ mod api;
 mod app_attest;
 mod auth;
 mod challenges;
+mod counters;
 mod database;
 mod deliveries;
 mod kick;
@@ -32,6 +33,7 @@ use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
 use crate::auth::{Auth, OAuthApp};
 use crate::challenges::Challenges;
+use crate::counters::Counters;
 use crate::database::Database;
 use crate::deliveries::Deliveries;
 use crate::kick::Kick;
@@ -140,6 +142,9 @@ struct Cli {
     /// Fake Twitch sign in, for development.
     #[arg(long)]
     fake_twitch_sign_in: bool,
+    /// Twitch user IDs allowed to see the admin page.
+    #[arg(long, env = "ADMINS", value_delimiter = ',')]
+    admins: Vec<String>,
 }
 
 fn http_client() -> Client {
@@ -228,7 +233,13 @@ async fn main() -> Result<()> {
         Some(AppAttest::new(&cli.app_id, cli.app_attest_environment))
     };
     let pages = Pages::new(database.clone());
+    let counters = Counters::new(database.clone());
     let deliveries = Deliveries::new(database);
+    if cli.admins.is_empty() {
+        warn!("no admins, the admin page is unavailable");
+    } else {
+        info!("{} admins", cli.admins.len());
+    }
     let paypal = match (
         cli.paypal_client_id,
         cli.paypal_client_secret,
@@ -298,6 +309,8 @@ async fn main() -> Result<()> {
         deliveries,
         auth,
         accounts,
+        counters,
+        admins: cli.admins,
     });
     tokio::spawn({
         let api = api.clone();

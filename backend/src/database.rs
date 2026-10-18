@@ -47,6 +47,12 @@ impl Database {
                  CREATE TABLE IF NOT EXISTS streamers (
                      position INTEGER PRIMARY KEY,
                      channels TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS counters (
+                     name TEXT NOT NULL,
+                     day TEXT NOT NULL,
+                     value INTEGER NOT NULL,
+                     PRIMARY KEY (name, day)
                  );",
             )
             .context("failed to create the database tables")?;

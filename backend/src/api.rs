@@ -5,7 +5,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
-use axum::response::{Redirect, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine;
@@ -15,10 +15,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::accounts::{Account, AccountError, Accounts, Device, Page};
+use crate::accounts::{Account, AccountError, AccountStats, Accounts, Device, Page};
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
+use crate::counters::{Counter, Counters};
 use crate::deliveries::{self, Deliveries};
 use crate::live::Live;
 use crate::pages::{
@@ -45,6 +46,8 @@ pub struct Api {
     pub deliveries: Deliveries,
     pub auth: Auth,
     pub accounts: Accounts,
+    pub counters: Counters,
+    pub admins: Vec<String>,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -103,6 +106,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/test/song", post(handle_account_test_song))
         .route("/account/test/tip", post(handle_account_test_tip))
         .route("/account/test/spin", post(handle_account_test_spin))
+        .route("/admin/stats", get(handle_admin_stats))
         .route("/pages/{id}/songs", get(handle_songs))
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/songs/queue", get(handle_queue))
@@ -223,10 +227,11 @@ async fn handle_remote_control_streamer(
     Path(key): Path<String>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    let id = api
-        .accounts
-        .device_of_key(&key)
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let Some(id) = api.accounts.device_of_key(&key) else {
+        api.counters.bump("moblinConnectionsFailed:unknown-key");
+        return Err(StatusCode::NOT_FOUND);
+    };
+    api.counters.bump("moblinConnections");
     Ok(upgrade.on_upgrade(move |socket| async move { api.remote_control.serve(id, socket).await }))
 }
 
@@ -538,6 +543,7 @@ struct AccountResponse {
     music_device: Option<String>,
     wheel_device: Option<String>,
     settings: Option<SettingsResponse>,
+    admin: bool,
 }
 
 #[derive(Serialize)]
@@ -577,7 +583,19 @@ fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, St
     })
 }
 
-fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
+fn is_admin(api: &Api, id: &str) -> bool {
+    api.admins.iter().any(|admin| admin == id)
+}
+
+fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
+    let signed_in = signed_in(api, headers)?;
+    if !is_admin(api, &signed_in.id) {
+        return Err((StatusCode::FORBIDDEN, "not an admin".to_string()));
+    }
+    Ok(signed_in)
+}
+
+fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountResponse> {
     let settings = account.page.as_ref().map(|page| {
         let settings = api.pages.get(&page.id);
         settings_response(api, page.id.clone(), settings).0
@@ -603,6 +621,7 @@ fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
             .and_then(Page::wheel_device)
             .map(|device| device.id.clone()),
         settings,
+        admin: is_admin(api, id),
     })
 }
 
@@ -636,12 +655,51 @@ fn new_key(api: &Api) -> Result<(String, String), (StatusCode, String)> {
     ))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminStatsResponse {
+    accounts: AccountStats,
+    moblin: MoblinStats,
+    pending: PendingStats,
+    counters: Vec<Counter>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MoblinStats {
+    connected_devices: usize,
+}
+
+#[derive(Serialize)]
+struct PendingStats {
+    orders: usize,
+    deliveries: usize,
+}
+
+async fn handle_admin_stats(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<AdminStatsResponse>, (StatusCode, String)> {
+    admin(&api, &headers)?;
+    Ok(Json(AdminStatsResponse {
+        accounts: api.accounts.stats(),
+        moblin: MoblinStats {
+            connected_devices: api.remote_control.connected_count(),
+        },
+        pending: PendingStats {
+            orders: api.orders.len(),
+            deliveries: api.deliveries.count(),
+        },
+        counters: api.counters.all(),
+    }))
+}
+
 async fn handle_account(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let signed_in = signed_in(&api, &headers)?;
-    Ok(account_response(&api, signed_in.account))
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    Ok(account_response(&api, &id, account))
 }
 
 async fn handle_account_page(
@@ -650,7 +708,7 @@ async fn handle_account_page(
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     if account.page.is_some() {
-        return Ok(account_response(&api, account));
+        return Ok(account_response(&api, &id, account));
     }
     let (key, page) = new_key(&api)?;
     let device = Device {
@@ -663,7 +721,7 @@ async fn handle_account_page(
         .give_page(&id, Page::new(page, device))
         .map_err(account_error)?;
     info!("{id} got a page");
-    Ok(account_response(&api, account))
+    Ok(account_response(&api, &id, account))
 }
 
 #[derive(Deserialize)]
@@ -701,7 +759,7 @@ async fn handle_account_devices(
         )
         .map_err(account_error)?;
     info!("{id} added Moblin device {device}");
-    Ok(account_response(&api, account))
+    Ok(account_response(&api, &id, account))
 }
 
 #[derive(Deserialize)]
@@ -720,7 +778,7 @@ async fn handle_account_devices_choose(
         .accounts
         .choose_devices(&id, request.music, request.wheel)
         .map_err(account_error)?;
-    Ok(account_response(&api, account))
+    Ok(account_response(&api, &id, account))
 }
 
 async fn handle_account_device_key(
@@ -736,7 +794,7 @@ async fn handle_account_device_key(
         .map_err(account_error)?;
     api.remote_control.disconnect(&device);
     info!("{id} got a new Moblin Cloud key for device {device}");
-    Ok(account_response(&api, account))
+    Ok(account_response(&api, &id, account))
 }
 
 async fn handle_account_device_remove(
@@ -751,7 +809,7 @@ async fn handle_account_device_remove(
         .map_err(account_error)?;
     api.remote_control.disconnect(&device);
     info!("{id} removed Moblin device {device}");
-    Ok(account_response(&api, account))
+    Ok(account_response(&api, &id, account))
 }
 
 async fn handle_account_settings(
@@ -1268,23 +1326,50 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
     })
 }
 
-type Failure = (StatusCode, String);
+struct Failure {
+    reason: &'static str,
+    status: StatusCode,
+    text: String,
+}
 
-fn failure(status: StatusCode, text: &str) -> Failure {
-    (status, text.to_string())
+impl From<(StatusCode, String)> for Failure {
+    fn from((status, text): (StatusCode, String)) -> Self {
+        Self {
+            reason: "account",
+            status,
+            text,
+        }
+    }
+}
+
+impl IntoResponse for Failure {
+    fn into_response(self) -> Response {
+        (self.status, self.text).into_response()
+    }
+}
+
+fn failure(reason: &'static str, status: StatusCode, text: &str) -> Failure {
+    Failure {
+        reason,
+        status,
+        text: text.to_string(),
+    }
 }
 
 fn music_error(error: RequestError) -> Failure {
     match error {
         RequestError::Offline => failure(
+            "offline",
             StatusCode::NOT_FOUND,
             "The streamer is offline right now. Try again when they are live.",
         ),
         RequestError::Timeout => failure(
+            "moblin-timeout",
             StatusCode::GATEWAY_TIMEOUT,
             "The streamer's Moblin did not answer. It may need an update.",
         ),
         RequestError::Failed => failure(
+            "moblin-error",
             StatusCode::BAD_GATEWAY,
             "The streamer's Moblin could not do it. Try again in a moment.",
         ),
@@ -1332,6 +1417,7 @@ struct RequestedSong {
 
 fn song_and_user(request: SongRequest) -> Result<(String, String), Failure> {
     let link = remote_control::song_link(&request.song).ok_or(failure(
+        "invalid-link",
         StatusCode::BAD_REQUEST,
         "Paste the Apple Music share link of a song.",
     ))?;
@@ -1353,6 +1439,7 @@ async fn requested_song(
     if api.remote_control.is_connected(&device) && !api.remote_control.takes_song_requests(&device)
     {
         return Err(failure(
+            "requests-off",
             StatusCode::CONFLICT,
             "The streamer is not taking song requests right now.",
         ));
@@ -1363,6 +1450,7 @@ async fn requested_song(
         .await
         .map_err(music_error)?
         .ok_or(failure(
+            "song-not-found",
             StatusCode::UNPROCESSABLE_ENTITY,
             "That song is not available on the streamer's Apple Music.",
         ))?;
@@ -1423,14 +1511,24 @@ async fn handle_song_order(
     Path(id): Path<String>,
     Json(request): Json<SongRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
+    let result = song_order(&api, id, request).await;
+    counted(&api, "songOrders", result)
+}
+
+async fn song_order(
+    api: &Api,
+    id: String,
+    request: SongRequest,
+) -> Result<Json<OrderResponse>, Failure> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     let paywall = settings.paywall.ok_or(failure(
+        "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes song requests. Reload the page.",
     ))?;
-    let payee = payee(&api, &id, request.provider.as_deref())?;
-    let song = requested_song(&api, &id, song_and_user(request)?).await?;
+    let payee = payee(api, &id, request.provider.as_deref())?;
+    let song = requested_song(api, &id, song_and_user(request)?).await?;
     let order = Order {
         streamer: id.clone(),
         item: Item::Song {
@@ -1442,7 +1540,7 @@ async fn handle_song_order(
         price: song_price(paywall.price, song.duration),
         currency,
     };
-    Ok(Json(start_order(&api, order).await?))
+    Ok(Json(start_order(api, order).await?))
 }
 
 async fn handle_song_capture(
@@ -1494,6 +1592,7 @@ async fn start_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> 
             order.streamer
         );
         failure(
+            "provider",
             StatusCode::BAD_GATEWAY,
             &format!("{provider} could not start the payment. Try again."),
         )
@@ -1504,6 +1603,7 @@ async fn start_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> 
 
 fn capture_crashed() -> Failure {
     failure(
+        "crashed",
         StatusCode::INTERNAL_SERVER_ERROR,
         "Something went wrong with the payment.",
     )
@@ -1511,40 +1611,58 @@ fn capture_crashed() -> Failure {
 
 fn payment_unavailable() -> Failure {
     failure(
+        "payments-unavailable",
         StatusCode::SERVICE_UNAVAILABLE,
         "Payments are unavailable right now. Try again later.",
     )
 }
 
+fn counted<T>(api: &Api, name: &str, result: Result<T, Failure>) -> Result<T, Failure> {
+    api.counters.bump(&match &result {
+        Ok(_) => name.to_string(),
+        Err(failure) => format!("{name}Failed:{}", failure.reason),
+    });
+    result
+}
+
 async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Order, Failure> {
+    let result = capture_order(api, id, order_id, kind).await;
+    counted(api, &format!("{kind}Payments"), result)
+}
+
+async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Order, Failure> {
     let order = api
         .orders
         .get(order_id)
         .filter(|order| order.streamer == id && order.item.kind() == kind)
         .ok_or(failure(
+            "expired",
             StatusCode::GONE,
             "This payment is unknown or expired, so no money was taken.",
         ))?;
     let music = music_device(api, id);
     let refusal = if kind == "song" && !api.remote_control.is_connected(&music) {
         Some((
+            "offline",
             StatusCode::NOT_FOUND,
             "The streamer went offline, so your payment was not taken.",
         ))
     } else if kind == "song" && !api.remote_control.takes_song_requests(&music) {
         Some((
+            "requests-off",
             StatusCode::CONFLICT,
             "The streamer stopped taking song requests, so your payment was not taken.",
         ))
     } else if kind == "spin" && api.remote_control.wheel(&wheel_device(api, id)).is_none() {
         Some((
+            "no-wheel",
             StatusCode::NOT_FOUND,
             "The streamer's wheel is gone, so your payment was not taken.",
         ))
     } else {
         None
     };
-    if let Some((status, refusal)) = refusal {
+    if let Some((reason, status, refusal)) = refusal {
         if let Payee::Stripe(account) = &order.payee
             && let Some(stripe) = &api.stripe
         {
@@ -1553,7 +1671,7 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
                 warn!("cancelling Stripe payment {order_id} failed: {error:#}");
             }
         }
-        return Err(failure(status, refusal));
+        return Err(failure(reason, status, refusal));
     }
     let provider = order.payee.provider();
     let captured = match &order.payee {
@@ -1573,33 +1691,15 @@ async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Orde
         api.orders.remove(order_id);
     }
     captured.map_err(|error| match error {
-        CaptureError::NotApproved if kind == "song" => failure(
-            StatusCode::PAYMENT_REQUIRED,
-            "The payment was not completed. No song was added.",
-        ),
-        CaptureError::NotApproved => failure(
-            StatusCode::PAYMENT_REQUIRED,
-            "The payment was not completed.",
-        ),
+        CaptureError::NotApproved if kind == "song" => failure("not-approved", StatusCode::PAYMENT_REQUIRED, "The payment was not completed. No song was added."),
+        CaptureError::NotApproved => failure("not-approved", StatusCode::PAYMENT_REQUIRED, "The payment was not completed."),
         CaptureError::AlreadyCaptured => {
-            failure(StatusCode::CONFLICT, "This payment was already used.")
+            failure("already-used", StatusCode::CONFLICT, "This payment was already used.")
         }
-        CaptureError::Pending if kind == "spin" => failure(
-            StatusCode::PAYMENT_REQUIRED,
-            &format!("{provider} is still reviewing the payment, so the wheel was not spun. If the money is taken, ask the streamer for a refund."),
-        ),
-        CaptureError::Pending if kind == "tip" => failure(
-            StatusCode::PAYMENT_REQUIRED,
-            &format!("{provider} is still reviewing the payment, so the tip was not shown. If {provider} approves it, the money still reaches the streamer."),
-        ),
-        CaptureError::Pending => failure(
-            StatusCode::PAYMENT_REQUIRED,
-            &format!("{provider} is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund."),
-        ),
-        CaptureError::Failed | CaptureError::Unexpected => failure(
-            StatusCode::BAD_GATEWAY,
-            &format!("{provider} could not complete the payment."),
-        ),
+        CaptureError::Pending if kind == "spin" => failure("pending", StatusCode::PAYMENT_REQUIRED, &format!("{provider} is still reviewing the payment, so the wheel was not spun. If the money is taken, ask the streamer for a refund.")),
+        CaptureError::Pending if kind == "tip" => failure("pending", StatusCode::PAYMENT_REQUIRED, &format!("{provider} is still reviewing the payment, so the tip was not shown. If {provider} approves it, the money still reaches the streamer.")),
+        CaptureError::Pending => failure("pending", StatusCode::PAYMENT_REQUIRED, &format!("{provider} is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund.")),
+        CaptureError::Failed | CaptureError::Unexpected => failure("provider", StatusCode::BAD_GATEWAY, &format!("{provider} could not complete the payment.")),
     })?;
     info!(
         "{:?} paid {} {} in {provider} order {order_id}",
@@ -1637,6 +1737,7 @@ fn viewer_message(message: Option<String>) -> Result<Option<String>, Failure> {
         .is_some_and(|message| message.chars().count() > 200)
     {
         return Err(failure(
+            "invalid-message",
             StatusCode::BAD_REQUEST,
             "The message can be at most 200 characters.",
         ));
@@ -1658,16 +1759,27 @@ async fn handle_tip_order(
     Path(id): Path<String>,
     Json(request): Json<TipRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
+    let result = tip_order(&api, id, request).await;
+    counted(&api, "tipOrders", result)
+}
+
+async fn tip_order(
+    api: &Api,
+    id: String,
+    request: TipRequest,
+) -> Result<Json<OrderResponse>, Failure> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     let tips = settings.tips.ok_or(failure(
+        "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
     ))?;
-    let payee = payee(&api, &id, request.provider.as_deref())?;
+    let payee = payee(api, &id, request.provider.as_deref())?;
     let minimum = tips.amounts.iter().copied().min().unwrap_or(50);
     if request.amount < minimum {
         return Err(failure(
+            "amount-too-low",
             StatusCode::BAD_REQUEST,
             &format!("Tip at least {}.", format_price(minimum)),
         ));
@@ -1681,7 +1793,7 @@ async fn handle_tip_order(
         price: request.amount,
         currency,
     };
-    Ok(Json(start_order(&api, order).await?))
+    Ok(Json(start_order(api, order).await?))
 }
 
 async fn handle_tip_capture(
@@ -1742,32 +1854,45 @@ async fn handle_spin_order(
     Path(id): Path<String>,
     Json(request): Json<SpinRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
+    let result = spin_order(&api, id, request).await;
+    counted(&api, "spinOrders", result)
+}
+
+async fn spin_order(
+    api: &Api,
+    id: String,
+    request: SpinRequest,
+) -> Result<Json<OrderResponse>, Failure> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     let spin = settings.spin.ok_or(failure(
+        "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
-    let device = wheel_device(&api, &id);
+    let device = wheel_device(api, &id);
     if api.remote_control.wheel(&device).is_none() {
         return Err(if api.remote_control.is_connected(&device) {
             failure(
+                "no-wheel",
                 StatusCode::CONFLICT,
                 "The streamer is not taking wheel spins right now.",
             )
         } else {
             failure(
+                "offline",
                 StatusCode::NOT_FOUND,
                 "The streamer's wheel is not available right now. Try again when they are live.",
             )
         });
     }
-    let payee = payee(&api, &id, request.provider.as_deref())?;
+    let payee = payee(api, &id, request.provider.as_deref())?;
     let option = spin
         .options
         .iter()
         .find(|option| option.spins == request.spins)
         .ok_or(failure(
+            "invalid-option",
             StatusCode::BAD_REQUEST,
             "The streamer changed the prices. Reload the page.",
         ))?;
@@ -1782,7 +1907,7 @@ async fn handle_spin_order(
         price: option.price,
         currency,
     };
-    Ok(Json(start_order(&api, order).await?))
+    Ok(Json(start_order(api, order).await?))
 }
 
 async fn handle_spin_capture(
@@ -1831,6 +1956,7 @@ fn test_page(api: &Api, headers: &HeaderMap) -> Result<(String, Account, String)
     let account = signed_in(api, headers)?.account;
     let id = account.page.as_ref().ok_or_else(no_page)?.id.clone();
     let request_id = api.remote_control.new_request_id().ok_or(failure(
+        "crashed",
         StatusCode::SERVICE_UNAVAILABLE,
         "The test could not be sent. Try again.",
     ))?;
@@ -1838,7 +1964,7 @@ fn test_page(api: &Api, headers: &HeaderMap) -> Result<(String, Account, String)
 }
 
 fn moblin_not_connected() -> Failure {
-    failure(StatusCode::CONFLICT, "Connect Moblin first.")
+    failure("offline", StatusCode::CONFLICT, "Connect Moblin first.")
 }
 
 async fn handle_account_test_song(
@@ -1898,6 +2024,7 @@ async fn handle_account_test_spin(
     if api.remote_control.wheel(&device).is_none() {
         return Err(if api.remote_control.is_connected(&device) {
             failure(
+                "no-wheel",
                 StatusCode::CONFLICT,
                 "Pick a wheel of luck in Moblin's Moblin Cloud settings first.",
             )
@@ -2018,6 +2145,8 @@ mod tests {
             )
             .unwrap(),
             accounts: Accounts::new(Database::memory()),
+            counters: Counters::new(Database::memory()),
+            admins: vec!["admin".to_string()],
         });
         tokio::spawn({
             let api = api.clone();
@@ -3932,6 +4061,7 @@ mod tests {
                 "musicDevice": null,
                 "wheelDevice": null,
                 "settings": null,
+                "admin": false,
             })
         );
         let response = client
@@ -4417,6 +4547,65 @@ mod tests {
             ))
             .await
             .is_err()
+        );
+        assert_eq!(
+            api.counters.all(),
+            [Counter {
+                name: "moblinConnectionsFailed:unknown-key".to_string(),
+                today: 1,
+                week: 1,
+                total: 1,
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn admin_stats() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let url = format!("http://{address}/admin/stats");
+        let response = client.get(&url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let (session, _, _) = streamer(&address, &api).await;
+        let response = client.get(&url).bearer_auth(&session).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let account: Value = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["admin"], false);
+        api.accounts
+            .signed_in("admin", "Admin", "admin", None)
+            .unwrap();
+        let admin = api.auth.session("admin", 0);
+        let account: Value = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(&admin)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["admin"], true);
+        api.counters.bump("songOrders");
+        api.counters.bump("songOrders");
+        let response = client.get(&url).bearer_auth(&admin).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let stats: Value = response.json().await.unwrap();
+        assert_eq!(
+            stats,
+            json!({
+                "accounts": {"total": 2, "withPage": 1, "paypal": 0, "stripe": 0},
+                "moblin": {"connectedDevices": 0},
+                "pending": {"orders": 0, "deliveries": 0},
+                "counters": [{"name": "songOrders", "today": 2, "week": 2, "total": 2}],
+            })
         );
     }
 }

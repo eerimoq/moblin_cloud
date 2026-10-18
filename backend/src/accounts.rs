@@ -67,6 +67,15 @@ impl Page {
     }
 }
 
+#[derive(Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStats {
+    pub total: u64,
+    pub with_page: u64,
+    pub paypal: u64,
+    pub stripe: u64,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum AccountError {
     Unknown,
@@ -334,6 +343,27 @@ impl Accounts {
             account.sessions += 1;
             Ok(())
         })
+    }
+
+    pub fn stats(&self) -> AccountStats {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT count(*), count(page_id), count(merchant_id), coalesce(sum(stripe_ready), 0) FROM accounts",
+                [],
+                |row| {
+                    Ok(AccountStats {
+                        total: row.get(0)?,
+                        with_page: row.get(1)?,
+                        paypal: row.get(2)?,
+                        stripe: row.get(3)?,
+                    })
+                },
+            )
+            .unwrap_or_else(|error| {
+                warn!("failed to count accounts: {error:#}");
+                AccountStats::default()
+            })
     }
 
     fn find(&self, condition: &str, value: &str) -> Option<Account> {

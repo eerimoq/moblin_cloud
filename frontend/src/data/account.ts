@@ -15,6 +15,14 @@ export type Account = {
   musicDevice: string | null;
   wheelDevice: string | null;
   settings: Settings | null;
+  admin: boolean;
+};
+
+export type AdminStats = {
+  accounts: { total: number; withPage: number; paypal: number; stripe: number };
+  moblin: { connectedDevices: number };
+  pending: { orders: number; deliveries: number };
+  counters: { name: string; today: number; week: number; total: number }[];
 };
 
 const sessionKey = "songRequestSession";
@@ -68,6 +76,8 @@ const post = (body: unknown) => ({
 });
 
 export const fetchAccount = (session: string) => call<Account>(session, "/account");
+
+export const fetchAdminStats = (session: string) => call<AdminStats>(session, "/admin/stats");
 
 export async function signOutEverywhere(session: string) {
   await fetch(`${backendUrl}/account/sign-out`, {

@@ -56,7 +56,7 @@ backend-run *args:
 	set -euo pipefail
 	cd backend
 	cargo build
-	cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --fake-twitch-sign-in --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
+	cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --fake-twitch-sign-in --public-url http://localhost:5173/api --frontend-url http://localhost:5173 --admins fake-streamer {{args}} &
 	trap 'kill $!' EXIT
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	just backend-seed

@@ -115,4 +115,13 @@ impl Orders {
     pub fn remove(&self, order_id: &str) {
         self.orders.lock().unwrap().remove(order_id);
     }
+
+    pub fn len(&self) -> usize {
+        self.orders
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|(created, _)| created.elapsed() < Duration::from_secs(3 * 60 * 60))
+            .count()
+    }
 }

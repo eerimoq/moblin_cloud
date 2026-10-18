@@ -1718,6 +1718,7 @@ function Preview(props: { failed: boolean }) {
               musicDevice: null,
               wheelDevice: null,
               settings: null,
+              admin: false,
             }}
             settings={{
               id: "",
@@ -1822,18 +1823,25 @@ export default function Dashboard() {
           }
         >
           {(current) => (
-            <button
-              type="button"
-              class={`${ghostButtonClass} h-11! px-5! text-base!`}
-              onClick={async () => {
-                try {
-                  await signOutEverywhere(current().session);
-                } catch {}
-                signOut();
-              }}
-            >
-              {t("Sign out")}
-            </button>
+            <div class="flex items-center gap-3">
+              <Show when={current().account.admin}>
+                <a href={asset(pages.admin)} class={`${ghostButtonClass} h-11! px-5! text-base!`}>
+                  {t("Admin")}
+                </a>
+              </Show>
+              <button
+                type="button"
+                class={`${ghostButtonClass} h-11! px-5! text-base!`}
+                onClick={async () => {
+                  try {
+                    await signOutEverywhere(current().session);
+                  } catch {}
+                  signOut();
+                }}
+              >
+                {t("Sign out")}
+              </button>
+            </div>
           )}
         </Show>
       </CloudHeader>
