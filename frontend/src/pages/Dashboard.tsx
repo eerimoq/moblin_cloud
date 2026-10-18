@@ -580,13 +580,6 @@ function YourPage(props: {
   const [saving, setSaving] = createSignal(false);
   const [saved, flashSaved] = createFlash(2000);
   const [error, setError] = createSignal<string | null>(null);
-  const [copied, flashCopied] = createFlash(1500);
-
-  const copyLink = async () => {
-    if (await copyText(pageUrl(props.account))) {
-      flashCopied();
-    }
-  };
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -669,10 +662,6 @@ function YourPage(props: {
         <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
           {t("Open tip page")}
         </a>
-        <button type="button" class={ghostButtonClass} onClick={copyLink}>
-          <Icon name={copied() ? "check" : "copy"} class="size-4" />
-          {copied() ? t("Copied") : t("Copy link")}
-        </button>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
     </form>
