@@ -179,7 +179,7 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
 }
 
 const stripeButtonClass =
-  "inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-stripe px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-stripe-bright disabled:opacity-60";
+  "inline-flex h-12 items-center justify-center gap-2.5 rounded-full bg-stripe px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors not-disabled:hover:bg-stripe-bright disabled:opacity-60";
 
 type CardPayment = {
   order: Order;
@@ -359,7 +359,9 @@ function PayButtons(props: {
         )}
       </Show>
       <Show when={props.payment.paypal && props.payment.stripe}>
-        <p class="text-center text-[15px] text-muted">{t("or")}</p>
+        <p class="text-center text-xs font-semibold tracking-widest text-muted uppercase">
+          {t("or")}
+        </p>
       </Show>
       <Show when={props.payment.stripe}>
         {(stripe) => (
@@ -621,10 +623,12 @@ function TipJar(props: {
         onMessage={setMessage}
         placeholder={t("Love the stream!")}
       />
-      <div class="flex w-full flex-col gap-3">
-        <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
-          <span class="text-ink-2">{t("Your tip")}</span>
-          <span class="font-display text-2xl font-semibold">
+      <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
+        <p class="flex flex-col items-center gap-1 text-center">
+          <span class="text-sm font-semibold tracking-wider text-muted uppercase">
+            {t("Your tip")}
+          </span>
+          <span class="font-display text-4xl font-semibold">
             {amount() === null
               ? "–"
               : formatPrice({ price: amount()!, currency: props.tips.currency })}
@@ -636,7 +640,7 @@ function TipJar(props: {
           disabled={busy() || amount() === null}
           resetKey={`${amount()}\n${props.name}\n${message()}`}
         />
-        <p class="text-[15px] text-muted">
+        <p class="text-center text-sm text-muted">
           {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
         </p>
       </div>
@@ -1005,12 +1009,12 @@ function SpinWheel(props: {
         onMessage={setMessage}
         placeholder={t("Land on the big one!")}
       />
-      <div class="flex w-full flex-col gap-3">
-        <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
-          <span class="text-ink-2">
+      <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
+        <p class="flex flex-col items-center gap-1 text-center">
+          <span class="text-sm font-semibold tracking-wider text-muted uppercase">
             {t("Your tip · {spins}", { spins: spinsText(choice().spins) })}
           </span>
-          <span class="font-display text-2xl font-semibold">
+          <span class="font-display text-4xl font-semibold">
             {formatPrice({ price: choice().price, currency: props.spin.currency })}
           </span>
         </p>
@@ -1020,7 +1024,7 @@ function SpinWheel(props: {
           disabled={busy() || !props.wheel}
           resetKey={`${choice().spins}\n${props.name}\n${message()}`}
         />
-        <p class="text-[15px] text-muted">
+        <p class="text-center text-sm text-muted">
           {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
         </p>
       </div>
@@ -1423,13 +1427,15 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
               <div class="flex flex-wrap items-center gap-4">
                 <Show when={payable()} keyed>
                   {(current) => (
-                    <div class="flex w-full flex-col gap-3">
-                      <p class="flex items-baseline justify-between gap-4 border-b border-line pb-3">
-                        <span class="text-ink-2">{t("Your tip")}</span>
+                    <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
+                      <p class="flex flex-col items-center gap-1 text-center">
+                        <span class="text-sm font-semibold tracking-wider text-muted uppercase">
+                          {t("Your tip")}
+                        </span>
                         <span class="text-ink-2">
                           {tRich("{price} per 5 minutes", {
                             price: (
-                              <span class="font-display text-2xl font-semibold text-ink">
+                              <span class="font-display text-4xl font-semibold text-ink">
                                 {formatPrice(current)}
                               </span>
                             ),
@@ -1444,7 +1450,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                         }
                         resetKey={`${song()}\n${name()}`}
                       />
-                      <p class="text-[15px] text-muted">
+                      <p class="text-center text-sm text-muted">
                         {tRich(
                           "Every started 5 minutes of the song counts, and it always plays in full. " +
                             "Your tip goes straight to the streamer. {terms}",
