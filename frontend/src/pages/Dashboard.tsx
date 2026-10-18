@@ -1093,7 +1093,7 @@ function TestSend(props: {
             {sending()
               ? t("Sending…")
               : sent()
-                ? t("Sent to Moblin")
+                ? t("Queued for Moblin")
                 : props.kind === "song"
                   ? t("Send test song")
                   : props.kind === "tip"
