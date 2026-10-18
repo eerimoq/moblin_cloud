@@ -27,6 +27,7 @@ import {
   disconnectPayPal,
   disconnectStripe,
   fetchAccount,
+  fetchRecent,
   createStreamer,
   newDeviceKey,
   readSession,
@@ -40,6 +41,8 @@ import {
   takeSignInResult,
   type Account,
   type Device,
+  type Recent,
+  type RecentLists,
   type SettingsChanges,
 } from "../data/account";
 import { pages } from "../data/links";
@@ -48,6 +51,7 @@ import {
   BackendError,
   currencies,
   defaultTitle,
+  formatPrice,
   hundredths,
   type Page,
   type Paywall,
@@ -70,6 +74,22 @@ const pageUrl = (account: Account) =>
   new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
 
 const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
+
+const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+
+function timeAgo(at: number) {
+  const seconds = Math.max(0, Math.round(Date.now() / 1000 - at));
+  if (seconds < 60) {
+    return t("Just now");
+  }
+  if (seconds < 3600) {
+    return relativeTime.format(-Math.round(seconds / 60), "minute");
+  }
+  if (seconds < 86_400) {
+    return relativeTime.format(-Math.round(seconds / 3600), "hour");
+  }
+  return relativeTime.format(-Math.round(seconds / 86_400), "day");
+}
 
 function paymentErrorText(error: unknown, invalid: string) {
   if (error instanceof BackendError) {
@@ -1086,6 +1106,72 @@ function TestSend(props: {
   );
 }
 
+function Latest(props: { kind: "song" | "tip" | "spin"; items: Recent[] | undefined }) {
+  const title = () =>
+    props.kind === "song"
+      ? t("Latest song requests")
+      : props.kind === "tip"
+        ? t("Latest tips")
+        : t("Latest spins");
+  const empty = () =>
+    props.kind === "song"
+      ? t("No paid song requests yet.")
+      : props.kind === "tip"
+        ? t("No tips yet.")
+        : t("No paid spins yet.");
+  const status = (item: Recent) =>
+    item.status === "delivered"
+      ? { text: t("In Moblin"), class: "text-leaf" }
+      : item.status === "waiting"
+        ? { text: t("Waiting for Moblin"), class: "text-muted" }
+        : { text: t("Not added by Moblin"), class: "text-amber-ink" };
+
+  return (
+    <section class={cardClass}>
+      <h2 class="text-[23px] font-semibold">{title()}</h2>
+      <Show when={props.items} fallback={<Spinner />}>
+        {(items) => (
+          <Show when={items().length > 0} fallback={<p class="text-ink-2">{empty()}</p>}>
+            <ul class="flex flex-col divide-y divide-line">
+              <For each={items()}>
+                {(item) => (
+                  <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
+                    <div class="flex min-w-0 flex-col gap-0.5">
+                      <span class="flex flex-wrap items-baseline gap-x-2">
+                        <span class="font-semibold">{item.user}</span>
+                        <span class="text-ink-2">
+                          {formatPrice({ price: item.amount, currency: item.currency })}
+                        </span>
+                      </span>
+                      <Show when={item.name}>
+                        {(name) => <span class="truncate text-ink-2">{name()}</span>}
+                      </Show>
+                      <Show when={item.spins}>
+                        {(spins) => (
+                          <span class="text-ink-2">
+                            {spins() === 1 ? t("1 spin") : t("{count} spins", { count: spins() })}
+                          </span>
+                        )}
+                      </Show>
+                      <Show when={item.message}>
+                        {(message) => <span class="truncate text-ink-2">{message()}</span>}
+                      </Show>
+                    </div>
+                    <div class="flex items-baseline gap-3 text-[15px]">
+                      <span class="text-muted">{timeAgo(item.at)}</span>
+                      <span class={`font-semibold ${status(item).class}`}>{status(item).text}</span>
+                    </div>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        )}
+      </Show>
+    </section>
+  );
+}
+
 function Admin(props: {
   session: string;
   account: Account;
@@ -1096,6 +1182,19 @@ function Admin(props: {
   const [account, setAccount] = createSignal(props.account);
   const [settings, setSettings] = createSignal(props.settings);
   const [busy, setBusy] = createSignal(false);
+  const [recent, setRecent] = createSignal<RecentLists | null>(
+    props.preview ? { songs: [], tips: [], spins: [] } : null,
+  );
+
+  const loadRecent = async () => {
+    try {
+      setRecent(await fetchRecent(props.session));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+    }
+  };
 
   const changeDevices = async (change: () => Promise<Account>) => {
     setBusy(true);
@@ -1115,7 +1214,9 @@ function Admin(props: {
     if (props.preview) {
       return;
     }
+    void loadRecent();
     const timer = setInterval(async () => {
+      void loadRecent();
       try {
         const account = await fetchAccount(props.session);
         setAccount(account);
@@ -1269,6 +1370,7 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
+          <Latest kind="tip" items={recent()?.tips} />
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
           <Show
@@ -1290,6 +1392,7 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
+          <Latest kind="spin" items={recent()?.spins} />
         </div>
         <div hidden={active() !== "songs"} class="flex flex-col gap-6">
           <Show
@@ -1311,6 +1414,7 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
+          <Latest kind="song" items={recent()?.songs} />
         </div>
         <Show when={payments()}>
           <div hidden={active() !== "payments"} class="flex flex-col gap-6">

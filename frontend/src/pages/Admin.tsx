@@ -56,6 +56,8 @@ const reasonLabels: Record<string, string> = {
   "not-approved": "Viewer had not approved the payment",
   "already-used": "Payment already used",
   pending: "Provider still reviewing the payment",
+  unknown: "Provider did not answer, settled later",
+  "not-saved": "Database write failed",
   "moblin-timeout": "Moblin did not answer",
   "moblin-error": "Moblin answered with an error",
   crashed: "Backend error",
@@ -64,6 +66,8 @@ const reasonLabels: Record<string, string> = {
 
 const problemReasons = [
   "provider",
+  "unknown",
+  "not-saved",
   "payments-unavailable",
   "moblin-timeout",
   "moblin-error",
@@ -106,7 +110,7 @@ const problems: Problem[] = [
   },
   {
     label: "Given up after 7 days",
-    hint: "Paid or test requests that never reached a device and were dropped.",
+    hint: "Paid or test requests that never reached a device in 7 days and were dropped.",
     matches: (name) => name.endsWith("Expiries"),
   },
 ];
@@ -139,7 +143,6 @@ const kinds: Kind[] = [
       "offline",
       "requests-off",
       "not-approved",
-      "already-used",
       "pending",
       "payments-unavailable",
       "provider",
@@ -156,14 +159,7 @@ const kinds: Kind[] = [
       "invalid-message",
       "provider",
     ],
-    payments: [
-      "expired",
-      "not-approved",
-      "already-used",
-      "pending",
-      "payments-unavailable",
-      "provider",
-    ],
+    payments: ["expired", "not-approved", "pending", "payments-unavailable", "provider"],
     deliveries: ["moblin-error"],
   },
   {
@@ -182,7 +178,6 @@ const kinds: Kind[] = [
       "expired",
       "no-wheel",
       "not-approved",
-      "already-used",
       "pending",
       "payments-unavailable",
       "provider",

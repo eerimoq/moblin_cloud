@@ -158,6 +158,19 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
+const capture = async (path: string) => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await call<object>(path, { method: "POST" });
+    } catch (error) {
+      if ((error instanceof BackendError && error.status < 500) || attempt === 4) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
+};
+
 export const musicStatus = (id: string) =>
   call<MusicStatus>(`/${encodeURIComponent(id)}/songs/queue`);
 
@@ -185,9 +198,7 @@ export const orderSong = (id: string, song: string, user: string, provider: Prov
   );
 
 export const captureSong = (id: string, orderId: string) =>
-  call<object>(`/${encodeURIComponent(id)}/songs/orders/${encodeURIComponent(orderId)}/capture`, {
-    method: "POST",
-  });
+  capture(`/${encodeURIComponent(id)}/songs/orders/${encodeURIComponent(orderId)}/capture`);
 
 export const streamerTips = async (id: string) =>
   (await call<{ tips: PublicTips | null }>(`/${encodeURIComponent(id)}/tips`)).tips;
@@ -205,9 +216,7 @@ export const orderTip = (
   );
 
 export const captureTip = (id: string, orderId: string) =>
-  call<object>(`/${encodeURIComponent(id)}/tips/orders/${encodeURIComponent(orderId)}/capture`, {
-    method: "POST",
-  });
+  capture(`/${encodeURIComponent(id)}/tips/orders/${encodeURIComponent(orderId)}/capture`);
 
 export type Wheel = {
   options: { text: string; weight: number }[];
@@ -231,9 +240,7 @@ export const orderSpin = (
   );
 
 export const captureSpin = (id: string, orderId: string) =>
-  call<object>(`/${encodeURIComponent(id)}/spin/orders/${encodeURIComponent(orderId)}/capture`, {
-    method: "POST",
-  });
+  capture(`/${encodeURIComponent(id)}/spin/orders/${encodeURIComponent(orderId)}/capture`);
 
 export const idOfTwitchLogin = async (login: string) =>
   (await call<{ id: string }>(`/twitch/${encodeURIComponent(login)}`)).id;

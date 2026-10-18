@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use log::info;
+use log::{info, warn};
 use reqwest::header::{CONTENT_TYPE, HeaderMap};
 use reqwest::{Client, RequestBuilder, StatusCode};
 use serde::Deserialize;
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use crate::pages::format_price;
-use crate::payments::{CaptureError, Order};
+use crate::payments::{CaptureError, Order, PaymentStatus};
 
 pub const LIVE_URL: &str = "https://api-m.paypal.com";
 pub const SANDBOX_URL: &str = "https://api-m.sandbox.paypal.com";
@@ -30,6 +30,17 @@ fn order_body(order: &Order, merchant_id: &str) -> Value {
         }],
         "application_context": {"shipping_preference": "NO_SHIPPING"},
     })
+}
+
+fn check_order_id(order_id: &str) -> Result<()> {
+    if order_id.is_empty()
+        || !order_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        bail!("bad order id");
+    }
+    Ok(())
 }
 
 trait Checked: Sized {
@@ -372,18 +383,22 @@ impl PayPal {
             .post_capture(order_id, merchant_id)
             .await
             .map_err(|error| {
-                info!("capturing PayPal order {order_id} failed: {error:#}");
-                CaptureError::Failed
+                warn!("capturing PayPal order {order_id} failed: {error:#}");
+                CaptureError::Unknown
             })?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or_default();
+        if status.is_server_error() {
+            warn!("PayPal failed to capture order {order_id} ({status}): {body}");
+            return Err(CaptureError::Unknown);
+        }
         if !status.is_success() {
             let issue = body["details"][0]["issue"].as_str().unwrap_or_default();
             info!("PayPal refused to capture order {order_id} ({status}): {issue}");
             return Err(match issue {
                 "ORDER_NOT_APPROVED" | "PAYER_ACTION_REQUIRED" => CaptureError::NotApproved,
                 "ORDER_ALREADY_CAPTURED" => CaptureError::AlreadyCaptured,
-                _ => CaptureError::Failed,
+                _ => CaptureError::Refused,
             });
         }
         let capture = &body["purchase_units"][0]["payments"]["captures"][0];
@@ -399,19 +414,63 @@ impl PayPal {
                 Err(CaptureError::Pending)
             }
             _ => {
-                info!("unexpected capture of PayPal order {order_id}: {body}");
-                Err(CaptureError::Unexpected)
+                warn!("unexpected capture of PayPal order {order_id}: {body}");
+                Err(CaptureError::Unknown)
             }
         }
     }
 
-    async fn post_capture(&self, order_id: &str, merchant_id: &str) -> Result<reqwest::Response> {
-        if !order_id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            bail!("bad order id");
+    pub async fn status(
+        &self,
+        order_id: &str,
+        order: &Order,
+        merchant_id: &str,
+    ) -> Result<PaymentStatus> {
+        check_order_id(order_id)?;
+        let token = self.token().await?;
+        let response = self
+            .partner(
+                self.client
+                    .get(format!("{}/v2/checkout/orders/{order_id}", self.url)),
+            )
+            .bearer_auth(&token)
+            .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
+            .send()
+            .await
+            .context("failed to look a PayPal order up")?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(PaymentStatus::Gone);
         }
+        let body: Value = response
+            .checked("look an order up")
+            .await?
+            .json()
+            .await
+            .context("unexpected answer to a PayPal order lookup")?;
+        let capture = &body["purchase_units"][0]["payments"]["captures"][0];
+        Ok(match capture["status"].as_str() {
+            Some("COMPLETED" | "REFUNDED" | "PARTIALLY_REFUNDED") => {
+                if capture["amount"]["currency_code"] != order.currency.as_str()
+                    || capture["amount"]["value"] != format_price(order.price).as_str()
+                {
+                    warn!(
+                        "PayPal order {order_id} captured {} instead of {} {}",
+                        capture["amount"],
+                        format_price(order.price),
+                        order.currency
+                    );
+                }
+                PaymentStatus::Captured
+            }
+            Some("PENDING") => PaymentStatus::Pending,
+            Some(_) => PaymentStatus::NotCaptured,
+            None if body["status"] == "VOIDED" => PaymentStatus::Gone,
+            None => PaymentStatus::NotCaptured,
+        })
+    }
+
+    async fn post_capture(&self, order_id: &str, merchant_id: &str) -> Result<reqwest::Response> {
+        check_order_id(order_id)?;
         let token = self.token().await?;
         Ok(self
             .partner(self.client.post(format!(

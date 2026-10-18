@@ -173,6 +173,21 @@ class Dashboard(Client):
     def disconnect_stripe(self) -> dict:
         return self.post("/account/stripe/disconnect")
 
+    def recent(self) -> dict:
+        return self.get("/account/recent")
+
+    def test_song(self, song: str) -> dict:
+        return self.post("/account/test/song", {"song": song})
+
+    def test_tip(self, message: str | None = None) -> dict:
+        return self.post("/account/test/tip", {"message": message})
+
+    def test_spin(self, message: str | None = None) -> dict:
+        return self.post("/account/test/spin", {"message": message})
+
+    def admin_stats(self) -> dict:
+        return self.get("/admin/stats")
+
     def sign_out_everywhere(self):
         response = self.request("POST", "/account/sign-out")
         if not response.ok:

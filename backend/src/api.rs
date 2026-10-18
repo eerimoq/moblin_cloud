@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::body::Bytes;
@@ -19,13 +20,13 @@ use crate::accounts::{Account, AccountError, AccountStats, Accounts, Device, Pag
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
-use crate::counters::{Counter, Counters};
+use crate::counters::{self, Counter, Counters};
 use crate::deliveries::{self, Deliveries};
 use crate::live::Live;
 use crate::pages::{
     CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
 };
-use crate::payments::{CaptureError, Item, Order, Orders, Payee};
+use crate::payments::{CaptureError, Item, Order, Orders, Payee, PaymentStatus, Stage};
 use crate::paypal::{PayPal, Seller};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
 use crate::store::{Channel, Store, Streamer};
@@ -103,6 +104,7 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_account_stripe_disconnect),
         )
         .route("/account/sign-out", post(handle_account_sign_out))
+        .route("/account/recent", get(handle_account_recent))
         .route("/account/test/song", post(handle_account_test_song))
         .route("/account/test/tip", post(handle_account_test_tip))
         .route("/account/test/spin", post(handle_account_test_spin))
@@ -687,7 +689,7 @@ async fn handle_admin_stats(
             connected_devices: api.remote_control.connected_count(),
         },
         pending: PendingStats {
-            orders: api.orders.len(),
+            orders: api.orders.unfinished(),
             deliveries: api.deliveries.count(),
         },
         counters: api.counters.all(),
@@ -700,6 +702,75 @@ async fn handle_account(
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     Ok(account_response(&api, &id, account))
+}
+
+#[derive(Default, Serialize)]
+struct RecentResponse {
+    songs: Vec<Recent>,
+    tips: Vec<Recent>,
+    spins: Vec<Recent>,
+}
+
+#[derive(Serialize)]
+struct Recent {
+    id: String,
+    at: u64,
+    user: String,
+    amount: u32,
+    currency: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    spins: Option<u32>,
+    status: &'static str,
+}
+
+async fn handle_account_recent(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<RecentResponse>, (StatusCode, String)> {
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
+    let mut response = RecentResponse::default();
+    let Some(page) = account.page else {
+        return Ok(Json(response));
+    };
+    for (id, at, order) in api.orders.recent(&page.id) {
+        let list = match &order.item {
+            Item::Song { .. } => &mut response.songs,
+            Item::Tip { .. } => &mut response.tips,
+            Item::Spin { .. } => &mut response.spins,
+        };
+        if list.len() >= 5 {
+            continue;
+        }
+        let status = match api.deliveries.get(&id) {
+            None => "delivered",
+            Some(delivery) if delivery.failure.as_deref() == Some("not-found") => "notAdded",
+            Some(_) => "waiting",
+        };
+        let (name, link, message, spins) = match order.item {
+            Item::Song { link, name } => (Some(name), Some(link), None, None),
+            Item::Tip { message } => (None, None, message, None),
+            Item::Spin { spins, message } => (None, None, message, Some(spins)),
+        };
+        list.push(Recent {
+            id,
+            at,
+            user: order.user,
+            amount: order.price,
+            currency: order.currency,
+            name,
+            link,
+            message,
+            spins,
+            status,
+        });
+    }
+    Ok(Json(response))
 }
 
 async fn handle_account_page(
@@ -807,6 +878,7 @@ async fn handle_account_device_remove(
         .accounts
         .remove_device(&id, &device)
         .map_err(account_error)?;
+    api.deliveries.notify();
     api.remote_control.disconnect(&device);
     info!("{id} removed Moblin device {device}");
     Ok(account_response(&api, &id, account))
@@ -1477,7 +1549,7 @@ fn queue(
         song.link, song.user
     );
     api.deliveries.add(
-        id,
+        id.clone(),
         request_id,
         deliveries::Item::Song {
             link: song.link,
@@ -1547,7 +1619,7 @@ async fn handle_song_capture(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    tokio::spawn(capture_song(api, id, order_id))
+    tokio::spawn(capture_paid(api, id, order_id, "song"))
         .await
         .unwrap_or_else(|_| Err(capture_crashed()))
 }
@@ -1597,7 +1669,14 @@ async fn start_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> 
             &format!("{provider} could not start the payment. Try again."),
         )
     })?;
-    api.orders.insert(order_id.clone(), order);
+    api.orders.insert(&order_id, &order).map_err(|error| {
+        warn!("{error:#}");
+        failure(
+            "not-saved",
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Payments are unavailable right now. Try again later.",
+        )
+    })?;
     Ok(OrderResponse { order_id, stripe })
 }
 
@@ -1625,21 +1704,65 @@ fn counted<T>(api: &Api, name: &str, result: Result<T, Failure>) -> Result<T, Fa
     result
 }
 
-async fn capture(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Order, Failure> {
-    let result = capture_order(api, id, order_id, kind).await;
-    counted(api, &format!("{kind}Payments"), result)
+async fn capture_paid(
+    api: Arc<Api>,
+    id: String,
+    order_id: String,
+    kind: &'static str,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    if let Err(failure) = capture_order(&api, &id, &order_id, kind).await {
+        api.counters
+            .bump(&format!("{kind}PaymentsFailed:{}", failure.reason));
+        return Err(failure);
+    }
+    Ok(accepted())
 }
 
-async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<Order, Failure> {
-    let order = api
+fn expired() -> Failure {
+    failure(
+        "expired",
+        StatusCode::GONE,
+        "This payment is unknown or expired, so no money was taken.",
+    )
+}
+
+fn provider_failed(provider: &str) -> Failure {
+    failure(
+        "provider",
+        StatusCode::BAD_GATEWAY,
+        &format!("{provider} could not complete the payment."),
+    )
+}
+
+fn pending(provider: &str, kind: &str) -> Failure {
+    let text = match kind {
+        "song" => format!(
+            "{provider} is still reviewing the payment, so no song was added yet. It will be added if {provider} approves the payment."
+        ),
+        "tip" => format!(
+            "{provider} is still reviewing the payment. If {provider} approves it, the tip will be shown and the money reaches the streamer."
+        ),
+        _ => format!(
+            "{provider} is still reviewing the payment, so the wheel was not spun yet. It will be spun if {provider} approves the payment."
+        ),
+    };
+    failure("pending", StatusCode::PAYMENT_REQUIRED, &text)
+}
+
+async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<(), Failure> {
+    let (stage, order) = api
         .orders
         .get(order_id)
-        .filter(|order| order.streamer == id && order.item.kind() == kind)
-        .ok_or(failure(
-            "expired",
-            StatusCode::GONE,
-            "This payment is unknown or expired, so no money was taken.",
-        ))?;
+        .filter(|(_, order)| order.streamer == id && order.item.kind() == kind)
+        .ok_or_else(expired)?;
+    match stage {
+        Stage::Captured => return Ok(()),
+        Stage::Capturing => {
+            let status = settle_one(api, order_id, &order).await;
+            return settled(&order, status);
+        }
+        Stage::Created => {}
+    }
     let music = music_device(api, id);
     let refusal = if kind == "song" && !api.remote_control.is_connected(&music) {
         Some((
@@ -1674,6 +1797,24 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         return Err(failure(reason, status, refusal));
     }
     let provider = order.payee.provider();
+    let available = match &order.payee {
+        Payee::PayPal(_) => api.paypal.is_some(),
+        Payee::Stripe(_) => api.stripe.is_some(),
+    };
+    if !available {
+        return Err(payment_unavailable());
+    }
+    if let Err(error) = api
+        .orders
+        .transition(order_id, Stage::Created, Stage::Capturing)
+    {
+        warn!("{error:#}");
+        return Err(failure(
+            "not-saved",
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Payments are unavailable right now, so no money was taken. Try again later.",
+        ));
+    }
     let captured = match &order.payee {
         Payee::PayPal(merchant_id) => {
             let paypal = api.paypal.as_ref().ok_or_else(payment_unavailable)?;
@@ -1684,48 +1825,186 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
             stripe.capture(order_id, &order, account).await
         }
     };
-    if !matches!(
-        captured,
-        Err(CaptureError::NotApproved | CaptureError::Failed)
-    ) {
-        api.orders.remove(order_id);
-    }
-    captured.map_err(|error| match error {
-        CaptureError::NotApproved if kind == "song" => failure("not-approved", StatusCode::PAYMENT_REQUIRED, "The payment was not completed. No song was added."),
-        CaptureError::NotApproved => failure("not-approved", StatusCode::PAYMENT_REQUIRED, "The payment was not completed."),
-        CaptureError::AlreadyCaptured => {
-            failure("already-used", StatusCode::CONFLICT, "This payment was already used.")
+    match captured {
+        Ok(()) | Err(CaptureError::AlreadyCaptured) => {
+            info!(
+                "{:?} paid {} {} in {provider} order {order_id}",
+                order.user,
+                format_price(order.price),
+                order.currency
+            );
+            record_capture(api, order_id, &order);
+            Ok(())
         }
-        CaptureError::Pending if kind == "spin" => failure("pending", StatusCode::PAYMENT_REQUIRED, &format!("{provider} is still reviewing the payment, so the wheel was not spun. If the money is taken, ask the streamer for a refund.")),
-        CaptureError::Pending if kind == "tip" => failure("pending", StatusCode::PAYMENT_REQUIRED, &format!("{provider} is still reviewing the payment, so the tip was not shown. If {provider} approves it, the money still reaches the streamer.")),
-        CaptureError::Pending => failure("pending", StatusCode::PAYMENT_REQUIRED, &format!("{provider} is still reviewing the payment, so no song was added. If the money is taken, ask the streamer for a refund.")),
-        CaptureError::Failed | CaptureError::Unexpected => failure("provider", StatusCode::BAD_GATEWAY, &format!("{provider} could not complete the payment.")),
-    })?;
-    info!(
-        "{:?} paid {} {} in {provider} order {order_id}",
-        order.user,
-        format_price(order.price),
-        order.currency
-    );
-    Ok(order)
+        Err(CaptureError::Unknown) => {
+            let status = settle_one(api, order_id, &order).await;
+            settled(&order, status)
+        }
+        Err(error) => {
+            if error != CaptureError::Pending
+                && let Err(error) =
+                    api.orders
+                        .transition(order_id, Stage::Capturing, Stage::Created)
+            {
+                warn!("{error:#}");
+            }
+            Err(match error {
+                CaptureError::NotApproved if kind == "song" => failure(
+                    "not-approved",
+                    StatusCode::PAYMENT_REQUIRED,
+                    "The payment was not completed. No song was added.",
+                ),
+                CaptureError::NotApproved => failure(
+                    "not-approved",
+                    StatusCode::PAYMENT_REQUIRED,
+                    "The payment was not completed.",
+                ),
+                CaptureError::Pending => pending(provider, kind),
+                _ => provider_failed(provider),
+            })
+        }
+    }
 }
 
-async fn capture_song(
-    api: Arc<Api>,
-    id: String,
-    order_id: String,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let order = capture(&api, &id, &order_id, "song").await?;
-    let Item::Song { link, name } = order.item else {
-        return Err(capture_crashed());
+fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> {
+    let provider = order.payee.provider();
+    match status {
+        Some(PaymentStatus::Captured) => Ok(()),
+        Some(PaymentStatus::Pending) => Err(pending(provider, order.item.kind())),
+        Some(PaymentStatus::NotCaptured) => Err(provider_failed(provider)),
+        Some(PaymentStatus::Gone) => Err(expired()),
+        None => Err(failure(
+            "unknown",
+            StatusCode::BAD_GATEWAY,
+            &format!(
+                "{provider} did not answer. If the money was taken, {}.",
+                match order.item.kind() {
+                    "song" => "the song will still be added",
+                    "tip" => "the tip will still be shown",
+                    _ => "the wheel will still be spun",
+                }
+            ),
+        )),
+    }
+}
+
+async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentStatus> {
+    let provider = order.payee.provider();
+    let status = match &order.payee {
+        Payee::PayPal(merchant_id) => {
+            api.paypal
+                .as_ref()?
+                .status(order_id, order, merchant_id)
+                .await
+        }
+        Payee::Stripe(account) => api.stripe.as_ref()?.status(order_id, order, account).await,
     };
-    let song = RequestedSong {
-        link,
-        user: order.user,
-        name,
-        duration: None,
+    let status = match status {
+        Ok(status) => status,
+        Err(error) => {
+            warn!("settling {provider} order {order_id} failed: {error:#}");
+            return None;
+        }
     };
-    Ok(queue(&api, id, order_id, song))
+    match status {
+        PaymentStatus::Captured => {
+            info!(
+                "{:?} paid {} {} in {provider} order {order_id}, found when settling it",
+                order.user,
+                format_price(order.price),
+                order.currency
+            );
+            record_capture(api, order_id, order);
+        }
+        PaymentStatus::Pending => {
+            info!("{provider} is still reviewing order {order_id}");
+        }
+        PaymentStatus::NotCaptured => {
+            info!("{provider} order {order_id} was not captured");
+            if let Err(error) = api
+                .orders
+                .transition(order_id, Stage::Capturing, Stage::Created)
+            {
+                warn!("{error:#}");
+            }
+        }
+        PaymentStatus::Gone => {
+            info!("{provider} order {order_id} is gone");
+            api.orders.remove(order_id);
+        }
+    }
+    Some(status)
+}
+
+pub async fn settle(api: &Api, min_age: Duration) {
+    for unsettled in api.orders.unsettled(min_age) {
+        settle_one(api, &unsettled.id, &unsettled.order).await;
+    }
+}
+
+async fn expire_orders(api: &Api) {
+    for (order_id, order) in api.orders.expire() {
+        if let Payee::Stripe(account) = &order.payee
+            && let Some(stripe) = &api.stripe
+        {
+            match stripe.cancel(&order_id, account).await {
+                Ok(()) => info!("cancelled expired Stripe payment {order_id}"),
+                Err(error) => {
+                    warn!("cancelling expired Stripe payment {order_id} failed: {error:#}")
+                }
+            }
+        }
+    }
+}
+
+pub async fn settle_orders(api: Arc<Api>) {
+    loop {
+        settle(&api, Duration::from_secs(60)).await;
+        expire_orders(&api).await;
+        api.orders.prune();
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    }
+}
+
+fn delivery_item(order: &Order) -> deliveries::Item {
+    match &order.item {
+        Item::Song { link, .. } => deliveries::Item::Song {
+            link: link.clone(),
+            user: order.user.clone(),
+        },
+        Item::Tip { message } => deliveries::Item::Tip {
+            user: order.user.clone(),
+            message: message.clone().unwrap_or_default(),
+            amount: order.price,
+            currency: order.currency.clone(),
+        },
+        Item::Spin { spins, message } => deliveries::Item::Spin {
+            user: order.user.clone(),
+            message: message.clone().unwrap_or_default(),
+            spins: *spins,
+        },
+    }
+}
+
+fn record_capture(api: &Api, order_id: &str, order: &Order) {
+    let item = delivery_item(order);
+    let saved = api.orders.captured(order_id, |connection| {
+        deliveries::insert(connection, &order.streamer, order_id, &item)?;
+        counters::bump(connection, &format!("{}Payments", order.item.kind()));
+        Ok(())
+    });
+    match saved {
+        Ok(false) => {}
+        Ok(true) => {
+            api.deliveries.notify();
+            info!(
+                "queued {:?} in order {order_id} for remote control streamer {}",
+                order.description(),
+                order.streamer
+            );
+        }
+        Err(error) => warn!("{error:#}, settling it later"),
+    }
 }
 
 fn viewer_message(message: Option<String>) -> Result<Option<String>, Failure> {
@@ -1800,37 +2079,9 @@ async fn handle_tip_capture(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    tokio::spawn(capture_tip(api, id, order_id))
+    tokio::spawn(capture_paid(api, id, order_id, "tip"))
         .await
         .unwrap_or_else(|_| Err(capture_crashed()))
-}
-
-async fn capture_tip(
-    api: Arc<Api>,
-    id: String,
-    order_id: String,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let order = capture(&api, &id, &order_id, "tip").await?;
-    let Item::Tip { message } = order.item else {
-        return Err(capture_crashed());
-    };
-    info!(
-        "queued a tip of {} {} by {:?} in order {order_id} for remote control streamer {id}",
-        format_price(order.price),
-        order.currency,
-        order.user
-    );
-    api.deliveries.add(
-        id,
-        order_id,
-        deliveries::Item::Tip {
-            user: order.user,
-            message: message.unwrap_or_default(),
-            amount: order.price,
-            currency: order.currency,
-        },
-    );
-    Ok(accepted())
 }
 
 fn accepted() -> (StatusCode, Json<Value>) {
@@ -1914,34 +2165,9 @@ async fn handle_spin_capture(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    tokio::spawn(capture_spin(api, id, order_id))
+    tokio::spawn(capture_paid(api, id, order_id, "spin"))
         .await
         .unwrap_or_else(|_| Err(capture_crashed()))
-}
-
-async fn capture_spin(
-    api: Arc<Api>,
-    id: String,
-    order_id: String,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let order = capture(&api, &id, &order_id, "spin").await?;
-    let Item::Spin { spins, message } = order.item else {
-        return Err(capture_crashed());
-    };
-    info!(
-        "queued {spins} wheel spins by {:?} in order {order_id} for remote control streamer {id}",
-        order.user
-    );
-    api.deliveries.add(
-        id,
-        order_id,
-        deliveries::Item::Spin {
-            user: order.user,
-            message: message.unwrap_or_default(),
-            spins,
-        },
-    );
-    Ok(accepted())
 }
 
 #[derive(Deserialize)]
@@ -2124,6 +2350,7 @@ mod tests {
         twitch: Option<OAuthApp>,
         pages: Pages,
     ) -> (String, Arc<Api>) {
+        let database = Database::memory();
         let api = Arc::new(Api {
             store: Arc::new(Store::new(6, Database::memory())),
             challenges: Challenges::new(),
@@ -2133,8 +2360,8 @@ mod tests {
             pages,
             paypal,
             stripe,
-            orders: Orders::new(),
-            deliveries: Deliveries::new(Database::memory()),
+            orders: Orders::new(database.clone()),
+            deliveries: Deliveries::new(database.clone()),
             auth: Auth::new(
                 reqwest::Client::new(),
                 "http://localhost".to_string(),
@@ -2145,7 +2372,7 @@ mod tests {
             )
             .unwrap(),
             accounts: Accounts::new(Database::memory()),
-            counters: Counters::new(Database::memory()),
+            counters: Counters::new(database),
             admins: vec!["admin".to_string()],
         });
         tokio::spawn({
@@ -2200,6 +2427,13 @@ mod tests {
         seller: Arc<std::sync::Mutex<Option<Value>>>,
         list_sellers: Arc<std::sync::Mutex<bool>>,
         verification: Arc<std::sync::Mutex<Option<Value>>>,
+        captured: Arc<std::sync::Mutex<bool>>,
+        lose_capture: Arc<std::sync::Mutex<bool>>,
+        fail_capture: Arc<std::sync::Mutex<bool>>,
+        lookups_fail: Arc<std::sync::Mutex<bool>>,
+        approved: Arc<std::sync::Mutex<bool>>,
+        refuse_capture: Arc<std::sync::Mutex<bool>>,
+        gone: Arc<std::sync::Mutex<bool>>,
     }
 
     fn new_paypal(url: String) -> PayPal {
@@ -2305,10 +2539,12 @@ mod tests {
                 "/v2/checkout/orders",
                 post({
                     let order = order.clone();
+                    let captured = fake.captured.clone();
                     move |headers: HeaderMap, Json(mut request): Json<Value>| async move {
                         request["assertion"] =
                             json!(headers["paypal-auth-assertion"].to_str().unwrap());
                         *order.lock().unwrap() = Some(request);
+                        *captured.lock().unwrap() = false;
                         (
                             StatusCode::CREATED,
                             Json(json!({
@@ -2323,6 +2559,10 @@ mod tests {
                 "/v2/checkout/orders/{id}/capture",
                 post({
                     let order = order.clone();
+                    let captured = fake.captured.clone();
+                    let lose_capture = fake.lose_capture.clone();
+                    let fail_capture = fake.fail_capture.clone();
+                    let refuse_capture = fake.refuse_capture.clone();
                     move |headers: HeaderMap, Path(id): Path<String>| async move {
                         assert_eq!(
                             payer_of(headers["paypal-auth-assertion"].to_str().unwrap()),
@@ -2341,6 +2581,31 @@ mod tests {
                                 Json(json!({"details": [{"issue": "ORDER_NOT_APPROVED"}]})),
                             );
                         }
+                        if *fail_capture.lock().unwrap() {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(json!({"name": "INTERNAL_SERVER_ERROR"})),
+                            );
+                        }
+                        if *refuse_capture.lock().unwrap() {
+                            return (
+                                StatusCode::UNPROCESSABLE_ENTITY,
+                                Json(json!({"details": [{"issue": "INSTRUMENT_DECLINED"}]})),
+                            );
+                        }
+                        if *captured.lock().unwrap() {
+                            return (
+                                StatusCode::UNPROCESSABLE_ENTITY,
+                                Json(json!({"details": [{"issue": "ORDER_ALREADY_CAPTURED"}]})),
+                            );
+                        }
+                        *captured.lock().unwrap() = true;
+                        if *lose_capture.lock().unwrap() {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(json!({"name": "INTERNAL_SERVER_ERROR"})),
+                            );
+                        }
                         let status = if amount["currency_code"] == "EUR" {
                             "PENDING"
                         } else {
@@ -2348,6 +2613,51 @@ mod tests {
                         };
                         (
                             StatusCode::CREATED,
+                            Json(json!({
+                                "id": id,
+                                "status": "COMPLETED",
+                                "purchase_units": [{"payments": {"captures": [
+                                    {"status": status, "amount": amount},
+                                ]}}],
+                            })),
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/v2/checkout/orders/{id}",
+                get({
+                    let order = order.clone();
+                    let captured = fake.captured.clone();
+                    let lookups_fail = fake.lookups_fail.clone();
+                    let approved = fake.approved.clone();
+                    let gone = fake.gone.clone();
+                    move |Path(id): Path<String>| async move {
+                        if *lookups_fail.lock().unwrap() {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(json!({"name": "INTERNAL_SERVER_ERROR"})),
+                            );
+                        }
+                        if id != "ORDER1" || *gone.lock().unwrap() {
+                            return (
+                                StatusCode::NOT_FOUND,
+                                Json(json!({"name": "RESOURCE_NOT_FOUND"})),
+                            );
+                        }
+                        let amount =
+                            order.lock().unwrap().as_ref().unwrap()["purchase_units"][0]["amount"]
+                                .clone();
+                        if !*captured.lock().unwrap() {
+                            return (StatusCode::OK, Json(json!({"id": id, "status": "APPROVED"})));
+                        }
+                        let status = if amount["currency_code"] == "EUR" && !*approved.lock().unwrap() {
+                            "PENDING"
+                        } else {
+                            "COMPLETED"
+                        };
+                        (
+                            StatusCode::OK,
                             Json(json!({
                                 "id": id,
                                 "status": "COMPLETED",
@@ -2373,6 +2683,8 @@ mod tests {
         payment: Arc<std::sync::Mutex<Option<Value>>>,
         state: Arc<std::sync::Mutex<&'static str>>,
         cancelled: Arc<std::sync::Mutex<Vec<String>>>,
+        lose_capture: Arc<std::sync::Mutex<bool>>,
+        processing: Arc<std::sync::Mutex<bool>>,
     }
 
     fn new_stripe(url: String) -> Stripe {
@@ -2451,6 +2763,8 @@ mod tests {
                 post({
                     let payment = fake.payment.clone();
                     let state = fake.state.clone();
+                    let lose_capture = fake.lose_capture.clone();
+                    let processing = fake.processing.clone();
                     move |headers: HeaderMap, Path(id): Path<String>| async move {
                         let payment = payment.lock().unwrap().clone().unwrap();
                         assert_eq!(headers["stripe-account"], "acct_1");
@@ -2464,7 +2778,25 @@ mod tests {
                                 }})),
                             );
                         }
+                        if *processing.lock().unwrap() {
+                            *state = "processing";
+                            return (
+                                StatusCode::OK,
+                                Json(json!({
+                                    "id": id,
+                                    "status": "processing",
+                                    "amount_received": 0,
+                                    "currency": payment["form"]["currency"],
+                                })),
+                            );
+                        }
                         *state = "succeeded";
+                        if *lose_capture.lock().unwrap() {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(json!({"error": {"type": "api_error"}})),
+                            );
+                        }
                         (
                             StatusCode::OK,
                             Json(json!({
@@ -2475,6 +2807,38 @@ mod tests {
                                     .unwrap()
                                     .parse::<u32>()
                                     .unwrap(),
+                                "currency": payment["form"]["currency"],
+                            })),
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/v1/payment_intents/{id}",
+                get({
+                    let payment = fake.payment.clone();
+                    let state = fake.state.clone();
+                    move |headers: HeaderMap, Path(id): Path<String>| async move {
+                        assert_eq!(headers["stripe-account"], "acct_1");
+                        if id != "pi_1" {
+                            return (
+                                StatusCode::NOT_FOUND,
+                                Json(json!({"error": {"code": "resource_missing"}})),
+                            );
+                        }
+                        let payment = payment.lock().unwrap().clone().unwrap();
+                        let state = *state.lock().unwrap();
+                        let amount = payment["form"]["amount"]
+                            .as_str()
+                            .unwrap()
+                            .parse::<u32>()
+                            .unwrap();
+                        (
+                            StatusCode::OK,
+                            Json(json!({
+                                "id": id,
+                                "status": state,
+                                "amount_received": if state == "succeeded" { amount } else { 0 },
                                 "currency": payment["form"]["currency"],
                             })),
                         )
@@ -2658,7 +3022,7 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let response = client.post(&capture_url).send().await.unwrap();
-        assert_eq!(response.status(), StatusCode::GONE);
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
         let settings: Value = post("/account/stripe/disconnect")
             .send()
@@ -2677,6 +3041,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(public, json!({"tips": null}));
+    }
+
+    #[tokio::test]
+    async fn stripe_holds_of_expired_orders_are_released() {
+        let (_, api, fake) = start_stripe_api().await;
+        let order = |payee: Payee| Order {
+            streamer: "p".to_string(),
+            item: Item::Tip { message: None },
+            user: "Viewer".to_string(),
+            payee,
+            price: 700,
+            currency: "USD".to_string(),
+        };
+        for (id, payee) in [
+            ("pi_1", Payee::Stripe("acct_1".to_string())),
+            ("pi_2", Payee::Stripe("acct_1".to_string())),
+            ("ORDER1", Payee::PayPal("MERCHANT00001".to_string())),
+        ] {
+            api.orders.insert(id, &order(payee)).unwrap();
+        }
+        api.orders.age("pi_1", 4 * 60 * 60);
+        api.orders.age("ORDER1", 4 * 60 * 60);
+        expire_orders(&api).await;
+        assert_eq!(*fake.cancelled.lock().unwrap(), ["pi_1"]);
+        assert_eq!(api.orders.get("pi_1"), None);
+        assert_eq!(api.orders.get("ORDER1"), None);
+        assert_eq!(api.orders.get("pi_2").unwrap().0, Stage::Created);
     }
 
     #[tokio::test]
@@ -2781,9 +3172,778 @@ mod tests {
     }
 
     async fn start_paid() -> (String, Arc<Api>, Arc<std::sync::Mutex<Option<Value>>>) {
+        let (address, api, fake) = start_paid_fake().await;
+        (address, api, fake.order)
+    }
+
+    async fn start_paid_fake() -> (String, Arc<Api>, FakePayPal) {
         let (paypal_url, fake) = start_paypal().await;
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
-        (address, api, fake.order)
+        (address, api, fake)
+    }
+
+    async fn paypal_tip_order(address: &str, api: &Api) -> String {
+        paypal_tip_order_as(address, api).await.1
+    }
+
+    async fn paypal_tip_order_as(address: &str, api: &Api) -> (String, String) {
+        paypal_tip_order_in(address, api, "USD").await
+    }
+
+    async fn paypal_tip_order_in(address: &str, api: &Api, currency: &str) -> (String, String) {
+        let (session, _, id) = streamer(address, api).await;
+        connect_paypal(api);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"currency": currency, "tips": {"amounts": [500]}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+        let order: Value = client
+            .post(&orders_url)
+            .json(&json!({"amount": 700, "user": "Viewer"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(order, json!({"orderId": "ORDER1"}));
+        (session, format!("{orders_url}/ORDER1/capture"))
+    }
+
+    #[tokio::test]
+    async fn recent_payments_are_listed_to_the_streamer() {
+        let (address, api, _) = start_paid_fake().await;
+        let (session, capture_url) = paypal_tip_order_as(&address, &api).await;
+        let client = reqwest::Client::new();
+        let recent = || async {
+            client
+                .get(format!("http://{address}/account/recent"))
+                .bearer_auth(&session)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        };
+        assert_eq!(
+            recent().await,
+            json!({"songs": [], "tips": [], "spins": []})
+        );
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let listed = recent().await;
+        assert_eq!(listed["songs"], json!([]));
+        assert_eq!(listed["spins"], json!([]));
+        assert_eq!(listed["tips"].as_array().unwrap().len(), 1);
+        let tip = &listed["tips"][0];
+        assert_eq!(tip["id"], "ORDER1");
+        assert_eq!(tip["user"], "Viewer");
+        assert_eq!(tip["amount"], 700);
+        assert_eq!(tip["currency"], "USD");
+        assert_eq!(tip["status"], "waiting");
+        assert!(tip["at"].as_u64().unwrap() > 0);
+        assert!(tip.get("message").is_none());
+        let key = api.accounts.get("1").unwrap().page.unwrap().devices[0]
+            .key
+            .clone();
+        let mut socket = connect(&address, &key).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"]["tip"]["requestId"], "ORDER1");
+        socket
+            .send(Message::text(
+                json!({"response": {"id": request["request"]["id"], "result": {"ok": {}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        wait_until_added(&api).await;
+        assert_eq!(recent().await["tips"][0]["status"], "delivered");
+        let response = client
+            .get(format!("http://{address}/account/recent"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Fault {
+        None,
+        LostAnswer,
+        LostAnswerAndLookups,
+        ProviderDown,
+        Refused,
+        PendingReview,
+        AlreadyCaptured,
+        DatabaseReadOnly,
+        CrashedAfterCapture,
+    }
+
+    async fn tip_delivered_once(
+        mut socket: tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        address: &str,
+        key: &str,
+        api: &Api,
+        currency: &str,
+    ) {
+        let tip = json!({"tip": {
+            "name": "Viewer",
+            "message": "",
+            "amount": "7.00",
+            "currency": currency,
+            "requestId": "ORDER1",
+        }});
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], tip);
+        socket
+            .send(Message::text(
+                json!({"response": {"id": request["request"]["id"], "result": {"error": {}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket.close(None).await.unwrap();
+        assert_eq!(api.deliveries.pending().len(), 1);
+        let mut socket = connect(address, key).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], tip);
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(api).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut socket))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn paid_tips_always_reach_the_queue_exactly_once() {
+        for fault in [
+            Fault::None,
+            Fault::LostAnswer,
+            Fault::LostAnswerAndLookups,
+            Fault::ProviderDown,
+            Fault::Refused,
+            Fault::PendingReview,
+            Fault::AlreadyCaptured,
+            Fault::DatabaseReadOnly,
+            Fault::CrashedAfterCapture,
+        ] {
+            let (address, api, fake) = start_paid_fake().await;
+            let currency = match fault {
+                Fault::PendingReview => "EUR",
+                _ => "USD",
+            };
+            let (session, capture_url) = paypal_tip_order_in(&address, &api, currency).await;
+            let client = reqwest::Client::new();
+            let capture = || async { client.post(&capture_url).send().await.unwrap() };
+            let not_paid = |api: &Api, fake: &FakePayPal| {
+                assert!(!*fake.captured.lock().unwrap(), "{fault:?}");
+                assert!(api.deliveries.pending().is_empty(), "{fault:?}");
+            };
+            match fault {
+                Fault::None => {
+                    assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
+                }
+                Fault::LostAnswer => {
+                    *fake.lose_capture.lock().unwrap() = true;
+                    assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
+                }
+                Fault::LostAnswerAndLookups => {
+                    *fake.lose_capture.lock().unwrap() = true;
+                    *fake.lookups_fail.lock().unwrap() = true;
+                    assert_eq!(
+                        capture().await.status(),
+                        StatusCode::BAD_GATEWAY,
+                        "{fault:?}"
+                    );
+                    assert!(*fake.captured.lock().unwrap());
+                    assert!(api.deliveries.pending().is_empty());
+                    *fake.lookups_fail.lock().unwrap() = false;
+                    settle(&api, Duration::ZERO).await;
+                }
+                Fault::ProviderDown => {
+                    *fake.fail_capture.lock().unwrap() = true;
+                    assert_eq!(
+                        capture().await.status(),
+                        StatusCode::BAD_GATEWAY,
+                        "{fault:?}"
+                    );
+                    not_paid(&api, &fake);
+                    *fake.fail_capture.lock().unwrap() = false;
+                    assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
+                }
+                Fault::Refused => {
+                    *fake.refuse_capture.lock().unwrap() = true;
+                    assert_eq!(
+                        capture().await.status(),
+                        StatusCode::BAD_GATEWAY,
+                        "{fault:?}"
+                    );
+                    not_paid(&api, &fake);
+                    *fake.refuse_capture.lock().unwrap() = false;
+                    assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
+                }
+                Fault::PendingReview => {
+                    assert_eq!(
+                        capture().await.status(),
+                        StatusCode::PAYMENT_REQUIRED,
+                        "{fault:?}"
+                    );
+                    assert!(api.deliveries.pending().is_empty());
+                    settle(&api, Duration::ZERO).await;
+                    assert!(api.deliveries.pending().is_empty());
+                    *fake.approved.lock().unwrap() = true;
+                    settle(&api, Duration::ZERO).await;
+                }
+                Fault::AlreadyCaptured => {
+                    *fake.captured.lock().unwrap() = true;
+                    assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
+                }
+                Fault::DatabaseReadOnly => {
+                    api.orders.read_only(true);
+                    assert_eq!(
+                        capture().await.status(),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "{fault:?}"
+                    );
+                    not_paid(&api, &fake);
+                    api.orders.read_only(false);
+                    assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
+                }
+                Fault::CrashedAfterCapture => {
+                    assert!(
+                        api.orders
+                            .transition("ORDER1", Stage::Created, Stage::Capturing)
+                            .unwrap()
+                    );
+                    *fake.captured.lock().unwrap() = true;
+                    assert!(api.deliveries.pending().is_empty());
+                    settle(&api, Duration::ZERO).await;
+                }
+            }
+            assert!(*fake.captured.lock().unwrap(), "{fault:?}");
+            let pending = api.deliveries.pending();
+            assert_eq!(pending.len(), 1, "{fault:?}");
+            assert_eq!(pending[0].request_id, "ORDER1", "{fault:?}");
+            assert_eq!(
+                pending[0].item,
+                deliveries::Item::Tip {
+                    user: "Viewer".to_string(),
+                    message: String::new(),
+                    amount: 700,
+                    currency: currency.to_string(),
+                },
+                "{fault:?}"
+            );
+            assert_eq!(
+                api.orders.get("ORDER1").unwrap().0,
+                Stage::Captured,
+                "{fault:?}"
+            );
+            assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
+            settle(&api, Duration::ZERO).await;
+            assert_eq!(api.deliveries.pending().len(), 1, "{fault:?}");
+            let key = api.accounts.get("1").unwrap().page.unwrap().devices[0]
+                .key
+                .clone();
+            let socket = connect(&address, &key).await;
+            tip_delivered_once(socket, &address, &key, &api, currency).await;
+            let recent: Value = client
+                .get(format!("http://{address}/account/recent"))
+                .bearer_auth(&session)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(recent["tips"][0]["status"], "delivered", "{fault:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn tips_reach_every_device_but_stop_waiting_for_removed_ones() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let devices_url = format!("http://{address}/account/devices");
+        let account: Value = client
+            .post(&devices_url)
+            .bearer_auth(&session)
+            .json(&json!({"name": "Backup"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
+        for request_id in ["TIP1", "TIP2"] {
+            api.deliveries.add(
+                id.clone(),
+                request_id.to_string(),
+                deliveries::Item::Tip {
+                    user: "Viewer".to_string(),
+                    message: String::new(),
+                    amount: 500,
+                    currency: "USD".to_string(),
+                },
+            );
+        }
+        let mut main = connect(&address, &key).await;
+        for request_id in ["TIP1", "TIP2"] {
+            let request = receive(&mut main).await;
+            assert_eq!(request["request"]["data"]["tip"]["requestId"], request_id);
+            answer(&mut main, &request, Value::Null).await;
+        }
+        for _ in 0..100 {
+            if api
+                .deliveries
+                .pending()
+                .iter()
+                .all(|delivery| delivery.delivered == vec![id.clone()])
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(api.deliveries.pending().len(), 2);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut main))
+                .await
+                .is_err()
+        );
+        let response = client
+            .post(format!("{devices_url}/{backup_id}/remove"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        wait_until_added(&api).await;
+    }
+
+    #[tokio::test]
+    async fn lost_capture_answers_are_settled_right_away() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.lose_capture.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn lost_capture_answers_are_settled_later() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.lose_capture.lock().unwrap() = true;
+        *fake.lookups_fail.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let unknown = "PayPal did not answer. If the money was taken, the tip will still be shown.";
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(response.text().await.unwrap(), unknown);
+        assert!(api.deliveries.pending().is_empty());
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(response.text().await.unwrap(), unknown);
+        settle(&api, Duration::ZERO).await;
+        assert!(api.deliveries.pending().is_empty());
+        *fake.lookups_fail.lock().unwrap() = false;
+        settle(&api, Duration::from_secs(60)).await;
+        assert!(api.deliveries.pending().is_empty());
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.deliveries.pending().len(), 1);
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert!(
+            api.counters
+                .all()
+                .iter()
+                .any(|counter| counter.name == "tipPayments" && counter.total == 1)
+        );
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+        assert!(
+            api.counters
+                .all()
+                .iter()
+                .any(|counter| counter.name == "tipPayments" && counter.total == 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_captures_can_be_retried() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.fail_capture.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "PayPal could not complete the payment."
+        );
+        assert!(api.deliveries.pending().is_empty());
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        *fake.fail_capture.lock().unwrap() = false;
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn captures_need_a_writable_database_before_taking_money() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        api.orders.read_only(true);
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Payments are unavailable right now, so no money was taken. Try again later."
+        );
+        assert!(!*fake.captured.lock().unwrap());
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        api.orders.read_only(false);
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert!(*fake.captured.lock().unwrap());
+        assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn refused_captures_go_back_to_created() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.refuse_capture.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "PayPal could not complete the payment."
+        );
+        assert!(api.deliveries.pending().is_empty());
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert!(!*fake.captured.lock().unwrap());
+        *fake.refuse_capture.lock().unwrap() = false;
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn gone_orders_are_forgotten_when_settling() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.lose_capture.lock().unwrap() = true;
+        *fake.lookups_fail.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        *fake.lookups_fail.lock().unwrap() = false;
+        *fake.gone.lock().unwrap() = true;
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1"), None);
+        assert!(api.deliveries.pending().is_empty());
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+    }
+
+    #[tokio::test]
+    async fn spin_captures_need_the_wheel() {
+        let (address, api, _) = start_paid().await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        connect_paypal(&api);
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"currency": "usd", "paywall": null, "spin": {
+                "options": [{"spins": 2, "price": 800}],
+            }}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let wheel = json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [
+            {"text": "Yes", "weight": 1},
+        ]}}}}});
+        let mut socket = connect(&address, &key).await;
+        socket.send(Message::text(wheel.to_string())).await.unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let orders_url = format!("http://{address}/pages/{id}/spin/orders");
+        let order: Value = client
+            .post(&orders_url)
+            .json(&json!({"user": "Viewer", "spins": 2}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(order, json!({"orderId": "ORDER1"}));
+        socket.close(None).await.unwrap();
+        for _ in 0..100 {
+            if !api.remote_control.is_connected(&id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let capture_url = format!("{orders_url}/ORDER1/capture");
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer's wheel is gone, so your payment was not taken."
+        );
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert!(api.deliveries.pending().is_empty());
+        let mut socket = connect(&address, &key).await;
+        socket.send(Message::text(wheel.to_string())).await.unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"]["spinWheelOfLuck"]["requestId"],
+            "ORDER1"
+        );
+    }
+
+    #[tokio::test]
+    async fn recent_lists_cap_at_five_per_kind_and_show_songs_not_added() {
+        let (address, api) = start_api(None).await;
+        let (session, _, id) = streamer(&address, &api).await;
+        let order = |item: Item, price: u32| Order {
+            streamer: id.clone(),
+            item,
+            user: "Viewer".to_string(),
+            payee: Payee::PayPal("MERCHANT00001".to_string()),
+            price,
+            currency: "USD".to_string(),
+        };
+        for n in 0..6 {
+            let order_id = format!("TIP{n}");
+            api.orders
+                .insert(
+                    &order_id,
+                    &order(
+                        Item::Tip {
+                            message: Some(format!("m{n}")),
+                        },
+                        100 + n,
+                    ),
+                )
+                .unwrap();
+            api.orders.captured(&order_id, |_| Ok(())).unwrap();
+        }
+        api.orders
+            .insert(
+                "SONG1",
+                &order(
+                    Item::Song {
+                        link: LINK.to_string(),
+                        name: "Song".to_string(),
+                    },
+                    250,
+                ),
+            )
+            .unwrap();
+        api.orders
+            .captured("SONG1", |connection| {
+                deliveries::insert(
+                    connection,
+                    &id,
+                    "SONG1",
+                    &deliveries::Item::Song {
+                        link: LINK.to_string(),
+                        user: "Viewer".to_string(),
+                    },
+                )?;
+                connection.execute(
+                    "UPDATE deliveries SET failure = 'not-found' WHERE request_id = 'SONG1'",
+                    [],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        api.orders
+            .insert(
+                "SPIN1",
+                &order(
+                    Item::Spin {
+                        spins: 2,
+                        message: Some("Go!".to_string()),
+                    },
+                    800,
+                ),
+            )
+            .unwrap();
+        api.orders
+            .captured("SPIN1", |connection| {
+                deliveries::insert(
+                    connection,
+                    &id,
+                    "SPIN1",
+                    &deliveries::Item::Spin {
+                        user: "Viewer".to_string(),
+                        message: "Go!".to_string(),
+                        spins: 2,
+                    },
+                )
+            })
+            .unwrap();
+        let recent: Value = reqwest::Client::new()
+            .get(format!("http://{address}/account/recent"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let tips = recent["tips"].as_array().unwrap();
+        assert_eq!(tips.len(), 5);
+        assert_eq!(tips[0]["id"], "TIP5");
+        assert_eq!(tips[0]["message"], "m5");
+        assert_eq!(tips[0]["amount"], 105);
+        assert_eq!(tips[0]["status"], "delivered");
+        assert_eq!(tips[4]["id"], "TIP1");
+        let song = &recent["songs"][0];
+        assert_eq!(recent["songs"].as_array().unwrap().len(), 1);
+        assert_eq!(song["name"], "Song");
+        assert_eq!(song["link"], LINK);
+        assert_eq!(song["amount"], 250);
+        assert_eq!(song["status"], "notAdded");
+        let spin = &recent["spins"][0];
+        assert_eq!(recent["spins"].as_array().unwrap().len(), 1);
+        assert_eq!(spin["spins"], 2);
+        assert_eq!(spin["message"], "Go!");
+        assert_eq!(spin["status"], "waiting");
+    }
+
+    #[tokio::test]
+    async fn processing_stripe_captures_are_settled_once_succeeded() {
+        let (address, api, fake) = start_stripe_api().await;
+        let (session, _, id) = streamer(&address, &api).await;
+        connect_stripe(&api);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"currency": "eur", "tips": {"amounts": [500]}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+        let order: Value = client
+            .post(&orders_url)
+            .json(&json!({"amount": 700, "user": "Viewer", "provider": "stripe"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(order["orderId"], "pi_1");
+        *fake.state.lock().unwrap() = "requires_capture";
+        *fake.processing.lock().unwrap() = true;
+        let capture_url = format!("{orders_url}/pi_1/capture");
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Stripe is still reviewing the payment. If Stripe approves it, the tip will be shown and the money reaches the streamer."
+        );
+        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Capturing);
+        settle(&api, Duration::ZERO).await;
+        assert!(api.deliveries.pending().is_empty());
+        *fake.state.lock().unwrap() = "succeeded";
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.deliveries.pending().len(), 1);
+        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Captured);
+    }
+
+    #[tokio::test]
+    async fn already_captured_orders_are_delivered() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.captured.lock().unwrap() = true;
+        let response = reqwest::Client::new()
+            .post(&capture_url)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+    }
+
+    #[tokio::test]
+    async fn lost_stripe_capture_answers_are_settled() {
+        let (address, api, fake) = start_stripe_api().await;
+        let (session, _, id) = streamer(&address, &api).await;
+        connect_stripe(&api);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"currency": "eur", "tips": {"amounts": [500]}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+        let order: Value = client
+            .post(&orders_url)
+            .json(&json!({"amount": 700, "user": "Viewer", "provider": "stripe"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(order["orderId"], "pi_1");
+        let capture_url = format!("{orders_url}/pi_1/capture");
+        *fake.lose_capture.lock().unwrap() = true;
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Created);
+        *fake.state.lock().unwrap() = "requires_capture";
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Captured);
     }
 
     fn connect_paypal(api: &Api) {
@@ -3096,7 +4256,7 @@ mod tests {
         .await;
         wait_until_added(&api).await;
         let response = client.post(&capture_url).send().await.unwrap();
-        assert_eq!(response.status(), StatusCode::GONE);
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
     }
 
     #[tokio::test]
@@ -3159,8 +4319,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pending_captures_add_no_song() {
-        let (address, api, _) = start_paid().await;
+    async fn pending_captures_add_the_song_once_approved() {
+        let (address, api, fake) = start_paid_fake().await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
@@ -3178,13 +4338,30 @@ mod tests {
             request_song(&mut socket, &orders_url).await,
             json!({"orderId": "ORDER1"})
         );
-        let response = client
-            .post(format!("{orders_url}/ORDER1/capture"))
-            .send()
-            .await
-            .unwrap();
+        let capture_url = format!("{orders_url}/ORDER1/capture");
+        let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "PayPal is still reviewing the payment, so no song was added yet. It will be added if PayPal approves the payment."
+        );
         assert!(api.deliveries.pending().is_empty());
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        settle(&api, Duration::ZERO).await;
+        assert!(api.deliveries.pending().is_empty());
+        *fake.approved.lock().unwrap() = true;
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.deliveries.pending().len(), 1);
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"]["music"]["command"]["add"]["requestId"],
+            "ORDER1"
+        );
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
     }
 
     #[tokio::test]
@@ -3521,7 +4698,7 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::GONE);
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
         let tip = json!({"tip": {
             "name": "Viewer",
@@ -3884,7 +5061,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn songs_not_found_are_dropped() {
+    async fn songs_not_found_stay_songs_and_are_not_retried() {
         let (address, api, _) = start_paid().await;
         let (key, id) = paid_streamer(&address, &api).await;
         let orders_url = format!("http://{address}/pages/{id}/songs/orders");
@@ -3904,6 +5081,27 @@ mod tests {
         status["music"]["status"]["songNotFound"] = json!(true);
         answer(&mut socket, &request, status).await;
         wait_until_added(&api).await;
+        let delivery = api.deliveries.get("ORDER1").unwrap();
+        assert_eq!(
+            delivery.item,
+            deliveries::Item::Song {
+                link: LINK.to_string(),
+                user: "Viewer".to_string(),
+            }
+        );
+        assert_eq!(delivery.failure.as_deref(), Some("not-found"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut socket))
+                .await
+                .is_err()
+        );
+        assert!(
+            api.counters
+                .all()
+                .iter()
+                .any(|counter| counter.name == "songDeliveriesFailed:not-found"
+                    && counter.total == 1)
+        );
     }
 
     async fn start_twitch() -> String {

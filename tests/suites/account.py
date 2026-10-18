@@ -72,6 +72,7 @@ class AccountSignIn(AccountTestCase):
                 "musicDevice": None,
                 "wheelDevice": None,
                 "settings": None,
+                "admin": False,
             },
         )
 
@@ -183,7 +184,7 @@ class AccountUnknownPage(TestCase):
         self.assert_backend_error(404, viewer.profile)
         self.assert_equal(viewer.paywall(), None)
         self.assert_equal(viewer.tips(), None)
-        self.assert_equal(viewer.spin(), {"spin": None, "wheel": None})
+        self.assert_equal(viewer.spin(), {"spin": None, "wheel": None, "connected": False})
         self.assert_backend_error(
             404, viewer.queue, "The streamer is offline right now. Try again when they are live."
         )
@@ -323,6 +324,44 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
         self.assert_equal(viewer.spin()["spin"], None)
 
 
+class AccountTestDeliveriesNeedMoblin(AccountTestCase):
+    """Refuse the dashboard's free test song, tip and wheel spin without a page or a connected Moblin."""
+
+    def run(self):
+        dashboard = self.sign_in("testneedsmoblin")
+        self.assert_equal(dashboard.recent(), {"songs": [], "tips": [], "spins": []})
+        self.assert_backend_error(404, dashboard.test_tip, "no page")
+        dashboard.create_page()
+        song = "https://music.apple.com/us/album/take-on-me/380907762?i=380907765"
+        self.assert_backend_error(409, lambda: dashboard.test_song(song), "Connect Moblin first.")
+        self.assert_backend_error(409, dashboard.test_tip, "Connect Moblin first.")
+        self.assert_backend_error(409, dashboard.test_spin, "Connect Moblin first.")
+        self.assert_equal(dashboard.recent(), {"songs": [], "tips": [], "spins": []})
+
+
+class AccountAdmin(AccountTestCase):
+    """Show the operator's statistics only to admins."""
+
+    def run(self):
+        streamer = self.sign_in("notadmin")
+        streamer.create_page()
+        self.assert_false(streamer.account()["admin"])
+        self.assert_backend_error(403, streamer.admin_stats, "not an admin")
+        self.assert_backend_error(401, Dashboard(self.backend.url, None).admin_stats, "not signed in")
+        admin = self.sign_in("admin")
+        self.assert_true(admin.account()["admin"])
+        stats = admin.admin_stats()
+        self.assert_equal(sorted(stats), ["accounts", "counters", "moblin", "pending"])
+        self.assert_equal(sorted(stats["accounts"]), ["paypal", "stripe", "total", "withPage"])
+        self.assert_true(stats["accounts"]["total"] >= 2)
+        self.assert_true(stats["accounts"]["withPage"] >= 1)
+        self.assert_in("connectedDevices", stats["moblin"])
+        self.assert_equal(sorted(stats["pending"]), ["deliveries", "orders"])
+        for counter in stats["counters"]:
+            self.assert_equal(sorted(counter), ["name", "today", "total", "week"])
+            self.assert_true(counter["today"] <= counter["week"] <= counter["total"])
+
+
 class AccountCors(TestCase):
     """Only let https://moblin.app call the backend from a browser."""
 
@@ -357,5 +396,7 @@ def tests(context: Context):
         AccountPageLook(context),
         AccountCurrency(context),
         AccountPaidFeaturesNeedPayments(context),
+        AccountTestDeliveriesNeedMoblin(context),
+        AccountAdmin(context),
         AccountCors(context),
     ]

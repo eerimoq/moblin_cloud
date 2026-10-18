@@ -1,10 +1,10 @@
 use anyhow::{Context, Result, bail};
-use log::info;
+use log::{info, warn};
 use reqwest::{Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::payments::{CaptureError, Order};
+use crate::payments::{CaptureError, Order, PaymentStatus};
 
 pub const URL: &str = "https://api.stripe.com";
 
@@ -203,11 +203,15 @@ impl Stripe {
             .post_capture(payment_id, account)
             .await
             .map_err(|error| {
-                info!("capturing Stripe payment {payment_id} failed: {error:#}");
-                CaptureError::Failed
+                warn!("capturing Stripe payment {payment_id} failed: {error:#}");
+                CaptureError::Unknown
             })?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or_default();
+        if status.is_server_error() {
+            warn!("Stripe failed to capture payment {payment_id} ({status}): {body}");
+            return Err(CaptureError::Unknown);
+        }
         if !status.is_success() {
             let state = body["error"]["payment_intent"]["status"]
                 .as_str()
@@ -222,22 +226,66 @@ impl Stripe {
                 | "requires_action"
                 | "processing" => CaptureError::NotApproved,
                 "succeeded" => CaptureError::AlreadyCaptured,
-                _ => CaptureError::Failed,
+                _ => CaptureError::Refused,
             });
         }
         let amount_matches = body["amount_received"] == order.price
             && body["currency"] == order.currency.to_lowercase().as_str();
         match body["status"].as_str() {
             Some("succeeded") if amount_matches => Ok(()),
-            Some("processing") if amount_matches => {
+            Some("processing") => {
                 info!("capture of Stripe payment {payment_id} is processing");
                 Err(CaptureError::Pending)
             }
             _ => {
-                info!("unexpected capture of Stripe payment {payment_id}: {body}");
-                Err(CaptureError::Unexpected)
+                warn!("unexpected capture of Stripe payment {payment_id}: {body}");
+                Err(CaptureError::Unknown)
             }
         }
+    }
+
+    pub async fn status(
+        &self,
+        payment_id: &str,
+        order: &Order,
+        account: &str,
+    ) -> Result<PaymentStatus> {
+        check_id(payment_id, "pi_")?;
+        check_id(account, "acct_")?;
+        let response = self
+            .connected(
+                self.client
+                    .get(format!("{}/v1/payment_intents/{payment_id}", self.url)),
+                account,
+            )
+            .send()
+            .await
+            .context("failed to look a Stripe payment up")?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(PaymentStatus::Gone);
+        }
+        let body: Value = response
+            .checked("look a payment up")
+            .await?
+            .json()
+            .await
+            .context("unexpected answer to a Stripe payment lookup")?;
+        Ok(match body["status"].as_str() {
+            Some("succeeded") => {
+                if body["amount_received"] != order.price
+                    || body["currency"] != order.currency.to_lowercase().as_str()
+                {
+                    warn!(
+                        "Stripe payment {payment_id} received {} {} instead of {} {}",
+                        body["amount_received"], body["currency"], order.price, order.currency
+                    );
+                }
+                PaymentStatus::Captured
+            }
+            Some("processing") => PaymentStatus::Pending,
+            Some("canceled") => PaymentStatus::Gone,
+            _ => PaymentStatus::NotCaptured,
+        })
     }
 
     async fn post_capture(&self, payment_id: &str, account: &str) -> Result<reqwest::Response> {

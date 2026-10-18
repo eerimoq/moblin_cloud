@@ -24,9 +24,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use axum::Router;
 use clap::Parser;
 use log::{info, warn};
 use reqwest::Client;
+use tokio::net::TcpListener;
+use tokio::signal::unix::{SignalKind, signal};
 
 use crate::accounts::Accounts;
 use crate::api::Api;
@@ -234,7 +237,7 @@ async fn main() -> Result<()> {
     };
     let pages = Pages::new(database.clone());
     let counters = Counters::new(database.clone());
-    let deliveries = Deliveries::new(database);
+    let deliveries = Deliveries::new(database.clone());
     if cli.admins.is_empty() {
         warn!("no admins, the admin page is unavailable");
     } else {
@@ -305,7 +308,7 @@ async fn main() -> Result<()> {
         pages,
         paypal,
         stripe,
-        orders: Orders::new(),
+        orders: Orders::new(database),
         deliveries,
         auth,
         accounts,
@@ -316,10 +319,88 @@ async fn main() -> Result<()> {
         let api = api.clone();
         async move { api.deliveries.run(&api.remote_control, &api.accounts).await }
     });
-    let listener = tokio::net::TcpListener::bind(cli.listen)
+    tokio::spawn(api::settle_orders(api.clone()));
+    let listener = TcpListener::bind(cli.listen)
         .await
         .with_context(|| format!("failed to listen on {}", cli.listen))?;
     info!("listening on http://{}", cli.listen);
-    axum::serve(listener, api::router(api)).await?;
+    serve(listener, api::router(api), shutdown_signal()).await?;
+    info!("stopped");
     Ok(())
+}
+
+async fn serve(
+    listener: TcpListener,
+    router: Router,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown)
+        .await?;
+    Ok(())
+}
+
+async fn shutdown_signal() {
+    let mut terminate = match signal(SignalKind::terminate()) {
+        Ok(terminate) => terminate,
+        Err(error) => {
+            warn!("not listening for SIGTERM: {error}");
+            std::future::pending().await
+        }
+    };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = terminate.recv() => {}
+    }
+    info!("shutting down, finishing the requests in flight");
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::routing::get;
+    use reqwest::StatusCode;
+    use tokio::sync::oneshot;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn requests_in_flight_finish_before_stopping() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = Router::new().route(
+            "/slow",
+            get(|| async {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                "done"
+            }),
+        );
+        let (stop, stopped) = oneshot::channel();
+        let server = tokio::spawn(serve(listener, router, async {
+            stopped.await.unwrap();
+        }));
+        let request = tokio::spawn(async move {
+            reqwest::Client::new()
+                .get(format!("http://{address}/slow"))
+                .send()
+                .await
+                .unwrap()
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        stop.send(()).unwrap();
+        let response = request.await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "done");
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(
+            reqwest::Client::new()
+                .get(format!("http://{address}/slow"))
+                .send()
+                .await
+                .is_err()
+        );
+    }
 }

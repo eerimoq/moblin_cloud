@@ -116,6 +116,8 @@ class Backend:
             str(self.files_dir / "database.sqlite"),
             "--lookup-spacing",
             "1",
+            "--admins",
+            "fake-admin",
         ]
         if self.config.allow_unattested():
             arguments.append("--allow-unattested")

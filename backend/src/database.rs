@@ -37,12 +37,21 @@ impl Database {
                      id TEXT PRIMARY KEY,
                      settings TEXT NOT NULL
                  );
+                 CREATE TABLE IF NOT EXISTS orders (
+                     id TEXT PRIMARY KEY,
+                     streamer TEXT NOT NULL,
+                     state TEXT NOT NULL,
+                     created_at INTEGER NOT NULL,
+                     updated_at INTEGER NOT NULL,
+                     details TEXT NOT NULL
+                 );
                  CREATE TABLE IF NOT EXISTS deliveries (
                      request_id TEXT PRIMARY KEY,
                      streamer TEXT NOT NULL,
                      requested_at INTEGER NOT NULL,
                      item TEXT NOT NULL,
-                     delivered TEXT NOT NULL DEFAULT '[]'
+                     delivered TEXT NOT NULL DEFAULT '[]',
+                     failure TEXT
                  );
                  CREATE TABLE IF NOT EXISTS streamers (
                      position INTEGER PRIMARY KEY,
@@ -63,6 +72,7 @@ impl Database {
             ("accounts", "music_device", "TEXT"),
             ("accounts", "wheel_device", "TEXT"),
             ("deliveries", "delivered", "TEXT NOT NULL DEFAULT '[]'"),
+            ("deliveries", "failure", "TEXT"),
         ] {
             if !has_column(&connection, table, column)? {
                 connection

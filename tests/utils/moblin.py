@@ -443,6 +443,15 @@ class Moblin:
             if self._cloud is not connection:
                 raise MoblinError("Moblin reconnected when its wheel changed.")
 
+    def change_song_requests(self, enabled: bool):
+        """Turns song requests on or off in Moblin's Moblin Cloud settings, by hand on a real device."""
+        if self._fake is not None:
+            self._fake.change_song_requests(enabled)
+        else:
+            manual_confirmation(
+                f"In Moblin's Moblin Cloud settings, turn Song requests {'on' if enabled else 'off'}."
+            )
+
     def disconnect_from_backend(self):
         if self.connected_key() is None:
             return
@@ -467,6 +476,26 @@ class Moblin:
     def backend_requests(self, kind: str | None = None) -> list[BackendRequest]:
         with self._lock:
             return [request for request in self._backend_requests if kind is None or request.kind == kind]
+
+    def backend_requests_position(self) -> int:
+        with self._lock:
+            return len(self._backend_requests)
+
+    def wait_for_new_backend_request(self, kind: str, start: int, timeout: float = 60) -> BackendRequest:
+        """Waits for Moblin to accept a request of a kind sent after start, whatever its request id."""
+        found: list[BackendRequest] = []
+
+        def check() -> bool:
+            with self._lock:
+                requests = self._backend_requests[start:]
+            for request in requests:
+                if request.kind == kind and request.ok():
+                    found.append(request)
+                    return True
+            return False
+
+        wait_until(check, f"Moblin to accept a {kind} from the backend", timeout=timeout)
+        return found[0]
 
     def wait_for_backend_request(self, kind: str, request_id: str, timeout: float = 60) -> BackendRequest:
         found: list[BackendRequest] = []

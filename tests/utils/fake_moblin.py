@@ -37,6 +37,7 @@ class FakeMoblin:
         self.api_url = api_url
         self.key: str | None = None
         self.wheel: dict | None = None
+        self.song_requests = True
         self.songs: list[dict] = []
         self.next_song_id = 0
         self.handled_request_ids: set[str] = set()
@@ -98,6 +99,9 @@ class FakeMoblin:
             elif "identified" in message:
                 if name == "cloud":
                     self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
+                    self.send(
+                        websocket, {"event": {"data": {"songRequests": {"enabled": self.song_requests}}}}
+                    )
             elif "request" in message:
                 request = message["request"]
                 result, data = self.handle(request["data"])
@@ -112,6 +116,13 @@ class FakeMoblin:
             websocket = self._websockets.get("cloud")
         if websocket is not None:
             self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
+
+    def change_song_requests(self, enabled: bool):
+        self.song_requests = enabled
+        with self._lock:
+            websocket = self._websockets.get("cloud")
+        if websocket is not None:
+            self.send(websocket, {"event": {"data": {"songRequests": {"enabled": enabled}}}})
 
     def send(self, websocket: ClientConnection, message: dict):
         websocket.send(json.dumps(message))

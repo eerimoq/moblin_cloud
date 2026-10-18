@@ -18,6 +18,21 @@ export type Account = {
   admin: boolean;
 };
 
+export type Recent = {
+  id: string;
+  at: number;
+  user: string;
+  amount: number;
+  currency: string;
+  name?: string;
+  link?: string;
+  message?: string;
+  spins?: number;
+  status: "delivered" | "waiting" | "notAdded";
+};
+
+export type RecentLists = { songs: Recent[]; tips: Recent[]; spins: Recent[] };
+
 export type AdminStats = {
   accounts: { total: number; withPage: number; paypal: number; stripe: number };
   moblin: { connectedDevices: number };
@@ -78,6 +93,8 @@ const post = (body: unknown) => ({
 export const fetchAccount = (session: string) => call<Account>(session, "/account");
 
 export const fetchAdminStats = (session: string) => call<AdminStats>(session, "/admin/stats");
+
+export const fetchRecent = (session: string) => call<RecentLists>(session, "/account/recent");
 
 export async function signOutEverywhere(session: string) {
   await fetch(`${backendUrl}/account/sign-out`, {

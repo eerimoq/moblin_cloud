@@ -177,11 +177,7 @@ class PaymentsTipPaid(PaymentTestCase):
         self.pay(order_id)
         self.assert_equal(self.capture(self.viewer.capture_tip, order_id), {})
         self.assert_paid(order_id, "7.00", "EUR")
-        self.assert_backend_error(
-            410,
-            lambda: self.capture(self.viewer.capture_tip, order_id),
-            "This payment is unknown or expired, so no money was taken.",
-        )
+        self.assert_equal(self.capture(self.viewer.capture_tip, order_id), {})
         if self.context.moblin is None:
             return
         tip = self.moblin.wait_for_backend_request("tip", order_id)
