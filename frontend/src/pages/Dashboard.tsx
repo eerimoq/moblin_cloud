@@ -1109,16 +1109,16 @@ function TestSend(props: {
 function Latest(props: { kind: "song" | "tip" | "spin"; items: Recent[] | undefined }) {
   const title = () =>
     props.kind === "song"
-      ? t("Latest song requests")
+      ? t("Latest 5 song requests")
       : props.kind === "tip"
-        ? t("Latest tips")
-        : t("Latest spins");
+        ? t("Latest 5 tips")
+        : t("Latest 5 spins");
   const empty = () =>
     props.kind === "song"
-      ? t("No paid song requests yet.")
+      ? t("No song requests yet.")
       : props.kind === "tip"
         ? t("No tips yet.")
-        : t("No paid spins yet.");
+        : t("No spins yet.");
   const status = (item: Recent) =>
     item.status === "delivered"
       ? { text: t("In Moblin"), class: "text-leaf" }
