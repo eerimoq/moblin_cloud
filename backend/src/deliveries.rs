@@ -22,6 +22,7 @@ pub struct Delivery {
     pub item: Item,
     pub delivered: Vec<String>,
     pub failure: Option<String>,
+    pub finished: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -30,6 +31,8 @@ pub enum Item {
     Song {
         link: String,
         user: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
     },
     Spin {
         user: String,
@@ -45,7 +48,7 @@ pub enum Item {
 }
 
 impl Item {
-    fn kind(&self) -> &'static str {
+    pub fn kind(&self) -> &'static str {
         match self {
             Item::Song { .. } => "song",
             Item::Spin { .. } => "spin",
@@ -76,11 +79,32 @@ impl Deliveries {
         }
     }
 
-    pub fn add(&self, streamer: String, request_id: String, item: Item) {
-        if let Err(error) = insert(&self.database.lock(), &streamer, &request_id, &item) {
-            warn!("failed to save delivery {request_id}: {error:#}");
+    pub fn add_test(&self, streamer: String, request_id: String, item: Item) {
+        let database = self.database.lock();
+        let result = database
+            .execute(
+                "INSERT OR IGNORE INTO deliveries (request_id, streamer, requested_at, item, test) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![request_id, streamer, now(), serde_json::to_string(&item).unwrap(), item.kind()],
+            )
+            .and_then(|_| {
+                database.execute(
+                    "DELETE FROM deliveries WHERE streamer = ?1 AND test = ?2 AND rowid NOT IN (SELECT rowid FROM deliveries WHERE streamer = ?1 AND test = ?2 ORDER BY rowid DESC LIMIT 5)",
+                    [&streamer, item.kind()],
+                )
+            });
+        if let Err(error) = result {
+            warn!("failed to save test delivery {request_id}: {error:#}");
         }
+        drop(database);
         self.notify();
+    }
+
+    pub fn tests(&self, streamer: &str) -> Vec<Delivery> {
+        query(
+            &self.database.lock(),
+            "SELECT * FROM deliveries WHERE streamer = ?1 AND test IS NOT NULL ORDER BY rowid DESC",
+            [streamer],
+        )
     }
 
     pub fn notify(&self) {
@@ -91,7 +115,7 @@ impl Deliveries {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*) FROM deliveries WHERE failure IS NOT 'not-found'",
+                "SELECT count(*) FROM deliveries WHERE NOT finished AND failure IS NOT 'not-found'",
                 [],
                 |row| row.get(0),
             )
@@ -105,7 +129,7 @@ impl Deliveries {
         let database = self.database.lock();
         let expired = query(
             &database,
-            "DELETE FROM deliveries WHERE requested_at < ?1 AND failure IS NOT 'not-found' RETURNING *",
+            "DELETE FROM deliveries WHERE requested_at < ?1 AND NOT finished AND failure IS NOT 'not-found' RETURNING *",
             [now().saturating_sub(7 * 24 * 60 * 60)],
         );
         for delivery in expired {
@@ -121,17 +145,17 @@ impl Deliveries {
             }
         }
         if let Err(error) = database.execute(
-            "DELETE FROM deliveries WHERE requested_at < ?1 AND failure = 'not-found'",
+            "DELETE FROM deliveries WHERE requested_at < ?1 AND (finished OR failure = 'not-found')",
             [now().saturating_sub(30 * 24 * 60 * 60)],
         ) {
-            warn!("failed to remove songs not found: {error:#}");
+            warn!("failed to remove finished deliveries: {error:#}");
         }
     }
 
     pub fn pending(&self) -> Vec<Delivery> {
         query(
             &self.database.lock(),
-            "SELECT * FROM deliveries WHERE failure IS NOT 'not-found' ORDER BY rowid",
+            "SELECT * FROM deliveries WHERE NOT finished AND failure IS NOT 'not-found' ORDER BY rowid",
             [],
         )
     }
@@ -156,11 +180,7 @@ impl Deliveries {
             .map(|delivered| serde_json::from_str::<Vec<String>>(&delivered).unwrap_or_default());
         match delivered {
             Ok(delivered) if devices.iter().all(|device| delivered.contains(device)) => {
-                if let Err(error) =
-                    database.execute("DELETE FROM deliveries WHERE request_id = ?1", [request_id])
-                {
-                    warn!("failed to remove delivery {request_id}: {error:#}");
-                }
+                finish(&database, request_id);
                 if let Some(counter) = counter {
                     counters::bump(&database, counter);
                 }
@@ -194,16 +214,6 @@ impl Deliveries {
         }
     }
 
-    fn remove(&self, request_id: &str) {
-        if let Err(error) = self
-            .database
-            .lock()
-            .execute("DELETE FROM deliveries WHERE request_id = ?1", [request_id])
-        {
-            warn!("failed to remove delivery {request_id}: {error:#}");
-        }
-    }
-
     pub async fn run(&self, streamers: &Streamers, accounts: &Accounts) {
         loop {
             self.expire();
@@ -232,7 +242,7 @@ impl Deliveries {
                         .collect(),
                 };
                 if devices.is_empty() && !delivery.delivered.is_empty() {
-                    self.remove(&delivery.request_id);
+                    finish(&self.database.lock(), &delivery.request_id);
                     continue;
                 }
                 for device in &devices {
@@ -296,6 +306,15 @@ impl Deliveries {
     }
 }
 
+fn finish(database: &Connection, request_id: &str) {
+    if let Err(error) = database.execute(
+        "UPDATE deliveries SET finished = 1 WHERE request_id = ?1",
+        [request_id],
+    ) {
+        warn!("failed to finish delivery {request_id}: {error:#}");
+    }
+}
+
 pub fn insert(
     connection: &Connection,
     streamer: &str,
@@ -320,6 +339,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     row.get::<_, String>("item")?,
                     row.get::<_, String>("delivered")?,
                     row.get("failure")?,
+                    row.get("finished")?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -328,7 +348,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
         Ok(deliveries) => deliveries
             .into_iter()
             .filter_map(
-                |(request_id, streamer, requested_at, item, delivered, failure)| {
+                |(request_id, streamer, requested_at, item, delivered, failure, finished)| {
                     match serde_json::from_str(&item) {
                         Ok(item) => Some(Delivery {
                             streamer,
@@ -337,6 +357,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                             item,
                             delivered: serde_json::from_str(&delivered).unwrap_or_default(),
                             failure,
+                            finished,
                         }),
                         Err(error) => {
                             warn!("failed to parse delivery {request_id}: {error}");
@@ -365,7 +386,7 @@ async fn deliver(
 ) -> Result<Outcome, RequestError> {
     let request_id = delivery.request_id.clone();
     match &delivery.item {
-        Item::Song { link, user } => {
+        Item::Song { link, user, .. } => {
             let add = MusicCommand::Add {
                 title: link.clone(),
                 user: user.clone(),
@@ -418,6 +439,7 @@ mod tests {
         Item::Song {
             link: "https://music.apple.com/song/1?i=1".to_string(),
             user: "Viewer".to_string(),
+            name: None,
         }
     }
 
@@ -450,11 +472,12 @@ mod tests {
     fn deliveries_are_saved() {
         let path = database::temporary_path("deliveries");
         let deliveries = Deliveries::new(Database::open(Some(&path)).unwrap());
-        deliveries.add("S".to_string(), "A".to_string(), song());
-        deliveries.add("S".to_string(), "B".to_string(), tip());
-        deliveries.add("S".to_string(), "C".to_string(), spin());
-        deliveries.add("S".to_string(), "C".to_string(), tip());
-        deliveries.remove("A");
+        deliveries.add_test("S".to_string(), "A".to_string(), song());
+        deliveries.add_test("S".to_string(), "B".to_string(), tip());
+        deliveries.add_test("S".to_string(), "C".to_string(), spin());
+        deliveries.add_test("S".to_string(), "C".to_string(), tip());
+        finish(&deliveries.database.lock(), "A");
+        assert!(deliveries.get("A").unwrap().finished);
         let saved = deliveries.pending();
         let deliveries = Deliveries::new(Database::open(Some(&path)).unwrap());
         assert_eq!(deliveries.pending(), saved);
@@ -469,6 +492,27 @@ mod tests {
     }
 
     #[test]
+    fn only_the_5_newest_tests_per_kind_are_kept() {
+        let deliveries = Deliveries::new(Database::memory());
+        for n in 0..7 {
+            deliveries.add_test("S".to_string(), format!("T{n}"), tip());
+        }
+        deliveries.add_test("S".to_string(), "SPIN".to_string(), spin());
+        deliveries.add_test("O".to_string(), "OTHER".to_string(), tip());
+        insert(&deliveries.database.lock(), "S", "PAID", &tip()).unwrap();
+        let ids = |streamer: &str| {
+            deliveries
+                .tests(streamer)
+                .into_iter()
+                .map(|delivery| delivery.request_id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids("S"), vec!["SPIN", "T6", "T5", "T4", "T3", "T2"]);
+        assert_eq!(ids("O"), vec!["OTHER"]);
+        assert!(deliveries.get("PAID").is_some());
+    }
+
+    #[test]
     fn deliveries_are_given_up_after_7_days() {
         let deliveries = Deliveries::new(Database::memory());
         for (request_id, item, age) in [
@@ -480,7 +524,7 @@ mod tests {
             ("F", spin(), 6),
             ("G", tip(), 8),
         ] {
-            deliveries.add("S".to_string(), request_id.to_string(), item);
+            deliveries.add_test("S".to_string(), request_id.to_string(), item);
             deliveries
                 .database
                 .lock()
@@ -520,8 +564,8 @@ mod tests {
     #[test]
     fn songs_not_found_stay_songs_and_failures_are_counted_once() {
         let deliveries = Deliveries::new(Database::memory());
-        deliveries.add("S".to_string(), "A".to_string(), song());
-        deliveries.add("S".to_string(), "B".to_string(), tip());
+        deliveries.add_test("S".to_string(), "A".to_string(), song());
+        deliveries.add_test("S".to_string(), "B".to_string(), tip());
         let pending = deliveries.pending();
         assert!(deliveries.failed(&pending[0], "moblin-error"));
         assert!(!deliveries.failed(&pending[0], "moblin-error"));

@@ -1139,9 +1139,18 @@ function Latest(props: { kind: "song" | "tip" | "spin"; items: Recent[] | undefi
                     <div class="flex min-w-0 flex-col gap-0.5">
                       <span class="flex flex-wrap items-baseline gap-x-2">
                         <span class="font-semibold">{item.user}</span>
-                        <span class="text-ink-2">
-                          {formatPrice({ price: item.amount, currency: item.currency })}
-                        </span>
+                        <Show when={item.amount !== undefined && item.currency}>
+                          {(currency) => (
+                            <span class="text-ink-2">
+                              {formatPrice({ price: item.amount ?? 0, currency: currency() })}
+                            </span>
+                          )}
+                        </Show>
+                        <Show when={item.test}>
+                          <span class="rounded-full border-[1.5px] border-line px-2 font-display text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
+                            {t("Test")}
+                          </span>
+                        </Show>
                       </span>
                       <Show when={item.name}>
                         {(name) => <span class="truncate text-ink-2">{name()}</span>}
@@ -1154,7 +1163,29 @@ function Latest(props: { kind: "song" | "tip" | "spin"; items: Recent[] | undefi
                         )}
                       </Show>
                       <Show when={item.message}>
-                        {(message) => <span class="truncate text-ink-2">{message()}</span>}
+                        {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
+                      </Show>
+                      <Show when={item.devices && item.devices.length > 1 && item.devices}>
+                        {(devices) => (
+                          <ul class="flex flex-wrap gap-x-3 gap-y-0.5 text-[15px]">
+                            <For each={devices()}>
+                              {(device) => (
+                                <li
+                                  class={`flex items-center gap-1 ${device.received ? "text-leaf" : "text-muted"}`}
+                                >
+                                  <Icon
+                                    name={device.received ? "check" : "clock"}
+                                    class="size-4 shrink-0"
+                                  />
+                                  <span class="sr-only">
+                                    {device.received ? t("Received:") : t("Not received yet:")}
+                                  </span>
+                                  {device.name}
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        )}
                       </Show>
                     </div>
                     <div class="flex items-baseline gap-3 text-[15px]">

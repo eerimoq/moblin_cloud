@@ -20,7 +20,7 @@ mod twitch;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -314,6 +314,7 @@ async fn main() -> Result<()> {
         accounts,
         counters,
         admins: cli.admins,
+        tests: Mutex::default(),
     });
     tokio::spawn({
         let api = api.clone();

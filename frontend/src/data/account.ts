@@ -22,13 +22,15 @@ export type Recent = {
   id: string;
   at: number;
   user: string;
-  amount: number;
-  currency: string;
+  amount?: number;
+  currency?: string;
   name?: string;
   link?: string;
   message?: string;
   spins?: number;
   status: "delivered" | "waiting" | "notAdded";
+  devices?: { name: string; received: boolean }[];
+  test?: boolean;
 };
 
 export type RecentLists = { songs: Recent[]; tips: Recent[]; spins: Recent[] };

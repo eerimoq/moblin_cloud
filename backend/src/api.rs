@@ -1,5 +1,6 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::body::Bytes;
@@ -49,6 +50,7 @@ pub struct Api {
     pub accounts: Accounts,
     pub counters: Counters,
     pub admins: Vec<String>,
+    pub tests: Mutex<HashMap<String, Vec<Instant>>>,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -716,8 +718,10 @@ struct Recent {
     id: String,
     at: u64,
     user: String,
-    amount: u32,
-    currency: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    amount: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    currency: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -727,6 +731,16 @@ struct Recent {
     #[serde(skip_serializing_if = "Option::is_none")]
     spins: Option<u32>,
     status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    devices: Option<Vec<RecentDevice>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    test: bool,
+}
+
+#[derive(Serialize)]
+struct RecentDevice {
+    name: String,
+    received: bool,
 }
 
 async fn handle_account_recent(
@@ -738,39 +752,118 @@ async fn handle_account_recent(
     let Some(page) = account.page else {
         return Ok(Json(response));
     };
+    let mut recent = Vec::new();
     for (id, at, order) in api.orders.recent(&page.id) {
-        let list = match &order.item {
-            Item::Song { .. } => &mut response.songs,
-            Item::Tip { .. } => &mut response.tips,
-            Item::Spin { .. } => &mut response.spins,
-        };
-        if list.len() >= 5 {
-            continue;
-        }
-        let status = match api.deliveries.get(&id) {
-            None => "delivered",
-            Some(delivery) if delivery.failure.as_deref() == Some("not-found") => "notAdded",
-            Some(_) => "waiting",
-        };
+        let kind = order.item.kind();
+        let delivery = api.deliveries.get(&id);
         let (name, link, message, spins) = match order.item {
             Item::Song { link, name } => (Some(name), Some(link), None, None),
             Item::Tip { message } => (None, None, message, None),
             Item::Spin { spins, message } => (None, None, message, Some(spins)),
         };
-        list.push(Recent {
-            id,
-            at,
-            user: order.user,
-            amount: order.price,
-            currency: order.currency,
-            name,
-            link,
-            message,
-            spins,
-            status,
-        });
+        recent.push((
+            kind,
+            Recent {
+                id,
+                at,
+                user: order.user,
+                amount: Some(order.price),
+                currency: Some(order.currency),
+                name,
+                link,
+                message,
+                spins,
+                status: recent_status(delivery.as_ref()),
+                devices: recent_devices(&page, kind, delivery.as_ref()),
+                test: false,
+            },
+        ));
+    }
+    for delivery in api.deliveries.tests(&page.id) {
+        let kind = delivery.item.kind();
+        let (user, name, link, message, spins, amount, currency) = match delivery.item.clone() {
+            deliveries::Item::Song { link, user, name } => {
+                (user, name, Some(link), None, None, None, None)
+            }
+            deliveries::Item::Tip {
+                user,
+                message,
+                amount,
+                currency,
+            } => (
+                user,
+                None,
+                None,
+                Some(message),
+                None,
+                Some(amount),
+                Some(currency),
+            ),
+            deliveries::Item::Spin {
+                user,
+                message,
+                spins,
+            } => (user, None, None, Some(message), Some(spins), None, None),
+        };
+        recent.push((
+            kind,
+            Recent {
+                id: delivery.request_id.clone(),
+                at: delivery.requested_at,
+                user,
+                amount,
+                currency,
+                name,
+                link,
+                message: message.filter(|message| !message.is_empty()),
+                spins,
+                status: recent_status(Some(&delivery)),
+                devices: recent_devices(&page, kind, Some(&delivery)),
+                test: true,
+            },
+        ));
+    }
+    recent.sort_by_key(|(_, recent)| std::cmp::Reverse(recent.at));
+    for (kind, recent) in recent {
+        let list = match kind {
+            "song" => &mut response.songs,
+            "tip" => &mut response.tips,
+            _ => &mut response.spins,
+        };
+        if list.len() < 5 {
+            list.push(recent);
+        }
     }
     Ok(Json(response))
+}
+
+fn recent_status(delivery: Option<&deliveries::Delivery>) -> &'static str {
+    match delivery {
+        None => "delivered",
+        Some(delivery) if delivery.finished => "delivered",
+        Some(delivery) if delivery.failure.as_deref() == Some("not-found") => "notAdded",
+        Some(_) => "waiting",
+    }
+}
+
+fn recent_devices(
+    page: &Page,
+    kind: &str,
+    delivery: Option<&deliveries::Delivery>,
+) -> Option<Vec<RecentDevice>> {
+    let delivery = delivery.filter(|_| kind == "tip")?;
+    Some(
+        page.devices
+            .iter()
+            .filter_map(|device| {
+                let received = delivery.delivered.contains(&device.id);
+                (received || !delivery.finished).then(|| RecentDevice {
+                    name: device.name.clone(),
+                    received,
+                })
+            })
+            .collect(),
+    )
 }
 
 async fn handle_account_page(
@@ -1548,12 +1641,13 @@ fn queue(
         "queued {:?} by {:?} in request {request_id} for remote control streamer {id}",
         song.link, song.user
     );
-    api.deliveries.add(
+    api.deliveries.add_test(
         id.clone(),
         request_id,
         deliveries::Item::Song {
             link: song.link,
             user: song.user,
+            name: Some(song.name),
         },
     );
     (
@@ -1968,9 +2062,10 @@ pub async fn settle_orders(api: Arc<Api>) {
 
 fn delivery_item(order: &Order) -> deliveries::Item {
     match &order.item {
-        Item::Song { link, .. } => deliveries::Item::Song {
+        Item::Song { link, name } => deliveries::Item::Song {
             link: link.clone(),
             user: order.user.clone(),
+            name: Some(name.clone()),
         },
         Item::Tip { message } => deliveries::Item::Tip {
             user: order.user.clone(),
@@ -2181,6 +2276,22 @@ struct TestRequest {
 fn test_page(api: &Api, headers: &HeaderMap) -> Result<(String, Account, String), Failure> {
     let account = signed_in(api, headers)?.account;
     let id = account.page.as_ref().ok_or_else(no_page)?.id.clone();
+    {
+        let mut tests = api.tests.lock().unwrap();
+        tests.retain(|_, sent| {
+            sent.retain(|at| at.elapsed() < Duration::from_secs(60));
+            !sent.is_empty()
+        });
+        let sent = tests.entry(id.clone()).or_default();
+        if sent.len() >= 10 {
+            return Err(failure(
+                "too-many-tests",
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many tests. Try again in a minute.",
+            ));
+        }
+        sent.push(Instant::now());
+    }
     let request_id = api.remote_control.new_request_id().ok_or(failure(
         "crashed",
         StatusCode::SERVICE_UNAVAILABLE,
@@ -2217,9 +2328,6 @@ async fn handle_account_test_tip(
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let (id, account, request_id) = test_page(&api, &headers)?;
-    if !any_connected(&api, &account) {
-        return Err(moblin_not_connected());
-    }
     let settings = api.pages.get(&id);
     let amount = settings
         .tips
@@ -2227,7 +2335,7 @@ async fn handle_account_test_tip(
         .and_then(|tips| tips.amounts.first().copied())
         .unwrap_or(500);
     info!("queued a test tip in request {request_id} for remote control streamer {id}");
-    api.deliveries.add(
+    api.deliveries.add_test(
         id,
         request_id,
         deliveries::Item::Tip {
@@ -2265,7 +2373,7 @@ async fn handle_account_test_spin(
         .and_then(|spin| spin.options.first().map(|option| option.spins))
         .unwrap_or(1);
     info!("queued a test spin in request {request_id} for remote control streamer {id}");
-    api.deliveries.add(
+    api.deliveries.add_test(
         id,
         request_id,
         deliveries::Item::Spin {
@@ -2374,6 +2482,7 @@ mod tests {
             accounts: Accounts::new(Database::memory()),
             counters: Counters::new(database),
             admins: vec!["admin".to_string()],
+            tests: Mutex::default(),
         });
         tokio::spawn({
             let api = api.clone();
@@ -3250,6 +3359,26 @@ mod tests {
         assert_eq!(tip["status"], "waiting");
         assert!(tip["at"].as_u64().unwrap() > 0);
         assert!(tip.get("message").is_none());
+        let devices_url = format!("http://{address}/account/devices");
+        let account: Value = client
+            .post(&devices_url)
+            .bearer_auth(&session)
+            .json(&json!({"name": "Backup"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let main_name = account["devices"][0]["name"].clone();
+        let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
+        assert_eq!(
+            recent().await["tips"][0]["devices"],
+            json!([
+                {"name": main_name, "received": false},
+                {"name": "Backup", "received": false},
+            ])
+        );
         let key = api.accounts.get("1").unwrap().page.unwrap().devices[0]
             .key
             .clone();
@@ -3263,8 +3392,35 @@ mod tests {
             ))
             .await
             .unwrap();
+        for _ in 0..100 {
+            if api.deliveries.get("ORDER1").unwrap().delivered.len() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let tip = &recent().await["tips"][0];
+        assert_eq!(tip["status"], "waiting");
+        assert_eq!(
+            tip["devices"],
+            json!([
+                {"name": main_name, "received": true},
+                {"name": "Backup", "received": false},
+            ])
+        );
+        let response = client
+            .post(format!("{devices_url}/{backup_id}/remove"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
         wait_until_added(&api).await;
-        assert_eq!(recent().await["tips"][0]["status"], "delivered");
+        let tip = &recent().await["tips"][0];
+        assert_eq!(tip["status"], "delivered");
+        assert_eq!(
+            tip["devices"],
+            json!([{"name": main_name, "received": true}])
+        );
         let response = client
             .get(format!("http://{address}/account/recent"))
             .send()
@@ -3489,7 +3645,7 @@ mod tests {
             .unwrap();
         let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
         for request_id in ["TIP1", "TIP2"] {
-            api.deliveries.add(
+            api.deliveries.add_test(
                 id.clone(),
                 request_id.to_string(),
                 deliveries::Item::Tip {
@@ -3787,6 +3943,7 @@ mod tests {
                     &deliveries::Item::Song {
                         link: LINK.to_string(),
                         user: "Viewer".to_string(),
+                        name: None,
                     },
                 )?;
                 connection.execute(
@@ -4731,6 +4888,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tests_are_rate_limited_per_page() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, _, _) = streamer(&address, &api).await;
+        for _ in 0..10 {
+            let response = client
+                .post(format!("http://{address}/account/test/spin"))
+                .bearer_auth(&session)
+                .json(&json!({}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+        }
+        let response = client
+            .post(format!("http://{address}/account/test/spin"))
+            .bearer_auth(&session)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Too many tests. Try again in a minute."
+        );
+    }
+
+    #[tokio::test]
     async fn streamers_send_themselves_free_tests() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
@@ -4749,14 +4935,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        for kind in ["song", "tip", "spin"] {
+        for kind in ["song", "spin"] {
             let response = test(kind, json!({"song": LINK})).await.unwrap();
             assert_eq!(response.status(), StatusCode::CONFLICT);
             assert_eq!(response.text().await.unwrap(), "Connect Moblin first.");
         }
-        let mut socket = connect(&address, &key).await;
         let response = test("tip", json!({"message": " Testing "})).await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let mut socket = connect(&address, &key).await;
         let request = receive(&mut socket).await;
         let tip = &request["request"]["data"]["tip"];
         assert_eq!(tip["name"], "Erik");
@@ -4765,6 +4951,22 @@ mod tests {
         assert_eq!(tip["currency"], "USD");
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
+        let recent: Value = client
+            .get(format!("http://{address}/account/recent"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let listed = &recent["tips"][0];
+        assert_eq!(listed["test"], true);
+        assert_eq!(listed["user"], "Erik");
+        assert_eq!(listed["message"], "Testing");
+        assert_eq!(listed["amount"], 500);
+        assert_eq!(listed["status"], "delivered");
+        assert_eq!(listed["devices"][0]["received"], true);
         let response = test("spin", json!({})).await.unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         socket
@@ -4895,7 +5097,7 @@ mod tests {
         let request = receive(&mut other).await;
         answer(&mut other, &request, music(json!([]))).await;
         assert_eq!(queue.await.unwrap()["songRequests"], false);
-        api.deliveries.add(
+        api.deliveries.add_test(
             id.clone(),
             "TIP1".to_string(),
             deliveries::Item::Tip {
@@ -5087,6 +5289,7 @@ mod tests {
             deliveries::Item::Song {
                 link: LINK.to_string(),
                 user: "Viewer".to_string(),
+                name: Some("Band - Song".to_string()),
             }
         );
         assert_eq!(delivery.failure.as_deref(), Some("not-found"));

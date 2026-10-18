@@ -51,7 +51,9 @@ impl Database {
                      requested_at INTEGER NOT NULL,
                      item TEXT NOT NULL,
                      delivered TEXT NOT NULL DEFAULT '[]',
-                     failure TEXT
+                     failure TEXT,
+                     finished INTEGER NOT NULL DEFAULT 0,
+                     test TEXT
                  );
                  CREATE TABLE IF NOT EXISTS streamers (
                      position INTEGER PRIMARY KEY,
@@ -73,6 +75,8 @@ impl Database {
             ("accounts", "wheel_device", "TEXT"),
             ("deliveries", "delivered", "TEXT NOT NULL DEFAULT '[]'"),
             ("deliveries", "failure", "TEXT"),
+            ("deliveries", "finished", "INTEGER NOT NULL DEFAULT 0"),
+            ("deliveries", "test", "TEXT"),
         ] {
             if !has_column(&connection, table, column)? {
                 connection
