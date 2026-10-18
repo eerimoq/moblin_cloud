@@ -19,13 +19,7 @@ import {
 } from "solid-js";
 import { asset } from "../asset";
 import Icon from "../components/Icon";
-import {
-  buttonClass,
-  cardClass,
-  ghostButtonClass,
-  inputClass,
-  Notice,
-} from "../components/PageParts";
+import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
   BackendError,
@@ -168,7 +162,7 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
     <>
       <div
         ref={(element) => (container = element)}
-        class={`transition-opacity [color-scheme:light] ${
+        class={`text-center transition-opacity [color-scheme:light] [&>paypal-button]:mx-auto ${
           props.disabled ? "pointer-events-none opacity-40" : ""
         }`}
       />
@@ -183,6 +177,9 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
     </>
   );
 }
+
+const stripeButtonClass =
+  "inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-stripe px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-stripe-bright disabled:opacity-60";
 
 type CardPayment = {
   order: Order;
@@ -301,12 +298,11 @@ function StripeCard(props: {
       <Show when={!payment()}>
         <button
           type="button"
-          class={`${buttonClass} w-full`}
+          class={`${stripeButtonClass} w-full max-w-72 self-center`}
           disabled={props.disabled || working()}
           onClick={() => void open()}
         >
-          <Icon name="card" class="size-5" />
-          {working() ? t("Loading…") : t("Pay with card")}
+          {working() ? t("Loading…") : t("Tip with Stripe")}
         </button>
       </Show>
       <div ref={(element) => (container = element)} class={payment() ? "" : "hidden"} />
@@ -317,18 +313,18 @@ function StripeCard(props: {
             <div class="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                class={buttonClass}
+                class={stripeButtonClass}
                 disabled={working()}
                 onClick={() => void pay()}
               >
                 {current().order.price !== undefined && current().order.currency
-                  ? t("Pay {price}", {
+                  ? t("Tip {price}", {
                       price: formatPrice({
                         price: current().order.price!,
                         currency: current().order.currency!,
                       }),
                     })
-                  : t("Pay")}
+                  : t("Tip")}
               </button>
               <button type="button" class={ghostButtonClass} disabled={working()} onClick={cancel}>
                 {t("Cancel")}
@@ -361,6 +357,9 @@ function PayButtons(props: {
         {(paypal) => (
           <PayPalButton config={paypal()} options={props.options} disabled={props.disabled} />
         )}
+      </Show>
+      <Show when={props.payment.paypal && props.payment.stripe}>
+        <p class="text-center text-[15px] text-muted">{t("or")}</p>
       </Show>
       <Show when={props.payment.stripe}>
         {(stripe) => (

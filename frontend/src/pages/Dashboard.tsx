@@ -326,12 +326,12 @@ function PayPalAccount(props: {
       <div class="flex flex-wrap items-center gap-4">
         <Show when={!props.settings.merchantId}>
           <button type="button" class={buttonClass} disabled={working()} onClick={connect}>
-            {t("Connect PayPal")}
+            {t("Connect")}
           </button>
         </Show>
         <Show when={props.settings.merchantId || props.settings.paypalPending}>
           <button type="button" class={ghostButtonClass} disabled={working()} onClick={disconnect}>
-            {t("Disconnect PayPal")}
+            {t("Disconnect")}
           </button>
         </Show>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
@@ -373,6 +373,9 @@ function StripeAccount(props: {
   const [working, setWorking] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [signInAgain, setSignInAgain] = createSignal(false);
+  const [waiting, setWaiting] = createSignal(false);
+  let stopped = false;
+  onCleanup(() => (stopped = true));
 
   const failed = (error: unknown) => {
     if (signedOut(error)) {
@@ -428,6 +431,20 @@ function StripeAccount(props: {
     }
   };
 
+  const wait = async () => {
+    setWaiting(true);
+    for (let attempt = 0; attempt < 20 && !stopped; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+      await check(attempt < 19);
+      if (!props.settings.stripePending) {
+        break;
+      }
+    }
+    setWaiting(false);
+  };
+
   onMount(() => {
     const search = new URLSearchParams(location.search);
     const returned = search.has("stripe");
@@ -435,7 +452,7 @@ function StripeAccount(props: {
       history.replaceState(null, "", location.pathname + location.hash);
     }
     if (props.settings.stripePending) {
-      void check(!returned);
+      void (returned ? wait() : check(true));
     }
   });
 
@@ -478,7 +495,19 @@ function StripeAccount(props: {
         )}
       </Show>
       <Show when={props.settings.stripePending}>
-        <p class="text-ink-2">{t("Finish setting up your account on Stripe, then check again.")}</p>
+        <Show
+          when={waiting()}
+          fallback={
+            <p class="text-ink-2">
+              {t("Finish setting up your account on Stripe, then check again.")}
+            </p>
+          }
+        >
+          <p role="status" class="flex items-center gap-3 text-ink-2">
+            <span class="size-5 shrink-0 animate-spin rounded-full border-2 border-line border-t-leaf" />
+            {t("Stripe is checking your account. This usually takes a few seconds.")}
+          </p>
+        </Show>
       </Show>
       <Show when={!props.settings.stripeAccountId && !props.settings.stripePending}>
         <label class="flex flex-col gap-2">
@@ -502,7 +531,7 @@ function StripeAccount(props: {
           </span>
         </label>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
+      <div class={`flex flex-wrap items-center gap-4 ${waiting() ? "hidden" : ""}`}>
         <Show when={!props.settings.stripeAccountId}>
           <button
             type="button"
@@ -510,7 +539,7 @@ function StripeAccount(props: {
             disabled={working() || (!props.settings.stripePending && !country())}
             onClick={connect}
           >
-            {props.settings.stripePending ? t("Continue on Stripe") : t("Connect Stripe")}
+            {props.settings.stripePending ? t("Continue on Stripe") : t("Connect")}
           </button>
         </Show>
         <Show when={props.settings.stripePending}>
@@ -525,7 +554,7 @@ function StripeAccount(props: {
         </Show>
         <Show when={props.settings.stripeAccountId || props.settings.stripePending}>
           <button type="button" class={ghostButtonClass} disabled={working()} onClick={disconnect}>
-            {t("Disconnect Stripe")}
+            {t("Disconnect")}
           </button>
         </Show>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
