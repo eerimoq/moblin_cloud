@@ -1408,42 +1408,70 @@ function Admin(props: {
     history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
   };
   const paid = (configured: boolean) => connected() || configured;
+  const [menuOpen, setMenuOpen] = createSignal(false);
 
   return (
     <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
-      <nav
-        aria-label={t("Dashboard")}
-        class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:-mx-8 sm:px-8 lg:sticky lg:top-24 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0"
-      >
-        <For each={visible()}>
-          {(section) => (
-            <button
-              type="button"
-              aria-current={active() === section.id ? "page" : undefined}
-              onClick={() => select(section.id)}
-              class="flex shrink-0 items-center gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-left whitespace-nowrap transition-colors"
-              classList={{
-                "border-line bg-card text-ink": active() === section.id,
-                "border-transparent text-ink-2 hover:bg-ghost hover:text-ink":
-                  active() !== section.id,
-              }}
-            >
-              <Icon name={section.icon} class="size-5 shrink-0" />
-              <span class="font-display text-[17px] font-semibold">{section.label}</span>
-              <Show when={section.status()}>
-                {(status) => (
-                  <span class="ml-auto flex items-center gap-1.5 pl-1 text-[13px] text-muted">
-                    <span
-                      class={`size-2 shrink-0 rounded-full ${status().on ? "bg-leaf" : "bg-muted/50"}`}
-                    />
-                    <span class="hidden lg:inline">{status().text}</span>
-                  </span>
-                )}
-              </Show>
-            </button>
-          )}
-        </For>
-      </nav>
+      <div>
+        <button
+          type="button"
+          aria-expanded={menuOpen()}
+          aria-controls="dashboard-menu"
+          onClick={() => setMenuOpen(!menuOpen())}
+          class="flex w-full items-center gap-3 rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-left text-ink lg:hidden"
+        >
+          <Show when={visible().find((section) => section.id === active())}>
+            {(section) => (
+              <>
+                <Icon name={section().icon} class="size-5 shrink-0" />
+                <span class="font-display text-[17px] font-semibold">{section().label}</span>
+              </>
+            )}
+          </Show>
+          <Icon
+            name="chevron-down"
+            class={`ml-auto size-5 shrink-0 transition-transform ${menuOpen() ? "rotate-180" : ""}`}
+          />
+        </button>
+        <nav
+          id="dashboard-menu"
+          aria-label={t("Dashboard")}
+          class="mt-2 flex-col gap-2 lg:sticky lg:top-24 lg:mt-0 lg:flex"
+          classList={{ flex: menuOpen(), hidden: !menuOpen() }}
+        >
+          <For each={visible()}>
+            {(section) => (
+              <button
+                type="button"
+                aria-current={active() === section.id ? "page" : undefined}
+                onClick={() => {
+                  select(section.id);
+                  setMenuOpen(false);
+                }}
+                class="flex items-center gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-left whitespace-nowrap transition-colors"
+                classList={{
+                  "border-line bg-card text-ink": active() === section.id,
+                  "border-transparent text-ink-2 hover:bg-ghost hover:text-ink":
+                    active() !== section.id,
+                }}
+              >
+                <Icon name={section.icon} class="size-5 shrink-0" />
+                <span class="font-display text-[17px] font-semibold">{section.label}</span>
+                <Show when={section.status()}>
+                  {(status) => (
+                    <span class="ml-auto flex items-center gap-1.5 pl-1 text-[13px] text-muted">
+                      <span
+                        class={`size-2 shrink-0 rounded-full ${status().on ? "bg-leaf" : "bg-muted/50"}`}
+                      />
+                      {status().text}
+                    </span>
+                  )}
+                </Show>
+              </button>
+            )}
+          </For>
+        </nav>
+      </div>
       <div class="min-w-0">
         <div hidden={active() !== "page"}>
           <YourPage account={account()} page={settings()} busy={busy()} onSave={save} />
