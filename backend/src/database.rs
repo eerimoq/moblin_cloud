@@ -43,7 +43,8 @@ impl Database {
                      state TEXT NOT NULL,
                      created_at INTEGER NOT NULL,
                      updated_at INTEGER NOT NULL,
-                     details TEXT NOT NULL
+                     details TEXT NOT NULL,
+                     kind TEXT
                  );
                  CREATE TABLE IF NOT EXISTS deliveries (
                      request_id TEXT PRIMARY KEY,
@@ -77,6 +78,7 @@ impl Database {
             ("deliveries", "failure", "TEXT"),
             ("deliveries", "finished", "INTEGER NOT NULL DEFAULT 0"),
             ("deliveries", "test", "TEXT"),
+            ("orders", "kind", "TEXT"),
         ] {
             if !has_column(&connection, table, column)? {
                 connection
@@ -86,6 +88,16 @@ impl Database {
                     .with_context(|| format!("failed to add {column} to the {table} table"))?;
             }
         }
+        connection
+            .execute_batch(
+                "UPDATE orders SET kind = CASE
+                     WHEN json_extract(details, '$.item.Song') IS NOT NULL THEN 'song'
+                     WHEN json_extract(details, '$.item.Tip') IS NOT NULL THEN 'tip'
+                     ELSE 'spin'
+                 END WHERE kind IS NULL;
+                 CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);",
+            )
+            .context("failed to index the orders")?;
         if has_column(&connection, "accounts", "page_key")? {
             connection
                 .execute_batch(

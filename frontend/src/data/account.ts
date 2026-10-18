@@ -22,18 +22,19 @@ export type Recent = {
   id: string;
   at: number;
   user: string;
-  amount?: number;
-  currency?: string;
+  amount: number;
+  currency: string;
   name?: string;
   link?: string;
   message?: string;
   spins?: number;
   status: "delivered" | "waiting" | "notAdded";
   devices?: { name: string; received: boolean }[];
-  test?: boolean;
 };
 
-export type RecentLists = { songs: Recent[]; tips: Recent[]; spins: Recent[] };
+export type RecentKind = "song" | "tip" | "spin";
+
+export type RecentList = { items: Recent[]; more: boolean };
 
 export type AdminStats = {
   accounts: { total: number; withPage: number; paypal: number; stripe: number };
@@ -96,7 +97,11 @@ export const fetchAccount = (session: string) => call<Account>(session, "/accoun
 
 export const fetchAdminStats = (session: string) => call<AdminStats>(session, "/admin/stats");
 
-export const fetchRecent = (session: string) => call<RecentLists>(session, "/account/recent");
+export const fetchRecent = (session: string, kind: RecentKind, limit: number, before?: string) =>
+  call<RecentList>(
+    session,
+    `/account/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
+  );
 
 export async function signOutEverywhere(session: string) {
   await fetch(`${backendUrl}/account/sign-out`, {

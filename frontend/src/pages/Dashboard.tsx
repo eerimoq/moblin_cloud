@@ -42,7 +42,8 @@ import {
   type Account,
   type Device,
   type Recent,
-  type RecentLists,
+  type RecentKind,
+  type RecentList,
   type SettingsChanges,
 } from "../data/account";
 import { pages } from "../data/links";
@@ -1106,51 +1107,58 @@ function TestSend(props: {
   );
 }
 
-function Latest(props: { kind: "song" | "tip" | "spin"; items: Recent[] | undefined }) {
+function Latest(props: {
+  kind: RecentKind;
+  list: RecentList | undefined;
+  onMore: () => Promise<void>;
+}) {
+  const [loading, setLoading] = createSignal(false);
   const title = () =>
     props.kind === "song"
-      ? t("Latest 5 song requests")
+      ? t("Received song requests")
       : props.kind === "tip"
-        ? t("Latest 5 tips")
-        : t("Latest 5 spins");
+        ? t("Received tips")
+        : t("Received spins");
   const empty = () =>
     props.kind === "song"
-      ? t("No song requests yet.")
+      ? t("No paid song requests yet.")
       : props.kind === "tip"
         ? t("No tips yet.")
-        : t("No spins yet.");
+        : t("No paid spins yet.");
   const status = (item: Recent) =>
     item.status === "delivered"
       ? { text: t("In Moblin"), class: "text-leaf" }
       : item.status === "waiting"
         ? { text: t("Waiting for Moblin"), class: "text-muted" }
         : { text: t("Not added by Moblin"), class: "text-amber-ink" };
+  const more = async () => {
+    setLoading(true);
+    try {
+      await props.onMore();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <section class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{title()}</h2>
-      <Show when={props.items} fallback={<Spinner />}>
-        {(items) => (
-          <Show when={items().length > 0} fallback={<p class="text-ink-2">{empty()}</p>}>
+      <div class="flex flex-col gap-1">
+        <h2 class="text-[23px] font-semibold">{title()}</h2>
+        <p class="text-[15px] text-muted">{t("From the last 30 days.")}</p>
+      </div>
+      <Show when={props.list} fallback={<Spinner />}>
+        {(list) => (
+          <Show when={list().items.length > 0} fallback={<p class="text-ink-2">{empty()}</p>}>
             <ul class="flex flex-col divide-y divide-line">
-              <For each={items()}>
+              <For each={list().items}>
                 {(item) => (
                   <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
                     <div class="flex min-w-0 flex-col gap-0.5">
                       <span class="flex flex-wrap items-baseline gap-x-2">
                         <span class="font-semibold">{item.user}</span>
-                        <Show when={item.amount !== undefined && item.currency}>
-                          {(currency) => (
-                            <span class="text-ink-2">
-                              {formatPrice({ price: item.amount ?? 0, currency: currency() })}
-                            </span>
-                          )}
-                        </Show>
-                        <Show when={item.test}>
-                          <span class="rounded-full border-[1.5px] border-line px-2 font-display text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
-                            {t("Test")}
-                          </span>
-                        </Show>
+                        <span class="text-ink-2">
+                          {formatPrice({ price: item.amount, currency: item.currency })}
+                        </span>
                       </span>
                       <Show when={item.name}>
                         {(name) => <span class="truncate text-ink-2">{name()}</span>}
@@ -1196,6 +1204,16 @@ function Latest(props: { kind: "song" | "tip" | "spin"; items: Recent[] | undefi
                 )}
               </For>
             </ul>
+            <Show when={list().more}>
+              <button
+                type="button"
+                class={`${ghostButtonClass} self-start`}
+                disabled={loading()}
+                onClick={more}
+              >
+                {loading() ? t("Loading…") : t("Show more")}
+              </button>
+            </Show>
           </Show>
         )}
       </Show>
@@ -1213,13 +1231,41 @@ function Admin(props: {
   const [account, setAccount] = createSignal(props.account);
   const [settings, setSettings] = createSignal(props.settings);
   const [busy, setBusy] = createSignal(false);
-  const [recent, setRecent] = createSignal<RecentLists | null>(
-    props.preview ? { songs: [], tips: [], spins: [] } : null,
+  const empty = { items: [], more: false };
+  const [recent, setRecent] = createSignal<Record<RecentKind, RecentList> | null>(
+    props.preview ? { song: empty, tip: empty, spin: empty } : null,
   );
 
   const loadRecent = async () => {
     try {
-      setRecent(await fetchRecent(props.session));
+      const [song, tip, spin] = await Promise.all(
+        (["song", "tip", "spin"] as const).map((kind) => fetchRecent(props.session, kind, 5)),
+      );
+      setRecent({ song, tip, spin });
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+    }
+  };
+
+  const loadMore = async (kind: RecentKind) => {
+    const items = recent()?.[kind].items ?? [];
+    try {
+      const page = await fetchRecent(props.session, kind, 20, items[items.length - 1]?.id);
+      setRecent((old) => {
+        if (!old) {
+          return old;
+        }
+        const ids = new Set(old[kind].items.map((item) => item.id));
+        return {
+          ...old,
+          [kind]: {
+            items: [...old[kind].items, ...page.items.filter((item) => !ids.has(item.id))],
+            more: page.more,
+          },
+        };
+      });
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
@@ -1247,7 +1293,6 @@ function Admin(props: {
     }
     void loadRecent();
     const timer = setInterval(async () => {
-      void loadRecent();
       try {
         const account = await fetchAccount(props.session);
         setAccount(account);
@@ -1401,7 +1446,7 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
-          <Latest kind="tip" items={recent()?.tips} />
+          <Latest kind="tip" list={recent()?.tip} onMore={() => loadMore("tip")} />
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
           <Show
@@ -1423,7 +1468,7 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
-          <Latest kind="spin" items={recent()?.spins} />
+          <Latest kind="spin" list={recent()?.spin} onMore={() => loadMore("spin")} />
         </div>
         <div hidden={active() !== "songs"} class="flex flex-col gap-6">
           <Show
@@ -1445,7 +1490,7 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
-          <Latest kind="song" items={recent()?.songs} />
+          <Latest kind="song" list={recent()?.song} onMore={() => loadMore("song")} />
         </div>
         <Show when={payments()}>
           <div hidden={active() !== "payments"} class="flex flex-col gap-6">

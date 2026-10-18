@@ -173,8 +173,8 @@ class Dashboard(Client):
     def disconnect_stripe(self) -> dict:
         return self.post("/account/stripe/disconnect")
 
-    def recent(self) -> dict:
-        return self.get("/account/recent")
+    def recent(self, kind: str) -> dict:
+        return self.get(f"/account/recent?kind={kind}")
 
     def test_song(self, song: str) -> dict:
         return self.post("/account/test/song", {"song": song})

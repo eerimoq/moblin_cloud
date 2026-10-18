@@ -706,11 +706,17 @@ async fn handle_account(
     Ok(account_response(&api, &id, account))
 }
 
-#[derive(Default, Serialize)]
+#[derive(Deserialize)]
+struct RecentQuery {
+    kind: String,
+    before: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Serialize)]
 struct RecentResponse {
-    songs: Vec<Recent>,
-    tips: Vec<Recent>,
-    spins: Vec<Recent>,
+    items: Vec<Recent>,
+    more: bool,
 }
 
 #[derive(Serialize)]
@@ -718,10 +724,8 @@ struct Recent {
     id: String,
     at: u64,
     user: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    amount: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    currency: Option<String>,
+    amount: u32,
+    currency: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -733,8 +737,6 @@ struct Recent {
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     devices: Option<Vec<RecentDevice>>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    test: bool,
 }
 
 #[derive(Serialize)]
@@ -746,124 +748,75 @@ struct RecentDevice {
 async fn handle_account_recent(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
+    Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    let mut response = RecentResponse::default();
+    if !["song", "tip", "spin"].contains(&query.kind.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string()));
+    }
     let Some(page) = account.page else {
-        return Ok(Json(response));
+        return Ok(Json(RecentResponse {
+            items: Vec::new(),
+            more: false,
+        }));
     };
-    let mut recent = Vec::new();
-    for (id, at, order) in api.orders.recent(&page.id) {
-        let kind = order.item.kind();
-        let delivery = api.deliveries.get(&id);
-        let (name, link, message, spins) = match order.item {
-            Item::Song { link, name } => (Some(name), Some(link), None, None),
-            Item::Tip { message } => (None, None, message, None),
-            Item::Spin { spins, message } => (None, None, message, Some(spins)),
-        };
-        recent.push((
-            kind,
+    let limit = query.limit.unwrap_or(20).clamp(1, 50);
+    let mut orders = api
+        .orders
+        .recent(&page.id, &query.kind, query.before.as_deref(), limit + 1);
+    let more = orders.len() > limit;
+    orders.truncate(limit);
+    let items = orders
+        .into_iter()
+        .map(|(id, at, order)| {
+            let delivery = api.deliveries.get(&id);
+            let devices = match &order.item {
+                Item::Tip { .. } => delivery
+                    .as_ref()
+                    .map(|delivery| recent_devices(&page, delivery)),
+                _ => None,
+            };
+            let (name, link, message, spins) = match order.item {
+                Item::Song { link, name } => (Some(name), Some(link), None, None),
+                Item::Tip { message } => (None, None, message, None),
+                Item::Spin { spins, message } => (None, None, message, Some(spins)),
+            };
             Recent {
                 id,
                 at,
                 user: order.user,
-                amount: Some(order.price),
-                currency: Some(order.currency),
+                amount: order.price,
+                currency: order.currency,
                 name,
                 link,
                 message,
                 spins,
-                status: recent_status(delivery.as_ref()),
-                devices: recent_devices(&page, kind, delivery.as_ref()),
-                test: false,
-            },
-        ));
-    }
-    for delivery in api.deliveries.tests(&page.id) {
-        let kind = delivery.item.kind();
-        let (user, name, link, message, spins, amount, currency) = match delivery.item.clone() {
-            deliveries::Item::Song { link, user, name } => {
-                (user, name, Some(link), None, None, None, None)
+                status: match &delivery {
+                    None => "delivered",
+                    Some(delivery) if delivery.finished => "delivered",
+                    Some(delivery) if delivery.failure.as_deref() == Some("not-found") => {
+                        "notAdded"
+                    }
+                    Some(_) => "waiting",
+                },
+                devices,
             }
-            deliveries::Item::Tip {
-                user,
-                message,
-                amount,
-                currency,
-            } => (
-                user,
-                None,
-                None,
-                Some(message),
-                None,
-                Some(amount),
-                Some(currency),
-            ),
-            deliveries::Item::Spin {
-                user,
-                message,
-                spins,
-            } => (user, None, None, Some(message), Some(spins), None, None),
-        };
-        recent.push((
-            kind,
-            Recent {
-                id: delivery.request_id.clone(),
-                at: delivery.requested_at,
-                user,
-                amount,
-                currency,
-                name,
-                link,
-                message: message.filter(|message| !message.is_empty()),
-                spins,
-                status: recent_status(Some(&delivery)),
-                devices: recent_devices(&page, kind, Some(&delivery)),
-                test: true,
-            },
-        ));
-    }
-    recent.sort_by_key(|(_, recent)| std::cmp::Reverse(recent.at));
-    for (kind, recent) in recent {
-        let list = match kind {
-            "song" => &mut response.songs,
-            "tip" => &mut response.tips,
-            _ => &mut response.spins,
-        };
-        if list.len() < 5 {
-            list.push(recent);
-        }
-    }
-    Ok(Json(response))
+        })
+        .collect();
+    Ok(Json(RecentResponse { items, more }))
 }
 
-fn recent_status(delivery: Option<&deliveries::Delivery>) -> &'static str {
-    match delivery {
-        None => "delivered",
-        Some(delivery) if delivery.finished => "delivered",
-        Some(delivery) if delivery.failure.as_deref() == Some("not-found") => "notAdded",
-        Some(_) => "waiting",
-    }
-}
-
-fn recent_devices(
-    page: &Page,
-    kind: &str,
-    delivery: Option<&deliveries::Delivery>,
-) -> Option<Vec<RecentDevice>> {
-    let delivery = delivery.filter(|_| kind == "tip")?;
-    Some(
-        page.devices
-            .iter()
-            .filter_map(|device| {
-                let received = delivery.delivered.contains(&device.id);
-                (received || !delivery.finished).then(|| RecentDevice {
-                    name: device.name.clone(),
-                    received,
-                })
+fn recent_devices(page: &Page, delivery: &deliveries::Delivery) -> Vec<RecentDevice> {
+    page.devices
+        .iter()
+        .filter_map(|device| {
+            let received = delivery.delivered.contains(&device.id);
+            (received || !delivery.finished).then(|| RecentDevice {
+                name: device.name.clone(),
+                received,
             })
-            .collect(),
-    )
+        })
+        .collect()
 }
 
 async fn handle_account_page(
@@ -1647,7 +1600,6 @@ fn queue(
         deliveries::Item::Song {
             link: song.link,
             user: song.user,
-            name: Some(song.name),
         },
     );
     (
@@ -2062,10 +2014,9 @@ pub async fn settle_orders(api: Arc<Api>) {
 
 fn delivery_item(order: &Order) -> deliveries::Item {
     match &order.item {
-        Item::Song { link, name } => deliveries::Item::Song {
+        Item::Song { link, .. } => deliveries::Item::Song {
             link: link.clone(),
             user: order.user.clone(),
-            name: Some(name.clone()),
         },
         Item::Tip { message } => deliveries::Item::Tip {
             user: order.user.clone(),
@@ -3332,7 +3283,7 @@ mod tests {
         let client = reqwest::Client::new();
         let recent = || async {
             client
-                .get(format!("http://{address}/account/recent"))
+                .get(format!("http://{address}/account/recent?kind=tip"))
                 .bearer_auth(&session)
                 .send()
                 .await
@@ -3341,17 +3292,13 @@ mod tests {
                 .await
                 .unwrap()
         };
-        assert_eq!(
-            recent().await,
-            json!({"songs": [], "tips": [], "spins": []})
-        );
+        assert_eq!(recent().await, json!({"items": [], "more": false}));
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let listed = recent().await;
-        assert_eq!(listed["songs"], json!([]));
-        assert_eq!(listed["spins"], json!([]));
-        assert_eq!(listed["tips"].as_array().unwrap().len(), 1);
-        let tip = &listed["tips"][0];
+        assert_eq!(listed["more"], false);
+        assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+        let tip = &listed["items"][0];
         assert_eq!(tip["id"], "ORDER1");
         assert_eq!(tip["user"], "Viewer");
         assert_eq!(tip["amount"], 700);
@@ -3373,7 +3320,7 @@ mod tests {
         let main_name = account["devices"][0]["name"].clone();
         let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
         assert_eq!(
-            recent().await["tips"][0]["devices"],
+            recent().await["items"][0]["devices"],
             json!([
                 {"name": main_name, "received": false},
                 {"name": "Backup", "received": false},
@@ -3398,7 +3345,7 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        let tip = &recent().await["tips"][0];
+        let tip = &recent().await["items"][0];
         assert_eq!(tip["status"], "waiting");
         assert_eq!(
             tip["devices"],
@@ -3415,14 +3362,14 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         wait_until_added(&api).await;
-        let tip = &recent().await["tips"][0];
+        let tip = &recent().await["items"][0];
         assert_eq!(tip["status"], "delivered");
         assert_eq!(
             tip["devices"],
             json!([{"name": main_name, "received": true}])
         );
         let response = client
-            .get(format!("http://{address}/account/recent"))
+            .get(format!("http://{address}/account/recent?kind=tip"))
             .send()
             .await
             .unwrap();
@@ -3615,7 +3562,7 @@ mod tests {
             let socket = connect(&address, &key).await;
             tip_delivered_once(socket, &address, &key, &api, currency).await;
             let recent: Value = client
-                .get(format!("http://{address}/account/recent"))
+                .get(format!("http://{address}/account/recent?kind=tip"))
                 .bearer_auth(&session)
                 .send()
                 .await
@@ -3623,7 +3570,7 @@ mod tests {
                 .json()
                 .await
                 .unwrap();
-            assert_eq!(recent["tips"][0]["status"], "delivered", "{fault:?}");
+            assert_eq!(recent["items"][0]["status"], "delivered", "{fault:?}");
         }
     }
 
@@ -3896,7 +3843,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recent_lists_cap_at_five_per_kind_and_show_songs_not_added() {
+    async fn recent_lists_are_paged_per_kind_and_show_songs_not_added() {
         let (address, api) = start_api(None).await;
         let (session, _, id) = streamer(&address, &api).await;
         let order = |item: Item, price: u32| Order {
@@ -3907,7 +3854,7 @@ mod tests {
             price,
             currency: "USD".to_string(),
         };
-        for n in 0..6 {
+        for n in 0..45 {
             let order_id = format!("TIP{n}");
             api.orders
                 .insert(
@@ -3943,7 +3890,6 @@ mod tests {
                     &deliveries::Item::Song {
                         link: LINK.to_string(),
                         user: "Viewer".to_string(),
-                        name: None,
                     },
                 )?;
                 connection.execute(
@@ -3979,33 +3925,80 @@ mod tests {
                 )
             })
             .unwrap();
-        let recent: Value = reqwest::Client::new()
-            .get(format!("http://{address}/account/recent"))
-            .bearer_auth(&session)
-            .send()
+        let client = reqwest::Client::new();
+        let recent = |query: String| {
+            let request = client
+                .get(format!("http://{address}/account/recent?{query}"))
+                .bearer_auth(&session);
+            async move { request.send().await.unwrap() }
+        };
+        let response = recent("kind=gift".to_string()).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let mut ids = Vec::new();
+        let mut before = String::new();
+        for (expected, more) in [(20, true), (20, true), (5, false)] {
+            let listed: Value = recent(format!("kind=tip{before}"))
+                .await
+                .json()
+                .await
+                .unwrap();
+            let items = listed["items"].as_array().unwrap();
+            assert_eq!(items.len(), expected);
+            assert_eq!(listed["more"], more);
+            ids.extend(
+                items
+                    .iter()
+                    .map(|item| item["id"].as_str().unwrap().to_string()),
+            );
+            before = format!("&before={}", ids.last().unwrap());
+        }
+        assert_eq!(
+            ids,
+            (0..45).rev().map(|n| format!("TIP{n}")).collect::<Vec<_>>()
+        );
+        let listed: Value = recent("kind=tip&limit=5".to_string())
             .await
-            .unwrap()
             .json()
             .await
             .unwrap();
-        let tips = recent["tips"].as_array().unwrap();
+        let tips = listed["items"].as_array().unwrap();
         assert_eq!(tips.len(), 5);
-        assert_eq!(tips[0]["id"], "TIP5");
-        assert_eq!(tips[0]["message"], "m5");
-        assert_eq!(tips[0]["amount"], 105);
+        assert_eq!(listed["more"], true);
+        assert_eq!(tips[0]["id"], "TIP44");
+        assert_eq!(tips[0]["message"], "m44");
+        assert_eq!(tips[0]["amount"], 144);
         assert_eq!(tips[0]["status"], "delivered");
-        assert_eq!(tips[4]["id"], "TIP1");
-        let song = &recent["songs"][0];
-        assert_eq!(recent["songs"].as_array().unwrap().len(), 1);
+        let listed: Value = recent("kind=song".to_string()).await.json().await.unwrap();
+        assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+        let song = &listed["items"][0];
         assert_eq!(song["name"], "Song");
         assert_eq!(song["link"], LINK);
         assert_eq!(song["amount"], 250);
         assert_eq!(song["status"], "notAdded");
-        let spin = &recent["spins"][0];
-        assert_eq!(recent["spins"].as_array().unwrap().len(), 1);
+        let listed: Value = recent("kind=spin".to_string()).await.json().await.unwrap();
+        assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+        let spin = &listed["items"][0];
         assert_eq!(spin["spins"], 2);
         assert_eq!(spin["message"], "Go!");
         assert_eq!(spin["status"], "waiting");
+        api.orders
+            .insert(
+                "OTHER",
+                &Order {
+                    streamer: "other".to_string(),
+                    ..order(Item::Tip { message: None }, 100)
+                },
+            )
+            .unwrap();
+        api.orders.captured("OTHER", |_| Ok(())).unwrap();
+        let listed: Value = recent("kind=tip&before=OTHER".to_string())
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(listed, json!({"items": [], "more": false}));
+        let listed: Value = recent("kind=tip".to_string()).await.json().await.unwrap();
+        assert_eq!(listed["items"][0]["id"], "TIP44");
     }
 
     #[tokio::test]
@@ -4952,7 +4945,7 @@ mod tests {
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
         let recent: Value = client
-            .get(format!("http://{address}/account/recent"))
+            .get(format!("http://{address}/account/recent?kind=tip"))
             .bearer_auth(&session)
             .send()
             .await
@@ -4960,13 +4953,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        let listed = &recent["tips"][0];
-        assert_eq!(listed["test"], true);
-        assert_eq!(listed["user"], "Erik");
-        assert_eq!(listed["message"], "Testing");
-        assert_eq!(listed["amount"], 500);
-        assert_eq!(listed["status"], "delivered");
-        assert_eq!(listed["devices"][0]["received"], true);
+        assert_eq!(recent, json!({"items": [], "more": false}));
         let response = test("spin", json!({})).await.unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         socket
@@ -5289,7 +5276,6 @@ mod tests {
             deliveries::Item::Song {
                 link: LINK.to_string(),
                 user: "Viewer".to_string(),
-                name: Some("Band - Song".to_string()),
             }
         );
         assert_eq!(delivery.failure.as_deref(), Some("not-found"));

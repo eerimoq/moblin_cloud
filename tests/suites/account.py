@@ -325,18 +325,21 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
 
 
 class AccountTestDeliveriesNeedMoblin(AccountTestCase):
-    """Refuse the dashboard's free test song, tip and wheel spin without a page or a connected Moblin."""
+    """Refuse the dashboard's free test song and wheel spin without a page or a connected Moblin, and queue the test tip."""
 
     def run(self):
         dashboard = self.sign_in("testneedsmoblin")
-        self.assert_equal(dashboard.recent(), {"songs": [], "tips": [], "spins": []})
+        empty = {"items": [], "more": False}
+        for kind in ["song", "tip", "spin"]:
+            self.assert_equal(dashboard.recent(kind), empty)
         self.assert_backend_error(404, dashboard.test_tip, "no page")
         dashboard.create_page()
         song = "https://music.apple.com/us/album/take-on-me/380907762?i=380907765"
         self.assert_backend_error(409, lambda: dashboard.test_song(song), "Connect Moblin first.")
-        self.assert_backend_error(409, dashboard.test_tip, "Connect Moblin first.")
         self.assert_backend_error(409, dashboard.test_spin, "Connect Moblin first.")
-        self.assert_equal(dashboard.recent(), {"songs": [], "tips": [], "spins": []})
+        dashboard.test_tip()
+        for kind in ["song", "tip", "spin"]:
+            self.assert_equal(dashboard.recent(kind), empty)
 
 
 class AccountAdmin(AccountTestCase):

@@ -177,8 +177,8 @@ impl Orders {
         self.database
             .lock()
             .execute(
-                "INSERT OR REPLACE INTO orders (id, streamer, state, created_at, updated_at, details) VALUES (?1, ?2, 'created', ?3, ?3, ?4)",
-                params![id, order.streamer, now(), serde_json::to_string(order)?],
+                "INSERT OR REPLACE INTO orders (id, streamer, state, created_at, updated_at, details, kind) VALUES (?1, ?2, 'created', ?3, ?3, ?4, ?5)",
+                params![id, order.streamer, now(), serde_json::to_string(order)?, order.item.kind()],
             )
             .with_context(|| format!("failed to save order {id}"))?;
         Ok(())
@@ -301,16 +301,25 @@ impl Orders {
         }
     }
 
-    pub fn recent(&self, streamer: &str) -> Vec<(String, u64, Order)> {
+    pub fn recent(
+        &self,
+        streamer: &str,
+        kind: &str,
+        before: Option<&str>,
+        limit: usize,
+    ) -> Vec<(String, u64, Order)> {
         let rows = self
             .database
             .lock()
             .prepare(
-                "SELECT id, updated_at, details FROM orders WHERE streamer = ?1 AND state = 'captured' ORDER BY updated_at DESC, rowid DESC LIMIT 100",
+                "SELECT id, updated_at, details FROM orders
+                 WHERE streamer = ?1 AND kind = ?2 AND state = 'captured'
+                   AND (?3 IS NULL OR (updated_at, rowid) < (SELECT updated_at, rowid FROM orders WHERE id = ?3 AND streamer = ?1))
+                 ORDER BY updated_at DESC, rowid DESC LIMIT ?4",
             )
             .and_then(|mut statement| {
                 statement
-                    .query_map([streamer], |row| {
+                    .query_map(params![streamer, kind, before, limit], |row| {
                         Ok((
                             row.get::<_, String>(0)?,
                             row.get::<_, u64>(1)?,
@@ -387,6 +396,60 @@ impl Orders {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kinds_of_older_orders_are_filled_in() {
+        let path = crate::database::temporary_path("orders-kind");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE orders (id TEXT PRIMARY KEY, streamer TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, details TEXT NOT NULL)",
+            )
+            .unwrap();
+        let items = [
+            (
+                "SONG",
+                Item::Song {
+                    link: "l".to_string(),
+                    name: "n".to_string(),
+                },
+            ),
+            ("TIP", Item::Tip { message: None }),
+            (
+                "SPIN",
+                Item::Spin {
+                    spins: 1,
+                    message: None,
+                },
+            ),
+        ];
+        for (id, item) in &items {
+            connection
+                .execute(
+                    "INSERT INTO orders VALUES (?1, 'p', 'captured', 1, 1, ?2)",
+                    params![
+                        id,
+                        serde_json::to_string(&Order {
+                            item: item.clone(),
+                            ..order()
+                        })
+                        .unwrap()
+                    ],
+                )
+                .unwrap();
+        }
+        drop(connection);
+        let orders = Orders::new(Database::open(Some(&path)).unwrap());
+        for (id, item) in &items {
+            let listed: Vec<String> = orders
+                .recent("p", item.kind(), None, 10)
+                .into_iter()
+                .map(|(id, _, _)| id)
+                .collect();
+            assert_eq!(listed, vec![id.to_string()]);
+        }
+        crate::database::remove(&path);
+    }
 
     fn order() -> Order {
         Order {

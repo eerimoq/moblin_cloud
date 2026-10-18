@@ -31,8 +31,6 @@ pub enum Item {
     Song {
         link: String,
         user: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
     },
     Spin {
         user: String,
@@ -97,14 +95,6 @@ impl Deliveries {
         }
         drop(database);
         self.notify();
-    }
-
-    pub fn tests(&self, streamer: &str) -> Vec<Delivery> {
-        query(
-            &self.database.lock(),
-            "SELECT * FROM deliveries WHERE streamer = ?1 AND test IS NOT NULL ORDER BY rowid DESC",
-            [streamer],
-        )
     }
 
     pub fn notify(&self) {
@@ -386,7 +376,7 @@ async fn deliver(
 ) -> Result<Outcome, RequestError> {
     let request_id = delivery.request_id.clone();
     match &delivery.item {
-        Item::Song { link, user, .. } => {
+        Item::Song { link, user } => {
             let add = MusicCommand::Add {
                 title: link.clone(),
                 user: user.clone(),
@@ -439,7 +429,6 @@ mod tests {
         Item::Song {
             link: "https://music.apple.com/song/1?i=1".to_string(),
             user: "Viewer".to_string(),
-            name: None,
         }
     }
 
@@ -501,11 +490,14 @@ mod tests {
         deliveries.add_test("O".to_string(), "OTHER".to_string(), tip());
         insert(&deliveries.database.lock(), "S", "PAID", &tip()).unwrap();
         let ids = |streamer: &str| {
-            deliveries
-                .tests(streamer)
-                .into_iter()
-                .map(|delivery| delivery.request_id)
-                .collect::<Vec<_>>()
+            query(
+                &deliveries.database.lock(),
+                "SELECT * FROM deliveries WHERE streamer = ?1 AND test IS NOT NULL ORDER BY rowid DESC",
+                [streamer],
+            )
+            .into_iter()
+            .map(|delivery| delivery.request_id)
+            .collect::<Vec<_>>()
         };
         assert_eq!(ids("S"), vec!["SPIN", "T6", "T5", "T4", "T3", "T2"]);
         assert_eq!(ids("O"), vec!["OTHER"]);
