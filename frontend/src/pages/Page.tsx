@@ -302,7 +302,7 @@ function StripeCard(props: {
           disabled={props.disabled || working()}
           onClick={() => void open()}
         >
-          {working() ? t("Loading…") : t("Tip with Stripe")}
+          {working() ? t("Loading…") : t("Pay with Stripe")}
         </button>
       </Show>
       <div ref={(element) => (container = element)} class={payment() ? "" : "hidden"} />
