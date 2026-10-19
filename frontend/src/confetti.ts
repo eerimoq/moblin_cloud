@@ -34,12 +34,12 @@ export function fireConfetti(parent: HTMLElement) {
     return;
   }
   const scale = devicePixelRatio || 1;
-  const width = innerWidth;
-  const height = innerHeight;
+  const width = parent.clientWidth;
+  const height = parent.clientHeight;
   canvas.width = width * scale;
   canvas.height = height * scale;
   context.scale(scale, scale);
-  const style = getComputedStyle(document.documentElement);
+  const style = getComputedStyle(parent);
   const colors = colorTokens.map((token) => style.getPropertyValue(token).trim()).filter(Boolean);
   const speed = Math.sqrt(width * width + height * height) / 55;
   const pieces: Piece[] = [];
@@ -65,6 +65,9 @@ export function fireConfetti(parent: HTMLElement) {
   const start = performance.now();
   let last = start;
   const frame = (now: number) => {
+    if (!canvas.isConnected) {
+      return;
+    }
     const step = Math.min((now - last) / 16.7, 3);
     last = now;
     context.clearRect(0, 0, width, height);

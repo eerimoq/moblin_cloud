@@ -100,8 +100,6 @@ function paymentOf(current: PublicPayment): Payment | null {
 
 const sameData = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-const showTestNotices = false;
-
 const providerName = (provider: Provider) => (provider === "stripe" ? "Stripe" : "PayPal");
 
 type PayOptions = {
@@ -171,11 +169,6 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
           props.disabled ? "pointer-events-none opacity-40" : ""
         }`}
       />
-      <Show when={showTestNotices && props.config.environment === "sandbox"}>
-        <Notice status>
-          {t("PayPal sandbox. This is a test payment and no real money is moved.")}
-        </Notice>
-      </Show>
       <Show when={failed()}>
         <Notice error>{t("PayPal could not be loaded. Reload the page to try again.")}</Notice>
       </Show>
@@ -348,11 +341,6 @@ function StripeCard(props: {
           </>
         )}
       </Show>
-      <Show when={showTestNotices && props.config.publishableKey.startsWith("pk_test_")}>
-        <Notice status>
-          {t("Stripe test mode. This is a test payment and no real money is moved.")}
-        </Notice>
-      </Show>
       <Show when={failed()}>
         <Notice error>{t("Stripe could not be loaded. Reload the page to try again.")}</Notice>
       </Show>
@@ -400,7 +388,7 @@ function TermsLink() {
   );
 }
 
-type Result = { ok: boolean; text: string };
+type Result = { text: string };
 
 function CheerCard(props: { text: string; onClose: () => void }) {
   let overlay: HTMLDivElement | undefined;
@@ -450,17 +438,10 @@ function ResultLine(props: { result: Result | null }) {
     <Show when={props.result}>
       {(result) => (
         <p
-          role="status"
-          class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[17px] font-semibold ${
-            result().ok
-              ? "border-moss bg-well text-leaf"
-              : "border-danger-line bg-danger-bg text-danger-ink"
-          }`}
+          role="alert"
+          class="flex items-start gap-3 rounded-2xl border-[1.5px] border-danger-line bg-danger-bg px-4 py-3 text-[17px] font-semibold text-danger-ink"
         >
-          <Icon
-            name={result().ok ? "check" : "warning"}
-            class={`mt-0.5 size-5 shrink-0 ${result().ok ? "text-leaf" : ""}`}
-          />
+          <Icon name="warning" class="mt-0.5 size-5 shrink-0" />
           {result().text}
         </p>
       )}
@@ -571,7 +552,7 @@ function TipJar(props: {
   };
 
   const showError = (error: unknown) => {
-    setResult({ ok: false, text: errorText(error) });
+    setResult({ text: errorText(error) });
     props.onError(error);
   };
 
@@ -613,14 +594,13 @@ function TipJar(props: {
       }
     },
     onCancel: () => {
-      setResult({ ok: false, text: t("Payment cancelled. No tip was sent.") });
+      setResult({ text: t("Payment cancelled. No tip was sent.") });
     },
     onError: (provider) => {
       if (orderError) {
         showError(orderError);
       } else {
         setResult({
-          ok: false,
           text: t("{provider} could not complete the payment. Try again.", {
             provider: providerName(provider),
           }),
@@ -993,7 +973,7 @@ function SpinWheel(props: {
   let orderError: unknown = null;
 
   const showError = (error: unknown) => {
-    setResult({ ok: false, text: errorText(error) });
+    setResult({ text: errorText(error) });
     props.onError(error);
   };
 
@@ -1039,17 +1019,13 @@ function SpinWheel(props: {
       }
     },
     onCancel: () => {
-      setResult({
-        ok: false,
-        text: t("Payment cancelled. No tip was sent and the wheel was not spun."),
-      });
+      setResult({ text: t("Payment cancelled. No tip was sent and the wheel was not spun.") });
     },
     onError: (provider) => {
       if (orderError) {
         showError(orderError);
       } else {
         setResult({
-          ok: false,
           text: t("{provider} could not complete the payment. Try again.", {
             provider: providerName(provider),
           }),
@@ -1363,7 +1339,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   };
 
   const showError = (error: unknown) => {
-    setResult({ ok: false, text: errorText(error) });
+    setResult({ text: errorText(error) });
     if (error instanceof BackendError && error.status === 404) {
       setStatus("offline");
     }
@@ -1405,17 +1381,13 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       }
     },
     onCancel: () => {
-      setResult({
-        ok: false,
-        text: t("Payment cancelled. No tip was sent and no song was added."),
-      });
+      setResult({ text: t("Payment cancelled. No tip was sent and no song was added.") });
     },
     onError: (provider) => {
       if (orderError) {
         showError(orderError);
       } else {
         setResult({
-          ok: false,
           text: t("{provider} could not complete the payment. Try again.", {
             provider: providerName(provider),
           }),
