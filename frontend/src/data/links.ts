@@ -5,6 +5,7 @@ export const links = {
   appStore: "https://apps.apple.com/app/id6466745933",
   testFlight: "https://testflight.apple.com/join/PDpxEaGh",
   discord: "https://discord.gg/kh3KMng4JV",
+  discordPremium: "https://discord.gg/YzpsZfNSZ",
   github: "https://github.com/eerimoq/moblin",
   chatBotHelp: "https://github.com/eerimoq/moblin/blob/main/docs/chat-bot-help.md",
   privacyPolicy: "https://eerimoq.github.io/moblin/privacy-policy/en.html",

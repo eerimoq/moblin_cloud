@@ -48,7 +48,7 @@ import {
   type RecentList,
   type SettingsChanges,
 } from "../data/account";
-import { pages } from "../data/links";
+import { links, pages } from "../data/links";
 import {
   accentAttributes,
   accents,
@@ -1983,6 +1983,66 @@ function MoblinSettings(props: {
   );
 }
 
+function GoPremium() {
+  let dialog: HTMLDialogElement | undefined;
+
+  return (
+    <>
+      <button
+        type="button"
+        class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf px-3.5 font-display text-base font-semibold whitespace-nowrap text-leaf transition-colors hover:bg-ghost-hover sm:px-4"
+        title={t("Go premium")}
+        onClick={() => dialog?.showModal()}
+      >
+        <Icon name="star" class="size-4" />
+        <span class="max-sm:sr-only">{t("Go premium")}</span>
+      </button>
+      <dialog
+        ref={(element) => (dialog = element)}
+        class="m-auto w-[calc(100%-2rem)] max-w-md rounded-3xl border-[1.5px] border-line bg-card p-6 text-ink backdrop:bg-black/60 sm:p-8"
+        onClick={(event) => {
+          if (event.target === dialog) {
+            dialog?.close();
+          }
+        }}
+      >
+        <div class="flex flex-col gap-5">
+          <h2 class="font-display text-2xl font-bold">{t("Go premium")}</h2>
+          <p class="text-[17px] text-ink-2">
+            {t(
+              "With a premium account you can add a banner image, pick any color and choose a font for your tip page.",
+            )}
+          </p>
+          <p class="text-[17px] text-ink-2">
+            {tRich("To go premium, join the {discord} and request it in the {channel} channel.", {
+              discord: (
+                <a
+                  href={links.discordPremium}
+                  target="_blank"
+                  rel="noopener"
+                  class="text-leaf hover:text-leaf-bright"
+                >
+                  {t("Moblin Discord")}
+                </a>
+              ),
+              channel: <span class="font-semibold text-ink">#dev-cave</span>,
+            })}
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <a href={links.discordPremium} target="_blank" rel="noopener" class={buttonClass}>
+              <Icon name="discord" class="size-5" />
+              {t("Join Discord")}
+            </a>
+            <button type="button" class={ghostButtonClass} onClick={() => dialog?.close()}>
+              {t("Close")}
+            </button>
+          </div>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
 const smallButtonClass =
   "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
 
@@ -2282,7 +2342,7 @@ export default function Dashboard() {
         >
           {(current) => (
             <div class="flex items-center gap-3">
-              <Show when={current().account.premium}>
+              <Show when={current().account.premium} fallback={<GoPremium />}>
                 <span
                   title={t("Premium")}
                   class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf px-3.5 font-display text-base font-semibold text-leaf sm:px-4"
