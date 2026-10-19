@@ -816,22 +816,36 @@ function StreamerHeader(props: { id: string | null; profile: Profile | null; unk
       >
         {(banner) => (
           <div class="mx-auto flex max-w-[720px] flex-col px-5 pt-6 pb-6 sm:px-8 lg:pt-10">
-            <img
-              src={banner().src}
-              alt=""
-              class="aspect-[3/1] w-full rounded-3xl bg-ghost object-cover"
-            />
-            <div class="flex items-end gap-4 px-4 sm:px-6">
-              <Avatar
-                profile={banner().profile}
-                cutout
-                class="relative -mt-8 size-18 text-3xl sm:-mt-10 sm:size-22 sm:text-4xl"
+            <div class="relative overflow-hidden rounded-3xl bg-ghost">
+              <img
+                src={banner().src}
+                alt=""
+                class="aspect-[3/2] w-full object-cover sm:aspect-[3/1]"
               />
-              <div class="min-w-0 pb-1">
-                <TwitchLink profile={banner().profile} />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+              <div class="absolute inset-x-0 bottom-0 flex items-center gap-4 p-3 sm:p-4">
+                <Avatar
+                  profile={banner().profile}
+                  cutout
+                  class="size-16 text-2xl ring-white/90! sm:size-20 sm:text-3xl"
+                />
+                <div class="flex min-w-0 flex-col">
+                  <h1 class="truncate font-display text-3xl leading-tight font-bold text-white drop-shadow sm:text-4xl">
+                    {banner().profile.name}
+                  </h1>
+                  <a
+                    href={`https://www.twitch.tv/${encodeURIComponent(banner().profile.login)}`}
+                    target="_blank"
+                    rel="noopener"
+                    class="inline-flex min-w-0 items-center gap-1.5 text-[15px] font-semibold text-white/80 transition-colors hover:text-white"
+                  >
+                    <Icon name="twitch" class="size-4.5 shrink-0 text-twitch-bright" />
+                    <span class="truncate">twitch.tv/{banner().profile.login}</span>
+                  </a>
+                </div>
               </div>
             </div>
-            <div class="mt-3 px-1 sm:px-2">
+            <div class="mt-5 px-1 sm:px-2">
               <Greeting profile={banner().profile} />
             </div>
           </div>
