@@ -143,9 +143,9 @@ struct Cli {
     /// Accept live posts without App Attest, for development.
     #[arg(long)]
     allow_unattested: bool,
-    /// Fake Twitch sign in, for development.
-    #[arg(long)]
-    fake_twitch_sign_in: bool,
+    /// Fake Twitch sign in as this login, unless the sign in names another, for development.
+    #[arg(long, value_name = "LOGIN")]
+    fake_twitch_sign_in: Option<String>,
     /// Twitch user IDs allowed to see the admin page.
     #[arg(long, env = "ADMINS", value_delimiter = ',')]
     admins: Vec<String>,
@@ -181,7 +181,7 @@ async fn main() -> Result<()> {
     if cli.session_secret.is_none() {
         warn!("no session secret, signing everyone out on restart");
     }
-    if cli.fake_twitch_sign_in {
+    if cli.fake_twitch_sign_in.is_some() {
         warn!("signing anyone in as any Twitch user without asking Twitch");
     }
     let auth = Auth::new(

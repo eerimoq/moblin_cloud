@@ -61,7 +61,7 @@ pub struct Auth {
     public_url: String,
     pub frontend_url: String,
     twitch: Option<OAuthApp>,
-    fake: bool,
+    fake_twitch_login: Option<String>,
     key: hmac::Key,
     random: SystemRandom,
     pending: Mutex<HashMap<String, Instant>>,
@@ -73,7 +73,7 @@ impl Auth {
         public_url: String,
         frontend_url: String,
         twitch: Option<OAuthApp>,
-        fake: bool,
+        fake_twitch_login: Option<String>,
         secret: Option<&str>,
     ) -> Result<Self> {
         let random = SystemRandom::new();
@@ -87,7 +87,7 @@ impl Auth {
             public_url: public_url.trim_end_matches('/').to_string(),
             frontend_url: frontend_url.trim_end_matches('/').to_string(),
             twitch,
-            fake,
+            fake_twitch_login,
             key,
             random,
             pending: Mutex::new(HashMap::new()),
@@ -99,8 +99,8 @@ impl Auth {
     }
 
     pub fn login_url(&self, fake_login: Option<&str>) -> Option<(String, String)> {
-        if self.fake {
-            let login = fake_login.unwrap_or("streamer").to_lowercase();
+        if let Some(default_login) = &self.fake_twitch_login {
+            let login = fake_login.unwrap_or(default_login).to_lowercase();
             let valid = (1..=25).contains(&login.len())
                 && login.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
             if !valid {
@@ -177,7 +177,7 @@ impl Auth {
         if browser_state != Some(state) {
             bail!("the state is from another browser");
         }
-        if self.fake {
+        if self.fake_twitch_login.is_some() {
             return Ok(User {
                 id: format!("fake-{code}"),
                 name: code.to_string(),
@@ -297,7 +297,7 @@ mod tests {
             "https://api.example.com/".to_string(),
             "https://example.com".to_string(),
             Some(OAuthApp::twitch("id".to_string(), "secret".to_string())),
-            false,
+            None,
             Some(secret),
         )
         .unwrap()
@@ -352,7 +352,7 @@ mod tests {
             "http://localhost:5173/api".to_string(),
             "http://localhost:5173".to_string(),
             None,
-            true,
+            Some("streamer".to_string()),
             None,
         )
         .unwrap();

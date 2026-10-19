@@ -2569,7 +2569,7 @@ mod tests {
                 "http://localhost".to_string(),
                 "https://moblin.app".to_string(),
                 twitch,
-                false,
+                None,
                 Some("secret"),
             )
             .unwrap(),

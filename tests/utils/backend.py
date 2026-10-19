@@ -126,7 +126,7 @@ class Backend:
             if (app_id := self.config.app_id()) is not None:
                 arguments += ["--app-id", app_id]
         if self.config.twitch_sign_in() == "fake":
-            arguments.append("--fake-twitch-sign-in")
+            arguments += ["--fake-twitch-sign-in", "streamer"]
         twitch = self.config.twitch()
         if twitch is not None:
             arguments += [
