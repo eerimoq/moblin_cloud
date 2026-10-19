@@ -73,6 +73,7 @@ class AccountSignIn(AccountTestCase):
                 "wheelDevice": None,
                 "settings": None,
                 "admin": False,
+                "pro": False,
             },
         )
 
@@ -361,7 +362,7 @@ class AccountAdmin(AccountTestCase):
         self.assert_true(admin.account()["admin"])
         stats = admin.admin_stats()
         self.assert_equal(sorted(stats), ["accounts", "counters", "moblin", "pending"])
-        self.assert_equal(sorted(stats["accounts"]), ["paypal", "stripe", "total", "withPage"])
+        self.assert_equal(sorted(stats["accounts"]), ["images", "paypal", "stripe", "total", "withPage"])
         self.assert_true(stats["accounts"]["total"] >= 2)
         self.assert_true(stats["accounts"]["withPage"] >= 1)
         self.assert_in("connectedDevices", stats["moblin"])
