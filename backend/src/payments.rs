@@ -40,6 +40,7 @@ impl Item {
 pub enum Payee {
     PayPal(String),
     Stripe(String),
+    Twitch(u8),
 }
 
 impl Payee {
@@ -47,6 +48,7 @@ impl Payee {
         match self {
             Payee::PayPal(_) => "PayPal",
             Payee::Stripe(_) => "Stripe",
+            Payee::Twitch(_) => "Twitch",
         }
     }
 }
@@ -80,6 +82,14 @@ impl Order {
         };
         description.chars().take(127).collect()
     }
+}
+
+pub fn insert_captured(connection: &Connection, id: &str, order: &Order) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO orders (id, streamer, state, created_at, updated_at, details, kind) VALUES (?1, ?2, 'captured', ?3, ?3, ?4, ?5)",
+        params![id, order.streamer, now(), serde_json::to_string(order).unwrap(), order.item.kind()],
+    )?;
+    Ok(())
 }
 
 #[derive(Debug, PartialEq)]

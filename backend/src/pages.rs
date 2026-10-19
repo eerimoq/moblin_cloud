@@ -18,6 +18,10 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spin: Option<Spin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_songs: Option<Tiers>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_spins: Option<Tiers>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -46,6 +50,13 @@ pub struct Spin {
 pub struct SpinOption {
     pub spins: u32,
     pub price: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Tiers {
+    pub tier1: u32,
+    pub tier2: u32,
+    pub tier3: u32,
 }
 
 pub const CURRENCIES: [&str; 16] = [
@@ -99,6 +110,14 @@ impl Settings {
             Some(spin) => Some(spin.normalize().ok_or(SettingsError::InvalidSpin)?),
             None => None,
         };
+        let sub_songs = match self.sub_songs {
+            Some(tiers) => Some(tiers.normalize().ok_or(SettingsError::InvalidTiers)?),
+            None => None,
+        };
+        let sub_spins = match self.sub_spins {
+            Some(tiers) => Some(tiers.normalize().ok_or(SettingsError::InvalidTiers)?),
+            None => None,
+        };
         let accent = match self.accent.map(|accent| accent.to_lowercase()) {
             Some(accent) if !ACCENTS.contains(&accent.as_str()) && !is_color(&accent) => {
                 return Err(SettingsError::InvalidPage);
@@ -116,6 +135,8 @@ impl Settings {
             paywall,
             tips,
             spin,
+            sub_songs,
+            sub_spins,
             title: text(self.title, 60)?,
             message: text(self.message, 300)?,
             accent,
@@ -164,12 +185,30 @@ impl Spin {
     }
 }
 
+impl Tiers {
+    pub fn normalize(self) -> Option<Self> {
+        let tiers = [self.tier1, self.tier2, self.tier3];
+        let valid = tiers.iter().all(|songs| *songs <= 100) && tiers.iter().any(|songs| *songs > 0);
+        valid.then_some(self)
+    }
+
+    pub fn allowance(&self, tier: Option<u8>) -> u32 {
+        match tier {
+            Some(1) => self.tier1,
+            Some(2) => self.tier2,
+            Some(3) => self.tier3,
+            _ => 0,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
     InvalidCurrency,
     InvalidPaywall,
     InvalidTips,
     InvalidSpin,
+    InvalidTiers,
     InvalidPage,
     Full,
     NotSaved,
@@ -449,6 +488,35 @@ mod tests {
                 Err(SettingsError::InvalidSpin)
             );
         }
+    }
+
+    #[test]
+    fn sub_songs_are_validated() {
+        let pages = Pages::new(Database::memory());
+        let sub_songs = |tier1, tier2, tier3| Settings {
+            sub_songs: Some(Tiers {
+                tier1,
+                tier2,
+                tier3,
+            }),
+            ..Settings::default()
+        };
+        assert_eq!(pages.set("a", sub_songs(1, 5, 10)), Ok(sub_songs(1, 5, 10)));
+        assert_eq!(
+            pages.set("a", sub_songs(0, 0, 100)),
+            Ok(sub_songs(0, 0, 100))
+        );
+        for (tier1, tier2, tier3) in [(0, 0, 0), (101, 5, 10), (1, 5, 101)] {
+            assert_eq!(
+                pages.set("a", sub_songs(tier1, tier2, tier3)),
+                Err(SettingsError::InvalidTiers)
+            );
+        }
+        let sub_songs = sub_songs(1, 0, 10).sub_songs.unwrap();
+        assert_eq!(
+            [None, Some(1), Some(2), Some(3)].map(|tier| sub_songs.allowance(tier)),
+            [0, 1, 0, 10]
+        );
     }
 
     #[test]

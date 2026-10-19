@@ -17,6 +17,7 @@ mod profiles;
 mod remote_control;
 mod store;
 mod stripe;
+mod subscribers;
 mod twitch;
 
 use std::net::SocketAddr;
@@ -50,6 +51,7 @@ use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
 use crate::store::Store;
 use crate::stripe::Stripe;
+use crate::subscribers::Allowances;
 use crate::twitch::Twitch;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -312,7 +314,8 @@ async fn main() -> Result<()> {
         pages,
         paypal,
         stripe,
-        orders: Orders::new(database),
+        orders: Orders::new(database.clone()),
+        allowances: Allowances::new(database),
         deliveries,
         auth,
         accounts,

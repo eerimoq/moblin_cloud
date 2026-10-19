@@ -251,6 +251,11 @@ class PaymentsSpinNeedsWheel(PaymentTestCase):
         self.dashboard.save_settings(spin=SPIN)
         self.assert_equal(self.viewer.spin()["wheel"], None)
         self.assert_backend_error(
+            409, lambda: self.order_spin(1), "The streamer is not taking wheel spins right now."
+        )
+        self.moblin.disconnect_from_backend()
+        self.wait_until(lambda: not self.viewer.spin()["connected"], "Moblin to be disconnected")
+        self.assert_backend_error(
             404,
             lambda: self.order_spin(1),
             "The streamer's wheel is not available right now. Try again when they are live.",

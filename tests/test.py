@@ -5,6 +5,7 @@ from .suites import persistence
 from .suites import remote_control
 from .suites import streamers
 from .suites import stripe
+from .suites import subscribers
 from .utils.runner import create_parser
 from .utils.runner import run
 
@@ -17,6 +18,7 @@ def create_suites(context):
         paypal.tests(context),
         stripe.tests(context),
         payments.tests(context),
+        subscribers.tests(context),
         persistence.tests(context),
     ]
 

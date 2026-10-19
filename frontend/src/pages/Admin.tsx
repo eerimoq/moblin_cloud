@@ -64,6 +64,12 @@ const reasonLabels: Record<string, string> = {
   "moblin-error": "Moblin answered with an error",
   crashed: "Backend error",
   account: "Not signed in",
+  "not-signed-in": "Viewer not signed in with Twitch",
+  "not-subscribed": "Viewer not subscribed on Twitch",
+  "no-minutes-left": "Viewer used this month's minutes",
+  "no-spins-left": "Viewer used this month's spins",
+  "tier-excluded": "Viewer's tier gets nothing on the page",
+  "too-long": "Song longer than the viewer's minutes left",
   "not-premium": "Not a premium account",
   "invalid-image": "Unreadable or too small image",
 };
@@ -103,8 +109,8 @@ const problems: Problem[] = [
     matches: (_, reason) => reason === "moblin-error",
   },
   {
-    label: "Paid song not found by Moblin",
-    hint: "The song was found before paying but not when adding it, so it was dropped.",
+    label: "Song not found by Moblin",
+    hint: "The song was found before paying or the subscriber's request but not when adding it, so it was dropped.",
     matches: (_, reason) => reason === "not-found",
   },
   {
@@ -114,7 +120,7 @@ const problems: Problem[] = [
   },
   {
     label: "Given up after 7 days",
-    hint: "Paid requests that never reached a device in 7 days and were dropped.",
+    hint: "Paid and subscriber requests that never reached a device in 7 days and were dropped.",
     matches: (name) => name.endsWith("Expiries"),
   },
 ];
@@ -124,6 +130,7 @@ type Kind = {
   label: string;
   orders: string[];
   payments: string[];
+  subscribers?: { event: string; reasons: string[] };
   tests: string[];
   deliveries: string[];
 };
@@ -153,6 +160,27 @@ const kinds: Kind[] = [
       "payments-unavailable",
       "provider",
     ],
+    subscribers: {
+      event: "subSongs",
+      reasons: [
+        "feature-off",
+        "not-signed-in",
+        "not-subscribed",
+        "tier-excluded",
+        "no-minutes-left",
+        "too-long",
+        "invalid-message",
+        "invalid-link",
+        "too-many-requests",
+        "offline",
+        "requests-off",
+        "song-not-found",
+        "moblin-timeout",
+        "moblin-error",
+        "crashed",
+        "not-saved",
+      ],
+    },
     tests: [
       "account",
       "too-many-tests",
@@ -201,6 +229,21 @@ const kinds: Kind[] = [
       "payments-unavailable",
       "provider",
     ],
+    subscribers: {
+      event: "subSpins",
+      reasons: [
+        "feature-off",
+        "not-signed-in",
+        "not-subscribed",
+        "tier-excluded",
+        "no-spins-left",
+        "no-wheel",
+        "offline",
+        "invalid-message",
+        "crashed",
+        "not-saved",
+      ],
+    },
     tests: ["account", "too-many-tests", "offline", "no-wheel", "invalid-message", "crashed"],
     deliveries: ["moblin-error"],
   },
@@ -404,9 +447,17 @@ function Loaded(props: { stats: AdminStats }) {
         "Completed captures, so the streamer got the money and the request was queued. One order can fail several times before it succeeds.",
         kind.payments,
       ),
+      ...(kind.subscribers
+        ? step(
+            kind.subscribers.event,
+            "Subscribers",
+            "Requests by Twitch subscribers, queued without a payment.",
+            kind.subscribers.reasons,
+          )
+        : []),
       ...paid(
         "Deliveries",
-        "Paid requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
+        "Paid and subscriber requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
         kind.deliveries,
       ),
       {

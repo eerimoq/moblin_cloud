@@ -65,6 +65,14 @@ impl Database {
                      position INTEGER PRIMARY KEY,
                      channels TEXT NOT NULL
                  );
+                 CREATE TABLE IF NOT EXISTS subscriber_allowances (
+                     page TEXT NOT NULL,
+                     viewer TEXT NOT NULL,
+                     kind TEXT NOT NULL,
+                     month TEXT NOT NULL,
+                     count INTEGER NOT NULL,
+                     PRIMARY KEY (page, viewer, kind, month)
+                 );
                  CREATE TABLE IF NOT EXISTS counters (
                      name TEXT NOT NULL,
                      day TEXT NOT NULL,

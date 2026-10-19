@@ -30,6 +30,8 @@ import {
   captureTip,
   formatDuration,
   formatPrice,
+  fetchSongAllowance,
+  fetchSpinAllowance,
   hundredths,
   idOfTwitchLogin,
   loadFonts,
@@ -38,10 +40,16 @@ import {
   orderSpin,
   orderTip,
   pageImageUrl,
-  streamerPaywall,
+  requestSubscriberSong,
+  requestSubscriberSpin,
   streamerProfile,
+  streamerSongs,
   streamerSpin,
   streamerTips,
+  tierCount,
+  tierNumbers,
+  viewerSignInUrl,
+  type Allowance,
   type MusicStatus,
   type Order,
   type PayPalConfig,
@@ -52,6 +60,7 @@ import {
   type PublicSpin,
   type PublicTips,
   type StripeConfig,
+  type Tiers,
   type Wheel,
 } from "../data/remoteControl";
 import { t, tRich } from "../i18n";
@@ -72,6 +81,59 @@ function saveName(name: string) {
   try {
     localStorage.setItem(nameKey, name);
   } catch {}
+}
+
+const viewerKey = (id: string) => `viewerSession:${id}`;
+
+function readViewer(id: string) {
+  try {
+    return localStorage.getItem(viewerKey(id));
+  } catch {
+    return null;
+  }
+}
+
+function saveViewer(id: string, viewer: string | null) {
+  try {
+    if (viewer) {
+      localStorage.setItem(viewerKey(id), viewer);
+    } else {
+      localStorage.removeItem(viewerKey(id));
+    }
+  } catch {}
+}
+
+const sectionKey = "viewerSignInSection";
+
+function takeSection(): Section {
+  try {
+    const section = sessionStorage.getItem(sectionKey);
+    sessionStorage.removeItem(sectionKey);
+    return section === "tip" || section === "spin" ? section : "songs";
+  } catch {
+    return "songs";
+  }
+}
+
+function takeViewerSignIn(): { viewer: string | null; failed: boolean; section: Section } {
+  const hash = location.hash.slice(1);
+  const viewer = new URLSearchParams(hash).get("viewer");
+  const failed = hash === "viewerSignInFailed";
+  const section = viewer || failed ? takeSection() : "songs";
+  if (viewer || failed) {
+    history.replaceState(null, "", `${location.pathname}${location.search}#${section}`);
+  }
+  return { viewer, failed, section };
+}
+
+function signInAsViewer(id: string, section: Section) {
+  const login = import.meta.env.DEV
+    ? prompt("Fake Twitch login (sub1, sub2, sub3 or any other)", "sub1")
+    : null;
+  try {
+    sessionStorage.setItem(sectionKey, section);
+  } catch {}
+  location.href = viewerSignInUrl(id, login ?? undefined);
 }
 
 function errorText(error: unknown) {
@@ -390,7 +452,7 @@ function TermsLink() {
 
 type Result = { text: string };
 
-function CheerCard(props: { text: string; onClose: () => void }) {
+function CheerCard(props: { title: string; text: string; onClose: () => void }) {
   let overlay: HTMLDivElement | undefined;
   let close: HTMLButtonElement | undefined;
   const onKey = (event: KeyboardEvent) => event.key === "Escape" && props.onClose();
@@ -426,9 +488,140 @@ function CheerCard(props: { text: string; onClose: () => void }) {
           alt=""
           class="absolute -top-20 left-1/2 h-40 w-auto -translate-x-1/2 drop-shadow-xl"
         />
-        <span class="font-display text-3xl font-semibold text-ink">{t("Thanks for the tip!")}</span>
+        <span class="font-display text-3xl font-semibold text-ink">{props.title}</span>
         <span class="text-lg text-ink-2">{props.text}</span>
       </div>
+    </div>
+  );
+}
+
+function TwitchBox(props: {
+  kind: "song" | "spin";
+  tiers: Tiers;
+  allowance: Allowance | null;
+  signedIn: boolean;
+  paid: boolean;
+  disabled: boolean;
+  result: Result | null;
+  onSignIn: () => void;
+  onSignOut: () => void;
+  onRequest: () => void;
+}) {
+  const tiers = () =>
+    tierNumbers
+      .map((tier) => ({ tier, count: tierCount(props.tiers, tier) }))
+      .filter((tier) => tier.count > 0);
+  const song = () => props.kind === "song";
+  const signOut = () => (
+    <button type="button" class="underline hover:text-ink" onClick={() => props.onSignOut()}>
+      {t("Sign out")}
+    </button>
+  );
+  const amount = (count: number) => (song() ? count * 5 : count);
+  const offer = () => {
+    const values = {
+      counts: tiers()
+        .map((tier) => amount(tier.count))
+        .join(" / "),
+      tiers: tiers()
+        .map((tier) => tier.tier)
+        .join(" / "),
+    };
+    return song()
+      ? t("{counts} minutes a month for tier {tiers}", values)
+      : t("{counts} spins a month for tier {tiers}", values);
+  };
+
+  return (
+    <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
+      <p class="flex flex-col items-center gap-1 text-center">
+        <span class="text-ink-2">
+          <Show when={props.allowance} fallback={offer()}>
+            {(current) => (
+              <Switch fallback={offer()}>
+                <Match when={current().tier === null}>
+                  {t("You are not subscribed to this streamer on Twitch.")}
+                </Match>
+                <Match when={current().allowance === 0}>
+                  {song()
+                    ? t("Tier {tier} subscribers can't request songs here.", {
+                        tier: current().tier ?? 0,
+                      })
+                    : t("Tier {tier} subscribers can't spin the wheel here.", {
+                        tier: current().tier ?? 0,
+                      })}
+                </Match>
+                <Match when={current().left === 0}>
+                  {song()
+                    ? t(
+                        "You have used all your minutes this month. New ones come on the 1st of the month.",
+                      )
+                    : t(
+                        "You have used all your spins this month. New ones come on the 1st of the month.",
+                      )}
+                </Match>
+                <Match when={current().left > 0}>
+                  {song()
+                    ? t("{left} of {allowance} minutes left this month", {
+                        left: amount(current().left),
+                        allowance: amount(current().allowance),
+                      })
+                    : t("{left} of {allowance} spins left this month", {
+                        left: current().left,
+                        allowance: current().allowance,
+                      })}
+                </Match>
+              </Switch>
+            )}
+          </Show>
+        </span>
+        <Show when={song() && !props.paid}>
+          <span class="text-sm text-muted">
+            {t("Every started 5 minutes of the song counts, and it always plays in full.")}
+          </span>
+        </Show>
+      </p>
+      <Show when={!props.paid}>
+        <ResultLine result={props.result} />
+      </Show>
+      <Show when={!props.signedIn}>
+        <button
+          type="button"
+          class={`${ghostButtonClass} self-center`}
+          onClick={() => props.onSignIn()}
+        >
+          <Icon name="twitch" class="size-5 text-twitch" />
+          {t("Sign in with Twitch")}
+        </button>
+      </Show>
+      <Show when={props.allowance}>
+        {(current) => (
+          <>
+            <Show when={current().left > 0}>
+              <button
+                type="button"
+                class={`${ghostButtonClass} self-center`}
+                disabled={props.disabled}
+                onClick={() => props.onRequest()}
+              >
+                <Icon name="twitch" class="size-5 text-twitch" />
+                {song() ? t("Request song") : t("Spin the wheel")}
+              </button>
+            </Show>
+            <p class="text-center text-sm text-muted">
+              {current().tier === null
+                ? tRich("Signed in as {name}. {signOut} and in again if your sub changed.", {
+                    name: current().name,
+                    signOut: signOut(),
+                  })
+                : tRich(
+                    "Signed in as {name}, tier {tier}. {signOut} and in again if your sub changed.",
+                    { name: current().name, tier: String(current().tier), signOut: signOut() },
+                  )}
+            </p>
+          </>
+        )}
+      </Show>
     </div>
   );
 }
@@ -958,18 +1151,27 @@ function WheelPicture(props: { wheel: Wheel }) {
 
 function SpinWheel(props: {
   id: string;
-  spin: PublicSpin & { payment: Payment };
+  spin: (PublicSpin & { payment: Payment }) | null;
+  subSpins: Tiers | null;
+  allowance: Allowance | null;
+  viewer: string | null;
   wheel: Wheel | null;
   connected: boolean;
   name: string;
   onName: (name: string) => void;
   onError: (error: unknown) => void;
-  onPaid: (text: string) => void;
+  onPaid: (text: string, title?: string) => void;
+  onSignIn: () => void;
+  onSignOut: () => void;
+  onAllowance: () => void;
+  signInFailed: boolean;
 }) {
-  const [choice, setChoice] = createSignal(props.spin.options[0]);
+  const [choice, setChoice] = createSignal(props.spin?.options[0] ?? { spins: 1, price: 0 });
   const [message, setMessage] = createSignal("");
   const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<Result | null>(null);
+  const [result, setResult] = createSignal<Result | null>(
+    props.signInFailed ? { text: t("Signing in with Twitch failed. Try again.") } : null,
+  );
   let orderError: unknown = null;
 
   const showError = (error: unknown) => {
@@ -1034,6 +1236,24 @@ function SpinWheel(props: {
     },
   };
 
+  const spinAsSubscriber = async () => {
+    if (busy() || !props.viewer) {
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      await requestSubscriberSpin(props.id, props.viewer, message().trim());
+      props.onPaid(t("Your spin starts on stream in a moment."), t("Enjoy the spin!"));
+      setMessage("");
+    } catch (error) {
+      showError(error);
+    } finally {
+      setBusy(false);
+      props.onAllowance();
+    }
+  };
+
   return (
     <form class={cardClass} onSubmit={(event) => event.preventDefault()}>
       <p class="text-ink-2">
@@ -1059,11 +1279,11 @@ function SpinWheel(props: {
           </figure>
         )}
       </Show>
-      <Show when={props.spin.options.length > 1}>
+      <Show when={props.spin && props.spin.options.length > 1}>
         <fieldset class="flex flex-col gap-3">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Spins")}</legend>
           <div class="flex flex-wrap gap-3">
-            <For each={props.spin.options}>
+            <For each={props.spin?.options}>
               {(option) => (
                 <label class={chipClass}>
                   <input
@@ -1073,14 +1293,14 @@ function SpinWheel(props: {
                     onChange={() => setChoice(option)}
                     class="sr-only"
                   />
-                  {spinsText(option.spins)} · {formatTip(option.price, props.spin.currency)}
+                  {spinsText(option.spins)} · {formatTip(option.price, props.spin?.currency ?? "")}
                 </label>
               )}
             </For>
           </div>
         </fieldset>
       </Show>
-      <label class="flex flex-col gap-2">
+      <label class={`flex flex-col gap-2 ${props.spin ? "" : "hidden"}`}>
         <span class="text-[15px] font-semibold text-ink-2">{t("Your name (optional)")}</span>
         <input
           type="text"
@@ -1097,26 +1317,46 @@ function SpinWheel(props: {
         onMessage={setMessage}
         placeholder={t("Land on the big one!")}
       />
-      <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
-        <p class="flex flex-col items-center gap-1 text-center">
-          <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
-            {t("Your tip · {spins}", { spins: spinsText(choice().spins) })}
-          </span>
-          <span class="font-display text-4xl font-semibold">
-            {formatPrice({ price: choice().price, currency: props.spin.currency })}
-          </span>
-        </p>
-        <ResultLine result={result()} />
-        <PayButtons
-          payment={props.spin.payment}
-          options={options}
-          disabled={busy() || !props.wheel}
-          resetKey={`${choice().spins}\n${props.name}\n${message()}`}
-        />
-        <p class="text-center text-sm text-muted">
-          {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
-        </p>
-      </div>
+      <Show when={props.spin} keyed>
+        {(spin) => (
+          <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
+            <p class="flex flex-col items-center gap-1 text-center">
+              <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
+                {t("Your tip · {spins}", { spins: spinsText(choice().spins) })}
+              </span>
+              <span class="font-display text-4xl font-semibold">
+                {formatPrice({ price: choice().price, currency: spin.currency })}
+              </span>
+            </p>
+            <ResultLine result={result()} />
+            <PayButtons
+              payment={spin.payment}
+              options={options}
+              disabled={busy() || !props.wheel}
+              resetKey={`${choice().spins}\n${props.name}\n${message()}`}
+            />
+            <p class="text-center text-sm text-muted">
+              {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
+            </p>
+          </div>
+        )}
+      </Show>
+      <Show when={props.subSpins} keyed>
+        {(tiers) => (
+          <TwitchBox
+            kind="spin"
+            tiers={tiers}
+            allowance={props.allowance}
+            signedIn={props.viewer !== null}
+            paid={props.spin !== null}
+            disabled={busy() || !props.wheel}
+            result={result()}
+            onSignIn={props.onSignIn}
+            onSignOut={props.onSignOut}
+            onRequest={() => void spinAsSubscriber()}
+          />
+        )}
+      </Show>
     </form>
   );
 }
@@ -1211,6 +1451,12 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(null);
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
+  const [subSongs, setSubSongs] = createSignal<Tiers | null>(null, { equals: sameData });
+  const [subSpins, setSubSpins] = createSignal<Tiers | null>(null, { equals: sameData });
+  const [viewer, setViewer] = createSignal<string | null>(null);
+  const [songAllowance, setSongAllowance] = createSignal<Allowance | null>(null);
+  const [spinAllowance, setSpinAllowance] = createSignal<Allowance | null>(null);
+  const [spinSignInFailed, setSpinSignInFailed] = createSignal(false);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
   const [spin, setSpin] = createSignal<PublicSpin | null>(null);
   const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, {
@@ -1224,10 +1470,10 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   );
   const sections = (): Section[] => [
     ...(tipJar() ? (["tip"] as const) : []),
-    ...(wheel() ? (["spin"] as const) : []),
+    ...(spinnable() ? (["spin"] as const) : []),
     ...(songs() ? (["songs"] as const) : []),
   ];
-  const songs = () => payable() !== null;
+  const songs = () => payable() !== null || subSongs() !== null;
   const closed = () => {
     const current = status();
     return typeof current !== "string" && !current.songRequests;
@@ -1250,14 +1496,18 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         section: "spin",
         icon: "wheel",
         title: t("Spin the wheel"),
-        text: t("Your tip spins the wheel live on stream."),
-        enabled: wheel() !== null,
+        text: wheel()
+          ? t("Your tip spins the wheel live on stream.")
+          : t("Twitch subscribers spin the wheel live on stream."),
+        enabled: spinnable(),
       },
       {
         section: "songs",
         icon: "music",
         title: t("Request a song"),
-        text: t("Your tip puts a song in the queue."),
+        text: payable()
+          ? t("Your tip puts a song in the queue.")
+          : t("Twitch subscribers add songs to the queue."),
         enabled: songs(),
       },
     ];
@@ -1275,19 +1525,60 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const payable = createMemo(() => withPayment(paywall()), null, { equals: sameData });
   const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
   const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
+  const spinnable = () => wheel() !== null || subSpins() !== null;
   let orderError: unknown = null;
-  const [cheer, setCheer] = createSignal<{ text: string } | null>(null);
+  const [cheer, setCheer] = createSignal<{ title: string; text: string } | null>(null);
 
-  const celebrate = (text: string) => setCheer({ text });
+  const celebrate = (text: string, title = t("Thanks for the tip!")) => setCheer({ title, text });
 
   const refreshPaywall = async () => {
     const current = id();
     if (current) {
       try {
-        setPaywall(await streamerPaywall(current));
+        const found = await streamerSongs(current);
+        setPaywall(found.paywall);
+        setSubSongs(found.subSongs);
       } catch {}
     }
   };
+
+  const signOutViewer = () => {
+    const current = id();
+    if (current) {
+      saveViewer(current, null);
+    }
+    setViewer(null);
+    setSongAllowance(null);
+    setSpinAllowance(null);
+  };
+
+  const refreshAllowances = async () => {
+    const current = id();
+    const session = viewer();
+    if (!current || !session) {
+      return;
+    }
+    try {
+      await Promise.all([
+        subSongs() && fetchSongAllowance(current, session).then(setSongAllowance),
+        subSpins() && fetchSpinAllowance(current, session).then(setSpinAllowance),
+      ]);
+    } catch (error) {
+      if (error instanceof BackendError && error.status === 401) {
+        signOutViewer();
+      }
+    }
+  };
+
+  const allowancesMissing = () =>
+    (subSongs() !== null && songAllowance() === null) ||
+    (subSpins() !== null && spinAllowance() === null);
+
+  createEffect(() => {
+    if (viewer() && allowancesMissing()) {
+      void refreshAllowances();
+    }
+  });
 
   const refreshTips = async () => {
     const current = id();
@@ -1310,6 +1601,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       try {
         const found = await streamerSpin(current);
         setSpin(found.spin);
+        setSubSpins(found.subSpins);
         setWheelOfLuck(found.wheel);
         setStreamerConnected(found.connected);
       } catch {}
@@ -1322,8 +1614,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
   };
 
-  const requested = () => {
-    celebrate(t("Your song will be added to the queue in a moment."));
+  const requested = (title = t("Thanks for the tip!")) => {
+    setCheer({ title, text: t("Your song will be added to the queue in a moment.") });
     setSong("");
     setMessage("");
     setTimeout(refresh, 3_000);
@@ -1348,6 +1640,29 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
     if (error instanceof BackendError && error.status === 409) {
       void refresh();
+    }
+  };
+
+  const requestAsSubscriber = async () => {
+    const current = id();
+    const session = viewer();
+    if (!current || !session || !start()) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const answer = await requestSubscriberSong(current, session, song().trim(), message().trim());
+      setSongAllowance((found) => found && { ...found, left: answer.left });
+      requested(t("Enjoy the song!"));
+    } catch (error) {
+      showError(error);
+      if (error instanceof BackendError && error.status === 401) {
+        signOutViewer();
+      } else {
+        void refreshAllowances();
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1418,6 +1733,19 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
     const current = id();
     if (current) {
+      const signIn = takeViewerSignIn();
+      if (signIn.viewer) {
+        saveViewer(current, signIn.viewer);
+      }
+      setViewer(readViewer(current));
+      if (signIn.viewer || signIn.failed) {
+        setSection(signIn.section);
+      }
+      if (signIn.failed && signIn.section === "spin") {
+        setSpinSignInFailed(true);
+      } else if (signIn.failed) {
+        setResult({ text: t("Signing in with Twitch failed. Try again.") });
+      }
       streamerProfile(current)
         .then((found) => {
           setProfile(found);
@@ -1433,6 +1761,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     const timer = setInterval(() => {
       void refresh();
       void refreshSpin();
+      if (viewer() && allowancesMissing()) {
+        void refreshAllowances();
+      }
     }, 30_000);
     onCleanup(() => clearInterval(timer));
   });
@@ -1507,7 +1838,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   })}
                 </span>
               </label>
-              <label class="flex flex-col gap-2">
+              <label class={`flex flex-col gap-2 ${payable() ? "" : "hidden"}`}>
                 <span class="text-[15px] font-semibold text-ink-2">
                   {t("Your name (optional)")}
                 </span>
@@ -1563,6 +1894,24 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                     </div>
                   )}
                 </Show>
+                <Show when={subSongs()} keyed>
+                  {(current) => (
+                    <TwitchBox
+                      kind="song"
+                      tiers={current}
+                      allowance={songAllowance()}
+                      signedIn={viewer() !== null}
+                      paid={payable() !== null}
+                      disabled={
+                        busy() || typeof status() === "string" || closed() || !song().trim()
+                      }
+                      result={result()}
+                      onSignIn={() => signInAsViewer(id() ?? "", "songs")}
+                      onSignOut={signOutViewer}
+                      onRequest={() => void requestAsSubscriber()}
+                    />
+                  )}
+                </Show>
               </div>
             </form>
             <Show when={tipJar()} keyed>
@@ -1579,18 +1928,25 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                 </div>
               )}
             </Show>
-            <Show when={wheel()} keyed>
-              {(current) => (
+            <Show when={wheel() ?? subSpins()} keyed>
+              {(_current) => (
                 <div class={shown() === "spin" ? "" : "hidden"}>
                   <SpinWheel
                     id={id() ?? ""}
-                    spin={current}
+                    spin={wheel()}
+                    subSpins={subSpins()}
+                    allowance={spinAllowance()}
+                    viewer={viewer()}
                     wheel={wheelOfLuck()}
                     connected={streamerConnected()}
                     name={name()}
                     onName={setName}
                     onError={spinError}
                     onPaid={celebrate}
+                    onSignIn={() => signInAsViewer(id() ?? "", "spin")}
+                    onSignOut={signOutViewer}
+                    onAllowance={() => void refreshAllowances()}
+                    signInFailed={spinSignInFailed()}
                   />
                 </div>
               )}
@@ -1605,7 +1961,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         <PoweredBy />
       </Show>
       <Show when={cheer()} keyed>
-        {(current) => <CheerCard text={current.text} onClose={() => setCheer(null)} />}
+        {(current) => (
+          <CheerCard title={current.title} text={current.text} onClose={() => setCheer(null)} />
+        )}
       </Show>
     </div>
   );

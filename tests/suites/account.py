@@ -185,7 +185,7 @@ class AccountUnknownPage(TestCase):
         self.assert_backend_error(404, viewer.profile)
         self.assert_equal(viewer.paywall(), None)
         self.assert_equal(viewer.tips(), None)
-        self.assert_equal(viewer.spin(), {"spin": None, "wheel": None, "connected": False})
+        self.assert_equal(viewer.spin(), {"spin": None, "subSpins": None, "wheel": None, "connected": False})
         self.assert_backend_error(
             404, viewer.queue, "The streamer is offline right now. Try again when they are live."
         )

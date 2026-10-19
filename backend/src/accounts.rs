@@ -174,6 +174,21 @@ impl Accounts {
         self.find("page_id = ?1", page)
     }
 
+    pub fn streamer_of_page(&self, page: &str) -> Option<(String, String)> {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT id, login FROM accounts WHERE page_id = ?1",
+                [page],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read accounts: {error:#}");
+                None
+            })
+    }
+
     pub fn device_of_key(&self, key: &str) -> Option<String> {
         self.find(
             "EXISTS (SELECT 1 FROM json_each(page_devices) WHERE value ->> 'key' = ?1)",

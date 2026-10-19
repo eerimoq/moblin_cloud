@@ -43,6 +43,17 @@ export type Spin = {
   options: SpinOption[];
 };
 
+export type Tiers = {
+  tier1: number;
+  tier2: number;
+  tier3: number;
+};
+
+export const tierNumbers = [1, 2, 3] as const;
+
+export const tierCount = (tiers: Tiers, tier: number) =>
+  tier === 1 ? tiers.tier1 : tier === 2 ? tiers.tier2 : tiers.tier3;
+
 export type Page = {
   title: string | null;
   message: string | null;
@@ -57,6 +68,8 @@ export type Settings = Page & {
   paywall: Paywall | null;
   tips: Tips | null;
   spin: Spin | null;
+  subSongs: Tiers | null;
+  subSpins: Tiers | null;
   paypal: boolean;
   merchantId: string | null;
   paypalPending: boolean;
@@ -224,8 +237,32 @@ export const pageImageUrl = (id: string, version: string) =>
 
 export const streamerProfile = (id: string) => call<Profile>(`/${encodeURIComponent(id)}`);
 
-export const streamerPaywall = async (id: string) =>
-  (await call<{ paywall: PublicPaywall | null }>(`/${encodeURIComponent(id)}/songs`)).paywall;
+export const streamerSongs = (id: string) =>
+  call<{ paywall: PublicPaywall | null; subSongs: Tiers | null }>(
+    `/${encodeURIComponent(id)}/songs`,
+  );
+
+export type Allowance = {
+  name: string;
+  tier: number | null;
+  allowance: number;
+  left: number;
+};
+
+export const viewerSignInUrl = (id: string, login?: string) =>
+  `${backendUrl}/auth/twitch/login?${new URLSearchParams({ page: id, ...(login ? { login } : {}) })}`;
+
+export const fetchSongAllowance = (id: string, viewer: string) =>
+  call<Allowance>(`/${encodeURIComponent(id)}/songs/subscriber`, {
+    headers: { authorization: `Bearer ${viewer}` },
+  });
+
+export const requestSubscriberSong = (id: string, viewer: string, song: string, message: string) =>
+  call<{ left: number }>(`/${encodeURIComponent(id)}/songs/subscriber`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${viewer}` },
+    body: JSON.stringify({ song, message: message || null }),
+  });
 
 export const orderSong = (
   id: string,
@@ -265,9 +302,24 @@ export type Wheel = {
 };
 
 export const streamerSpin = (id: string) =>
-  call<{ spin: PublicSpin | null; wheel: Wheel | null; connected: boolean }>(
-    `/${encodeURIComponent(id)}/spin`,
-  );
+  call<{
+    spin: PublicSpin | null;
+    subSpins: Tiers | null;
+    wheel: Wheel | null;
+    connected: boolean;
+  }>(`/${encodeURIComponent(id)}/spin`);
+
+export const fetchSpinAllowance = (id: string, viewer: string) =>
+  call<Allowance>(`/${encodeURIComponent(id)}/spin/subscriber`, {
+    headers: { authorization: `Bearer ${viewer}` },
+  });
+
+export const requestSubscriberSpin = (id: string, viewer: string, message: string) =>
+  call<{ left: number }>(`/${encodeURIComponent(id)}/spin/subscriber`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${viewer}` },
+    body: JSON.stringify({ message: message || null }),
+  });
 
 export const orderSpin = (
   id: string,

@@ -86,6 +86,27 @@ class Website(Client):
             raise BackendError(response.status_code, response.text)
         return response.headers["location"]
 
+    def start_viewer_sign_in(self, page_id: str, login: str | None = None) -> tuple[str, requests.Session]:
+        browser = requests.Session()
+        params = {"page": page_id, **({"login": login} if login is not None else {})}
+        response = browser.get(
+            f"{self.url}/auth/twitch/login", params=params, allow_redirects=False, timeout=TIMEOUT
+        )
+        if response.status_code != 303:
+            raise BackendError(response.status_code, response.text)
+        return response.headers["location"], browser
+
+    def fake_viewer_sign_in(self, page_id: str, login: str) -> str:
+        callback_url, browser = self.start_viewer_sign_in(page_id, login)
+        return self.finish_sign_in(callback_url, browser)
+
+    def subscriber(self, page_id: str, login: str) -> "Subscriber":
+        page_url = self.fake_viewer_sign_in(page_id, login)
+        viewer = viewer_of(page_url)
+        if viewer is None:
+            raise Exception(f"Signing in as a viewer failed, ended at {page_url}.")
+        return Subscriber(self.url, page_id, viewer)
+
     def fake_sign_in(self, login: str) -> "Dashboard":
         callback_url, browser = self.start_sign_in(login)
         return self.dashboard_of(self.finish_sign_in(callback_url, browser))
@@ -95,6 +116,10 @@ class Website(Client):
         if session is None:
             raise Exception(f"Signing in failed, ended at {dashboard_url}.")
         return Dashboard(self.url, session)
+
+
+def viewer_of(page_url: str) -> str | None:
+    return parse_qs(urlsplit(page_url).fragment).get("viewer", [None])[0]
 
 
 def session_of(dashboard_url: str) -> str | None:
@@ -135,6 +160,8 @@ class Dashboard(Client):
         message: str | None = None,
         accent: str | None = None,
         font: str | None = None,
+        sub_songs: dict | None = None,
+        sub_spins: dict | None = None,
     ) -> dict:
         return self.post(
             "/account/settings",
@@ -147,14 +174,28 @@ class Dashboard(Client):
                 "message": message,
                 "accent": accent,
                 "font": font,
+                "subSongs": sub_songs,
+                "subSpins": sub_spins,
             },
         )
 
     def update_settings(self, **changes) -> dict:
         """Saves the current settings with some changed, like editing one field in the dashboard."""
         settings = self.account()["settings"]
-        fields = ["currency", "paywall", "tips", "spin", "title", "message", "accent", "font"]
-        current = {field: settings[field] for field in fields}
+        fields = [
+            "currency",
+            "paywall",
+            "tips",
+            "spin",
+            "title",
+            "message",
+            "accent",
+            "font",
+            "subSongs",
+            "subSpins",
+        ]
+        names = {"subSongs": "sub_songs", "subSpins": "sub_spins"}
+        current = {names.get(field, field): settings[field] for field in fields}
         return self.save_settings(**{**current, **changes})
 
     def connect_paypal(self) -> str:
@@ -259,3 +300,22 @@ class Viewer(Client):
 
     def capture_spin(self, order_id: str) -> dict:
         return self.post(self._path(f"/spin/orders/{quote(order_id, safe='')}/capture"))
+
+
+class Subscriber(Viewer):
+    def __init__(self, url: str, page_id: str, token: str):
+        super().__init__(url, page_id)
+        self.token = token
+        self.session = token
+
+    def songs(self) -> dict:
+        return self.get(self._path("/songs/subscriber"))
+
+    def request_song(self, song: str, message: str | None = None) -> dict:
+        return self.post(self._path("/songs/subscriber"), {"song": song, "message": message})
+
+    def spins(self) -> dict:
+        return self.get(self._path("/spin/subscriber"))
+
+    def spin_wheel(self, message: str | None = None) -> dict:
+        return self.post(self._path("/spin/subscriber"), {"message": message})

@@ -61,10 +61,13 @@ import {
   isColor,
   loadFonts,
   pageImageUrl,
+  tierCount,
+  tierNumbers,
   type Page,
   type Paywall,
   type Settings,
   type Spin,
+  type Tiers,
   type Tips,
 } from "../data/remoteControl";
 import { language, t, tRich } from "../i18n";
@@ -950,6 +953,121 @@ function SongSettings(props: {
   );
 }
 
+function SubscriberSettings(props: {
+  kind: "song" | "spin";
+  tiers: Tiers | null;
+  busy: boolean;
+  onSave: (tiers: Tiers | null) => Promise<void>;
+}) {
+  const song = props.kind === "song";
+  const unit = song ? 5 : 1;
+  const [enabled, setEnabled] = createSignal(props.tiers !== null);
+  const [amounts, setAmounts] = createSignal(
+    tierNumbers.map((tier) =>
+      String((props.tiers ? tierCount(props.tiers, tier) : [1, 5, 10][tier - 1]) * unit),
+    ),
+  );
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.busy) {
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    const [tier1, tier2, tier3] = amounts().map((count) =>
+      Math.round((Number.parseInt(count, 10) || 0) / unit),
+    );
+    try {
+      await props.onSave(enabled() ? { tier1, tier2, tier3 } : null);
+      flashSaved();
+    } catch (error) {
+      setError(
+        paymentErrorText(
+          error,
+          song
+            ? t("Enter 0 to 500 minutes per tier, and more than 0 for at least one tier.")
+            : t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier."),
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">
+        {song ? t("Songs for Twitch subscribers") : t("Spins for Twitch subscribers")}
+      </h2>
+      <p class="text-ink-2">
+        {song
+          ? t(
+              "Give your Twitch subscribers minutes of song requests every month, without a tip. Like paid " +
+                "song requests, every started 5 minutes of a song counts. Subscribers sign in with " +
+                "Twitch on your tip page, and their minutes come back on the 1st of every month. " +
+                "This works with or without paid song requests.",
+            )
+          : t(
+              "Give your Twitch subscribers spins of the wheel every month, without a tip. Subscribers sign " +
+                "in with Twitch on your tip page, and their spins come back on the 1st of every " +
+                "month. This works with or without paid wheel spins.",
+            )}
+      </p>
+      <label class="flex items-center gap-3 text-ink-2">
+        <input
+          type="checkbox"
+          checked={enabled()}
+          onChange={(event) => setEnabled(event.currentTarget.checked)}
+          class="size-5 accent-moss"
+        />
+        {song
+          ? t("Subscribers can request songs without a tip")
+          : t("Subscribers can spin the wheel without a tip")}
+      </label>
+      <Show when={enabled()}>
+        <div class="flex flex-wrap gap-4">
+          <For each={tierNumbers}>
+            {(tier, index) => (
+              <label class="flex flex-col gap-2">
+                <span class="text-[15px] font-semibold text-ink-2">
+                  {t("Tier {tier}", { tier })}
+                </span>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  max={100 * unit}
+                  step={unit}
+                  inputmode="numeric"
+                  value={amounts()[index()]}
+                  onInput={(event) => {
+                    const value = event.currentTarget.value;
+                    setAmounts(amounts().map((old, at) => (at === index() ? value : old)));
+                  }}
+                  class={`${inputClass} max-w-28`}
+                />
+              </label>
+            )}
+          </For>
+        </div>
+        <span class="text-[15px] text-muted">
+          {song
+            ? t("Minutes per month for each tier, in steps of 5.")
+            : t("Spins per month for each tier.")}
+        </span>
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      </div>
+    </form>
+  );
+}
+
 function MoneyInput(props: {
   value: string;
   onValue: (value: string) => void;
@@ -1328,10 +1446,10 @@ function Latest(props: {
         : t("Received spins");
   const empty = () =>
     props.kind === "song"
-      ? t("No paid song requests yet.")
+      ? t("No song requests yet.")
       : props.kind === "tip"
         ? t("No tips yet.")
-        : t("No paid spins yet.");
+        : t("No spins yet.");
   const status = (item: Recent) =>
     item.status === "delivered"
       ? { text: t("In Moblin"), class: "text-leaf" }
@@ -1364,7 +1482,9 @@ function Latest(props: {
                       <span class="flex flex-wrap items-baseline gap-x-2">
                         <span class="font-semibold">{item.user}</span>
                         <span class="text-ink-2">
-                          {formatPrice({ price: item.amount, currency: item.currency })}
+                          {item.tier
+                            ? t("Tier {tier} subscriber", { tier: item.tier })
+                            : formatPrice({ price: item.amount, currency: item.currency })}
                         </span>
                       </span>
                       <Show when={item.name}>
@@ -1590,15 +1710,15 @@ function Admin(props: {
       id: "wheel",
       label: t("Wheel of luck"),
       icon: "wheel",
-      shown: () => payments() || settings().spin !== null,
-      status: () => onOff(settings().spin !== null),
+      shown: () => true,
+      status: () => onOff(settings().spin !== null || settings().subSpins !== null),
     },
     {
       id: "songs",
       label: t("Song requests"),
       icon: "music",
-      shown: () => payments() || settings().paywall !== null,
-      status: () => onOff(settings().paywall !== null),
+      shown: () => true,
+      status: () => onOff(settings().paywall !== null || settings().subSongs !== null),
     },
     {
       id: "payments",
@@ -1737,6 +1857,12 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
+          <SubscriberSettings
+            kind="spin"
+            tiers={settings().subSpins}
+            busy={busy()}
+            onSave={(subSpins) => save({ subSpins })}
+          />
           <TestSend
             kind="spin"
             session={props.session}
@@ -1759,6 +1885,12 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
+          <SubscriberSettings
+            kind="song"
+            tiers={settings().subSongs}
+            busy={busy()}
+            onSave={(subSongs) => save({ subSongs })}
+          />
           <TestSend
             kind="song"
             session={props.session}
@@ -2246,6 +2378,8 @@ function Preview(props: { failed: boolean }) {
               connected: true,
               currency: "USD",
               paywall: { price: 100 },
+              subSongs: { tier1: 1, tier2: 5, tier3: 10 },
+              subSpins: { tier1: 1, tier2: 5, tier3: 10 },
               tips: { amounts: [300, 500, 1000] },
               spin: {
                 options: [

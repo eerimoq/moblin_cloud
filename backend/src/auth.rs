@@ -2,17 +2,19 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use reqwest::{Client, Url};
 use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
 const SESSION_LIFETIME: u64 = 30 * 24 * 60 * 60;
+const VIEWER_LIFETIME: u64 = 24 * 60 * 60;
+const VIEWER_PREFIX: &str = "viewer:";
 pub const STATE_COOKIE: &str = "moblin_sign_in_state";
 
 pub struct OAuthApp {
@@ -21,6 +23,7 @@ pub struct OAuthApp {
     pub authorize_url: String,
     pub token_url: String,
     pub users_url: String,
+    pub subscriptions_url: String,
 }
 
 impl OAuthApp {
@@ -31,6 +34,7 @@ impl OAuthApp {
             authorize_url: "https://id.twitch.tv/oauth2/authorize".to_string(),
             token_url: "https://id.twitch.tv/oauth2/token".to_string(),
             users_url: "https://api.twitch.tv/helix/users".to_string(),
+            subscriptions_url: "https://api.twitch.tv/helix/subscriptions/user".to_string(),
         }
     }
 }
@@ -56,6 +60,26 @@ pub struct User {
     pub avatar: Option<String>,
 }
 
+pub struct SignIn {
+    pub user: User,
+    token: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct StateError {
+    pub page: Option<String>,
+    pub error: anyhow::Error,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct Viewer {
+    pub id: String,
+    pub name: String,
+    pub page: String,
+    pub tier: Option<u8>,
+    pub issued: u64,
+}
+
 pub struct Auth {
     client: Client,
     public_url: String,
@@ -64,7 +88,7 @@ pub struct Auth {
     fake_twitch_login: Option<String>,
     key: hmac::Key,
     random: SystemRandom,
-    pending: Mutex<HashMap<String, Instant>>,
+    pending: Mutex<HashMap<String, (Instant, Option<String>)>>,
 }
 
 impl Auth {
@@ -80,7 +104,7 @@ impl Auth {
         let key = match secret {
             Some(secret) => hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes()),
             None => hmac::Key::generate(hmac::HMAC_SHA256, &random)
-                .map_err(|_| anyhow::anyhow!("failed to generate a session secret"))?,
+                .map_err(|_| anyhow!("failed to generate a session secret"))?,
         };
         Ok(Self {
             client,
@@ -98,7 +122,11 @@ impl Auth {
         format!("{}/auth/twitch/callback", self.public_url)
     }
 
-    pub fn login_url(&self, fake_login: Option<&str>) -> Option<(String, String)> {
+    pub fn login_url(
+        &self,
+        fake_login: Option<&str>,
+        page: Option<&str>,
+    ) -> Option<(String, String)> {
         if let Some(default_login) = &self.fake_twitch_login {
             let login = fake_login.unwrap_or(default_login).to_lowercase();
             let valid = (1..=25).contains(&login.len())
@@ -106,7 +134,7 @@ impl Auth {
             if !valid {
                 return None;
             }
-            let state = self.new_state()?;
+            let state = self.new_state(page)?;
             return Url::parse_with_params(
                 &self.redirect_uri(),
                 [("code", login.as_str()), ("state", state.as_str())],
@@ -115,14 +143,19 @@ impl Auth {
             .map(|url| (url.into(), state));
         }
         let app = self.twitch.as_ref()?;
-        let state = self.new_state()?;
+        let state = self.new_state(page)?;
+        let scope = if page.is_some() {
+            "user:read:subscriptions"
+        } else {
+            "openid"
+        };
         Url::parse_with_params(
             &app.authorize_url,
             [
                 ("client_id", app.client_id.as_str()),
                 ("redirect_uri", self.redirect_uri().as_str()),
                 ("response_type", "code"),
-                ("scope", "openid"),
+                ("scope", scope),
                 ("state", state.as_str()),
             ],
         )
@@ -143,46 +176,59 @@ impl Auth {
         self.state_cookie("").replace("Max-Age=600", "Max-Age=0")
     }
 
-    fn new_state(&self) -> Option<String> {
+    fn new_state(&self, page: Option<&str>) -> Option<String> {
         let mut bytes = [0; 32];
         self.random.fill(&mut bytes).ok()?;
         let state = BASE64_URL_SAFE_NO_PAD.encode(bytes);
         {
             let mut pending = self.pending.lock().unwrap();
             if pending.len() >= MAX_PENDING {
-                pending.retain(|_, created| created.elapsed() < STATE_LIFETIME);
+                pending.retain(|_, (created, _)| created.elapsed() < STATE_LIFETIME);
                 if pending.len() >= MAX_PENDING {
                     return None;
                 }
             }
-            pending.insert(state.clone(), Instant::now());
+            pending.insert(state.clone(), (Instant::now(), page.map(str::to_string)));
         }
         Some(state)
     }
 
-    fn consume_state(&self, state: &str) -> bool {
-        let created = self.pending.lock().unwrap().remove(state);
-        created.is_some_and(|created| created.elapsed() < STATE_LIFETIME)
-    }
-
-    pub async fn callback(
+    pub fn consume_state(
         &self,
-        code: &str,
         state: &str,
         browser_state: Option<&str>,
-    ) -> Result<User> {
-        if !self.consume_state(state) {
-            bail!("unknown or expired state");
+    ) -> Result<Option<String>, StateError> {
+        let Some((created, page)) = self.pending.lock().unwrap().remove(state) else {
+            return Err(StateError {
+                page: None,
+                error: anyhow!("unknown state"),
+            });
+        };
+        if created.elapsed() >= STATE_LIFETIME {
+            return Err(StateError {
+                page,
+                error: anyhow!("expired state"),
+            });
         }
         if browser_state != Some(state) {
-            bail!("the state is from another browser");
+            return Err(StateError {
+                page,
+                error: anyhow!("the state is from another browser"),
+            });
         }
+        Ok(page)
+    }
+
+    pub async fn callback(&self, code: &str) -> Result<SignIn> {
         if self.fake_twitch_login.is_some() {
-            return Ok(User {
-                id: format!("fake-{code}"),
-                name: code.to_string(),
-                login: code.to_string(),
-                avatar: None,
+            return Ok(SignIn {
+                user: User {
+                    id: format!("fake-{code}"),
+                    name: code.to_string(),
+                    login: code.to_string(),
+                    avatar: None,
+                },
+                token: None,
             });
         }
         let app = self.twitch.as_ref().context("Twitch not configured")?;
@@ -236,17 +282,77 @@ impl Auth {
         if user.id.is_empty() || user.login.is_empty() {
             bail!("no user id or login");
         }
-        Ok(User {
-            name: user
-                .display_name
-                .filter(|name| !name.is_empty())
-                .unwrap_or_else(|| user.login.clone()),
-            login: user.login.to_lowercase(),
-            avatar: user
-                .profile_image_url
-                .filter(|url| url.starts_with("https://")),
-            id: user.id,
+        Ok(SignIn {
+            user: User {
+                name: user
+                    .display_name
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| user.login.clone()),
+                login: user.login.to_lowercase(),
+                avatar: user
+                    .profile_image_url
+                    .filter(|url| url.starts_with("https://")),
+                id: user.id,
+            },
+            token: Some(token.access_token),
         })
+    }
+
+    pub async fn subscription_tier(
+        &self,
+        sign_in: &SignIn,
+        broadcaster: &str,
+    ) -> Result<Option<u8>> {
+        if self.fake_twitch_login.is_some() {
+            return Ok(sign_in
+                .user
+                .login
+                .chars()
+                .last()
+                .and_then(|last| last.to_digit(10))
+                .filter(|tier| (1..=3).contains(tier))
+                .map(|tier| tier as u8));
+        }
+        let app = self.twitch.as_ref().context("Twitch not configured")?;
+        let token = sign_in.token.as_deref().context("no access token")?;
+        let response = self
+            .client
+            .get(&app.subscriptions_url)
+            .query(&[
+                ("broadcaster_id", broadcaster),
+                ("user_id", &sign_in.user.id),
+            ])
+            .bearer_auth(token)
+            .header("Client-Id", &app.client_id)
+            .send()
+            .await
+            .context("failed to get the subscription")?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        #[derive(Deserialize)]
+        struct Subscriptions {
+            data: Vec<Subscription>,
+        }
+        #[derive(Deserialize)]
+        struct Subscription {
+            tier: String,
+        }
+        let subscriptions: Subscriptions = response
+            .error_for_status()
+            .context("the subscription was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the subscription request")?;
+        Ok(subscriptions
+            .data
+            .first()
+            .and_then(|subscription| match subscription.tier.as_str() {
+                "1000" => Some(1),
+                "2000" => Some(2),
+                "3000" => Some(3),
+                _ => None,
+            }))
     }
 
     pub fn session(&self, account: &str, generation: u64) -> String {
@@ -254,21 +360,15 @@ impl Auth {
     }
 
     pub fn session_at(&self, account: &str, generation: u64, issued: u64) -> String {
-        let payload = format!("{account}:{generation}:{issued}");
-        let tag = hmac::sign(&self.key, payload.as_bytes());
-        format!(
-            "{}.{}",
-            BASE64_URL_SAFE_NO_PAD.encode(&payload),
-            BASE64_URL_SAFE_NO_PAD.encode(tag.as_ref())
-        )
+        self.sign(&format!("{account}:{generation}:{issued}"))
     }
 
     pub fn session_of(&self, session: &str) -> Option<Session> {
-        let (payload, tag) = session.split_once('.')?;
-        let payload = BASE64_URL_SAFE_NO_PAD.decode(payload).ok()?;
-        let tag = BASE64_URL_SAFE_NO_PAD.decode(tag).ok()?;
-        hmac::verify(&self.key, &payload, &tag).ok()?;
-        let (rest, issued) = std::str::from_utf8(&payload).ok()?.rsplit_once(':')?;
+        let payload = self.verified(session)?;
+        if payload.starts_with(VIEWER_PREFIX) {
+            return None;
+        }
+        let (rest, issued) = payload.rsplit_once(':')?;
         let (account, generation) = rest.rsplit_once(':')?;
         let issued = issued.parse::<u64>().ok()?;
         let generation = generation.parse().ok()?;
@@ -277,6 +377,49 @@ impl Auth {
             generation,
             issued,
         })
+    }
+
+    pub fn viewer_session(
+        &self,
+        id: String,
+        name: String,
+        page: String,
+        tier: Option<u8>,
+    ) -> String {
+        let viewer = Viewer {
+            id,
+            name,
+            page,
+            tier,
+            issued: now(),
+        };
+        self.sign(&format!(
+            "{VIEWER_PREFIX}{}",
+            serde_json::to_string(&viewer).unwrap()
+        ))
+    }
+
+    pub fn viewer_of(&self, session: &str) -> Option<Viewer> {
+        let payload = self.verified(session)?;
+        let viewer: Viewer = serde_json::from_str(payload.strip_prefix(VIEWER_PREFIX)?).ok()?;
+        (viewer.issued + VIEWER_LIFETIME > now()).then_some(viewer)
+    }
+
+    fn sign(&self, payload: &str) -> String {
+        let tag = hmac::sign(&self.key, payload.as_bytes());
+        format!(
+            "{}.{}",
+            BASE64_URL_SAFE_NO_PAD.encode(payload),
+            BASE64_URL_SAFE_NO_PAD.encode(tag.as_ref())
+        )
+    }
+
+    fn verified(&self, token: &str) -> Option<String> {
+        let (payload, tag) = token.split_once('.')?;
+        let payload = BASE64_URL_SAFE_NO_PAD.decode(payload).ok()?;
+        let tag = BASE64_URL_SAFE_NO_PAD.decode(tag).ok()?;
+        hmac::verify(&self.key, &payload, &tag).ok()?;
+        String::from_utf8(payload).ok()
     }
 }
 
@@ -327,7 +470,7 @@ mod tests {
     #[test]
     fn states_are_single_use() {
         let auth = new_auth("secret");
-        let (url, state) = auth.login_url(Some("other")).unwrap();
+        let (url, state) = auth.login_url(Some("other"), None).unwrap();
         let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(url.host_str(), Some("id.twitch.tv"));
@@ -335,14 +478,65 @@ mod tests {
             query["redirect_uri"],
             "https://api.example.com/auth/twitch/callback"
         );
+        assert_eq!(query["scope"], "openid");
         assert_eq!(query["state"], state);
-        assert!(auth.consume_state(&query["state"]));
-        assert!(!auth.consume_state(&query["state"]));
-        auth.pending
-            .lock()
+        let state = Some(state.as_str());
+        assert_eq!(auth.consume_state(&query["state"], state).unwrap(), None);
+        assert!(auth.consume_state(&query["state"], state).is_err());
+        auth.pending.lock().unwrap().insert(
+            "old".to_string(),
+            (Instant::now() - STATE_LIFETIME * 2, None),
+        );
+        assert!(auth.consume_state("old", Some("old")).is_err());
+        let (url, state) = auth.login_url(None, Some("page")).unwrap();
+        let url = Url::parse(&url).unwrap();
+        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(query["scope"], "user:read:subscriptions");
+        assert_eq!(
+            auth.consume_state(&state, Some("other"))
+                .unwrap_err()
+                .page
+                .as_deref(),
+            Some("page")
+        );
+        let (_, state) = auth.login_url(None, Some("page")).unwrap();
+        assert_eq!(
+            auth.consume_state(&state, Some(&state)).unwrap().as_deref(),
+            Some("page")
+        );
+    }
+
+    #[test]
+    fn viewer_sessions_are_not_streamer_sessions() {
+        let auth = new_auth("secret");
+        let session = auth.viewer_session(
+            "7".to_string(),
+            "Viewer".to_string(),
+            "page".to_string(),
+            Some(2),
+        );
+        let viewer = auth.viewer_of(&session).unwrap();
+        assert_eq!(
+            (
+                viewer.id.as_str(),
+                viewer.name.as_str(),
+                viewer.page.as_str(),
+                viewer.tier
+            ),
+            ("7", "Viewer", "page", Some(2))
+        );
+        assert_eq!(auth.session_of(&session), None);
+        assert_eq!(new_auth("other").viewer_of(&session), None);
+        assert_eq!(auth.viewer_of(&auth.session("1", 0)), None);
+        let expired = auth.sign(&format!(
+            "{VIEWER_PREFIX}{}",
+            serde_json::to_string(&Viewer {
+                issued: now() - VIEWER_LIFETIME,
+                ..viewer
+            })
             .unwrap()
-            .insert("old".to_string(), Instant::now() - STATE_LIFETIME * 2);
-        assert!(!auth.consume_state("old"));
+        ));
+        assert_eq!(auth.viewer_of(&expired), None);
     }
 
     #[tokio::test]
@@ -356,20 +550,16 @@ mod tests {
             None,
         )
         .unwrap();
-        let url = Url::parse(&auth.login_url(Some("Erik")).unwrap().0).unwrap();
+        let url = Url::parse(&auth.login_url(Some("Erik"), None).unwrap().0).unwrap();
         assert_eq!(url.path(), "/api/auth/twitch/callback");
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         let state = query["state"].as_str();
-        let (_, other) = auth.login_url(None).unwrap();
-        assert!(
-            auth.callback(&query["code"], &other, Some(state))
-                .await
-                .is_err()
-        );
+        let (_, other) = auth.login_url(None, None).unwrap();
+        assert!(auth.consume_state(&other, Some(state)).is_err());
+        assert_eq!(auth.consume_state(state, Some(state)).unwrap(), None);
+        let sign_in = auth.callback(&query["code"]).await.unwrap();
         assert_eq!(
-            auth.callback(&query["code"], state, Some(state))
-                .await
-                .unwrap(),
+            sign_in.user,
             User {
                 id: "fake-erik".to_string(),
                 name: "erik".to_string(),
@@ -377,9 +567,18 @@ mod tests {
                 avatar: None,
             }
         );
-        assert!(auth.callback("erik", state, Some(state)).await.is_err());
-        assert_eq!(auth.login_url(Some("bad login")), None);
-        assert!(auth.login_url(None).unwrap().0.contains("code=streamer"));
+        assert_eq!(auth.subscription_tier(&sign_in, "1").await.unwrap(), None);
+        for (login, tier) in [("sub1", Some(1)), ("sub3", Some(3)), ("sub4", None)] {
+            let sign_in = auth.callback(login).await.unwrap();
+            assert_eq!(auth.subscription_tier(&sign_in, "1").await.unwrap(), tier);
+        }
+        assert_eq!(auth.login_url(Some("bad login"), None), None);
+        assert!(
+            auth.login_url(None, None)
+                .unwrap()
+                .0
+                .contains("code=streamer")
+        );
         assert_eq!(
             auth.state_cookie("s"),
             "moblin_sign_in_state=s; Max-Age=600; HttpOnly; SameSite=Lax"

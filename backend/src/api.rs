@@ -21,21 +21,24 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{Account, AccountError, AccountStats, Accounts, Device, Page};
 use crate::app_attest::AppAttest;
-use crate::auth::{Auth, STATE_COOKIE};
+use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
 use crate::challenges::Challenges;
 use crate::counters::{self, Counter, Counters};
 use crate::deliveries::{self, Deliveries};
 use crate::images;
 use crate::live::Live;
 use crate::pages::{
-    CURRENCIES, FONTS, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips,
+    CURRENCIES, FONTS, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tiers, Tips,
     format_price, is_color,
 };
-use crate::payments::{CaptureError, Item, Order, Orders, Payee, PaymentStatus, Stage};
+use crate::payments::{
+    CaptureError, Item, Order, Orders, Payee, PaymentStatus, Stage, insert_captured,
+};
 use crate::paypal::{PayPal, Seller};
 use crate::remote_control::{self, MusicCommand, MusicStatus, RequestError, Streamers, Wheel};
 use crate::store::{Channel, Store, Streamer};
 use crate::stripe::{self, Stripe};
+use crate::subscribers::Allowances;
 
 const ASSERTION_HEADER: &str = "moblin-assertion";
 
@@ -49,6 +52,7 @@ pub struct Api {
     pub paypal: Option<PayPal>,
     pub stripe: Option<Stripe>,
     pub orders: Orders,
+    pub allowances: Allowances,
     pub deliveries: Deliveries,
     pub auth: Auth,
     pub accounts: Accounts,
@@ -126,6 +130,14 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/image", get(handle_page_image))
         .route("/pages/{id}/songs/queue", get(handle_queue))
+        .route(
+            "/pages/{id}/songs/subscriber",
+            get(handle_subscriber_song_allowance).post(handle_subscriber_song),
+        )
+        .route(
+            "/pages/{id}/spin/subscriber",
+            get(handle_subscriber_spin_allowance).post(handle_subscriber_spin),
+        )
         .route("/pages/{id}/songs/orders", post(handle_song_order))
         .route(
             "/pages/{id}/songs/orders/{order_id}/capture",
@@ -275,6 +287,10 @@ struct SettingsResponse {
     paywall: Option<Paywall>,
     tips: Option<Tips>,
     spin: Option<Spin>,
+    #[serde(rename = "subSongs")]
+    sub_songs: Option<Tiers>,
+    #[serde(rename = "subSpins")]
+    sub_spins: Option<Tiers>,
     paypal: bool,
     #[serde(rename = "merchantId")]
     merchant_id: Option<String>,
@@ -312,6 +328,8 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         paywall: settings.paywall,
         tips: settings.tips,
         spin: settings.spin,
+        sub_songs: settings.sub_songs,
+        sub_spins: settings.sub_spins,
         paypal: api.paypal.is_some(),
         merchant_id: account.merchant_id,
         paypal_pending: account.paypal_tracking_id.is_some(),
@@ -341,6 +359,10 @@ struct SettingsRequest {
     tips: Option<Tips>,
     #[serde(default)]
     spin: Option<Spin>,
+    #[serde(default, rename = "subSongs")]
+    sub_songs: Option<Tiers>,
+    #[serde(default, rename = "subSpins")]
+    sub_spins: Option<Tiers>,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -454,6 +476,8 @@ async fn update_settings(
                 paywall,
                 tips,
                 spin,
+                sub_songs: request.sub_songs,
+                sub_spins: request.sub_spins,
                 title: request.title,
                 message: request.message,
                 accent,
@@ -465,6 +489,11 @@ async fn update_settings(
             SettingsError::InvalidPaywall => invalid_paywall(),
             SettingsError::InvalidTips => invalid_tips(),
             SettingsError::InvalidSpin => invalid_spin(),
+            SettingsError::InvalidTiers => (
+                StatusCode::BAD_REQUEST,
+                "subscribers' songs and spins per month must be 0 to 100 per tier, with at least one above 0"
+                    .to_string(),
+            ),
             SettingsError::InvalidPage => (
                 StatusCode::BAD_REQUEST,
                 "the title can be at most 60 characters, the message at most 300 and the accent and font among the supported ones".to_string(),
@@ -479,11 +508,13 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, title {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.paywall,
         settings.tips,
         settings.spin,
+        settings.sub_songs,
+        settings.sub_spins,
         settings.title,
         settings.message,
         settings.accent,
@@ -495,15 +526,21 @@ async fn update_settings(
 #[derive(Deserialize)]
 struct LoginQuery {
     login: Option<String>,
+    page: Option<String>,
 }
 
 async fn handle_login(
     State(api): State<Arc<Api>>,
     Query(query): Query<LoginQuery>,
 ) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
+    if let Some(page) = &query.page
+        && api.accounts.streamer_of_page(page).is_none()
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
     let (url, state) = api
         .auth
-        .login_url(query.login.as_deref())
+        .login_url(query.login.as_deref(), query.page.as_deref())
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     Ok((
         [(SET_COOKIE, api.auth.state_cookie(&state))],
@@ -526,6 +563,7 @@ fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
 struct CallbackQuery {
     code: Option<String>,
     state: Option<String>,
+    error: Option<String>,
 }
 
 async fn handle_callback(
@@ -545,11 +583,32 @@ async fn signed_in_redirect(
     browser_state: Option<&str>,
 ) -> Redirect {
     let dashboard = format!("{}/dashboard/", api.auth.frontend_url);
-    let (Some(code), Some(state)) = (query.code, query.state) else {
+    let Some(state) = query.state else {
         return Redirect::to(&format!("{dashboard}#signInFailed"));
     };
-    let user = match api.auth.callback(&code, &state, browser_state).await {
-        Ok(user) => user,
+    let page = match api.auth.consume_state(&state, browser_state) {
+        Ok(page) => page,
+        Err(StateError {
+            page: Some(page),
+            error,
+        }) => return viewer_redirect(api, &page, Err(error)).await,
+        Err(StateError { error, .. }) => {
+            warn!("signing in with Twitch failed: {error:#}");
+            return Redirect::to(&format!("{dashboard}#signInFailed"));
+        }
+    };
+    let sign_in = match query.code {
+        Some(code) => api.auth.callback(&code).await,
+        None => Err(anyhow::anyhow!(
+            "Twitch answered {}",
+            query.error.as_deref().unwrap_or("no code")
+        )),
+    };
+    if let Some(page) = page {
+        return viewer_redirect(api, &page, sign_in).await;
+    }
+    let user = match sign_in {
+        Ok(sign_in) => sign_in.user,
         Err(error) => {
             warn!("signing in with Twitch failed: {error:#}");
             return Redirect::to(&format!("{dashboard}#signInFailed"));
@@ -571,6 +630,37 @@ async fn signed_in_redirect(
         "{dashboard}#session={}",
         api.auth.session(&user.id, account.sessions)
     ))
+}
+
+async fn viewer_redirect(api: &Api, page: &str, sign_in: Result<SignIn>) -> Redirect {
+    let streamer = api.accounts.streamer_of_page(page);
+    let url = match &streamer {
+        Some((_, login)) => format!("{}/twitch/{login}", api.auth.frontend_url),
+        None => format!("{}/page/?streamer={page}", api.auth.frontend_url),
+    };
+    let tier = async {
+        let sign_in = sign_in?;
+        let (broadcaster, _) = streamer.context("the page has no streamer")?;
+        let tier = api.auth.subscription_tier(&sign_in, &broadcaster).await?;
+        anyhow::Ok((sign_in.user, tier))
+    };
+    match tier.await {
+        Ok((user, tier)) => {
+            info!(
+                "Twitch user {} ({}) signed in as a viewer of page {page} with subscription tier {tier:?}",
+                user.id, user.login
+            );
+            Redirect::to(&format!(
+                "{url}#viewer={}",
+                api.auth
+                    .viewer_session(user.id, user.name, page.to_string(), tier)
+            ))
+        }
+        Err(error) => {
+            warn!("signing in as a viewer of page {page} failed: {error:#}");
+            Redirect::to(&format!("{url}#viewerSignInFailed"))
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -778,6 +868,8 @@ struct Recent {
     message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     spins: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tier: Option<u8>,
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     devices: Option<Vec<RecentDevice>>,
@@ -820,6 +912,10 @@ async fn handle_account_recent(
                     .map(|delivery| recent_devices(&page, delivery)),
                 _ => None,
             };
+            let tier = match order.payee {
+                Payee::Twitch(tier) => Some(tier),
+                _ => None,
+            };
             let (name, link, message, spins) = match order.item {
                 Item::Song {
                     link,
@@ -839,6 +935,7 @@ async fn handle_account_recent(
                 link,
                 message,
                 spins,
+                tier,
                 status: match &delivery {
                     None => "delivered",
                     Some(delivery) if delivery.finished => "delivered",
@@ -1477,8 +1574,10 @@ struct PublicPaywall {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct PaywallResponse {
     paywall: Option<PublicPaywall>,
+    sub_songs: Option<Tiers>,
 }
 
 async fn handle_songs(
@@ -1489,6 +1588,7 @@ async fn handle_songs(
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     Json(PaywallResponse {
+        sub_songs: settings.sub_songs,
         paywall: settings.paywall.map(|paywall| PublicPaywall {
             price: paywall.price,
             currency,
@@ -1548,6 +1648,8 @@ struct PublicSpin {
 #[derive(Serialize)]
 struct SpinResponse {
     spin: Option<PublicSpin>,
+    #[serde(rename = "subSpins")]
+    sub_spins: Option<Tiers>,
     wheel: Option<Wheel>,
     connected: bool,
 }
@@ -1559,6 +1661,7 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
     let stripe = public_stripe(&api, &id);
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(SpinResponse {
+        sub_spins: settings.sub_spins.clone(),
         spin: settings.spin.filter(|_| payable).map(|spin| PublicSpin {
             options: spin.options,
             currency,
@@ -1780,13 +1883,7 @@ async fn song_order(
     ))?;
     let payee = payee(api, &id, request.provider.as_deref())?;
     let song_and_user = song_and_user(request)?;
-    if !within_limit(&api.song_finds, &id, 10) {
-        return Err(failure(
-            "too-many-requests",
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many song requests on this page right now. Try again in a minute.",
-        ));
-    }
+    limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
     let order = Order {
         streamer: id.clone(),
@@ -1801,6 +1898,337 @@ async fn song_order(
         currency,
     };
     Ok(Json(start_order(api, order).await?))
+}
+
+fn limit_song_finds(api: &Api, id: &str) -> Result<(), Failure> {
+    if !within_limit(&api.song_finds, id, 10) {
+        return Err(failure(
+            "too-many-requests",
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many song requests on this page right now. Try again in a minute.",
+        ));
+    }
+    Ok(())
+}
+
+fn viewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<Viewer, Failure> {
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(|session| api.auth.viewer_of(session))
+        .filter(|viewer| viewer.page == id)
+        .ok_or(failure(
+            "not-signed-in",
+            StatusCode::UNAUTHORIZED,
+            "Sign in with Twitch again.",
+        ))
+}
+
+#[derive(Serialize)]
+struct AllowanceResponse {
+    name: String,
+    tier: Option<u8>,
+    allowance: u32,
+    left: u32,
+}
+
+fn allowance_response(
+    api: &Api,
+    headers: &HeaderMap,
+    id: &str,
+    kind: SubscriberKind,
+    tiers: Option<Tiers>,
+) -> Result<Json<AllowanceResponse>, Failure> {
+    let viewer = viewer(api, headers, id)?;
+    let allowance = tiers.map_or(0, |tiers| tiers.allowance(viewer.tier));
+    Ok(Json(AllowanceResponse {
+        left: api
+            .allowances
+            .left(id, &viewer.id, kind.name(), allowance)
+            .map_err(not_saved)?,
+        name: viewer.name,
+        tier: viewer.tier,
+        allowance,
+    }))
+}
+
+async fn handle_subscriber_song_allowance(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<AllowanceResponse>, Failure> {
+    allowance_response(
+        &api,
+        &headers,
+        &id,
+        SubscriberKind::Song,
+        api.pages.get(&id).sub_songs,
+    )
+}
+
+async fn handle_subscriber_spin_allowance(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<AllowanceResponse>, Failure> {
+    allowance_response(
+        &api,
+        &headers,
+        &id,
+        SubscriberKind::Spin,
+        api.pages.get(&id).sub_spins,
+    )
+}
+
+#[derive(Deserialize)]
+struct SubscriberSongRequest {
+    song: String,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SubscriberSpinRequest {
+    #[serde(default)]
+    message: Option<String>,
+}
+
+#[derive(Serialize)]
+struct LeftResponse {
+    left: u32,
+}
+
+async fn handle_subscriber_song(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<SubscriberSongRequest>,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let result = subscriber_song(&api, id, &headers, request).await;
+    counted(&api, "subSongs", result)
+}
+
+async fn handle_subscriber_spin(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<SubscriberSpinRequest>,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let result = subscriber_spin(&api, id, &headers, request);
+    counted(&api, "subSpins", result)
+}
+
+#[derive(Clone, Copy)]
+enum SubscriberKind {
+    Song,
+    Spin,
+}
+
+impl SubscriberKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Song => "song",
+            Self::Spin => "spin",
+        }
+    }
+
+    fn short(self, left: u32) -> Failure {
+        match self {
+            Self::Song if left > 0 => failure(
+                "too-long",
+                StatusCode::CONFLICT,
+                "The song is longer than the minutes you have left this month.",
+            ),
+            Self::Song => failure(
+                "no-minutes-left",
+                StatusCode::CONFLICT,
+                "You have used all your minutes this month.",
+            ),
+            Self::Spin => failure(
+                "no-spins-left",
+                StatusCode::CONFLICT,
+                "You have used all your spins this month.",
+            ),
+        }
+    }
+}
+
+fn not_saved(error: anyhow::Error) -> Failure {
+    warn!("{error:#}");
+    failure(
+        "not-saved",
+        StatusCode::SERVICE_UNAVAILABLE,
+        "This is unavailable right now. Try again later.",
+    )
+}
+
+struct Subscriber {
+    viewer: Viewer,
+    tier: u8,
+    allowance: u32,
+    left: u32,
+}
+
+fn subscriber(
+    api: &Api,
+    headers: &HeaderMap,
+    id: &str,
+    kind: SubscriberKind,
+    tiers: Option<&Tiers>,
+) -> Result<Subscriber, Failure> {
+    let (off, not_subscribed, excluded) = match kind {
+        SubscriberKind::Song => (
+            "The streamer no longer takes song requests from subscribers. Reload the page.",
+            "Only Twitch subscribers of this streamer can request songs.",
+            "request songs",
+        ),
+        SubscriberKind::Spin => (
+            "The streamer no longer lets subscribers spin the wheel. Reload the page.",
+            "Only Twitch subscribers of this streamer can spin the wheel.",
+            "spin the wheel",
+        ),
+    };
+    let tiers = tiers.ok_or(failure("feature-off", StatusCode::BAD_REQUEST, off))?;
+    let viewer = viewer(api, headers, id)?;
+    let tier = viewer.tier.ok_or(failure(
+        "not-subscribed",
+        StatusCode::FORBIDDEN,
+        not_subscribed,
+    ))?;
+    let allowance = tiers.allowance(Some(tier));
+    if allowance == 0 {
+        return Err(failure(
+            "tier-excluded",
+            StatusCode::FORBIDDEN,
+            &format!("Tier {tier} subscribers can't {excluded} here."),
+        ));
+    }
+    let left = api
+        .allowances
+        .left(id, &viewer.id, kind.name(), allowance)
+        .map_err(not_saved)?;
+    if left == 0 {
+        return Err(kind.short(0));
+    }
+    Ok(Subscriber {
+        viewer,
+        tier,
+        allowance,
+        left,
+    })
+}
+
+fn queue_for_subscriber(
+    api: &Api,
+    subscriber: &Subscriber,
+    kind: SubscriberKind,
+    units: u32,
+    order: &Order,
+) -> Result<u32, Failure> {
+    let request_id = api.remote_control.new_request_id().ok_or(failure(
+        "crashed",
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Something went wrong. Try again.",
+    ))?;
+    let item = delivery_item(order);
+    let left = api
+        .allowances
+        .take(
+            &order.streamer,
+            &subscriber.viewer.id,
+            kind.name(),
+            subscriber.allowance,
+            units,
+            |connection| {
+                insert_captured(connection, &request_id, order)?;
+                deliveries::insert(connection, &order.streamer, &request_id, &item)
+            },
+        )
+        .map_err(not_saved)?
+        .map_err(|left| kind.short(left))?;
+    api.deliveries.notify();
+    info!(
+        "queued {:?} for tier {} subscriber {:?} in request {request_id} for remote control streamer {}",
+        order.description(),
+        subscriber.tier,
+        order.user,
+        order.streamer
+    );
+    Ok(left)
+}
+
+async fn subscriber_song(
+    api: &Api,
+    id: String,
+    headers: &HeaderMap,
+    request: SubscriberSongRequest,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let settings = api.pages.get(&id);
+    let subscriber = subscriber(
+        api,
+        headers,
+        &id,
+        SubscriberKind::Song,
+        settings.sub_songs.as_ref(),
+    )?;
+    let message = viewer_message(request.message)?;
+    let song_and_user = song_and_user(SongRequest {
+        song: request.song,
+        user: Some(subscriber.viewer.name.clone()),
+        message: None,
+        provider: None,
+    })?;
+    limit_song_finds(api, &id)?;
+    let song = requested_song(api, &id, song_and_user).await?;
+    let units = song_price(1, song.duration);
+    if units > subscriber.left {
+        return Err(SubscriberKind::Song.short(subscriber.left));
+    }
+    let order = Order {
+        streamer: id,
+        item: Item::Song {
+            link: song.link,
+            name: song.name,
+            message,
+        },
+        user: song.user,
+        payee: Payee::Twitch(subscriber.tier),
+        price: 0,
+        currency: settings.currency().to_string(),
+    };
+    let left = queue_for_subscriber(api, &subscriber, SubscriberKind::Song, units, &order)?;
+    Ok((StatusCode::ACCEPTED, Json(LeftResponse { left })))
+}
+
+fn subscriber_spin(
+    api: &Api,
+    id: String,
+    headers: &HeaderMap,
+    request: SubscriberSpinRequest,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let settings = api.pages.get(&id);
+    let subscriber = subscriber(
+        api,
+        headers,
+        &id,
+        SubscriberKind::Spin,
+        settings.sub_spins.as_ref(),
+    )?;
+    wheel_available(api, &id)?;
+    let order = Order {
+        streamer: id,
+        item: Item::Spin {
+            spins: 1,
+            message: viewer_message(request.message)?,
+        },
+        user: user_name(Some(subscriber.viewer.name.clone()), "Someone"),
+        payee: Payee::Twitch(subscriber.tier),
+        price: 0,
+        currency: settings.currency().to_string(),
+    };
+    let left = queue_for_subscriber(api, &subscriber, SubscriberKind::Spin, 1, &order)?;
+    Ok((StatusCode::ACCEPTED, Json(LeftResponse { left })))
 }
 
 async fn handle_song_capture(
@@ -1843,6 +2271,7 @@ async fn start_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> 
                     }),
                 ))
             }
+            Payee::Twitch(_) => anyhow::bail!("subscriber requests are not paid"),
         }
     };
     let (order_id, stripe) = created.await.map_err(|error| {
@@ -1988,6 +2417,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
     let available = match &order.payee {
         Payee::PayPal(_) => api.paypal.is_some(),
         Payee::Stripe(_) => api.stripe.is_some(),
+        Payee::Twitch(_) => false,
     };
     if !available {
         return Err(payment_unavailable());
@@ -2012,6 +2442,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
             let stripe = api.stripe.as_ref().ok_or_else(payment_unavailable)?;
             stripe.capture(order_id, &order, account).await
         }
+        Payee::Twitch(_) => return Err(payment_unavailable()),
     };
     match captured {
         Ok(()) | Err(CaptureError::AlreadyCaptured) => {
@@ -2086,6 +2517,7 @@ async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentS
                 .await
         }
         Payee::Stripe(account) => api.stripe.as_ref()?.status(order_id, order, account).await,
+        Payee::Twitch(_) => return None,
     };
     let status = match status {
         Ok(status) => status,
@@ -2150,6 +2582,7 @@ pub async fn settle_orders(api: Arc<Api>) {
         settle(&api, Duration::from_secs(60)).await;
         expire_orders(&api).await;
         api.orders.prune();
+        api.allowances.prune();
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
@@ -2310,22 +2743,7 @@ async fn spin_order(
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
-    let device = wheel_device(api, &id);
-    if api.remote_control.wheel(&device).is_none() {
-        return Err(if api.remote_control.is_connected(&device) {
-            failure(
-                "no-wheel",
-                StatusCode::CONFLICT,
-                "The streamer is not taking wheel spins right now.",
-            )
-        } else {
-            failure(
-                "offline",
-                StatusCode::NOT_FOUND,
-                "The streamer's wheel is not available right now. Try again when they are live.",
-            )
-        });
-    }
+    wheel_available(api, &id)?;
     let payee = payee(api, &id, request.provider.as_deref())?;
     let option = spin
         .options
@@ -2348,6 +2766,26 @@ async fn spin_order(
         currency,
     };
     Ok(Json(start_order(api, order).await?))
+}
+
+fn wheel_available(api: &Api, id: &str) -> Result<(), Failure> {
+    let device = wheel_device(api, id);
+    if api.remote_control.wheel(&device).is_none() {
+        return Err(if api.remote_control.is_connected(&device) {
+            failure(
+                "no-wheel",
+                StatusCode::CONFLICT,
+                "The streamer is not taking wheel spins right now.",
+            )
+        } else {
+            failure(
+                "offline",
+                StatusCode::NOT_FOUND,
+                "The streamer's wheel is not available right now. Try again when they are live.",
+            )
+        });
+    }
+    Ok(())
 }
 
 async fn handle_spin_capture(
@@ -2597,6 +3035,7 @@ mod tests {
             paypal,
             stripe,
             orders: Orders::new(database.clone()),
+            allowances: Allowances::new(database.clone()),
             deliveries: Deliveries::new(database.clone()),
             auth: Auth::new(
                 reqwest::Client::new(),
@@ -4318,7 +4757,7 @@ mod tests {
                 "merchantId": null,
                 "environment": "production",
                 "stripe": null,
-            }})
+            }, "subSongs": null})
         );
         let response = client
             .post(format!("http://{address}/pages/p/songs/orders"))
@@ -4526,7 +4965,7 @@ mod tests {
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
                 "stripe": null,
-            }})
+            }, "subSongs": null})
         );
         let orders_url = format!("http://{address}/pages/{id}/songs/orders");
         let response = client
@@ -4796,7 +5235,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             public,
-            json!({"spin": null, "wheel": null, "connected": false})
+            json!({"spin": null, "subSpins": null, "wheel": null, "connected": false})
         );
         let settings_url = format!("http://{address}/account/settings");
         let response = client
@@ -4842,7 +5281,7 @@ mod tests {
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
                 "stripe": null,
-            }, "wheel": null, "connected": false})
+            }, "subSpins": null, "wheel": null, "connected": false})
         );
         let orders_url = format!("{spin_url}/orders");
         let response = client
@@ -5528,6 +5967,21 @@ mod tests {
                         "profile_image_url": "https://static-cdn.jtvnw.net/erik.png",
                     }]}))
                 }),
+            )
+            .route(
+                "/subscriptions",
+                get(
+                    |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
+                        assert_eq!(headers[AUTHORIZATION], "Bearer u");
+                        assert_eq!(headers["client-id"], "id");
+                        assert_eq!(query["user_id"], "42");
+                        match query["broadcaster_id"].as_str() {
+                            "1" => Json(json!({"data": [{"tier": "2000"}]})).into_response(),
+                            "3" => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                            _ => StatusCode::NOT_FOUND.into_response(),
+                        }
+                    },
+                ),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -5540,19 +5994,586 @@ mod tests {
         response.headers()["location"].to_str().unwrap().to_string()
     }
 
+    fn twitch_app(twitch: &str) -> OAuthApp {
+        OAuthApp {
+            client_id: "id".to_string(),
+            client_secret: "secret".to_string(),
+            authorize_url: format!("{twitch}/authorize"),
+            token_url: format!("{twitch}/token"),
+            users_url: format!("{twitch}/users"),
+            subscriptions_url: format!("{twitch}/subscriptions"),
+        }
+    }
+
+    #[tokio::test]
+    async fn viewers_sign_in_with_their_subscription_tier() {
+        let twitch = start_twitch().await;
+        let (address, api) = start_api_with(
+            None,
+            None,
+            Some(twitch_app(&twitch)),
+            Pages::new(Database::memory()),
+        )
+        .await;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let (_, _, id) = streamer(&address, &api).await;
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login?page=unknown"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let sign_in = async |page: &str| {
+            let response = client
+                .get(format!("http://{address}/auth/twitch/login?page={page}"))
+                .send()
+                .await
+                .unwrap();
+            let login = reqwest::Url::parse(&location(&response)).unwrap();
+            let query: HashMap<_, _> = login.query_pairs().into_owned().collect();
+            assert_eq!(query["scope"], "user:read:subscriptions");
+            location(
+                &client
+                    .get(format!(
+                        "http://{address}/auth/twitch/callback?code=c&state={}",
+                        query["state"]
+                    ))
+                    .header("cookie", format!("moblin_sign_in_state={}", query["state"]))
+                    .send()
+                    .await
+                    .unwrap(),
+            )
+        };
+        let page = sign_in(&id).await;
+        let session = page
+            .strip_prefix("https://moblin.app/twitch/erik#viewer=")
+            .unwrap();
+        let viewer = api.auth.viewer_of(session).unwrap();
+        assert_eq!(
+            (
+                viewer.id.as_str(),
+                viewer.name.as_str(),
+                viewer.page.as_str(),
+                viewer.tier
+            ),
+            ("42", "Erik", id.as_str(), Some(2))
+        );
+        assert_eq!(api.accounts.get("42"), None);
+        assert_eq!(api.auth.session_of(session), None);
+        api.accounts.signed_in("2", "Other", "other", None).unwrap();
+        let other: Value = reqwest::Client::new()
+            .post(format!("http://{address}/account/page"))
+            .bearer_auth(api.auth.session("2", 0))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let other = other["settings"]["id"].as_str().unwrap();
+        let page = sign_in(other).await;
+        let session = page
+            .strip_prefix("https://moblin.app/twitch/other#viewer=")
+            .unwrap();
+        assert_eq!(api.auth.viewer_of(session).unwrap().tier, None);
+        api.accounts.signed_in("3", "Third", "third", None).unwrap();
+        let third: Value = reqwest::Client::new()
+            .post(format!("http://{address}/account/page"))
+            .bearer_auth(api.auth.session("3", 0))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let third = third["settings"]["id"].as_str().unwrap();
+        assert_eq!(
+            sign_in(third).await,
+            "https://moblin.app/twitch/third#viewerSignInFailed"
+        );
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login?page={id}"))
+            .send()
+            .await
+            .unwrap();
+        let state = reqwest::Url::parse(&location(&response))
+            .unwrap()
+            .query_pairs()
+            .find(|(name, _)| name == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        assert_eq!(
+            location(
+                &client
+                    .get(format!(
+                        "http://{address}/auth/twitch/callback?error=access_denied&state={state}"
+                    ))
+                    .header("cookie", format!("moblin_sign_in_state={state}"))
+                    .send()
+                    .await
+                    .unwrap()
+            ),
+            "https://moblin.app/twitch/erik#viewerSignInFailed"
+        );
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login?page={id}"))
+            .send()
+            .await
+            .unwrap();
+        let state = reqwest::Url::parse(&location(&response))
+            .unwrap()
+            .query_pairs()
+            .find(|(name, _)| name == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        assert_eq!(
+            location(
+                &client
+                    .get(format!(
+                        "http://{address}/auth/twitch/callback?code=c&state={state}"
+                    ))
+                    .header("cookie", "moblin_sign_in_state=other")
+                    .send()
+                    .await
+                    .unwrap()
+            ),
+            "https://moblin.app/twitch/erik#viewerSignInFailed"
+        );
+        assert_eq!(
+            location(
+                &client
+                    .get(format!(
+                        "http://{address}/auth/twitch/callback?error=access_denied"
+                    ))
+                    .send()
+                    .await
+                    .unwrap()
+            ),
+            "https://moblin.app/dashboard/#signInFailed"
+        );
+    }
+
+    async fn send_subscriber_song(
+        address: &str,
+        id: &str,
+        session: &str,
+        song: &str,
+    ) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(format!("http://{address}/pages/{id}/songs/subscriber"))
+            .bearer_auth(session)
+            .json(&json!({"song": song, "message": " For you "}))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    async fn subscriber_song_found<S>(
+        socket: &mut S,
+        address: &str,
+        id: &str,
+        session: &str,
+        duration: Option<u32>,
+    ) -> reqwest::Response
+    where
+        S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+            + SinkExt<Message>
+            + Unpin,
+        <S as futures_util::Sink<Message>>::Error: std::fmt::Debug,
+    {
+        let sent = tokio::spawn({
+            let (address, id, session) = (address.to_string(), id.to_string(), session.to_string());
+            async move { send_subscriber_song(&address, &id, &session, LINK).await }
+        });
+        let request = receive(socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"music": {"command": {"find": {"title": LINK}}}})
+        );
+        answer(
+            socket,
+            &request,
+            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": duration}}}),
+        )
+        .await;
+        sent.await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn twitch_subscribers_request_songs_every_month() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let settings = |body: Value| {
+            client
+                .post(format!("http://{address}/account/settings"))
+                .bearer_auth(&session)
+                .json(&body)
+                .send()
+        };
+        let viewer = |viewer: &str, page: &str, tier: Option<u8>| {
+            api.auth.viewer_session(
+                viewer.to_string(),
+                format!("Viewer {viewer}"),
+                page.to_string(),
+                tier,
+            )
+        };
+        let tier1 = viewer("11", &id, Some(1));
+        let response = send_subscriber_song(&address, &id, &tier1, LINK).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        for sub_songs in [
+            json!({"tier1": 0, "tier2": 0, "tier3": 0}),
+            json!({"tier1": 101, "tier2": 0, "tier3": 0}),
+        ] {
+            let response = settings(json!({"subSongs": sub_songs})).await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        let response = settings(json!({"subSongs": {"tier1": 1, "tier2": 0, "tier3": 3}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["subSongs"],
+            json!({"tier1": 1, "tier2": 0, "tier3": 3})
+        );
+        let public: Value = client
+            .get(format!("http://{address}/pages/{id}/songs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            public,
+            json!({"paywall": null, "subSongs": {"tier1": 1, "tier2": 0, "tier3": 3}})
+        );
+        let status = async |session: &str| {
+            let response = client
+                .get(format!("http://{address}/pages/{id}/songs/subscriber"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap();
+            (
+                response.status(),
+                response.json::<Value>().await.unwrap_or_default(),
+            )
+        };
+        assert_eq!(
+            status(&tier1).await,
+            (
+                StatusCode::OK,
+                json!({"name": "Viewer 11", "tier": 1, "allowance": 1, "left": 1})
+            )
+        );
+        assert_eq!(status("garbage").await.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            status(&viewer("11", "other", Some(1))).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            status(&api.auth.session("1", 0)).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+        let response = send_subscriber_song(&address, &id, &viewer("12", &id, None), LINK).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = send_subscriber_song(&address, &id, &viewer("13", &id, Some(2)), LINK).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Tier 2 subscribers can't request songs here."
+        );
+        let response = send_subscriber_song(&address, &id, &tier1, "nope").await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = send_subscriber_song(&address, &id, &tier1, LINK).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let mut socket = connect(&address, &key).await;
+        let response = subscriber_song_found(&mut socket, &address, &id, &tier1, None).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 0}));
+        let request = receive(&mut socket).await;
+        let add = &request["request"]["data"]["music"]["command"]["add"];
+        assert_eq!(add["title"], LINK);
+        assert_eq!(add["user"], "Viewer 11");
+        assert_eq!(add["message"], "For you");
+        let request_id = add["requestId"].as_str().unwrap().to_string();
+        answer(&mut socket, &request, music(json!([]))).await;
+        wait_until_added(&api).await;
+        let response = send_subscriber_song(&address, &id, &tier1, LINK).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "You have used all your minutes this month."
+        );
+        let tier3 = viewer("31", &id, Some(3));
+        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(301)).await;
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 1}));
+        let request = receive(&mut socket).await;
+        answer(&mut socket, &request, music(json!([]))).await;
+        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(301)).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The song is longer than the minutes you have left this month."
+        );
+        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(300)).await;
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 0}));
+        let request = receive(&mut socket).await;
+        answer(&mut socket, &request, music(json!([]))).await;
+        wait_until_added(&api).await;
+        let response = send_subscriber_song(&address, &id, &tier3, LINK).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let response = settings(json!({"subSongs": {"tier1": 1, "tier2": 0, "tier3": 4}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(status(&tier3).await.1["left"], 1);
+        let response = settings(json!({"subSongs": {"tier1": 1, "tier2": 0, "tier3": 2}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(status(&tier3).await.1["left"], 0);
+        api.allowances.last_month();
+        assert_eq!(status(&tier1).await.1["left"], 1);
+        assert_eq!(status(&tier3).await.1["left"], 2);
+        let recent: Value = client
+            .get(format!("http://{address}/account/recent?kind=song"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let items = recent["items"].as_array().unwrap();
+        assert_eq!(items.len(), 3);
+        let first = items.last().unwrap();
+        assert_eq!(first["id"], request_id.as_str());
+        assert_eq!(first["user"], "Viewer 11");
+        assert_eq!(first["tier"], 1);
+        assert_eq!(first["amount"], 0);
+        assert_eq!(first["status"], "delivered");
+        assert_eq!(items[0]["tier"], 3);
+        let response = settings(json!({"subSongs": null})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = send_subscriber_song(&address, &id, &tier1, LINK).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("subSongs"), 3);
+        assert_eq!(count("subSongsFailed:no-minutes-left"), 2);
+        assert_eq!(count("subSongsFailed:tier-excluded"), 1);
+        assert_eq!(count("subSongsFailed:not-subscribed"), 1);
+        assert_eq!(count("subSongsFailed:feature-off"), 2);
+        assert_eq!(count("subSongsFailed:offline"), 1);
+        assert_eq!(count("songDeliveries"), 3);
+        assert_eq!(count("subSongsFailed:too-long"), 1);
+    }
+
+    #[tokio::test]
+    async fn twitch_subscribers_spin_the_wheel_every_month() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let viewer = |viewer: &str, tier: Option<u8>| {
+            api.auth.viewer_session(
+                viewer.to_string(),
+                format!("Viewer {viewer}"),
+                id.clone(),
+                tier,
+            )
+        };
+        let spin = async |session: &str| {
+            client
+                .post(format!("http://{address}/pages/{id}/spin/subscriber"))
+                .bearer_auth(session)
+                .json(&json!({"message": " Big one "}))
+                .send()
+                .await
+                .unwrap()
+        };
+        let tier1 = viewer("11", Some(1));
+        assert_eq!(spin(&tier1).await.status(), StatusCode::BAD_REQUEST);
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({
+                "subSpins": {"tier1": 1, "tier2": 0, "tier3": 2},
+                "subSongs": {"tier1": 1, "tier2": 0, "tier3": 2},
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let public: Value = client
+            .get(format!("http://{address}/pages/{id}/spin"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            public["subSpins"],
+            json!({"tier1": 1, "tier2": 0, "tier3": 2})
+        );
+        assert_eq!(public["spin"], Value::Null);
+        assert_eq!(spin(&tier1).await.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            spin(&viewer("12", None)).await.status(),
+            StatusCode::FORBIDDEN
+        );
+        let mut socket = connect(&address, &key).await;
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let response = spin(&tier1).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 0}));
+        let request = receive(&mut socket).await;
+        let sent = &request["request"]["data"]["spinWheelOfLuck"];
+        assert_eq!(sent["name"], "Viewer 11");
+        assert_eq!(sent["message"], "Big one");
+        assert_eq!(sent["count"], 1);
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        let response = spin(&tier1).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "You have used all your spins this month."
+        );
+        let upgraded: Value = client
+            .get(format!("http://{address}/pages/{id}/spin/subscriber"))
+            .bearer_auth(viewer("11", Some(3)))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            upgraded,
+            json!({"name": "Viewer 11", "tier": 3, "allowance": 2, "left": 1})
+        );
+        let status: Value = client
+            .get(format!("http://{address}/pages/{id}/spin/subscriber"))
+            .bearer_auth(viewer("31", Some(3)))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            status,
+            json!({"name": "Viewer 31", "tier": 3, "allowance": 2, "left": 2})
+        );
+        let recent: Value = client
+            .get(format!("http://{address}/account/recent?kind=spin"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(recent["items"][0]["user"], "Viewer 11");
+        assert_eq!(recent["items"][0]["tier"], 1);
+        assert_eq!(recent["items"][0]["spins"], 1);
+        assert_eq!(recent["items"][0]["status"], "delivered");
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("subSpins"), 1);
+        assert_eq!(count("subSpinsFailed:no-spins-left"), 1);
+        assert_eq!(count("subSpinsFailed:offline"), 1);
+        assert_eq!(count("spinDeliveries"), 1);
+        let songs: Value = client
+            .get(format!("http://{address}/pages/{id}/songs/subscriber"))
+            .bearer_auth(&tier1)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(songs["left"], 1);
+        let racer = viewer("13", Some(1));
+        let (first, second) = tokio::join!(spin(&racer), spin(&racer));
+        let mut statuses = [first.status(), second.status()];
+        statuses.sort();
+        assert_eq!(statuses, [StatusCode::ACCEPTED, StatusCode::CONFLICT]);
+        let request = receive(&mut socket).await;
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut socket))
+                .await
+                .is_err()
+        );
+        let tier3 = viewer("31", Some(3));
+        assert_eq!(spin(&tier3).await.status(), StatusCode::ACCEPTED);
+        let request = receive(&mut socket).await;
+        let request_id = request["request"]["data"]["spinWheelOfLuck"]["requestId"].clone();
+        drop(socket);
+        let mut socket = connect(&address, &key).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"]["spinWheelOfLuck"]["requestId"],
+            request_id
+        );
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut socket))
+                .await
+                .is_err()
+        );
+        let recent: Value = client
+            .get(format!("http://{address}/account/recent?kind=spin"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(recent["items"].as_array().unwrap().len(), 3);
+    }
+
     #[tokio::test]
     async fn streamers_sign_in_and_manage_their_page() {
         let twitch = start_twitch().await;
         let (address, _) = start_api_with(
             None,
             None,
-            Some(OAuthApp {
-                client_id: "id".to_string(),
-                client_secret: "secret".to_string(),
-                authorize_url: format!("{twitch}/authorize"),
-                token_url: format!("{twitch}/token"),
-                users_url: format!("{twitch}/users"),
-            }),
+            Some(twitch_app(&twitch)),
             Pages::new(Database::memory()),
         )
         .await;

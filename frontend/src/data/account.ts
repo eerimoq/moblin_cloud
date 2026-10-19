@@ -29,6 +29,7 @@ export type Recent = {
   link?: string;
   message?: string;
   spins?: number;
+  tier?: number;
   status: "delivered" | "waiting" | "notAdded";
   devices?: { name: string; received: boolean }[];
 };
@@ -205,7 +206,8 @@ export const uploadImage = (session: string, image: File) =>
 export const removeImage = (session: string) =>
   call<Settings>(session, "/account/image/remove", { method: "POST" });
 
-export type SettingsChanges = Page & Pick<Settings, "currency" | "paywall" | "tips" | "spin">;
+export type SettingsChanges = Page &
+  Pick<Settings, "currency" | "paywall" | "tips" | "spin" | "subSongs" | "subSpins">;
 
 export const sendTest = (
   session: string,
@@ -222,6 +224,8 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges) 
       paywall: settings.paywall,
       tips: settings.tips,
       spin: settings.spin,
+      subSongs: settings.subSongs,
+      subSpins: settings.subSpins,
       title: settings.title,
       message: settings.message,
       accent: settings.accent,
