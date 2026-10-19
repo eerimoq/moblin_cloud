@@ -28,8 +28,8 @@ use crate::deliveries::{self, Deliveries};
 use crate::images;
 use crate::live::Live;
 use crate::pages::{
-    CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
-    is_color,
+    CURRENCIES, FONTS, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips,
+    format_price, is_color,
 };
 use crate::payments::{CaptureError, Item, Order, Orders, Payee, PaymentStatus, Stage};
 use crate::paypal::{PayPal, Seller};
@@ -400,6 +400,13 @@ async fn update_settings(
             "custom colors are only for pro streamers".to_string(),
         ));
     }
+    let font = request.font.filter(|font| font != FONTS[0]);
+    if !pro && font.is_some() && font != current.font {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "fonts are only for pro streamers".to_string(),
+        ));
+    }
     let currency = request
         .currency
         .map(|currency| currency.trim().to_uppercase())
@@ -450,7 +457,7 @@ async fn update_settings(
                 title: request.title,
                 message: request.message,
                 accent,
-                font: request.font,
+                font,
             },
         )
         .map_err(|error| match error {
@@ -5673,7 +5680,6 @@ mod tests {
                 "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
-                "font": "handwritten",
             }))
             .send()
             .await
@@ -5683,19 +5689,11 @@ mod tests {
             .unwrap();
         assert_eq!(settings["title"], "Pick a banger");
         assert_eq!(settings["accent"], "pink");
-        assert_eq!(settings["font"], "handwritten");
+        assert_eq!(settings["font"], Value::Null);
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "accent": "teal"}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let response = client
-            .post(format!("http://{address}/account/settings"))
-            .bearer_auth(&session)
-            .json(&json!({"paywall": null, "font": "comic"}))
             .send()
             .await
             .unwrap();
@@ -5729,7 +5727,7 @@ mod tests {
                 "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
-                "font": "handwritten",
+                "font": null,
                 "image": null,
             })
         );
@@ -6242,7 +6240,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn custom_colors_are_for_pro_streamers() {
+    async fn custom_colors_and_fonts_are_for_pro_streamers() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let save = |session: String, accent: &'static str| {
@@ -6252,9 +6250,20 @@ mod tests {
                 .json(&json!({"paywall": null, "accent": accent}))
                 .send()
         };
+        let save_font = |session: String, font: &'static str| {
+            client
+                .post(format!("http://{address}/account/settings"))
+                .bearer_auth(session)
+                .json(&json!({"paywall": null, "font": font}))
+                .send()
+        };
         let (session, _, _) = streamer(&address, &api).await;
         let response = save(session.clone(), "#123abc").await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = save_font(session.clone(), "handwritten").await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = save_font(session.clone(), "rounded").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
         let response = save(session, "pink").await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         api.accounts.signed_in("pro", "Pro", "pro", None).unwrap();
@@ -6285,7 +6294,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(profile["accent"], "#123abc");
-        let response = save(pro, "#12345").await.unwrap();
+        let response = save(pro.clone(), "#12345").await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let settings: Value = save_font(pro.clone(), "handwritten")
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["font"], "handwritten");
+        let response = save_font(pro, "comic").await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 

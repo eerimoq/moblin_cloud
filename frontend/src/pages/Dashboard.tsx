@@ -812,29 +812,37 @@ function YourPage(props: {
           </Show>
         </div>
       </fieldset>
-      <fieldset class="flex flex-col gap-2">
-        <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Font")}</legend>
-        <div class="flex flex-wrap gap-3">
-          <For each={fonts}>
-            {(name) => (
-              <label
-                data-font={name}
-                class="flex h-11 cursor-pointer items-center rounded-full border-[1.5px] border-line bg-well px-5 font-title text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink"
-              >
-                <input
-                  type="radio"
-                  name="font"
-                  value={name}
-                  checked={font() === name}
-                  onChange={() => setFont(name)}
-                  class="sr-only"
-                />
-                {fontNames[name]}
-              </label>
-            )}
-          </For>
-        </div>
-      </fieldset>
+      <Show when={props.account.pro || props.page.font}>
+        <fieldset class="flex flex-col gap-2">
+          <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Font")}</legend>
+          <div class="flex flex-wrap gap-3">
+            <For
+              each={
+                props.account.pro
+                  ? fonts
+                  : fonts.filter((name) => name === fonts[0] || name === props.page.font)
+              }
+            >
+              {(name) => (
+                <label
+                  data-font={name}
+                  class="flex h-11 cursor-pointer items-center rounded-full border-[1.5px] border-line bg-well px-5 font-title text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink"
+                >
+                  <input
+                    type="radio"
+                    name="font"
+                    value={name}
+                    checked={font() === name}
+                    onChange={() => setFont(name)}
+                    class="sr-only"
+                  />
+                  {fontNames[name]}
+                </label>
+              )}
+            </For>
+          </div>
+        </fieldset>
+      </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
         <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>

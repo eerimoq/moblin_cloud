@@ -291,6 +291,12 @@ class AccountPageLook(AccountTestCase):
         self.assert_backend_error(400, lambda: dashboard.save_settings(accent="black"), invalid)
         self.assert_backend_error(400, lambda: dashboard.save_settings(font="comic"), invalid)
         self.assert_equal(dashboard.account()["settings"]["title"], 60 * "å")
+        normal = self.sign_in("normallook")
+        normal.create_page()
+        self.assert_backend_error(
+            403, lambda: normal.save_settings(font="serif"), "fonts are only for pro streamers"
+        )
+        self.assert_equal(normal.save_settings(accent="purple", font="rounded")["font"], None)
 
 
 class AccountCurrency(AccountTestCase):
