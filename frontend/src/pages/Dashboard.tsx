@@ -52,8 +52,10 @@ import {
   BackendError,
   currencies,
   defaultTitle,
+  fonts,
   formatPrice,
   hundredths,
+  loadFonts,
   type Page,
   type Paywall,
   type Settings,
@@ -69,6 +71,15 @@ const accentNames: Record<string, string> = {
   pink: t("Pink"),
   orange: t("Orange"),
   red: t("Red"),
+};
+
+const fontNames: Record<string, string> = {
+  rounded: t("Rounded"),
+  modern: t("Modern"),
+  serif: t("Serif"),
+  mono: t("Mono"),
+  handwritten: t("Handwritten"),
+  pixel: t("Pixel"),
 };
 
 const pageUrl = (account: Account) =>
@@ -577,6 +588,8 @@ function YourPage(props: {
   const [title, setTitle] = createSignal(props.page.title ?? "");
   const [message, setMessage] = createSignal(props.page.message ?? "");
   const [accent, setAccent] = createSignal(props.page.accent ?? accents[0]);
+  const [font, setFont] = createSignal(props.page.font ?? fonts[0]);
+  onMount(() => loadFonts(fonts));
   const [saving, setSaving] = createSignal(false);
   const [saved, flashSaved] = createFlash(2000);
   const [error, setError] = createSignal<string | null>(null);
@@ -589,7 +602,7 @@ function YourPage(props: {
     setError(null);
     setSaving(true);
     try {
-      await props.onSave({ title: title(), message: message(), accent: accent() });
+      await props.onSave({ title: title(), message: message(), accent: accent(), font: font() });
       flashSaved();
     } catch {
       setError(t("Something went wrong. Try again."));
@@ -652,6 +665,29 @@ function YourPage(props: {
                 <Show when={accent() === name}>
                   <Icon name="check" class="size-5" />
                 </Show>
+              </label>
+            )}
+          </For>
+        </div>
+      </fieldset>
+      <fieldset class="flex flex-col gap-2">
+        <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Font")}</legend>
+        <div class="flex flex-wrap gap-3">
+          <For each={fonts}>
+            {(name) => (
+              <label
+                data-font={name}
+                class="flex h-11 cursor-pointer items-center rounded-full border-[1.5px] border-line bg-well px-5 font-display text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink"
+              >
+                <input
+                  type="radio"
+                  name="font"
+                  value={name}
+                  checked={font() === name}
+                  onChange={() => setFont(name)}
+                  class="sr-only"
+                />
+                {fontNames[name]}
               </label>
             )}
           </For>
@@ -1967,6 +2003,7 @@ function Preview(props: { failed: boolean }) {
               title: null,
               message: null,
               accent: null,
+              font: null,
               connected: true,
               currency: "USD",
               paywall: { price: 100 },

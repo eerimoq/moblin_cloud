@@ -30,6 +30,7 @@ import {
   formatPrice,
   hundredths,
   idOfTwitchLogin,
+  loadFonts,
   musicStatus,
   orderSong,
   orderSpin,
@@ -1337,6 +1338,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       streamerProfile(current)
         .then((found) => {
           setProfile(found);
+          loadFonts(found.font ? [found.font] : []);
           document.title = `${found.name} – Moblin`;
         })
         .catch(() => {})
@@ -1353,7 +1355,11 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   });
 
   return (
-    <div data-accent={profile()?.accent ?? undefined} class="isolate flex min-h-svh flex-col">
+    <div
+      data-accent={profile()?.accent ?? undefined}
+      data-font={profile()?.font ?? undefined}
+      class="isolate flex min-h-svh flex-col"
+    >
       <main class="flex-1">
         <StreamerHeader profile={profile()} unknown={status() === "unknown"} />
         <Show

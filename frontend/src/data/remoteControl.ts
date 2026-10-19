@@ -47,6 +47,7 @@ export type Page = {
   title: string | null;
   message: string | null;
   accent: string | null;
+  font: string | null;
 };
 
 export type Settings = Page & {
@@ -67,6 +68,28 @@ export type Settings = Page & {
 };
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];
+
+const fontFamilies: Record<string, string[]> = {
+  rounded: [],
+  modern: ["Poppins:wght@500;600;700", "Inter:ital,wght@0,400..700;1,400"],
+  serif: ["Playfair+Display:wght@500..700", "Lora:ital,wght@0,400..700;1,400"],
+  mono: ["JetBrains+Mono:ital,wght@0,400..700;1,400"],
+  handwritten: ["Caveat:wght@500..700"],
+  pixel: ["Pixelify+Sans:wght@500..700"],
+};
+
+export const fonts = Object.keys(fontFamilies);
+
+export const loadFonts = (names: string[]) => {
+  const families = names.flatMap((name) => fontFamilies[name] ?? []);
+  if (families.length === 0) {
+    return;
+  }
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = `https://fonts.googleapis.com/css2?${families.map((family) => `family=${family}`).join("&")}&display=swap`;
+  document.head.append(link);
+};
 
 export const defaultTitle = t("Thanks for watching!");
 

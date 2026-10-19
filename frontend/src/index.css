@@ -130,7 +130,28 @@
   }
 }
 
+[data-font="modern"] {
+  --font-display: "Poppins", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+[data-font="serif"] {
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "Lora", Georgia, serif;
+}
+[data-font="mono"] {
+  --font-display: "JetBrains Mono", Menlo, monospace;
+  --font-body: "JetBrains Mono", Menlo, monospace;
+}
+[data-font="handwritten"] {
+  --font-display: "Caveat", "Bradley Hand", cursive;
+}
+[data-font="pixel"] {
+  --font-display: "Pixelify Sans", "Courier New", monospace;
+}
 @layer base {
+  [data-font] {
+    font-family: var(--font-body);
+  }
   html {
     background-color: var(--color-page);
     scrollbar-gutter: stable;

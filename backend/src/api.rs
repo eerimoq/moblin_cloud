@@ -280,6 +280,7 @@ struct SettingsResponse {
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
+    font: Option<String>,
 }
 
 fn any_connected(api: &Api, account: &Account) -> bool {
@@ -313,6 +314,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         title: settings.title,
         message: settings.message,
         accent: settings.accent,
+        font: settings.font,
     })
 }
 
@@ -331,6 +333,8 @@ struct SettingsRequest {
     message: Option<String>,
     #[serde(default)]
     accent: Option<String>,
+    #[serde(default)]
+    font: Option<String>,
 }
 
 fn merchant_of(api: &Api, id: &str) -> Option<String> {
@@ -424,6 +428,7 @@ async fn update_settings(
                 title: request.title,
                 message: request.message,
                 accent: request.accent,
+                font: request.font,
             },
         )
         .map_err(|error| match error {
@@ -433,7 +438,7 @@ async fn update_settings(
             SettingsError::InvalidSpin => invalid_spin(),
             SettingsError::InvalidPage => (
                 StatusCode::BAD_REQUEST,
-                "the title can be at most 60 characters, the message at most 300 and the accent one of the supported colors".to_string(),
+                "the title can be at most 60 characters, the message at most 300 and the accent and font among the supported ones".to_string(),
             ),
             SettingsError::Full => (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -445,14 +450,15 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?} and accent {:?}",
+        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, title {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.paywall,
         settings.tips,
         settings.spin,
         settings.title,
         settings.message,
-        settings.accent
+        settings.accent,
+        settings.font
     );
     Ok(settings_response(api, id, settings))
 }
@@ -1291,6 +1297,7 @@ struct ProfileResponse {
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
+    font: Option<String>,
 }
 
 async fn handle_page(
@@ -1306,6 +1313,7 @@ async fn handle_page(
         title: settings.title,
         message: settings.message,
         accent: settings.accent,
+        font: settings.font,
     }))
 }
 
@@ -5512,6 +5520,7 @@ mod tests {
                 "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
+                "font": "handwritten",
             }))
             .send()
             .await
@@ -5521,10 +5530,19 @@ mod tests {
             .unwrap();
         assert_eq!(settings["title"], "Pick a banger");
         assert_eq!(settings["accent"], "pink");
+        assert_eq!(settings["font"], "handwritten");
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({"paywall": null, "accent": "teal"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null, "font": "comic"}))
             .send()
             .await
             .unwrap();
@@ -5558,6 +5576,7 @@ mod tests {
                 "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
+                "font": "handwritten",
             })
         );
         let response = client

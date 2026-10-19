@@ -214,5 +214,6 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges) 
       title: settings.title,
       message: settings.message,
       accent: settings.accent,
+      font: settings.font,
     }),
   );

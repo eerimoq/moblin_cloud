@@ -22,6 +22,8 @@ pub struct Settings {
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -53,6 +55,8 @@ pub const CURRENCIES: [&str; 16] = [
 const DEFAULT_CURRENCY: &str = "USD";
 
 pub const ACCENTS: [&str; 6] = ["green", "purple", "blue", "pink", "orange", "red"];
+
+pub const FONTS: [&str; 6] = ["rounded", "modern", "serif", "mono", "handwritten", "pixel"];
 
 fn text(text: Option<String>, max: usize) -> Result<Option<String>, SettingsError> {
     let text = text
@@ -94,6 +98,12 @@ impl Settings {
             }
             accent => accent.filter(|accent| accent != ACCENTS[0]),
         };
+        let font = match self.font {
+            Some(font) if !FONTS.contains(&font.as_str()) => {
+                return Err(SettingsError::InvalidPage);
+            }
+            font => font.filter(|font| font != FONTS[0]),
+        };
         Ok(Self {
             currency,
             paywall,
@@ -102,6 +112,7 @@ impl Settings {
             title: text(self.title, 60)?,
             message: text(self.message, 300)?,
             accent,
+            font,
         })
     }
 }
@@ -353,37 +364,40 @@ mod tests {
     #[test]
     fn pages_are_validated() {
         let pages = Pages::new(Database::memory());
-        let page = |title: &str, message: &str, accent: &str| Settings {
+        let page = |title: &str, message: &str, accent: &str, font: &str| Settings {
             title: Some(title.to_string()),
             message: Some(message.to_string()),
             accent: Some(accent.to_string()),
+            font: Some(font.to_string()),
             ..Settings::default()
         };
         assert_eq!(
-            pages.set("a", page(" Hi! ", "  ", "purple")),
+            pages.set("a", page(" Hi! ", "  ", "purple", "serif")),
             Ok(Settings {
                 title: Some("Hi!".to_string()),
                 accent: Some("purple".to_string()),
+                font: Some("serif".to_string()),
                 ..Settings::default()
             })
         );
         assert_eq!(
-            pages.set("a", page("", "", "green")),
+            pages.set("a", page("", "", "green", "rounded")),
             Ok(Settings::default())
         );
         assert_eq!(pages.get("a"), Settings::default());
         assert!(
             pages
-                .set("a", page(&"å".repeat(60), &"å".repeat(300), "red"))
+                .set("a", page(&"å".repeat(60), &"å".repeat(300), "red", "pixel"))
                 .is_ok()
         );
-        for (title, message, accent) in [
-            ("a".repeat(61), String::new(), "red"),
-            (String::new(), "a".repeat(301), "red"),
-            (String::new(), String::new(), "teal"),
+        for (title, message, accent, font) in [
+            ("a".repeat(61), String::new(), "red", "mono"),
+            (String::new(), "a".repeat(301), "red", "mono"),
+            (String::new(), String::new(), "teal", "mono"),
+            (String::new(), String::new(), "red", "comic"),
         ] {
             assert_eq!(
-                pages.set("a", page(&title, &message, accent)),
+                pages.set("a", page(&title, &message, accent, font)),
                 Err(SettingsError::InvalidPage)
             );
         }

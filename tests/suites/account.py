@@ -263,26 +263,32 @@ class AccountPageLook(AccountTestCase):
         dashboard = self.sign_in("pagelook")
         page_id = dashboard.create_page()["settings"]["id"]
         settings = dashboard.save_settings(
-            title="  Hello!  ", message="Thanks for watching.", accent="purple"
+            title="  Hello!  ", message="Thanks for watching.", accent="purple", font="serif"
         )
         self.assert_equal(settings["title"], "Hello!")
         self.assert_equal(settings["message"], "Thanks for watching.")
         self.assert_equal(settings["accent"], "purple")
+        self.assert_equal(settings["font"], "serif")
         profile = self.website.viewer(page_id).profile()
         self.assert_equal(profile["title"], "Hello!")
         self.assert_equal(profile["message"], "Thanks for watching.")
         self.assert_equal(profile["accent"], "purple")
-        settings = dashboard.save_settings(title="   ", message="", accent="green")
-        self.assert_equal([settings["title"], settings["message"], settings["accent"]], [None, None, None])
+        self.assert_equal(profile["font"], "serif")
+        settings = dashboard.save_settings(title="   ", message="", accent="green", font="rounded")
+        self.assert_equal(
+            [settings["title"], settings["message"], settings["accent"], settings["font"]],
+            [None, None, None, None],
+        )
         settings = dashboard.save_settings(title=60 * "å", message=300 * "x")
         self.assert_equal(settings["title"], 60 * "å")
         invalid = (
-            "the title can be at most 60 characters, the message at most 300 and the accent one of the "
-            "supported colors"
+            "the title can be at most 60 characters, the message at most 300 and the accent and font "
+            "among the supported ones"
         )
         self.assert_backend_error(400, lambda: dashboard.save_settings(title=61 * "x"), invalid)
         self.assert_backend_error(400, lambda: dashboard.save_settings(message=301 * "x"), invalid)
         self.assert_backend_error(400, lambda: dashboard.save_settings(accent="black"), invalid)
+        self.assert_backend_error(400, lambda: dashboard.save_settings(font="comic"), invalid)
         self.assert_equal(dashboard.account()["settings"]["title"], 60 * "å")
 
 

@@ -134,6 +134,7 @@ class Dashboard(Client):
         title: str | None = None,
         message: str | None = None,
         accent: str | None = None,
+        font: str | None = None,
     ) -> dict:
         return self.post(
             "/account/settings",
@@ -145,13 +146,14 @@ class Dashboard(Client):
                 "title": title,
                 "message": message,
                 "accent": accent,
+                "font": font,
             },
         )
 
     def update_settings(self, **changes) -> dict:
         """Saves the current settings with some changed, like editing one field in the dashboard."""
         settings = self.account()["settings"]
-        fields = ["currency", "paywall", "tips", "spin", "title", "message", "accent"]
+        fields = ["currency", "paywall", "tips", "spin", "title", "message", "accent", "font"]
         current = {field: settings[field] for field in fields}
         return self.save_settings(**{**current, **changes})
 
