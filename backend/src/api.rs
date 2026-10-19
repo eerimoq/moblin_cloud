@@ -29,6 +29,7 @@ use crate::images;
 use crate::live::Live;
 use crate::pages::{
     CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
+    is_color,
 };
 use crate::payments::{CaptureError, Item, Order, Orders, Payee, PaymentStatus, Stage};
 use crate::paypal::{PayPal, Seller};
@@ -387,9 +388,17 @@ fn payments_unavailable() -> (StatusCode, String) {
 async fn update_settings(
     api: &Api,
     id: String,
+    pro: bool,
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let current = api.pages.get(&id);
+    let accent = request.accent.map(|accent| accent.to_lowercase());
+    if !pro && accent.as_deref().is_some_and(is_color) && accent != current.accent {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "custom colors are only for pro streamers".to_string(),
+        ));
+    }
     let currency = request
         .currency
         .map(|currency| currency.trim().to_uppercase())
@@ -439,7 +448,7 @@ async fn update_settings(
                 spin,
                 title: request.title,
                 message: request.message,
-                accent: request.accent,
+                accent,
                 font: request.font,
             },
         )
@@ -1029,12 +1038,9 @@ async fn handle_account_settings(
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?
-        .account
-        .page
-        .ok_or_else(no_page)?
-        .id;
-    update_settings(&api, id, request).await
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let page = account.page.ok_or_else(no_page)?.id;
+    update_settings(&api, page, is_pro(&api, &id), request).await
 }
 
 #[derive(Serialize)]
@@ -6190,6 +6196,54 @@ mod tests {
         assert_eq!(count("imageUploads"), Some(2));
         assert_eq!(count("imageUploadsFailed:not-pro"), Some(1));
         assert_eq!(count("imageUploadsFailed:invalid-image"), Some(1));
+    }
+
+    #[tokio::test]
+    async fn custom_colors_are_for_pro_streamers() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let save = |session: String, accent: &'static str| {
+            client
+                .post(format!("http://{address}/account/settings"))
+                .bearer_auth(session)
+                .json(&json!({"paywall": null, "accent": accent}))
+                .send()
+        };
+        let (session, _, _) = streamer(&address, &api).await;
+        let response = save(session.clone(), "#123abc").await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = save(session, "pink").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        api.accounts.signed_in("pro", "Pro", "pro", None).unwrap();
+        let pro = api.auth.session("pro", 0);
+        let account: Value = client
+            .post(format!("http://{address}/account/page"))
+            .bearer_auth(&pro)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let page = account["settings"]["id"].as_str().unwrap().to_string();
+        let settings: Value = save(pro.clone(), "#123ABC")
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["accent"], "#123abc");
+        let profile: Value = client
+            .get(format!("http://{address}/pages/{page}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(profile["accent"], "#123abc");
+        let response = save(pro, "#12345").await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

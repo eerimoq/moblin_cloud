@@ -70,6 +70,14 @@ export type Settings = Page & {
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];
 
+export const isColor = (accent: string | null | undefined) =>
+  accent != null && /^#[0-9a-f]{6}$/i.test(accent);
+
+export const accentAttributes = (accent: string | null | undefined) =>
+  isColor(accent)
+    ? { "data-accent": "custom", style: { "--accent": accent! } }
+    : { "data-accent": accent ?? undefined };
+
 const fontFamilies: Record<string, string[]> = {
   rounded: [],
   modern: ["Poppins:wght@500;600;700", "Inter:ital,wght@0,400..700;1,400"],

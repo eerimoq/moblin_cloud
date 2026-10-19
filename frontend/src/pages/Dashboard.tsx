@@ -50,6 +50,7 @@ import {
 } from "../data/account";
 import { pages } from "../data/links";
 import {
+  accentAttributes,
   accents,
   BackendError,
   currencies,
@@ -57,6 +58,7 @@ import {
   fonts,
   formatPrice,
   hundredths,
+  isColor,
   loadFonts,
   pageImageUrl,
   type Page,
@@ -687,6 +689,9 @@ function YourPage(props: {
   const [title, setTitle] = createSignal(props.page.title ?? "");
   const [message, setMessage] = createSignal(props.page.message ?? "");
   const [accent, setAccent] = createSignal(props.page.accent ?? accents[0]);
+  const [color, setColor] = createSignal(
+    isColor(props.page.accent) ? props.page.accent! : "#22b33a",
+  );
   const [font, setFont] = createSignal(props.page.font ?? fonts[0]);
   onMount(() => loadFonts(fonts));
   const [saving, setSaving] = createSignal(false);
@@ -770,6 +775,41 @@ function YourPage(props: {
               </label>
             )}
           </For>
+          <Show when={props.account.pro || isColor(props.page.accent)}>
+            <label
+              {...accentAttributes(color())}
+              class="relative flex size-11 cursor-pointer items-center justify-center rounded-full bg-moss text-white has-[:checked]:ring-3 has-[:checked]:ring-ink has-[:checked]:ring-offset-3 has-[:checked]:ring-offset-card has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-6 has-[:focus-visible]:outline-ink"
+              title={t("Any color")}
+            >
+              <input
+                type="radio"
+                name="accent"
+                value={color()}
+                checked={isColor(accent())}
+                onChange={() => setAccent(color())}
+                class="sr-only"
+              />
+              <span class="sr-only">{t("Any color")}</span>
+              <Show
+                when={isColor(accent())}
+                fallback={<span class="text-2xl leading-none font-semibold">+</span>}
+              >
+                <Icon name="check" class="size-5" />
+              </Show>
+              <Show when={props.account.pro}>
+                <input
+                  type="color"
+                  value={color()}
+                  onInput={(event) => {
+                    setColor(event.currentTarget.value);
+                    setAccent(event.currentTarget.value);
+                  }}
+                  aria-label={t("Any color")}
+                  class="absolute inset-0 cursor-pointer rounded-full opacity-0"
+                />
+              </Show>
+            </label>
+          </Show>
         </div>
       </fieldset>
       <fieldset class="flex flex-col gap-2">

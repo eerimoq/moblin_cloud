@@ -59,6 +59,12 @@ pub const ACCENTS: [&str; 6] = ["green", "purple", "blue", "pink", "orange", "re
 
 pub const FONTS: [&str; 6] = ["rounded", "modern", "serif", "mono", "handwritten", "pixel"];
 
+pub fn is_color(accent: &str) -> bool {
+    accent.len() == 7
+        && accent.starts_with('#')
+        && accent[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
 fn text(text: Option<String>, max: usize) -> Result<Option<String>, SettingsError> {
     let text = text
         .map(|text| text.trim().to_string())
@@ -93,8 +99,8 @@ impl Settings {
             Some(spin) => Some(spin.normalize().ok_or(SettingsError::InvalidSpin)?),
             None => None,
         };
-        let accent = match self.accent {
-            Some(accent) if !ACCENTS.contains(&accent.as_str()) => {
+        let accent = match self.accent.map(|accent| accent.to_lowercase()) {
+            Some(accent) if !ACCENTS.contains(&accent.as_str()) && !is_color(&accent) => {
                 return Err(SettingsError::InvalidPage);
             }
             accent => accent.filter(|accent| accent != ACCENTS[0]),
@@ -465,6 +471,13 @@ mod tests {
             })
         );
         assert_eq!(
+            pages.set("a", page("", "", "#A1B2c3", "rounded")),
+            Ok(Settings {
+                accent: Some("#a1b2c3".to_string()),
+                ..Settings::default()
+            })
+        );
+        assert_eq!(
             pages.set("a", page("", "", "green", "rounded")),
             Ok(Settings::default())
         );
@@ -478,6 +491,9 @@ mod tests {
             ("a".repeat(61), String::new(), "red", "mono"),
             (String::new(), "a".repeat(301), "red", "mono"),
             (String::new(), String::new(), "teal", "mono"),
+            (String::new(), String::new(), "#12345", "mono"),
+            (String::new(), String::new(), "#12345g", "mono"),
+            (String::new(), String::new(), "123456", "mono"),
             (String::new(), String::new(), "red", "comic"),
         ] {
             assert_eq!(

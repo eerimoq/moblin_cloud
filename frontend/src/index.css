@@ -96,8 +96,20 @@
   --color-leaf: #ff6b61;
   --color-leaf-bright: #ff9a93;
 }
+[data-accent="custom"] {
+  --color-moss: var(--accent);
+  --color-moss-bright: color-mix(in oklab, var(--accent), white 12%);
+  --color-leaf: color-mix(in oklab, var(--accent), white 35%);
+  --color-leaf-bright: color-mix(in oklab, var(--accent), white 55%);
+}
 
 @media (prefers-color-scheme: light) {
+  [data-accent="custom"] {
+    --color-moss: var(--accent);
+    --color-moss-bright: color-mix(in oklab, var(--accent), black 12%);
+    --color-leaf: color-mix(in oklab, var(--accent), black 20%);
+    --color-leaf-bright: color-mix(in oklab, var(--accent), black 35%);
+  }
   [data-accent="purple"] {
     --color-moss: #7a3be0;
     --color-moss-bright: #6a2fcc;

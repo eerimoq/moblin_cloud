@@ -22,6 +22,7 @@ import Icon from "../components/Icon";
 import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
+  accentAttributes,
   BackendError,
   captureSong,
   captureSpin,
@@ -1414,7 +1415,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
 
   return (
     <div
-      data-accent={profile()?.accent ?? undefined}
+      {...accentAttributes(profile()?.accent)}
       data-font={profile()?.font ?? undefined}
       class="isolate flex min-h-svh flex-col"
     >
