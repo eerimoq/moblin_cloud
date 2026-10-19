@@ -23,6 +23,14 @@ pub struct Delivery {
     pub delivered: Vec<String>,
     pub failure: Option<String>,
     pub finished: bool,
+    pub test: bool,
+}
+
+impl Delivery {
+    fn counter(&self, event: &str) -> String {
+        let test = if self.test { "Test" } else { "" };
+        format!("{}{test}{event}", self.item.kind())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -133,7 +141,7 @@ impl Deliveries {
                 delivery.delivered.len()
             );
             if delivery.delivered.is_empty() {
-                counters::bump(&database, &format!("{}Expiries", delivery.item.kind()));
+                counters::bump(&database, &delivery.counter("Expiries"));
             }
         }
         if let Err(error) = database.execute(
@@ -192,7 +200,7 @@ impl Deliveries {
             Ok(_) => {
                 counters::bump(
                     &database,
-                    &format!("{}DeliveriesFailed:{reason}", delivery.item.kind()),
+                    &delivery.counter(&format!("DeliveriesFailed:{reason}")),
                 );
                 true
             }
@@ -264,14 +272,13 @@ impl Deliveries {
 
     async fn deliver_all(&self, streamers: &Streamers, device: String, deliveries: Vec<Targeted>) {
         for (delivery, devices) in deliveries {
-            let kind = delivery.item.kind();
             let counter = match deliver(streamers, &device, &delivery).await {
                 Ok(Outcome::Delivered) => {
                     info!(
                         "delivered {:?} in request {} to remote control streamer {device}",
                         delivery.item, delivery.request_id
                     );
-                    Some(format!("{kind}Deliveries"))
+                    Some(delivery.counter("Deliveries"))
                 }
                 Ok(Outcome::NotFound) => {
                     if self.failed(&delivery, "not-found") {
@@ -332,6 +339,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     row.get::<_, String>("delivered")?,
                     row.get("failure")?,
                     row.get("finished")?,
+                    row.get::<_, Option<String>>("test")?.is_some(),
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -340,7 +348,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
         Ok(deliveries) => deliveries
             .into_iter()
             .filter_map(
-                |(request_id, streamer, requested_at, item, delivered, failure, finished)| {
+                |(request_id, streamer, requested_at, item, delivered, failure, finished, test)| {
                     match serde_json::from_str(&item) {
                         Ok(item) => Some(Delivery {
                             streamer,
@@ -350,6 +358,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                             delivered: serde_json::from_str(&delivered).unwrap_or_default(),
                             failure,
                             finished,
+                            test,
                         }),
                         Err(error) => {
                             warn!("failed to parse delivery {request_id}: {error}");
@@ -554,9 +563,9 @@ mod tests {
         assert_eq!(
             expiries,
             [
-                ("songExpiries".to_string(), 1),
-                ("spinExpiries".to_string(), 1),
-                ("tipExpiries".to_string(), 1),
+                ("songTestExpiries".to_string(), 1),
+                ("spinTestExpiries".to_string(), 1),
+                ("tipTestExpiries".to_string(), 1),
             ]
         );
     }
@@ -611,10 +620,10 @@ mod tests {
         assert_eq!(
             counters,
             [
-                ("songDeliveriesFailed:moblin-error".to_string(), 1),
-                ("songDeliveriesFailed:not-found".to_string(), 1),
-                ("tipDeliveriesFailed:moblin-error".to_string(), 1),
-                ("tipExpiries".to_string(), 1),
+                ("songTestDeliveriesFailed:moblin-error".to_string(), 1),
+                ("songTestDeliveriesFailed:not-found".to_string(), 1),
+                ("tipTestDeliveriesFailed:moblin-error".to_string(), 1),
+                ("tipTestExpiries".to_string(), 1),
             ]
         );
     }

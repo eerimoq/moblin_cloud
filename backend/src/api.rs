@@ -2408,8 +2408,17 @@ async fn handle_account_test_song(
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(&api, &headers)?;
-    if !api.remote_control.is_connected(&music_device(&api, &id)) {
+    let result = account_test_song(&api, &headers, request).await;
+    counted(&api, "songTests", result)
+}
+
+async fn account_test_song(
+    api: &Api,
+    headers: &HeaderMap,
+    request: TestRequest,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (id, account, request_id) = test_page(api, headers)?;
+    if !api.remote_control.is_connected(&music_device(api, &id)) {
         return Err(moblin_not_connected());
     }
     let message = viewer_message(request.message)?;
@@ -2419,8 +2428,8 @@ async fn handle_account_test_song(
         message: None,
         provider: None,
     };
-    let song = requested_song(&api, &id, song_and_user(request)?).await?;
-    Ok(queue(&api, id, request_id, song, message))
+    let song = requested_song(api, &id, song_and_user(request)?).await?;
+    Ok(queue(api, id, request_id, song, message))
 }
 
 async fn handle_account_test_tip(
@@ -2428,7 +2437,16 @@ async fn handle_account_test_tip(
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(&api, &headers)?;
+    let result = account_test_tip(&api, &headers, request).await;
+    counted(&api, "tipTests", result)
+}
+
+async fn account_test_tip(
+    api: &Api,
+    headers: &HeaderMap,
+    request: TestRequest,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (id, account, request_id) = test_page(api, headers)?;
     let settings = api.pages.get(&id);
     let amount = settings
         .tips
@@ -2454,8 +2472,17 @@ async fn handle_account_test_spin(
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(&api, &headers)?;
-    let device = wheel_device(&api, &id);
+    let result = account_test_spin(&api, &headers, request).await;
+    counted(&api, "spinTests", result)
+}
+
+async fn account_test_spin(
+    api: &Api,
+    headers: &HeaderMap,
+    request: TestRequest,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (id, account, request_id) = test_page(api, headers)?;
+    let device = wheel_device(api, &id);
     if api.remote_control.wheel(&device).is_none() {
         return Err(if api.remote_control.is_connected(&device) {
             failure(

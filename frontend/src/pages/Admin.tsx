@@ -46,6 +46,7 @@ const reasonLabels: Record<string, string> = {
   "no-wheel": "No wheel in Moblin",
   "invalid-link": "Not an Apple Music song link",
   "too-many-requests": "Over 10 song orders a minute on the page",
+  "too-many-tests": "Over 10 tests a minute on the page",
   "song-not-found": "Song not on the streamer's Apple Music",
   "not-found": "Song not found by Moblin",
   "invalid-message": "Message over 200 characters",
@@ -113,7 +114,7 @@ const problems: Problem[] = [
   },
   {
     label: "Given up after 7 days",
-    hint: "Paid or test requests that never reached a device in 7 days and were dropped.",
+    hint: "Paid requests that never reached a device in 7 days and were dropped.",
     matches: (name) => name.endsWith("Expiries"),
   },
 ];
@@ -123,6 +124,7 @@ type Kind = {
   label: string;
   orders: string[];
   payments: string[];
+  tests: string[];
   deliveries: string[];
 };
 
@@ -151,6 +153,18 @@ const kinds: Kind[] = [
       "payments-unavailable",
       "provider",
     ],
+    tests: [
+      "account",
+      "too-many-tests",
+      "invalid-link",
+      "offline",
+      "requests-off",
+      "song-not-found",
+      "moblin-timeout",
+      "moblin-error",
+      "invalid-message",
+      "crashed",
+    ],
     deliveries: ["not-found", "moblin-error"],
   },
   {
@@ -164,6 +178,7 @@ const kinds: Kind[] = [
       "provider",
     ],
     payments: ["expired", "not-approved", "pending", "payments-unavailable", "provider"],
+    tests: ["account", "too-many-tests", "invalid-message", "crashed"],
     deliveries: ["moblin-error"],
   },
   {
@@ -186,6 +201,7 @@ const kinds: Kind[] = [
       "payments-unavailable",
       "provider",
     ],
+    tests: ["account", "too-many-tests", "offline", "no-wheel", "invalid-message", "crashed"],
     deliveries: ["moblin-error"],
   },
 ];
@@ -216,7 +232,7 @@ class Counters {
     let sum = zero;
     for (const [name, counts] of this.byName) {
       const [event, reason] = name.split("Failed:");
-      if (matches(event, reason ?? "")) {
+      if (!event.includes("Test") && matches(event, reason ?? "")) {
         sum = add(sum, counts);
       }
     }
@@ -363,31 +379,34 @@ function Loaded(props: { stats: AdminStats }) {
   const values = (counts: Counts) => periods.map(([period]) => counts[period]);
   const columns = periods.map(([, label]) => label);
 
+  const step = (name: string, label: string, hint: string, expected: string[]): Row[] => [
+    { label, hint, values: values(counters().get(name)) },
+    ...counters()
+      .failures(name, expected)
+      .map((reason) => ({
+        label: `${label} failed: ${reasonLabels[reason] ?? reason}`,
+        values: values(counters().get(`${name}Failed:${reason}`)),
+        tone: (problemReasons.includes(reason) ? "problem" : "muted") as Tone,
+      })),
+  ];
+
   const flow = (kind: Kind): Row[] => {
-    const step = (event: string, hint: string, expected: string[]): Row[] => [
-      { label: event, hint, values: values(counters().get(`${kind.kind}${event}`)) },
-      ...counters()
-        .failures(`${kind.kind}${event}`, expected)
-        .map((reason) => ({
-          label: `${event} failed: ${reasonLabels[reason] ?? reason}`,
-          values: values(counters().get(`${kind.kind}${event}Failed:${reason}`)),
-          tone: (problemReasons.includes(reason) ? "problem" : "muted") as Tone,
-        })),
-    ];
+    const paid = (event: string, hint: string, expected: string[]) =>
+      step(`${kind.kind}${event}`, event, hint, expected);
     return [
-      ...step(
+      ...paid(
         "Orders",
         "Payments started at PayPal or Stripe, before the viewer approves.",
         kind.orders,
       ),
-      ...step(
+      ...paid(
         "Payments",
         "Completed captures, so the streamer got the money and the request was queued. One order can fail several times before it succeeds.",
         kind.payments,
       ),
-      ...step(
+      ...paid(
         "Deliveries",
-        "Requests Moblin accepted, including test sends from the dashboard. A stuck request is retried every 10 seconds and counts each time.",
+        "Paid requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
         kind.deliveries,
       ),
       {
@@ -398,6 +417,27 @@ function Loaded(props: { stats: AdminStats }) {
       },
     ];
   };
+
+  const tests = (kind: Kind): Row[] => [
+    ...step(
+      `${kind.kind}Tests`,
+      `${kind.label}: tests`,
+      "Free test sends by streamers from their dashboard.",
+      kind.tests,
+    ),
+    ...step(
+      `${kind.kind}TestDeliveries`,
+      `${kind.label}: deliveries`,
+      "Test sends Moblin accepted.",
+      kind.deliveries,
+    ),
+    {
+      label: `${kind.label}: given up`,
+      hint: "Test sends dropped after 7 days without reaching any device.",
+      values: values(counters().get(`${kind.kind}TestExpiries`)),
+      tone: "muted",
+    },
+  ];
 
   return (
     <div class="flex flex-col gap-10">
@@ -434,6 +474,12 @@ function Loaded(props: { stats: AdminStats }) {
       <For each={kinds}>
         {(kind) => <Table title={kind.label} columns={columns} rows={flow(kind)} />}
       </For>
+      <Table
+        title="Tests"
+        hint="Free songs, tips and wheel spins streamers send themselves from the dashboard. Not counted as problems above."
+        columns={columns}
+        rows={kinds.flatMap(tests)}
+      />
       <Table
         title="Moblin"
         columns={columns}
