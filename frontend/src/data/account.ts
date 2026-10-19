@@ -16,7 +16,7 @@ export type Account = {
   wheelDevice: string | null;
   settings: Settings | null;
   admin: boolean;
-  pro: boolean;
+  premium: boolean;
 };
 
 export type Recent = {

@@ -54,7 +54,7 @@ pub struct Api {
     pub accounts: Accounts,
     pub counters: Counters,
     pub admins: Vec<String>,
-    pub pro_streamers: Vec<String>,
+    pub premium_accounts: Vec<String>,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
     pub song_finds: Mutex<HashMap<String, Vec<Instant>>>,
 }
@@ -389,22 +389,22 @@ fn payments_unavailable() -> (StatusCode, String) {
 async fn update_settings(
     api: &Api,
     id: String,
-    pro: bool,
+    premium: bool,
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let current = api.pages.get(&id);
     let accent = request.accent.map(|accent| accent.to_lowercase());
-    if !pro && accent.as_deref().is_some_and(is_color) && accent != current.accent {
+    if !premium && accent.as_deref().is_some_and(is_color) && accent != current.accent {
         return Err((
             StatusCode::FORBIDDEN,
-            "custom colors are only for pro streamers".to_string(),
+            "custom colors are only for premium accounts".to_string(),
         ));
     }
     let font = request.font.filter(|font| font != FONTS[0]);
-    if !pro && font.is_some() && font != current.font {
+    if !premium && font.is_some() && font != current.font {
         return Err((
             StatusCode::FORBIDDEN,
-            "fonts are only for pro streamers".to_string(),
+            "fonts are only for premium accounts".to_string(),
         ));
     }
     let currency = request
@@ -583,7 +583,7 @@ struct AccountResponse {
     wheel_device: Option<String>,
     settings: Option<SettingsResponse>,
     admin: bool,
-    pro: bool,
+    premium: bool,
 }
 
 #[derive(Serialize)]
@@ -627,8 +627,8 @@ fn is_admin(api: &Api, id: &str) -> bool {
     api.admins.iter().any(|admin| admin == id)
 }
 
-fn is_pro(api: &Api, id: &str) -> bool {
-    is_admin(api, id) || api.pro_streamers.iter().any(|pro| pro == id)
+fn is_premium(api: &Api, id: &str) -> bool {
+    is_admin(api, id) || api.premium_accounts.iter().any(|premium| premium == id)
 }
 
 fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
@@ -666,7 +666,7 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
             .map(|device| device.id.clone()),
         settings,
         admin: is_admin(api, id),
-        pro: is_pro(api, id),
+        premium: is_premium(api, id),
     })
 }
 
@@ -994,11 +994,11 @@ async fn account_image(
 ) -> Result<Json<SettingsResponse>, Failure> {
     let SignedIn { id, account, .. } = signed_in(api, headers)?;
     let page = account.page.ok_or_else(no_page)?.id;
-    if !is_pro(api, &id) {
+    if !is_premium(api, &id) {
         return Err(Failure {
-            reason: "not-pro",
+            reason: "not-premium",
             status: StatusCode::FORBIDDEN,
-            text: "Banner images are only for pro streamers.".to_string(),
+            text: "Banner images are only for premium accounts.".to_string(),
         });
     }
     let image = tokio::task::spawn_blocking(move || images::banner(&body))
@@ -1048,7 +1048,7 @@ async fn handle_account_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     let page = account.page.ok_or_else(no_page)?.id;
-    update_settings(&api, page, is_pro(&api, &id), request).await
+    update_settings(&api, page, is_premium(&api, &id), request).await
 }
 
 #[derive(Serialize)]
@@ -2583,7 +2583,7 @@ mod tests {
             accounts: Accounts::new(Database::memory()),
             counters: Counters::new(database),
             admins: vec!["admin".to_string()],
-            pro_streamers: vec!["pro".to_string()],
+            premium_accounts: vec!["premium".to_string()],
             tests: Mutex::default(),
             song_finds: Mutex::default(),
         });
@@ -5636,7 +5636,7 @@ mod tests {
                 "wheelDevice": null,
                 "settings": null,
                 "admin": false,
-                "pro": false,
+                "premium": false,
             })
         );
         let response = client
@@ -6154,18 +6154,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        api.accounts.signed_in("pro", "Pro", "pro", None).unwrap();
-        let pro = api.auth.session("pro", 0);
+        api.accounts
+            .signed_in("premium", "Premium", "premium", None)
+            .unwrap();
+        let premium = api.auth.session("premium", 0);
         let account: Value = client
             .post(format!("http://{address}/account/page"))
-            .bearer_auth(&pro)
+            .bearer_auth(&premium)
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(account["pro"], true);
+        assert_eq!(account["premium"], true);
         assert_eq!(account["settings"]["image"], Value::Null);
         let page = account["settings"]["id"].as_str().unwrap().to_string();
         let image_url = format!("http://{address}/pages/{page}/image");
@@ -6173,11 +6175,15 @@ mod tests {
             client.get(&image_url).send().await.unwrap().status(),
             StatusCode::NOT_FOUND
         );
-        let response = upload(pro.clone(), b"not an image".to_vec()).await.unwrap();
+        let response = upload(premium.clone(), b"not an image".to_vec())
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let response = upload(pro.clone(), vec![0; 3 * 1024 * 1024]).await.unwrap();
+        let response = upload(premium.clone(), vec![0; 3 * 1024 * 1024])
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
-        let settings: Value = upload(pro.clone(), images::tests::png(1200, 400))
+        let settings: Value = upload(premium.clone(), images::tests::png(1200, 400))
             .await
             .unwrap()
             .json()
@@ -6197,7 +6203,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()["content-type"], "image/jpeg");
         assert!(!response.bytes().await.unwrap().is_empty());
-        let settings: Value = upload(pro.clone(), images::tests::png(2400, 800))
+        let settings: Value = upload(premium.clone(), images::tests::png(2400, 800))
             .await
             .unwrap()
             .json()
@@ -6215,7 +6221,7 @@ mod tests {
         assert_eq!(other["image"], Value::Null);
         let settings: Value = client
             .post(format!("http://{address}/account/image/remove"))
-            .bearer_auth(&pro)
+            .bearer_auth(&premium)
             .send()
             .await
             .unwrap()
@@ -6235,7 +6241,7 @@ mod tests {
                 .map(|counter| counter.total)
         };
         assert_eq!(count("imageUploads"), Some(2));
-        assert_eq!(count("imageUploadsFailed:not-pro"), Some(1));
+        assert_eq!(count("imageUploadsFailed:not-premium"), Some(1));
         assert_eq!(count("imageUploadsFailed:invalid-image"), Some(1));
     }
 
@@ -6266,11 +6272,13 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let response = save(session, "pink").await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        api.accounts.signed_in("pro", "Pro", "pro", None).unwrap();
-        let pro = api.auth.session("pro", 0);
+        api.accounts
+            .signed_in("premium", "Premium", "premium", None)
+            .unwrap();
+        let premium = api.auth.session("premium", 0);
         let account: Value = client
             .post(format!("http://{address}/account/page"))
-            .bearer_auth(&pro)
+            .bearer_auth(&premium)
             .send()
             .await
             .unwrap()
@@ -6278,7 +6286,7 @@ mod tests {
             .await
             .unwrap();
         let page = account["settings"]["id"].as_str().unwrap().to_string();
-        let settings: Value = save(pro.clone(), "#123ABC")
+        let settings: Value = save(premium.clone(), "#123ABC")
             .await
             .unwrap()
             .json()
@@ -6294,16 +6302,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(profile["accent"], "#123abc");
-        let response = save(pro.clone(), "#12345").await.unwrap();
+        let response = save(premium.clone(), "#12345").await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let settings: Value = save_font(pro.clone(), "handwritten")
+        let settings: Value = save_font(premium.clone(), "handwritten")
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
         assert_eq!(settings["font"], "handwritten");
-        let response = save_font(pro, "comic").await.unwrap();
+        let response = save_font(premium, "comic").await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 

@@ -149,9 +149,9 @@ struct Cli {
     /// Twitch user IDs allowed to see the admin page.
     #[arg(long, env = "ADMINS", value_delimiter = ',')]
     admins: Vec<String>,
-    /// Twitch user IDs of pro streamers, who get the pro features.
-    #[arg(long, env = "PRO_STREAMERS", value_delimiter = ',')]
-    pro_streamers: Vec<String>,
+    /// Twitch user IDs of the premium accounts, which get the premium features.
+    #[arg(long, env = "PREMIUM_ACCOUNTS", value_delimiter = ',')]
+    premium_accounts: Vec<String>,
 }
 
 fn http_client() -> Client {
@@ -318,7 +318,7 @@ async fn main() -> Result<()> {
         accounts,
         counters,
         admins: cli.admins,
-        pro_streamers: cli.pro_streamers,
+        premium_accounts: cli.premium_accounts,
         tests: Mutex::default(),
         song_finds: Mutex::default(),
     });

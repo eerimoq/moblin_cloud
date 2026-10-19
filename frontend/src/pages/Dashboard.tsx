@@ -723,7 +723,7 @@ function YourPage(props: {
           "Share it with your viewers so they can send you tips, request songs and spin your wheel.",
         )}
       </p>
-      <Show when={props.account.pro}>
+      <Show when={props.account.premium}>
         <BannerImage settings={props.page} busy={props.busy} onImage={props.onImage} />
       </Show>
       <label class="flex flex-col gap-2">
@@ -775,7 +775,7 @@ function YourPage(props: {
               </label>
             )}
           </For>
-          <Show when={props.account.pro || isColor(props.page.accent)}>
+          <Show when={props.account.premium || isColor(props.page.accent)}>
             <label
               {...accentAttributes(color())}
               class="relative flex size-11 cursor-pointer items-center justify-center rounded-full bg-moss text-white has-[:checked]:ring-3 has-[:checked]:ring-ink has-[:checked]:ring-offset-3 has-[:checked]:ring-offset-card has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-6 has-[:focus-visible]:outline-ink"
@@ -796,7 +796,7 @@ function YourPage(props: {
               >
                 <Icon name="check" class="size-5" />
               </Show>
-              <Show when={props.account.pro}>
+              <Show when={props.account.premium}>
                 <input
                   type="color"
                   value={color()}
@@ -812,13 +812,13 @@ function YourPage(props: {
           </Show>
         </div>
       </fieldset>
-      <Show when={props.account.pro || props.page.font}>
+      <Show when={props.account.premium || props.page.font}>
         <fieldset class="flex flex-col gap-2">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Font")}</legend>
           <div class="flex flex-wrap gap-3">
             <For
               each={
-                props.account.pro
+                props.account.premium
                   ? fonts
                   : fonts.filter((name) => name === fonts[0] || name === props.page.font)
               }
@@ -843,9 +843,11 @@ function YourPage(props: {
           </div>
         </fieldset>
       </Show>
-      <Show when={!props.account.pro}>
+      <Show when={!props.account.premium}>
         <p class="text-[15px] text-ink-2">
-          {t("Pro streamers can also add a banner image, pick any color and choose a font.")}
+          {t(
+            "With a premium account you can also add a banner image, pick any color and choose a font.",
+          )}
         </p>
       </Show>
       <div class="flex flex-wrap items-center gap-4">
@@ -2172,7 +2174,7 @@ function Preview(props: { failed: boolean }) {
               wheelDevice: null,
               settings: null,
               admin: false,
-              pro: false,
+              premium: false,
             }}
             settings={{
               id: "",
@@ -2280,6 +2282,15 @@ export default function Dashboard() {
         >
           {(current) => (
             <div class="flex items-center gap-3">
+              <Show when={current().account.premium}>
+                <span
+                  title={t("Premium")}
+                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf px-3.5 font-display text-base font-semibold text-leaf sm:px-4"
+                >
+                  <Icon name="star" class="size-4" />
+                  <span class="max-sm:sr-only">{t("Premium")}</span>
+                </span>
+              </Show>
               <Show when={current().account.admin}>
                 <a href={asset(pages.admin)} class={`${ghostButtonClass} h-11! px-5! text-base!`}>
                   {t("Admin")}

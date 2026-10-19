@@ -118,7 +118,7 @@ class Backend:
             "1",
             "--admins",
             "fake-admin",
-            "--pro-streamers",
+            "--premium-accounts",
             "fake-pagelook",
         ]
         if self.config.allow_unattested():

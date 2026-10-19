@@ -73,7 +73,7 @@ class AccountSignIn(AccountTestCase):
                 "wheelDevice": None,
                 "settings": None,
                 "admin": False,
-                "pro": False,
+                "premium": False,
             },
         )
 
@@ -294,7 +294,7 @@ class AccountPageLook(AccountTestCase):
         normal = self.sign_in("normallook")
         normal.create_page()
         self.assert_backend_error(
-            403, lambda: normal.save_settings(font="serif"), "fonts are only for pro streamers"
+            403, lambda: normal.save_settings(font="serif"), "fonts are only for premium accounts"
         )
         self.assert_equal(normal.save_settings(accent="purple", font="rounded")["font"], None)
 

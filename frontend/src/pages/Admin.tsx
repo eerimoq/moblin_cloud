@@ -63,7 +63,7 @@ const reasonLabels: Record<string, string> = {
   "moblin-error": "Moblin answered with an error",
   crashed: "Backend error",
   account: "Not signed in",
-  "not-pro": "Not a pro streamer",
+  "not-premium": "Not a premium account",
   "invalid-image": "Unreadable or too small image",
 };
 
@@ -458,11 +458,11 @@ function Loaded(props: { stats: AdminStats }) {
         rows={[
           {
             label: "Uploads",
-            hint: "Banner images pro streamers uploaded for their tip page.",
+            hint: "Banner images uploaded by premium accounts for their tip pages.",
             values: values(counters().get("imageUploads")),
           },
           ...counters()
-            .failures("imageUploads", ["invalid-image", "not-pro", "not-saved"])
+            .failures("imageUploads", ["invalid-image", "not-premium", "not-saved"])
             .map((reason) => ({
               label: `Uploads failed: ${reasonLabels[reason] ?? reason}`,
               values: values(counters().get(`imageUploadsFailed:${reason}`)),
@@ -496,7 +496,7 @@ function Loaded(props: { stats: AdminStats }) {
           },
           {
             label: "With a banner image",
-            hint: "Pages showing a banner image uploaded by a pro streamer.",
+            hint: "Pages showing a banner image uploaded by a premium account.",
             values: [props.stats.accounts.images],
           },
         ]}
