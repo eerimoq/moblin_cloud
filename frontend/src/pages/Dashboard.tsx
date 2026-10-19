@@ -843,6 +843,11 @@ function YourPage(props: {
           </div>
         </fieldset>
       </Show>
+      <Show when={!props.account.pro}>
+        <p class="text-[15px] text-ink-2">
+          {t("Pro streamers can also add a banner image, pick any color and choose a font.")}
+        </p>
+      </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
         <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
