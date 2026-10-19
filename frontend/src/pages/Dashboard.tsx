@@ -32,6 +32,7 @@ import {
   newDeviceKey,
   readSession,
   removeDevice,
+  removeImage,
   saveAccountSettings,
   saveSession,
   sendTest,
@@ -39,6 +40,7 @@ import {
   signOutEverywhere,
   stripeCountries,
   takeSignInResult,
+  uploadImage,
   type Account,
   type Device,
   type Recent,
@@ -56,6 +58,7 @@ import {
   formatPrice,
   hundredths,
   loadFonts,
+  pageImageUrl,
   type Page,
   type Paywall,
   type Settings,
@@ -579,11 +582,107 @@ function StripeAccount(props: {
   );
 }
 
+function BannerImage(props: {
+  settings: Settings;
+  busy: boolean;
+  onImage: (image: File | null) => Promise<void>;
+}) {
+  const [working, setWorking] = createSignal<"upload" | "remove" | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const change = async (image: File | null) => {
+    setError(null);
+    if (image && image.size > 2 * 1024 * 1024) {
+      setError(t("That image is too large. Use one under 2 MB."));
+      return;
+    }
+    setWorking(image ? "upload" : "remove");
+    try {
+      await props.onImage(image);
+    } catch (error) {
+      setError(
+        error instanceof BackendError && error.status === 400
+          ? t(
+              "That image could not be read. Use a JPEG, PNG or WebP at least 600 pixels wide and at most 4000 pixels on each side.",
+            )
+          : error instanceof BackendError && error.status === 413
+            ? t("That image is too large. Use one under 2 MB.")
+            : t("Something went wrong. Try again."),
+      );
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  return (
+    <div class="flex flex-col gap-2">
+      <span class="text-[15px] font-semibold text-ink-2">{t("Banner image (optional)")}</span>
+      <Show
+        when={props.settings.image}
+        fallback={
+          <span class="flex aspect-[3/1] w-full items-center justify-center rounded-2xl border-[1.5px] border-dashed border-line bg-well text-muted">
+            <Icon name="image" class="size-8" />
+          </span>
+        }
+      >
+        {(version) => (
+          <img
+            src={pageImageUrl(props.settings.id, version())}
+            alt=""
+            class="aspect-[3/1] w-full rounded-2xl bg-ghost object-cover"
+          />
+        )}
+      </Show>
+      <span class="text-sm text-muted">
+        {t("Shown at the top of your tip page. Wide images work best, about 3:1.")}
+      </span>
+      <div class="flex flex-wrap items-center gap-3">
+        <label
+          class={`${smallButtonClass} cursor-pointer has-[:disabled]:cursor-default has-[:disabled]:opacity-60 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink`}
+        >
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            disabled={props.busy || working() !== null}
+            class="sr-only"
+            onChange={(event) => {
+              const image = event.currentTarget.files?.[0] ?? null;
+              event.currentTarget.value = "";
+              if (image) {
+                void change(image);
+              }
+            }}
+          />
+          <span aria-live="polite">
+            {working() === "upload"
+              ? t("Uploading…")
+              : props.settings.image
+                ? t("Change image")
+                : t("Upload image")}
+          </span>
+        </label>
+        <Show when={props.settings.image}>
+          <button
+            type="button"
+            class={smallButtonClass}
+            disabled={props.busy || working() !== null}
+            onClick={() => void change(null)}
+          >
+            {t("Remove")}
+          </button>
+        </Show>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      </div>
+    </div>
+  );
+}
+
 function YourPage(props: {
   account: Account;
-  page: Page;
+  page: Settings;
   busy: boolean;
   onSave: (changes: Page) => Promise<void>;
+  onImage: (image: File | null) => Promise<void>;
 }) {
   const [title, setTitle] = createSignal(props.page.title ?? "");
   const [message, setMessage] = createSignal(props.page.message ?? "");
@@ -619,6 +718,9 @@ function YourPage(props: {
           "Share it with your viewers so they can send you tips, request songs and spin your wheel.",
         )}
       </p>
+      <Show when={props.account.pro}>
+        <BannerImage settings={props.page} busy={props.busy} onImage={props.onImage} />
+      </Show>
       <label class="flex flex-col gap-2">
         <span class="text-[15px] font-semibold text-ink-2">{t("Headline (optional)")}</span>
         <input
@@ -1342,6 +1444,20 @@ function Admin(props: {
     }
   };
 
+  const changeImage = async (image: File | null) => {
+    setBusy(true);
+    try {
+      setSettings(await (image ? uploadImage(props.session, image) : removeImage(props.session)));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const changeDevices = async (change: () => Promise<Account>) => {
     setBusy(true);
     try {
@@ -1524,7 +1640,13 @@ function Admin(props: {
       </div>
       <div class="min-w-0">
         <div hidden={active() !== "page"}>
-          <YourPage account={account()} page={settings()} busy={busy()} onSave={save} />
+          <YourPage
+            account={account()}
+            page={settings()}
+            busy={busy()}
+            onSave={save}
+            onImage={changeImage}
+          />
         </div>
         <div hidden={active() !== "tips"} class="flex flex-col gap-6">
           <Show
@@ -1997,6 +2119,7 @@ function Preview(props: { failed: boolean }) {
               wheelDevice: null,
               settings: null,
               admin: false,
+              pro: false,
             }}
             settings={{
               id: "",
@@ -2004,6 +2127,7 @@ function Preview(props: { failed: boolean }) {
               message: null,
               accent: null,
               font: null,
+              image: null,
               connected: true,
               currency: "USD",
               paywall: { price: 100 },

@@ -6,6 +6,7 @@ mod challenges;
 mod counters;
 mod database;
 mod deliveries;
+mod images;
 mod kick;
 mod live;
 mod live_status;
@@ -148,6 +149,9 @@ struct Cli {
     /// Twitch user IDs allowed to see the admin page.
     #[arg(long, env = "ADMINS", value_delimiter = ',')]
     admins: Vec<String>,
+    /// Twitch user IDs of pro streamers, who get the pro features.
+    #[arg(long, env = "PRO_STREAMERS", value_delimiter = ',')]
+    pro_streamers: Vec<String>,
 }
 
 fn http_client() -> Client {
@@ -314,6 +318,7 @@ async fn main() -> Result<()> {
         accounts,
         counters,
         admins: cli.admins,
+        pro_streamers: cli.pro_streamers,
         tests: Mutex::default(),
     });
     tokio::spawn({

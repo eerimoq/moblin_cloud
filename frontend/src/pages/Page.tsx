@@ -35,6 +35,7 @@ import {
   orderSong,
   orderSpin,
   orderTip,
+  pageImageUrl,
   streamerPaywall,
   streamerProfile,
   streamerSpin,
@@ -716,68 +717,125 @@ function Queue(props: { status: Status }) {
   );
 }
 
-function StreamerHeader(props: { profile: Profile | null; unknown: boolean }) {
+function Avatar(props: { profile: Profile; class: string; cutout?: boolean }) {
+  const ring = (color: string) =>
+    props.cutout ? "ring-4 ring-page" : `ring-4 ${color} ring-offset-4 ring-offset-page`;
   return (
-    <header>
-      <div class="mx-auto flex max-w-[720px] flex-col items-center gap-4 px-5 pt-8 pb-6 text-center sm:px-8 lg:pt-12">
-        <Show
-          when={props.profile}
-          fallback={
-            <>
-              <span class="size-28 rounded-full bg-ghost sm:size-32" />
-              <Show when={props.unknown}>
-                <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">
-                  {t("Page not found.")}
-                </h1>
-              </Show>
-            </>
-          }
+    <Show
+      when={props.profile.avatar}
+      fallback={
+        <span
+          class={`flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring("ring-moss/40")} ${props.class}`}
         >
-          {(profile) => (
-            <>
-              <Show
-                when={profile().avatar}
-                fallback={
-                  <span class="flex size-28 shrink-0 items-center justify-center rounded-full bg-moss font-display text-5xl font-semibold text-white ring-4 ring-moss/40 ring-offset-4 ring-offset-page sm:size-32">
-                    {profile().name.slice(0, 1).toUpperCase()}
-                  </span>
-                }
-              >
-                {(avatar) => (
-                  <img
-                    src={avatar()}
-                    alt=""
-                    class="size-28 shrink-0 rounded-full bg-ghost object-cover ring-4 ring-moss ring-offset-4 ring-offset-page sm:size-32"
-                  />
-                )}
-              </Show>
-              <a
-                href={`https://www.twitch.tv/${encodeURIComponent(profile().login)}`}
-                target="_blank"
-                rel="noopener"
-                class="inline-flex items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
-              >
-                <Icon name="twitch" class="size-5 shrink-0 text-twitch" />
-                twitch.tv/{profile().login}
-              </a>
-              <Show when={profile().title || profile().message}>
-                <div class="mt-2 flex flex-col gap-4">
-                  <Show when={profile().title}>
-                    {(title) => <p class="text-[23px] font-semibold text-balance">{title()}</p>}
-                  </Show>
-                  <Show when={profile().message}>
-                    {(message) => (
-                      <p class="text-lg whitespace-pre-line text-ink-2 text-pretty sm:text-[21px]">
-                        {message()}
-                      </p>
-                    )}
-                  </Show>
-                </div>
-              </Show>
-            </>
+          {props.profile.name.slice(0, 1).toUpperCase()}
+        </span>
+      }
+    >
+      {(avatar) => (
+        <img
+          src={avatar()}
+          alt=""
+          class={`shrink-0 rounded-full bg-ghost object-cover ${ring("ring-moss")} ${props.class}`}
+        />
+      )}
+    </Show>
+  );
+}
+
+function TwitchLink(props: { profile: Profile }) {
+  return (
+    <a
+      href={`https://www.twitch.tv/${encodeURIComponent(props.profile.login)}`}
+      target="_blank"
+      rel="noopener"
+      class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
+    >
+      <Icon name="twitch" class="size-5 shrink-0 text-twitch" />
+      <span class="truncate">twitch.tv/{props.profile.login}</span>
+    </a>
+  );
+}
+
+function Greeting(props: { profile: Profile }) {
+  return (
+    <Show when={props.profile.title || props.profile.message}>
+      <div class="mt-2 flex flex-col gap-4">
+        <Show when={props.profile.title}>
+          {(title) => <p class="text-[23px] font-semibold text-balance">{title()}</p>}
+        </Show>
+        <Show when={props.profile.message}>
+          {(message) => (
+            <p class="text-lg whitespace-pre-line text-ink-2 text-pretty sm:text-[21px]">
+              {message()}
+            </p>
           )}
         </Show>
       </div>
+    </Show>
+  );
+}
+
+function StreamerHeader(props: { id: string | null; profile: Profile | null; unknown: boolean }) {
+  const banner = () => {
+    const profile = props.profile;
+    return props.id && profile?.image
+      ? { profile, src: pageImageUrl(props.id, profile.image) }
+      : null;
+  };
+
+  return (
+    <header>
+      <Show
+        when={banner()}
+        fallback={
+          <div class="mx-auto flex max-w-[720px] flex-col items-center gap-4 px-5 pt-8 pb-6 text-center sm:px-8 lg:pt-12">
+            <Show
+              when={props.profile}
+              fallback={
+                <>
+                  <span class="size-28 rounded-full bg-ghost sm:size-32" />
+                  <Show when={props.unknown}>
+                    <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">
+                      {t("Page not found.")}
+                    </h1>
+                  </Show>
+                </>
+              }
+            >
+              {(profile) => (
+                <>
+                  <Avatar profile={profile()} class="size-28 text-5xl sm:size-32" />
+                  <TwitchLink profile={profile()} />
+                  <Greeting profile={profile()} />
+                </>
+              )}
+            </Show>
+          </div>
+        }
+      >
+        {(banner) => (
+          <div class="mx-auto flex max-w-[720px] flex-col px-5 pt-6 pb-6 sm:px-8 lg:pt-10">
+            <img
+              src={banner().src}
+              alt=""
+              class="aspect-[3/1] w-full rounded-3xl bg-ghost object-cover"
+            />
+            <div class="flex items-end gap-4 px-4 sm:px-6">
+              <Avatar
+                profile={banner().profile}
+                cutout
+                class="relative -mt-8 size-18 text-3xl sm:-mt-10 sm:size-22 sm:text-4xl"
+              />
+              <div class="min-w-0 pb-1">
+                <TwitchLink profile={banner().profile} />
+              </div>
+            </div>
+            <div class="mt-3 px-1 sm:px-2">
+              <Greeting profile={banner().profile} />
+            </div>
+          </div>
+        )}
+      </Show>
     </header>
   );
 }
@@ -1361,7 +1419,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       class="isolate flex min-h-svh flex-col"
     >
       <main class="flex-1">
-        <StreamerHeader profile={profile()} unknown={status() === "unknown"} />
+        <StreamerHeader id={id()} profile={profile()} unknown={status() === "unknown"} />
         <Show
           when={status() !== "unknown"}
           fallback={

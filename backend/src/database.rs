@@ -37,6 +37,11 @@ impl Database {
                      id TEXT PRIMARY KEY,
                      settings TEXT NOT NULL
                  );
+                 CREATE TABLE IF NOT EXISTS page_images (
+                     id TEXT PRIMARY KEY,
+                     version TEXT NOT NULL,
+                     data BLOB NOT NULL
+                 );
                  CREATE TABLE IF NOT EXISTS orders (
                      id TEXT PRIMARY KEY,
                      streamer TEXT NOT NULL,

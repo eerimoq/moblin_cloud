@@ -4,8 +4,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::body::Bytes;
-use axum::extract::{Path, Query, State, WebSocketUpgrade};
-use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
+use axum::extract::{DefaultBodyLimit, Path, Query, State, WebSocketUpgrade};
+use axum::http::header::{
+    AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, COOKIE, SET_COOKIE, X_CONTENT_TYPE_OPTIONS,
+};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
@@ -23,6 +25,7 @@ use crate::auth::{Auth, STATE_COOKIE};
 use crate::challenges::Challenges;
 use crate::counters::{self, Counter, Counters};
 use crate::deliveries::{self, Deliveries};
+use crate::images;
 use crate::live::Live;
 use crate::pages::{
     CURRENCIES, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tips, format_price,
@@ -50,6 +53,7 @@ pub struct Api {
     pub accounts: Accounts,
     pub counters: Counters,
     pub admins: Vec<String>,
+    pub pro_streamers: Vec<String>,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
 }
 
@@ -87,6 +91,11 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route("/account/settings", post(handle_account_settings))
         .route(
+            "/account/image",
+            post(handle_account_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
+        .route("/account/image/remove", post(handle_account_image_remove))
+        .route(
             "/account/paypal/connect",
             post(handle_account_paypal_connect),
         )
@@ -113,6 +122,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/admin/stats", get(handle_admin_stats))
         .route("/pages/{id}/songs", get(handle_songs))
         .route("/pages/{id}", get(handle_page))
+        .route("/pages/{id}/image", get(handle_page_image))
         .route("/pages/{id}/songs/queue", get(handle_queue))
         .route("/pages/{id}/songs/orders", post(handle_song_order))
         .route(
@@ -281,6 +291,7 @@ struct SettingsResponse {
     message: Option<String>,
     accent: Option<String>,
     font: Option<String>,
+    image: Option<String>,
 }
 
 fn any_connected(api: &Api, account: &Account) -> bool {
@@ -295,7 +306,6 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
     let account = api.accounts.of_page(&id).unwrap_or_default();
     Json(SettingsResponse {
         connected: any_connected(api, &account),
-        id,
         currency: settings.currency().to_string(),
         paywall: settings.paywall,
         tips: settings.tips,
@@ -315,6 +325,8 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         message: settings.message,
         accent: settings.accent,
         font: settings.font,
+        image: api.pages.image_version(&id),
+        id,
     })
 }
 
@@ -554,6 +566,7 @@ struct AccountResponse {
     wheel_device: Option<String>,
     settings: Option<SettingsResponse>,
     admin: bool,
+    pro: bool,
 }
 
 #[derive(Serialize)]
@@ -597,6 +610,10 @@ fn is_admin(api: &Api, id: &str) -> bool {
     api.admins.iter().any(|admin| admin == id)
 }
 
+fn is_pro(api: &Api, id: &str) -> bool {
+    is_admin(api, id) || api.pro_streamers.iter().any(|pro| pro == id)
+}
+
 fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
     let signed_in = signed_in(api, headers)?;
     if !is_admin(api, &signed_in.id) {
@@ -632,6 +649,7 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
             .map(|device| device.id.clone()),
         settings,
         admin: is_admin(api, id),
+        pro: is_pro(api, id),
     })
 }
 
@@ -692,7 +710,10 @@ async fn handle_admin_stats(
 ) -> Result<Json<AdminStatsResponse>, (StatusCode, String)> {
     admin(&api, &headers)?;
     Ok(Json(AdminStatsResponse {
-        accounts: api.accounts.stats(),
+        accounts: AccountStats {
+            images: api.pages.image_count(),
+            ..api.accounts.stats()
+        },
         moblin: MoblinStats {
             connected_devices: api.remote_control.connected_count(),
         },
@@ -938,6 +959,69 @@ async fn handle_account_device_remove(
     api.remote_control.disconnect(&device);
     info!("{id} removed Moblin device {device}");
     Ok(account_response(&api, &id, account))
+}
+
+async fn handle_account_image(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<SettingsResponse>, Failure> {
+    let result = account_image(&api, &headers, body).await;
+    counted(&api, "imageUploads", result)
+}
+
+async fn account_image(
+    api: &Api,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Result<Json<SettingsResponse>, Failure> {
+    let SignedIn { id, account, .. } = signed_in(api, headers)?;
+    let page = account.page.ok_or_else(no_page)?.id;
+    if !is_pro(api, &id) {
+        return Err(Failure {
+            reason: "not-pro",
+            status: StatusCode::FORBIDDEN,
+            text: "Banner images are only for pro streamers.".to_string(),
+        });
+    }
+    let image = tokio::task::spawn_blocking(move || images::banner(&body))
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(|| Failure {
+            reason: "invalid-image",
+            status: StatusCode::BAD_REQUEST,
+            text: "That image could not be read. Use a JPEG, PNG or WebP at least 600 pixels wide and at most 4000 pixels on each side."
+                .to_string(),
+        })?;
+    let version = api.pages.set_image(&page, &image).map_err(|_| Failure {
+        reason: "not-saved",
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        text: "The image could not be saved. Try again.".to_string(),
+    })?;
+    info!(
+        "{id} uploaded banner image {version} of {} bytes for page {page}",
+        image.len()
+    );
+    let settings = api.pages.get(&page);
+    Ok(settings_response(api, page, settings))
+}
+
+async fn handle_account_image_remove(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let page = account.page.ok_or_else(no_page)?.id;
+    api.pages.remove_image(&page).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "the image could not be removed".to_string(),
+        )
+    })?;
+    info!("{id} removed the banner image of page {page}");
+    let settings = api.pages.get(&page);
+    Ok(settings_response(&api, page, settings))
 }
 
 async fn handle_account_settings(
@@ -1298,6 +1382,7 @@ struct ProfileResponse {
     message: Option<String>,
     accent: Option<String>,
     font: Option<String>,
+    image: Option<String>,
 }
 
 async fn handle_page(
@@ -1314,7 +1399,24 @@ async fn handle_page(
         message: settings.message,
         accent: settings.accent,
         font: settings.font,
+        image: api.pages.image_version(&id),
     }))
+}
+
+async fn handle_page_image(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    let (_, image) = api.pages.image(&id).ok_or(StatusCode::NOT_FOUND)?;
+    Ok((
+        [
+            (CONTENT_TYPE, "image/jpeg"),
+            (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            (X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        image,
+    )
+        .into_response())
 }
 
 async fn handle_twitch_page(
@@ -2454,6 +2556,7 @@ mod tests {
             accounts: Accounts::new(Database::memory()),
             counters: Counters::new(database),
             admins: vec!["admin".to_string()],
+            pro_streamers: vec!["pro".to_string()],
             tests: Mutex::default(),
         });
         tokio::spawn({
@@ -5477,6 +5580,7 @@ mod tests {
                 "wheelDevice": null,
                 "settings": null,
                 "admin": false,
+                "pro": false,
             })
         );
         let response = client
@@ -5577,6 +5681,7 @@ mod tests {
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
                 "font": "handwritten",
+                "image": null,
             })
         );
         let response = client
@@ -5986,6 +6091,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn banner_images() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let upload = |session: String, body: Vec<u8>| {
+            client
+                .post(format!("http://{address}/account/image"))
+                .bearer_auth(session)
+                .header("content-type", "image/png")
+                .body(body)
+                .send()
+        };
+        let (session, _, id) = streamer(&address, &api).await;
+        let response = upload(session, images::tests::png(1200, 400))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        api.accounts.signed_in("pro", "Pro", "pro", None).unwrap();
+        let pro = api.auth.session("pro", 0);
+        let account: Value = client
+            .post(format!("http://{address}/account/page"))
+            .bearer_auth(&pro)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["pro"], true);
+        assert_eq!(account["settings"]["image"], Value::Null);
+        let page = account["settings"]["id"].as_str().unwrap().to_string();
+        let image_url = format!("http://{address}/pages/{page}/image");
+        assert_eq!(
+            client.get(&image_url).send().await.unwrap().status(),
+            StatusCode::NOT_FOUND
+        );
+        let response = upload(pro.clone(), b"not an image".to_vec()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = upload(pro.clone(), vec![0; 3 * 1024 * 1024]).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let settings: Value = upload(pro.clone(), images::tests::png(1200, 400))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let first = settings["image"].as_str().unwrap().to_string();
+        let profile: Value = client
+            .get(format!("http://{address}/pages/{page}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(profile["image"], first);
+        let response = client.get(&image_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], "image/jpeg");
+        assert!(!response.bytes().await.unwrap().is_empty());
+        let settings: Value = upload(pro.clone(), images::tests::png(2400, 800))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_ne!(settings["image"], first);
+        let other: Value = client
+            .get(format!("http://{address}/pages/{id}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(other["image"], Value::Null);
+        let settings: Value = client
+            .post(format!("http://{address}/account/image/remove"))
+            .bearer_auth(&pro)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["image"], Value::Null);
+        assert_eq!(
+            client.get(&image_url).send().await.unwrap().status(),
+            StatusCode::NOT_FOUND
+        );
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map(|counter| counter.total)
+        };
+        assert_eq!(count("imageUploads"), Some(2));
+        assert_eq!(count("imageUploadsFailed:not-pro"), Some(1));
+        assert_eq!(count("imageUploadsFailed:invalid-image"), Some(1));
+    }
+
+    #[tokio::test]
     async fn admin_stats() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
@@ -6027,7 +6234,7 @@ mod tests {
         assert_eq!(
             stats,
             json!({
-                "accounts": {"total": 2, "withPage": 1, "paypal": 0, "stripe": 0},
+                "accounts": {"total": 2, "withPage": 1, "paypal": 0, "stripe": 0, "images": 0},
                 "moblin": {"connectedDevices": 0},
                 "pending": {"orders": 0, "deliveries": 0},
                 "counters": [{"name": "songOrders", "today": 2, "week": 2, "total": 2}],

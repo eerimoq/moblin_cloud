@@ -62,6 +62,8 @@ const reasonLabels: Record<string, string> = {
   "moblin-error": "Moblin answered with an error",
   crashed: "Backend error",
   account: "Not signed in",
+  "not-pro": "Not a pro streamer",
+  "invalid-image": "Unreadable or too small image",
 };
 
 const problemReasons = [
@@ -449,6 +451,24 @@ function Loaded(props: { stats: AdminStats }) {
         ]}
       />
       <Table
+        title="Banner images"
+        columns={columns}
+        rows={[
+          {
+            label: "Uploads",
+            hint: "Banner images pro streamers uploaded for their tip page.",
+            values: values(counters().get("imageUploads")),
+          },
+          ...counters()
+            .failures("imageUploads", ["invalid-image", "not-pro", "not-saved"])
+            .map((reason) => ({
+              label: `Uploads failed: ${reasonLabels[reason] ?? reason}`,
+              values: values(counters().get(`imageUploadsFailed:${reason}`)),
+              tone: "muted" as Tone,
+            })),
+        ]}
+      />
+      <Table
         title="Accounts"
         columns={["Now"]}
         rows={[
@@ -471,6 +491,11 @@ function Loaded(props: { stats: AdminStats }) {
             label: "Stripe connected",
             hint: "Accounts whose Stripe account takes card payments.",
             values: [props.stats.accounts.stripe],
+          },
+          {
+            label: "With a banner image",
+            hint: "Pages showing a banner image uploaded by a pro streamer.",
+            values: [props.stats.accounts.images],
           },
         ]}
       />

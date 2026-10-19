@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use log::warn;
+use ring::digest::{SHA256, digest};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
@@ -230,6 +231,69 @@ impl Pages {
         }
         Ok(new)
     }
+
+    pub fn image_version(&self, id: &str) -> Option<String> {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT version FROM page_images WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read the image version of page {id}: {error:#}");
+                None
+            })
+    }
+
+    pub fn image(&self, id: &str) -> Option<(String, Vec<u8>)> {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT version, data FROM page_images WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read the image of page {id}: {error:#}");
+                None
+            })
+    }
+
+    pub fn set_image(&self, id: &str, data: &[u8]) -> Result<String, SettingsError> {
+        let version = digest(&SHA256, data).as_ref()[..8]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        self.database
+            .lock()
+            .execute(
+                "INSERT OR REPLACE INTO page_images (id, version, data) VALUES (?1, ?2, ?3)",
+                params![id, version, data],
+            )
+            .map_err(not_saved)?;
+        Ok(version)
+    }
+
+    pub fn remove_image(&self, id: &str) -> Result<(), SettingsError> {
+        self.database
+            .lock()
+            .execute("DELETE FROM page_images WHERE id = ?1", [id])
+            .map_err(not_saved)?;
+        Ok(())
+    }
+
+    pub fn image_count(&self) -> u64 {
+        self.database
+            .lock()
+            .query_row("SELECT count(*) FROM page_images", [], |row| row.get(0))
+            .unwrap_or_else(|error| {
+                warn!("failed to count page images: {error:#}");
+                0
+            })
+    }
 }
 
 #[cfg(test)]
@@ -262,6 +326,26 @@ mod tests {
             .query_row("SELECT count(*) FROM pages", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
+        database::remove(&path);
+    }
+
+    #[test]
+    fn images_are_saved() {
+        let path = database::temporary_path("page-images");
+        let pages = Pages::new(Database::open(Some(&path)).unwrap());
+        assert_eq!(pages.image_version("a"), None);
+        let first = pages.set_image("a", b"first").unwrap();
+        assert_eq!(first.len(), 16);
+        let second = pages.set_image("a", b"second").unwrap();
+        assert_ne!(first, second);
+        pages.set_image("b", b"first").unwrap();
+        pages.remove_image("b").unwrap();
+        pages.set("a", Settings::default()).unwrap();
+        let pages = Pages::new(Database::open(Some(&path)).unwrap());
+        assert_eq!(pages.image_version("a"), Some(second.clone()));
+        assert_eq!(pages.image("a"), Some((second, b"second".to_vec())));
+        assert_eq!(pages.image("b"), None);
+        assert_eq!(pages.image_count(), 1);
         database::remove(&path);
     }
 

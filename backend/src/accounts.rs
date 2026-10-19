@@ -74,6 +74,7 @@ pub struct AccountStats {
     pub with_page: u64,
     pub paypal: u64,
     pub stripe: u64,
+    pub images: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -357,6 +358,7 @@ impl Accounts {
                         with_page: row.get(1)?,
                         paypal: row.get(2)?,
                         stripe: row.get(3)?,
+                        images: 0,
                     })
                 },
             )

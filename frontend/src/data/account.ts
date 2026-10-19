@@ -16,6 +16,7 @@ export type Account = {
   wheelDevice: string | null;
   settings: Settings | null;
   admin: boolean;
+  pro: boolean;
 };
 
 export type Recent = {
@@ -37,7 +38,7 @@ export type RecentKind = "song" | "tip" | "spin";
 export type RecentList = { items: Recent[]; more: boolean };
 
 export type AdminStats = {
-  accounts: { total: number; withPage: number; paypal: number; stripe: number };
+  accounts: { total: number; withPage: number; paypal: number; stripe: number; images: number };
   moblin: { connectedDevices: number };
   pending: { orders: number; deliveries: number };
   counters: { name: string; today: number; week: number; total: number }[];
@@ -193,6 +194,16 @@ export const checkStripe = (session: string) =>
 
 export const disconnectStripe = (session: string) =>
   call<Settings>(session, "/account/stripe/disconnect", { method: "POST" });
+
+export const uploadImage = (session: string, image: File) =>
+  call<Settings>(session, "/account/image", {
+    method: "POST",
+    headers: { "content-type": image.type || "application/octet-stream" },
+    body: image,
+  });
+
+export const removeImage = (session: string) =>
+  call<Settings>(session, "/account/image/remove", { method: "POST" });
 
 export type SettingsChanges = Page & Pick<Settings, "currency" | "paywall" | "tips" | "spin">;
 

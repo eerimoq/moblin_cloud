@@ -65,6 +65,7 @@ export type Settings = Page & {
   stripeAccountId: string | null;
   stripePending: boolean;
   stripeTest: boolean;
+  image: string | null;
 };
 
 export const accents = ["green", "purple", "blue", "pink", "orange", "red"];
@@ -207,7 +208,11 @@ export type Profile = Page & {
   name: string;
   login: string;
   avatar: string | null;
+  image: string | null;
 };
+
+export const pageImageUrl = (id: string, version: string) =>
+  `${backendUrl}/pages/${encodeURIComponent(id)}/image?v=${encodeURIComponent(version)}`;
 
 export const streamerProfile = (id: string) => call<Profile>(`/${encodeURIComponent(id)}`);
 
