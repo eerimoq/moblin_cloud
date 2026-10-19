@@ -19,6 +19,7 @@ import {
 } from "solid-js";
 import { asset } from "../asset";
 import Icon from "../components/Icon";
+import { fireConfetti } from "../confetti";
 import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
@@ -99,6 +100,8 @@ function paymentOf(current: PublicPayment): Payment | null {
 
 const sameData = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
+const showTestNotices = false;
+
 const providerName = (provider: Provider) => (provider === "stripe" ? "Stripe" : "PayPal");
 
 type PayOptions = {
@@ -168,13 +171,13 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
           props.disabled ? "pointer-events-none opacity-40" : ""
         }`}
       />
-      <Show when={props.config.environment === "sandbox"}>
+      <Show when={showTestNotices && props.config.environment === "sandbox"}>
         <Notice status>
           {t("PayPal sandbox. This is a test payment and no real money is moved.")}
         </Notice>
       </Show>
       <Show when={failed()}>
-        <Notice status>{t("PayPal could not be loaded. Reload the page to try again.")}</Notice>
+        <Notice error>{t("PayPal could not be loaded. Reload the page to try again.")}</Notice>
       </Show>
     </>
   );
@@ -321,7 +324,7 @@ function StripeCard(props: {
       <Show when={payment()}>
         {(current) => (
           <>
-            <Show when={cardError()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+            <Show when={cardError()}>{(error) => <Notice error>{error()}</Notice>}</Show>
             <div class="flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -345,13 +348,13 @@ function StripeCard(props: {
           </>
         )}
       </Show>
-      <Show when={props.config.publishableKey.startsWith("pk_test_")}>
+      <Show when={showTestNotices && props.config.publishableKey.startsWith("pk_test_")}>
         <Notice status>
           {t("Stripe test mode. This is a test payment and no real money is moved.")}
         </Notice>
       </Show>
       <Show when={failed()}>
-        <Notice status>{t("Stripe could not be loaded. Reload the page to try again.")}</Notice>
+        <Notice error>{t("Stripe could not be loaded. Reload the page to try again.")}</Notice>
       </Show>
     </div>
   );
@@ -399,6 +402,49 @@ function TermsLink() {
 
 type Result = { ok: boolean; text: string };
 
+function CheerCard(props: { text: string; onClose: () => void }) {
+  let overlay: HTMLDivElement | undefined;
+  let close: HTMLButtonElement | undefined;
+  const onKey = (event: KeyboardEvent) => event.key === "Escape" && props.onClose();
+  onMount(() => {
+    if (overlay) {
+      fireConfetti(overlay);
+    }
+    close?.focus();
+    addEventListener("keydown", onKey);
+  });
+  onCleanup(() => removeEventListener("keydown", onKey));
+
+  return (
+    <div
+      ref={(element) => (overlay = element)}
+      role="dialog"
+      aria-modal="true"
+      onClick={(event) => event.target === event.currentTarget && props.onClose()}
+      class="cheer-fade fixed inset-0 z-50 flex items-center justify-center bg-page/60 px-4 backdrop-blur-md"
+    >
+      <button
+        ref={(element) => (close = element)}
+        type="button"
+        aria-label={t("Close")}
+        onClick={() => props.onClose()}
+        class="absolute top-4 right-4 z-10 grid size-11 place-items-center rounded-full border-[1.5px] border-ghost-line bg-ghost text-ink hover:bg-ghost-hover"
+      >
+        <Icon name="close" class="size-5" />
+      </button>
+      <div class="cheer-pop relative z-10 flex max-w-md flex-col items-center gap-2 rounded-3xl border-[1.5px] border-moss bg-card px-10 pt-24 pb-8 text-center shadow-2xl">
+        <img
+          src={asset("logos/logo-party.png")}
+          alt=""
+          class="absolute -top-20 left-1/2 h-40 w-auto -translate-x-1/2 drop-shadow-xl"
+        />
+        <span class="font-display text-3xl font-semibold text-ink">{t("Thanks for the tip!")}</span>
+        <span class="text-lg text-ink-2">{props.text}</span>
+      </div>
+    </div>
+  );
+}
+
 function ResultLine(props: { result: Result | null }) {
   return (
     <Show when={props.result}>
@@ -408,7 +454,7 @@ function ResultLine(props: { result: Result | null }) {
           class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[17px] font-semibold ${
             result().ok
               ? "border-moss bg-well text-leaf"
-              : "border-amber-line bg-amber-bg text-amber-ink"
+              : "border-danger-line bg-danger-bg text-danger-ink"
           }`}
         >
           <Icon
@@ -503,6 +549,7 @@ function TipJar(props: {
   name: string;
   onName: (name: string) => void;
   onError: (error: unknown) => void;
+  onPaid: (text: string) => void;
 }) {
   const [choice, setChoice] = createSignal<number | "other">(
     props.tips.amounts[Math.min(1, props.tips.amounts.length - 1)],
@@ -554,10 +601,10 @@ function TipJar(props: {
     },
     complete: async (orderId) => {
       setBusy(true);
-      setResult({ ok: true, text: t("Payment approved. Completing it…") });
+      setResult(null);
       try {
         await captureTip(props.id, orderId);
-        setResult({ ok: true, text: t("Thanks for the tip!") });
+        props.onPaid(t("Your tip is on its way to the streamer."));
         setMessage("");
       } catch (error) {
         showError(error);
@@ -646,6 +693,7 @@ function TipJar(props: {
               : formatPrice({ price: amount()!, currency: props.tips.currency })}
           </span>
         </p>
+        <ResultLine result={result()} />
         <PayButtons
           payment={props.tips.payment}
           options={options}
@@ -656,7 +704,6 @@ function TipJar(props: {
           {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
         </p>
       </div>
-      <ResultLine result={result()} />
     </form>
   );
 }
@@ -937,6 +984,7 @@ function SpinWheel(props: {
   name: string;
   onName: (name: string) => void;
   onError: (error: unknown) => void;
+  onPaid: (text: string) => void;
 }) {
   const [choice, setChoice] = createSignal(props.spin.options[0]);
   const [message, setMessage] = createSignal("");
@@ -975,16 +1023,14 @@ function SpinWheel(props: {
     },
     complete: async (orderId) => {
       setBusy(true);
-      setResult({ ok: true, text: t("Payment approved. Completing it…") });
+      setResult(null);
       try {
         await captureSpin(props.id, orderId);
-        setResult({
-          ok: true,
-          text:
-            choice().spins === 1
-              ? t("Thanks for the tip! Your spin starts on stream in a moment.")
-              : t("Thanks for the tip! Your spins start on stream in a moment."),
-        });
+        props.onPaid(
+          choice().spins === 1
+            ? t("Your spin starts on stream in a moment.")
+            : t("Your spins start on stream in a moment."),
+        );
         setMessage("");
       } catch (error) {
         showError(error);
@@ -1084,6 +1130,7 @@ function SpinWheel(props: {
             {formatPrice({ price: choice().price, currency: props.spin.currency })}
           </span>
         </p>
+        <ResultLine result={result()} />
         <PayButtons
           payment={props.spin.payment}
           options={options}
@@ -1094,7 +1141,6 @@ function SpinWheel(props: {
           {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
         </p>
       </div>
-      <ResultLine result={result()} />
     </form>
   );
 }
@@ -1254,6 +1300,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
   const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
   let orderError: unknown = null;
+  const [cheer, setCheer] = createSignal<{ text: string } | null>(null);
+
+  const celebrate = (text: string) => setCheer({ text });
 
   const refreshPaywall = async () => {
     const current = id();
@@ -1298,10 +1347,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   };
 
   const requested = () => {
-    setResult({
-      ok: true,
-      text: t("Thanks for the tip! Your song will be added to the queue in a moment."),
-    });
+    celebrate(t("Your song will be added to the queue in a moment."));
     setSong("");
     setMessage("");
     setTimeout(refresh, 3_000);
@@ -1348,7 +1394,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     },
     complete: async (orderId) => {
       setBusy(true);
-      setResult({ ok: true, text: t("Payment approved. Completing it…") });
+      setResult(null);
       try {
         await captureSong(id() ?? "", orderId);
         requested();
@@ -1526,6 +1572,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                           })}
                         </span>
                       </p>
+                      <ResultLine result={result()} />
                       <PayButtons
                         payment={current.payment}
                         options={payOptions}
@@ -1545,7 +1592,6 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   )}
                 </Show>
               </div>
-              <ResultLine result={result()} />
             </form>
             <Show when={tipJar()} keyed>
               {(current) => (
@@ -1556,6 +1602,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                     name={name()}
                     onName={setName}
                     onError={tipError}
+                    onPaid={celebrate}
                   />
                 </div>
               )}
@@ -1571,6 +1618,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                     name={name()}
                     onName={setName}
                     onError={spinError}
+                    onPaid={celebrate}
                   />
                 </div>
               )}
@@ -1583,6 +1631,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       </main>
       <Show when={styled() || status() === "unknown"}>
         <PoweredBy />
+      </Show>
+      <Show when={cheer()} keyed>
+        {(current) => <CheerCard text={current.text} onClose={() => setCheer(null)} />}
       </Show>
     </div>
   );

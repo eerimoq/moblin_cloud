@@ -17,11 +17,15 @@ export const ghostButtonClass =
 export const cardClass =
   "flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8";
 
-export function Notice(props: { status?: boolean; children: JSX.Element }) {
+export function Notice(props: { status?: boolean; error?: boolean; children: JSX.Element }) {
   return (
     <p
-      role={props.status ? "status" : undefined}
-      class="rounded-2xl border-[1.5px] border-amber-line bg-amber-bg px-4 py-3 text-[15px] font-semibold text-amber-ink"
+      role={props.error ? "alert" : props.status ? "status" : undefined}
+      class={`rounded-2xl border-[1.5px] px-4 py-3 text-[15px] font-semibold ${
+        props.error
+          ? "border-danger-line bg-danger-bg text-danger-ink"
+          : "border-amber-line bg-amber-bg text-amber-ink"
+      }`}
     >
       {props.children}
     </p>

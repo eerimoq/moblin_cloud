@@ -21,6 +21,9 @@
   --color-amber-line: #4a3d1c;
   --color-amber-ink: #f0e6c8;
   --color-amber: #f6d21b;
+  --color-danger-bg: #2c1614;
+  --color-danger-line: #6b2620;
+  --color-danger-ink: #ffd4cf;
   --color-confetti-red: #e8401c;
   --color-confetti-blue: #3f8fe8;
   --color-confetti-purple: #a23fb0;
@@ -64,6 +67,9 @@
     --color-amber-line: #ecd68a;
     --color-amber-ink: #5a4a10;
     --color-amber: #d9b800;
+    --color-danger-bg: #fde4e1;
+    --color-danger-line: #f0a39a;
+    --color-danger-ink: #7a1a12;
   }
 }
 
@@ -310,5 +316,36 @@
   }
   100% {
     background-color: transparent;
+  }
+}
+
+@utility cheer-pop {
+  animation: cheer-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes cheer-pop {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility cheer-fade {
+  animation: cheer-fade 0.3s ease-out both;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes cheer-fade {
+  from {
+    opacity: 0;
   }
 }
