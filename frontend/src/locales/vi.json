@@ -244,7 +244,6 @@
   "Low SRT latency: the Moblin SRT implementation does not perform well below 1000 ms. Select the Official implementation in the SRT(LA) settings.": "Độ trễ SRT thấp: bản triển khai SRT của Moblin hoạt động không tốt dưới 1000 ms. Hãy chọn bản triển khai Chính thức trong cài đặt SRT(LA).",
   "Macros": "Macro",
   "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop by the stream and say hi.": "Do Erik và cộng đồng Moblin tạo ra. Hãy tài trợ dự án, gửi tip, hoặc ghé stream chào một tiếng.",
-  "Made with Moblin": "Tạo bằng Moblin",
   "Manage streams": "Quản lý stream",
   "Many settings are hidden until you turn on Show all settings at the bottom of Settings. Settings that would stop the stream are disabled while you are live.": "Nhiều cài đặt bị ẩn cho đến khi bạn bật Hiện tất cả cài đặt ở cuối Cài đặt. Các cài đặt có thể làm dừng stream sẽ bị tắt khi bạn đang live.",
   "Map: a map with your location.": "Bản đồ: bản đồ hiển thị vị trí của bạn.",

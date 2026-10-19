@@ -244,7 +244,6 @@
   "Low SRT latency: the Moblin SRT implementation does not perform well below 1000 ms. Select the Official implementation in the SRT(LA) settings.": "Düşük SRT gecikmesi: Moblin SRT uygulaması 1000 ms altında iyi çalışmaz. SRT(LA) ayarlarında Resmi uygulamayı seç.",
   "Macros": "Makrolar",
   "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop by the stream and say hi.": "Erik ve Moblin topluluğu tarafından yapıldı. Projeye sponsor ol, bahşiş gönder ya da yayına uğrayıp merhaba de.",
-  "Made with Moblin": "Moblin ile yapıldı",
   "Manage streams": "Yayınları yönet",
   "Many settings are hidden until you turn on Show all settings at the bottom of Settings. Settings that would stop the stream are disabled while you are live.": "Ayarlar'ın altındaki Tüm ayarları göster'i açana kadar birçok ayar gizlidir. Yayını durduracak ayarlar, canlıyken devre dışıdır.",
   "Map: a map with your location.": "Harita: konumunu gösteren bir harita.",

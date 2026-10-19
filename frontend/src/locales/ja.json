@@ -244,7 +244,6 @@
   "Low SRT latency: the Moblin SRT implementation does not perform well below 1000 ms. Select the Official implementation in the SRT(LA) settings.": "SRTの低レイテンシー:MoblinのSRT実装は1000ms未満だとうまく動作しません。SRT(LA)設定で「公式」実装を選んでください。",
   "Macros": "マクロ",
   "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop by the stream and say hi.": "Erika とMoblinコミュニティが作っています。プロジェクトのスポンサーになるか、チップを送るか、配信に遊びに来て挨拶してください。",
-  "Made with Moblin": "Moblin で作成",
   "Manage streams": "配信の管理",
   "Many settings are hidden until you turn on Show all settings at the bottom of Settings. Settings that would stop the stream are disabled while you are live.": "多くの設定は、設定の下部にある「すべての設定を表示」をオンにするまで非表示です。配信が止まってしまう設定は、ライブ中は無効になります。",
   "Map: a map with your location.": "マップ:あなたの現在地を表示する地図。",

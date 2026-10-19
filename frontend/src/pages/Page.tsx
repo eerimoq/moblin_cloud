@@ -793,14 +793,11 @@ function StreamerHeader(props: { id: string | null; profile: Profile | null; unk
             <Show
               when={props.profile}
               fallback={
-                <>
-                  <span class="size-28 rounded-full bg-ghost sm:size-32" />
-                  <Show when={props.unknown}>
-                    <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">
-                      {t("Page not found.")}
-                    </h1>
-                  </Show>
-                </>
+                <Show when={props.unknown}>
+                  <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">
+                    {t("Page not found.")}
+                  </h1>
+                </Show>
               }
             >
               {(profile) => (
@@ -849,7 +846,7 @@ function PoweredBy() {
         class="mx-auto flex w-fit items-center gap-2 text-[15px] font-semibold text-muted transition-colors hover:text-ink"
       >
         <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto" />
-        {t("Made with Moblin")}
+        Moblin Cloud
       </a>
     </footer>
   );
@@ -1575,7 +1572,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
           </div>
         </Show>
       </main>
-      <PoweredBy />
+      <Show when={styled() || status() === "unknown"}>
+        <PoweredBy />
+      </Show>
     </div>
   );
 }

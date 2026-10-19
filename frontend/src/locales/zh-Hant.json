@@ -244,7 +244,6 @@
   "Low SRT latency: the Moblin SRT implementation does not perform well below 1000 ms. Select the Official implementation in the SRT(LA) settings.": "SRT 低延遲:Moblin 的 SRT 實作在低於 1000 毫秒時表現不佳。請在 SRT(LA) 設定中選擇「官方」實作。",
   "Macros": "巨集",
   "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop by the stream and say hi.": "由 Erik 和 Moblin 社群打造。你可以贊助專案、小額打賞,或來直播間打聲招呼。",
-  "Made with Moblin": "由 Moblin 製作",
   "Manage streams": "管理串流",
   "Many settings are hidden until you turn on Show all settings at the bottom of Settings. Settings that would stop the stream are disabled while you are live.": "許多設定預設是隱藏的,需要在設定底部開啟「顯示所有設定」。會中斷串流的設定在直播期間會停用。",
   "Map: a map with your location.": "地圖:顯示你所在位置的地圖。",

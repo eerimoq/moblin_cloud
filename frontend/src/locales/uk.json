@@ -244,7 +244,6 @@
   "Low SRT latency: the Moblin SRT implementation does not perform well below 1000 ms. Select the Official implementation in the SRT(LA) settings.": "Низька затримка SRT: реалізація SRT у Moblin погано працює нижче 1000 мс. Виберіть Офіційну реалізацію в налаштуваннях SRT(LA).",
   "Macros": "Макроси",
   "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop by the stream and say hi.": "Створено Erik і спільнотою Moblin. Станьте спонсором проєкту, надішліть чайові або просто загляньте на стрім і привітайтеся.",
-  "Made with Moblin": "Створено в Moblin",
   "Manage streams": "Керування трансляціями",
   "Many settings are hidden until you turn on Show all settings at the bottom of Settings. Settings that would stop the stream are disabled while you are live.": "Багато налаштувань приховано, доки ви не ввімкнете Показати всі налаштування внизу Налаштувань. Налаштування, які зупинили б стрім, вимкнені, поки ви в ефірі.",
   "Map: a map with your location.": "Мапа: мапа з твоєю локацією.",

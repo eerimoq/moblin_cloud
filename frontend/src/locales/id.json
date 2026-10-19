@@ -244,7 +244,6 @@
   "Low SRT latency: the Moblin SRT implementation does not perform well below 1000 ms. Select the Official implementation in the SRT(LA) settings.": "Latensi SRT rendah: implementasi SRT Moblin kurang bagus di bawah 1000 ms. Pilih implementasi Resmi di pengaturan SRT(LA).",
   "Macros": "Makro",
   "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop by the stream and say hi.": "Dibuat oleh Erik dan komunitas Moblin. Sponsori proyeknya, kirim tip, atau mampir ke stream dan sapa.",
-  "Made with Moblin": "Dibuat dengan Moblin",
   "Manage streams": "Kelola stream",
   "Many settings are hidden until you turn on Show all settings at the bottom of Settings. Settings that would stop the stream are disabled while you are live.": "Banyak pengaturan tersembunyi sampai kamu mengaktifkan Tampilkan semua pengaturan di bagian bawah Pengaturan. Pengaturan yang akan menghentikan stream dinonaktifkan saat kamu live.",
   "Map: a map with your location.": "Peta: peta dengan lokasimu.",

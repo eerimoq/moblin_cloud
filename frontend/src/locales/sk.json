@@ -244,7 +244,6 @@
   "Low SRT latency: the Moblin SRT implementation does not perform well below 1000 ms. Select the Official implementation in the SRT(LA) settings.": "Nízka latencia SRT: implementácia SRT v Moblin nefunguje dobre pod 1000 ms. V nastaveniach SRT(LA) vyber Oficiálnu implementáciu.",
   "Macros": "Makrá",
   "Made by Erik and the Moblin community. Sponsor the project, send a tip, or just drop by the stream and say hi.": "Vytvoril Erik a komunita Moblin. Sponzorujte projekt, pošlite tip alebo sa len zastavte na streame a pozdravte.",
-  "Made with Moblin": "Vytvorené v Moblin",
   "Manage streams": "Správa streamov",
   "Many settings are hidden until you turn on Show all settings at the bottom of Settings. Settings that would stop the stream are disabled while you are live.": "Mnohé nastavenia sú skryté, kým nezapneš Zobraziť všetky nastavenia v spodnej časti Nastavení. Nastavenia, ktoré by zastavili stream, sú počas vysielania vypnuté.",
   "Map: a map with your location.": "Mapa: mapa s tvojou polohou.",
