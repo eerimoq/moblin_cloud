@@ -493,7 +493,7 @@ function Loaded(props: { stats: AdminStats }) {
   return (
     <div class="flex flex-col gap-10">
       <Status counters={counters()} />
-      <div class="grid gap-4 sm:grid-cols-3">
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Tile
           label="Connected devices"
           value={props.stats.moblin.connectedDevices}
@@ -509,6 +509,11 @@ function Loaded(props: { stats: AdminStats }) {
           value={props.stats.pending.deliveries}
           hint="Songs, tips and spins not yet accepted by every device they go to. Kept for 7 days."
           attention
+        />
+        <Tile
+          label="Database bytes"
+          value={props.stats.database.bytes}
+          hint="Size of the SQLite database: streamers, accounts, pages, orders, deliveries and counters."
         />
       </div>
       <Table

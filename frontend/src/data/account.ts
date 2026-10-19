@@ -42,6 +42,7 @@ export type AdminStats = {
   accounts: { total: number; withPage: number; paypal: number; stripe: number; images: number };
   moblin: { connectedDevices: number };
   pending: { orders: number; deliveries: number };
+  database: { bytes: number };
   counters: { name: string; today: number; week: number; total: number }[];
 };
 

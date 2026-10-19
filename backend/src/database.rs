@@ -130,6 +130,17 @@ impl Database {
     pub fn lock(&self) -> MutexGuard<'_, Connection> {
         self.0.lock().unwrap()
     }
+
+    pub fn size(&self) -> u64 {
+        let connection = self.lock();
+        let page_count: u64 = connection
+            .query_row("PRAGMA page_count", [], |row| row.get(0))
+            .unwrap_or(0);
+        let page_size: u64 = connection
+            .query_row("PRAGMA page_size", [], |row| row.get(0))
+            .unwrap_or(0);
+        page_count * page_size
+    }
 }
 
 fn has_column(connection: &Connection, table: &str, column: &str) -> Result<bool> {

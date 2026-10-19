@@ -24,6 +24,7 @@ use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
 use crate::challenges::Challenges;
 use crate::counters::{self, Counter, Counters};
+use crate::database::Database;
 use crate::deliveries::{self, Deliveries};
 use crate::images;
 use crate::live::Live;
@@ -57,6 +58,7 @@ pub struct Api {
     pub auth: Auth,
     pub accounts: Accounts,
     pub counters: Counters,
+    pub database: Arc<Database>,
     pub admins: Vec<String>,
     pub premium_accounts: Vec<String>,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
@@ -796,7 +798,13 @@ struct AdminStatsResponse {
     accounts: AccountStats,
     moblin: MoblinStats,
     pending: PendingStats,
+    database: DatabaseStats,
     counters: Vec<Counter>,
+}
+
+#[derive(Serialize)]
+struct DatabaseStats {
+    bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -827,6 +835,9 @@ async fn handle_admin_stats(
         pending: PendingStats {
             orders: api.orders.unfinished(),
             deliveries: api.deliveries.count(),
+        },
+        database: DatabaseStats {
+            bytes: api.database.size(),
         },
         counters: api.counters.all(),
     }))
@@ -3004,7 +3015,6 @@ mod tests {
 
     use super::*;
     use crate::auth::OAuthApp;
-    use crate::database::Database;
 
     async fn start() -> String {
         start_with(None).await
@@ -3047,7 +3057,8 @@ mod tests {
             )
             .unwrap(),
             accounts: Accounts::new(Database::memory()),
-            counters: Counters::new(database),
+            counters: Counters::new(database.clone()),
+            database,
             admins: vec!["admin".to_string()],
             premium_accounts: vec!["premium".to_string()],
             tests: Mutex::default(),
@@ -7401,13 +7412,18 @@ mod tests {
         api.counters.bump("songOrders");
         let response = client.get(&url).bearer_auth(&admin).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let stats: Value = response.json().await.unwrap();
+        let mut stats: Value = response.json().await.unwrap();
+        let bytes = stats["database"]["bytes"].as_u64().unwrap();
+        assert_eq!(bytes % 4096, 0);
+        assert!(bytes > 0);
+        stats["database"].take();
         assert_eq!(
             stats,
             json!({
                 "accounts": {"total": 2, "withPage": 1, "paypal": 0, "stripe": 0, "images": 0},
                 "moblin": {"connectedDevices": 0},
                 "pending": {"orders": 0, "deliveries": 0},
+                "database": null,
                 "counters": [{"name": "songOrders", "today": 2, "week": 2, "total": 2}],
             })
         );
