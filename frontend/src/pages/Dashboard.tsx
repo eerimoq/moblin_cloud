@@ -819,7 +819,7 @@ function YourPage(props: {
             {(name) => (
               <label
                 data-font={name}
-                class="flex h-11 cursor-pointer items-center rounded-full border-[1.5px] border-line bg-well px-5 font-display text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink"
+                class="flex h-11 cursor-pointer items-center rounded-full border-[1.5px] border-line bg-well px-5 font-title text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink"
               >
                 <input
                   type="radio"

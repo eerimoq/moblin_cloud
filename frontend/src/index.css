@@ -38,6 +38,7 @@
 
   --font-display: "Fredoka", "Arial Rounded MT Bold", "Nunito Sans", sans-serif;
   --font-body: "Nunito Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-title: var(--font-display);
 }
 
 /* Light theme: same tokens, different values, chosen by the browser setting. */
@@ -143,27 +144,21 @@
 }
 
 [data-font="modern"] {
-  --font-display: "Poppins", "Helvetica Neue", Arial, sans-serif;
-  --font-body: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-title: "Poppins", "Helvetica Neue", Arial, sans-serif;
 }
 [data-font="serif"] {
-  --font-display: "Playfair Display", Georgia, serif;
-  --font-body: "Lora", Georgia, serif;
+  --font-title: "Playfair Display", Georgia, serif;
 }
 [data-font="mono"] {
-  --font-display: "JetBrains Mono", Menlo, monospace;
-  --font-body: "JetBrains Mono", Menlo, monospace;
+  --font-title: "JetBrains Mono", Menlo, monospace;
 }
 [data-font="handwritten"] {
-  --font-display: "Caveat", "Bradley Hand", cursive;
+  --font-title: "Caveat", "Bradley Hand", cursive;
 }
 [data-font="pixel"] {
-  --font-display: "Pixelify Sans", "Courier New", monospace;
+  --font-title: "Pixelify Sans", "Courier New", monospace;
 }
 @layer base {
-  [data-font] {
-    font-family: var(--font-body);
-  }
   html {
     background-color: var(--color-page);
     scrollbar-gutter: stable;
@@ -184,7 +179,7 @@
   h1,
   h2,
   h3 {
-    font-family: var(--font-display);
+    font-family: var(--font-title);
     letter-spacing: -0.01em;
   }
   section {

@@ -80,9 +80,9 @@ export const accentAttributes = (accent: string | null | undefined) =>
 
 const fontFamilies: Record<string, string[]> = {
   rounded: [],
-  modern: ["Poppins:wght@500;600;700", "Inter:ital,wght@0,400..700;1,400"],
-  serif: ["Playfair+Display:wght@500..700", "Lora:ital,wght@0,400..700;1,400"],
-  mono: ["JetBrains+Mono:ital,wght@0,400..700;1,400"],
+  modern: ["Poppins:wght@500;600;700"],
+  serif: ["Playfair+Display:wght@500..700"],
+  mono: ["JetBrains+Mono:wght@500..700"],
   handwritten: ["Caveat:wght@500..700"],
   pixel: ["Pixelify+Sans:wght@500..700"],
 };

@@ -1162,7 +1162,7 @@ function WaysToTip(props: {
                   <Icon name={way.icon} class="size-6" />
                 </span>
                 <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-display text-xl font-semibold text-ink">{way.title}</span>
+                  <span class="font-title text-xl font-semibold text-ink">{way.title}</span>
                   <span class="text-[15px] text-ink-2">{way.text}</span>
                 </span>
               </button>
