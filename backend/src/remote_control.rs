@@ -133,6 +133,8 @@ pub enum MusicCommand {
         title: String,
         user: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,
     },
     Find {
@@ -645,6 +647,7 @@ mod tests {
                     command: MusicCommand::Add {
                         title: "Song".to_string(),
                         user: "Erik".to_string(),
+                        message: None,
                         request_id: None,
                     },
                 },
@@ -658,11 +661,12 @@ mod tests {
                     command: MusicCommand::Add {
                         title: "Song".to_string(),
                         user: "Erik".to_string(),
+                        message: Some("Play it loud!".to_string()),
                         request_id: Some("ORDER1".to_string()),
                     },
                 },
             }),
-            r#"{"request":{"id":5,"data":{"music":{"command":{"add":{"title":"Song","user":"Erik","requestId":"ORDER1"}}}}}}"#
+            r#"{"request":{"id":5,"data":{"music":{"command":{"add":{"title":"Song","user":"Erik","message":"Play it loud!","requestId":"ORDER1"}}}}}}"#
         );
         assert_eq!(
             encode(&MessageToStreamer::Request {

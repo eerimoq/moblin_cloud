@@ -31,6 +31,8 @@ pub enum Item {
     Song {
         link: String,
         user: String,
+        #[serde(default)]
+        message: String,
     },
     Spin {
         user: String,
@@ -376,10 +378,15 @@ async fn deliver(
 ) -> Result<Outcome, RequestError> {
     let request_id = delivery.request_id.clone();
     match &delivery.item {
-        Item::Song { link, user } => {
+        Item::Song {
+            link,
+            user,
+            message,
+        } => {
             let add = MusicCommand::Add {
                 title: link.clone(),
                 user: user.clone(),
+                message: (!message.is_empty()).then(|| message.clone()),
                 request_id: Some(request_id),
             };
             let status = streamers.music_uncached(id, add).await?;
@@ -429,6 +436,7 @@ mod tests {
         Item::Song {
             link: "https://music.apple.com/song/1?i=1".to_string(),
             user: "Viewer".to_string(),
+            message: "Play it loud!".to_string(),
         }
     }
 

@@ -191,10 +191,16 @@ export const streamerProfile = (id: string) => call<Profile>(`/${encodeURICompon
 export const streamerPaywall = async (id: string) =>
   (await call<{ paywall: PublicPaywall | null }>(`/${encodeURIComponent(id)}/songs`)).paywall;
 
-export const orderSong = (id: string, song: string, user: string, provider: Provider) =>
+export const orderSong = (
+  id: string,
+  song: string,
+  user: string,
+  message: string,
+  provider: Provider,
+) =>
   call<Order>(
     `/${encodeURIComponent(id)}/songs/orders`,
-    post({ song, user: user || null, provider }),
+    post({ song, user: user || null, message: message || null, provider }),
   );
 
 export const captureSong = (id: string, orderId: string) =>

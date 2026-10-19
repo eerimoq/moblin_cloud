@@ -777,7 +777,11 @@ async fn handle_account_recent(
                 _ => None,
             };
             let (name, link, message, spins) = match order.item {
-                Item::Song { link, name } => (Some(name), Some(link), None, None),
+                Item::Song {
+                    link,
+                    name,
+                    message,
+                } => (Some(name), Some(link), message, None),
                 Item::Tip { message } => (None, None, message, None),
                 Item::Spin { spins, message } => (None, None, message, Some(spins)),
             };
@@ -1523,6 +1527,8 @@ struct SongRequest {
     song: String,
     user: Option<String>,
     #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
     provider: Option<String>,
 }
 
@@ -1589,6 +1595,7 @@ fn queue(
     id: String,
     request_id: String,
     song: RequestedSong,
+    message: Option<String>,
 ) -> (StatusCode, Json<Value>) {
     info!(
         "queued {:?} by {:?} in request {request_id} for remote control streamer {id}",
@@ -1600,6 +1607,7 @@ fn queue(
         deliveries::Item::Song {
             link: song.link,
             user: song.user,
+            message: message.unwrap_or_default(),
         },
     );
     (
@@ -1636,8 +1644,9 @@ async fn handle_song_order(
 async fn song_order(
     api: &Api,
     id: String,
-    request: SongRequest,
+    mut request: SongRequest,
 ) -> Result<Json<OrderResponse>, Failure> {
+    let message = viewer_message(request.message.take())?;
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     let paywall = settings.paywall.ok_or(failure(
@@ -1652,6 +1661,7 @@ async fn song_order(
         item: Item::Song {
             link: song.link,
             name: song.name,
+            message,
         },
         user: song.user,
         payee,
@@ -2014,9 +2024,10 @@ pub async fn settle_orders(api: Arc<Api>) {
 
 fn delivery_item(order: &Order) -> deliveries::Item {
     match &order.item {
-        Item::Song { link, .. } => deliveries::Item::Song {
+        Item::Song { link, message, .. } => deliveries::Item::Song {
             link: link.clone(),
             user: order.user.clone(),
+            message: message.clone().unwrap_or_default(),
         },
         Item::Tip { message } => deliveries::Item::Tip {
             user: order.user.clone(),
@@ -2264,13 +2275,15 @@ async fn handle_account_test_song(
     if !api.remote_control.is_connected(&music_device(&api, &id)) {
         return Err(moblin_not_connected());
     }
+    let message = viewer_message(request.message)?;
     let request = SongRequest {
         song: request.song.unwrap_or_default(),
         user: Some(account.name),
+        message: None,
         provider: None,
     };
     let song = requested_song(&api, &id, song_and_user(request)?).await?;
-    Ok(queue(&api, id, request_id, song))
+    Ok(queue(&api, id, request_id, song, message))
 }
 
 async fn handle_account_test_tip(
@@ -3876,6 +3889,7 @@ mod tests {
                     Item::Song {
                         link: LINK.to_string(),
                         name: "Song".to_string(),
+                        message: Some("Play it loud!".to_string()),
                     },
                     250,
                 ),
@@ -3890,6 +3904,7 @@ mod tests {
                     &deliveries::Item::Song {
                         link: LINK.to_string(),
                         user: "Viewer".to_string(),
+                        message: "Play it loud!".to_string(),
                     },
                 )?;
                 connection.execute(
@@ -3973,6 +3988,7 @@ mod tests {
         let song = &listed["items"][0];
         assert_eq!(song["name"], "Song");
         assert_eq!(song["link"], LINK);
+        assert_eq!(song["message"], "Play it loud!");
         assert_eq!(song["amount"], 250);
         assert_eq!(song["status"], "notAdded");
         let listed: Value = recent("kind=spin".to_string()).await.json().await.unwrap();
@@ -4196,7 +4212,7 @@ mod tests {
             async move {
                 reqwest::Client::new()
                     .post(url)
-                    .json(&json!({"song": "https://music.apple.com/us/song/x/1440818839", "user": "Viewer"}))
+                    .json(&json!({"song": "https://music.apple.com/us/song/x/1440818839", "user": "Viewer", "message": " Play it loud! "}))
                     .send()
                     .await
                     .unwrap()
@@ -4377,7 +4393,7 @@ mod tests {
         );
         assert_eq!(
             sent["purchase_units"][0]["description"],
-            "Song request: Band - Song"
+            "Song request: Band - Song: Play it loud!"
         );
         let response = client
             .post(format!("{orders_url}/OTHER/capture"))
@@ -4394,6 +4410,7 @@ mod tests {
             json!({"music": {"command": {"add": {
                 "title": LINK,
                 "user": "Viewer",
+                "message": "Play it loud!",
                 "requestId": "ORDER1",
             }}}})
         );
@@ -4533,6 +4550,7 @@ mod tests {
         let add = json!({"music": {"command": {"add": {
             "title": LINK,
             "user": "Viewer",
+            "message": "Play it loud!",
             "requestId": "ORDER1",
         }}}});
         let request = receive(&mut socket).await;
@@ -4978,7 +4996,7 @@ mod tests {
         wait_until_added(&api).await;
         let response = test("song", json!({"song": "nope"})).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let created = tokio::spawn(test("song", json!({"song": LINK})));
+        let created = tokio::spawn(test("song", json!({"song": LINK, "message": " Testing "})));
         let request = receive(&mut socket).await;
         assert_eq!(
             request["request"]["data"],
@@ -4998,6 +5016,7 @@ mod tests {
         let add = &request["request"]["data"]["music"]["command"]["add"];
         assert_eq!(add["title"], LINK);
         assert_eq!(add["user"], "Erik");
+        assert_eq!(add["message"], "Testing");
     }
 
     #[tokio::test]
@@ -5276,6 +5295,7 @@ mod tests {
             deliveries::Item::Song {
                 link: LINK.to_string(),
                 user: "Viewer".to_string(),
+                message: "Play it loud!".to_string(),
             }
         );
         assert_eq!(delivery.failure.as_deref(), Some("not-found"));

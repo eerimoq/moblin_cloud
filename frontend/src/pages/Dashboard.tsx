@@ -1051,7 +1051,7 @@ function TestSend(props: {
       await sendTest(
         props.session,
         props.kind,
-        props.kind === "song" ? { song: song() } : { message: message() },
+        props.kind === "song" ? { song: song(), message: message() } : { message: message() },
       );
       flashSent();
     } catch (error) {
@@ -1078,20 +1078,7 @@ function TestSend(props: {
             ? t("Send yourself a tip for free, to check that tips show up in Moblin.")
             : t("Spin your wheel in Moblin for free, to check that it works.")}
       </p>
-      <Show
-        when={props.kind === "song"}
-        fallback={
-          <input
-            type="text"
-            maxLength={200}
-            aria-label={t("Message (optional)")}
-            placeholder={t("Message (optional)")}
-            value={message()}
-            onInput={(event) => setMessage(event.currentTarget.value)}
-            class={inputClass}
-          />
-        }
-      >
+      <Show when={props.kind === "song"}>
         <input
           type="url"
           required
@@ -1102,6 +1089,15 @@ function TestSend(props: {
           class={inputClass}
         />
       </Show>
+      <input
+        type="text"
+        maxLength={200}
+        aria-label={t("Message (optional)")}
+        placeholder={t("Message (optional)")}
+        value={message()}
+        onInput={(event) => setMessage(event.currentTarget.value)}
+        class={inputClass}
+      />
       <div class="flex flex-wrap items-center gap-4">
         <button type="submit" class={buttonClass} disabled={sending()}>
           <Show when={sent()}>

@@ -1119,6 +1119,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [status, setStatus] = createSignal<Status>("loading");
   const [song, setSong] = createSignal("");
   const [name, setName] = createSignal(readName());
+  const [message, setMessage] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(null);
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
@@ -1236,6 +1237,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       text: t("Thanks for the tip! Your song will be added to the queue in a moment."),
     });
     setSong("");
+    setMessage("");
     setTimeout(refresh, 3_000);
   };
 
@@ -1266,7 +1268,13 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     createOrder: async (provider) => {
       orderError = null;
       try {
-        return await orderSong(id() ?? "", song().trim(), name().trim(), provider);
+        return await orderSong(
+          id() ?? "",
+          song().trim(),
+          name().trim(),
+          message().trim(),
+          provider,
+        );
       } catch (error) {
         orderError = error;
         throw error;
@@ -1424,6 +1432,11 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   class={inputClass}
                 />
               </label>
+              <MessageField
+                message={message()}
+                onMessage={setMessage}
+                placeholder={t("This one is for the drive home!")}
+              />
               <div class="flex flex-wrap items-center gap-4">
                 <Show when={payable()} keyed>
                   {(current) => (
@@ -1448,7 +1461,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                         disabled={
                           busy() || typeof status() === "string" || closed() || !song().trim()
                         }
-                        resetKey={`${song()}\n${name()}`}
+                        resetKey={`${song()}\n${name()}\n${message()}`}
                       />
                       <p class="text-center text-sm text-muted">
                         {tRich(

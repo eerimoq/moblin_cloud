@@ -11,9 +11,19 @@ use crate::deliveries::now;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Item {
-    Song { link: String, name: String },
-    Tip { message: Option<String> },
-    Spin { spins: u32, message: Option<String> },
+    Song {
+        link: String,
+        name: String,
+        #[serde(default)]
+        message: Option<String>,
+    },
+    Tip {
+        message: Option<String>,
+    },
+    Spin {
+        spins: u32,
+        message: Option<String>,
+    },
 }
 
 impl Item {
@@ -54,7 +64,7 @@ pub struct Order {
 impl Order {
     pub fn description(&self) -> String {
         let (description, message) = match &self.item {
-            Item::Song { name, .. } => (format!("Song request: {name}"), None),
+            Item::Song { name, message, .. } => (format!("Song request: {name}"), message.as_ref()),
             Item::Tip { message } => (format!("Tip from {}", self.user), message.as_ref()),
             Item::Spin { spins: 1, message } => {
                 (format!("Wheel spin by {}", self.user), message.as_ref())
@@ -412,6 +422,7 @@ mod tests {
                 Item::Song {
                     link: "l".to_string(),
                     name: "n".to_string(),
+                    message: None,
                 },
             ),
             ("TIP", Item::Tip { message: None }),
