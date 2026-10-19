@@ -56,6 +56,7 @@ pub struct Api {
     pub admins: Vec<String>,
     pub pro_streamers: Vec<String>,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
+    pub song_finds: Mutex<HashMap<String, Vec<Instant>>>,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -1771,7 +1772,15 @@ async fn song_order(
         "The streamer no longer takes song requests. Reload the page.",
     ))?;
     let payee = payee(api, &id, request.provider.as_deref())?;
-    let song = requested_song(api, &id, song_and_user(request)?).await?;
+    let song_and_user = song_and_user(request)?;
+    if !within_limit(&api.song_finds, &id, 10) {
+        return Err(failure(
+            "too-many-requests",
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many song requests on this page right now. Try again in a minute.",
+        ));
+    }
+    let song = requested_song(api, &id, song_and_user).await?;
     let order = Order {
         streamer: id.clone(),
         item: Item::Song {
@@ -2351,24 +2360,29 @@ struct TestRequest {
     message: Option<String>,
 }
 
+fn within_limit(limits: &Mutex<HashMap<String, Vec<Instant>>>, id: &str, max: usize) -> bool {
+    let mut limits = limits.lock().unwrap();
+    limits.retain(|_, sent| {
+        sent.retain(|at| at.elapsed() < Duration::from_secs(60));
+        !sent.is_empty()
+    });
+    let sent = limits.entry(id.to_string()).or_default();
+    if sent.len() >= max {
+        return false;
+    }
+    sent.push(Instant::now());
+    true
+}
+
 fn test_page(api: &Api, headers: &HeaderMap) -> Result<(String, Account, String), Failure> {
     let account = signed_in(api, headers)?.account;
     let id = account.page.as_ref().ok_or_else(no_page)?.id.clone();
-    {
-        let mut tests = api.tests.lock().unwrap();
-        tests.retain(|_, sent| {
-            sent.retain(|at| at.elapsed() < Duration::from_secs(60));
-            !sent.is_empty()
-        });
-        let sent = tests.entry(id.clone()).or_default();
-        if sent.len() >= 10 {
-            return Err(failure(
-                "too-many-tests",
-                StatusCode::TOO_MANY_REQUESTS,
-                "Too many tests. Try again in a minute.",
-            ));
-        }
-        sent.push(Instant::now());
+    if !within_limit(&api.tests, &id, 10) {
+        return Err(failure(
+            "too-many-tests",
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many tests. Try again in a minute.",
+        ));
     }
     let request_id = api.remote_control.new_request_id().ok_or(failure(
         "crashed",
@@ -2564,6 +2578,7 @@ mod tests {
             admins: vec!["admin".to_string()],
             pro_streamers: vec!["pro".to_string()],
             tests: Mutex::default(),
+            song_finds: Mutex::default(),
         });
         tokio::spawn({
             let api = api.clone();
@@ -4400,6 +4415,34 @@ mod tests {
                 json!({"currency_code": "SEK", "value": value})
             );
         }
+    }
+
+    #[tokio::test]
+    async fn song_orders_are_rate_limited_per_page() {
+        let (address, api, _) = start_paid().await;
+        let (_, id) = paid_streamer(&address, &api).await;
+        let client = reqwest::Client::new();
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
+        for _ in 0..10 {
+            let response = client
+                .post(&orders_url)
+                .json(&json!({"song": LINK}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+        let response = client
+            .post(&orders_url)
+            .json(&json!({"song": LINK}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Too many song requests on this page right now. Try again in a minute."
+        );
     }
 
     #[tokio::test]

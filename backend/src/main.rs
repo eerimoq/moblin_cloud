@@ -320,6 +320,7 @@ async fn main() -> Result<()> {
         admins: cli.admins,
         pro_streamers: cli.pro_streamers,
         tests: Mutex::default(),
+        song_finds: Mutex::default(),
     });
     tokio::spawn({
         let api = api.clone();
