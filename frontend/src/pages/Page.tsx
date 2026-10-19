@@ -628,7 +628,7 @@ function TipJar(props: {
       />
       <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
         <p class="flex flex-col items-center gap-1 text-center">
-          <span class="text-sm font-semibold tracking-wider text-muted uppercase">
+          <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
             {t("Your tip")}
           </span>
           <span class="font-display text-4xl font-semibold">
@@ -1071,7 +1071,7 @@ function SpinWheel(props: {
       />
       <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
         <p class="flex flex-col items-center gap-1 text-center">
-          <span class="text-sm font-semibold tracking-wider text-muted uppercase">
+          <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
             {t("Your tip · {spins}", { spins: spinsText(choice().spins) })}
           </span>
           <span class="font-display text-4xl font-semibold">
@@ -1507,7 +1507,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   {(current) => (
                     <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
                       <p class="flex flex-col items-center gap-1 text-center">
-                        <span class="text-sm font-semibold tracking-wider text-muted uppercase">
+                        <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
                           {t("Your tip")}
                         </span>
                         <span class="text-ink-2">
