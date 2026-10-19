@@ -1,10 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 
-pub struct Database(Mutex<Connection>);
+pub struct Database {
+    connection: Mutex<Connection>,
+    path: Option<PathBuf>,
+}
 
 impl Database {
     pub fn open(path: Option<&Path>) -> Result<Arc<Self>> {
@@ -119,7 +122,10 @@ impl Database {
                 )
                 .context("failed to remove the old Moblin Cloud keys")?;
         }
-        Ok(Arc::new(Self(Mutex::new(connection))))
+        Ok(Arc::new(Self {
+            connection: Mutex::new(connection),
+            path: path.map(Path::to_path_buf),
+        }))
     }
 
     #[cfg(test)]
@@ -128,18 +134,18 @@ impl Database {
     }
 
     pub fn lock(&self) -> MutexGuard<'_, Connection> {
-        self.0.lock().unwrap()
+        self.connection.lock().unwrap()
     }
 
     pub fn size(&self) -> u64 {
-        let connection = self.lock();
-        let page_count: u64 = connection
-            .query_row("PRAGMA page_count", [], |row| row.get(0))
-            .unwrap_or(0);
-        let page_size: u64 = connection
-            .query_row("PRAGMA page_size", [], |row| row.get(0))
-            .unwrap_or(0);
-        page_count * page_size
+        let Some(path) = &self.path else {
+            return 0;
+        };
+        ["", "-wal", "-shm"]
+            .into_iter()
+            .filter_map(|suffix| std::fs::metadata(format!("{}{suffix}", path.display())).ok())
+            .map(|metadata| metadata.len())
+            .sum()
     }
 }
 
@@ -167,5 +173,30 @@ pub fn temporary_path(name: &str) -> std::path::PathBuf {
 pub fn remove(path: &Path) {
     for suffix in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn size_is_the_files_on_disk() {
+        assert_eq!(Database::memory().size(), 0);
+        let path = temporary_path("size");
+        let database = Database::open(Some(&path)).unwrap();
+        database
+            .lock()
+            .execute("INSERT INTO pages (id, settings) VALUES ('a', '{}')", [])
+            .unwrap();
+        let expected: u64 = ["", "-wal", "-shm"]
+            .into_iter()
+            .filter_map(|suffix| std::fs::metadata(format!("{}{suffix}", path.display())).ok())
+            .map(|metadata| metadata.len())
+            .sum();
+        assert!(expected > std::fs::metadata(&path).unwrap().len());
+        assert_eq!(database.size(), expected);
+        drop(database);
+        remove(&path);
     }
 }

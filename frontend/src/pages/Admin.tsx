@@ -513,7 +513,7 @@ function Loaded(props: { stats: AdminStats }) {
         <Tile
           label="Database bytes"
           value={props.stats.database.bytes}
-          hint="Size of the SQLite database: streamers, accounts, pages, orders, deliveries and counters."
+          hint="Disk usage of the SQLite database and its WAL files: streamers, accounts, pages, orders, deliveries and counters."
         />
       </div>
       <Table

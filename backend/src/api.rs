@@ -7412,18 +7412,14 @@ mod tests {
         api.counters.bump("songOrders");
         let response = client.get(&url).bearer_auth(&admin).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let mut stats: Value = response.json().await.unwrap();
-        let bytes = stats["database"]["bytes"].as_u64().unwrap();
-        assert_eq!(bytes % 4096, 0);
-        assert!(bytes > 0);
-        stats["database"].take();
+        let stats: Value = response.json().await.unwrap();
         assert_eq!(
             stats,
             json!({
                 "accounts": {"total": 2, "withPage": 1, "paypal": 0, "stripe": 0, "images": 0},
                 "moblin": {"connectedDevices": 0},
                 "pending": {"orders": 0, "deliveries": 0},
-                "database": null,
+                "database": { "bytes": 0 },
                 "counters": [{"name": "songOrders", "today": 2, "week": 2, "total": 2}],
             })
         );
