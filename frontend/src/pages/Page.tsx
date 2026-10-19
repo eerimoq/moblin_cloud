@@ -815,7 +815,7 @@ function StreamerHeader(props: { id: string | null; profile: Profile | null; unk
         }
       >
         {(banner) => (
-          <div class="mx-auto flex max-w-[720px] flex-col px-5 pt-6 pb-6 sm:px-8 lg:pt-10">
+          <div class="mx-auto flex max-w-[720px] flex-col px-5 pt-6 pb-2 sm:px-8 lg:pt-10">
             <img
               src={banner().src}
               alt=""
@@ -831,7 +831,7 @@ function StreamerHeader(props: { id: string | null; profile: Profile | null; unk
                 <TwitchLink profile={banner().profile} />
               </div>
             </div>
-            <div class="mt-3 px-4 sm:px-6">
+            <div class="px-4 sm:px-6">
               <Greeting profile={banner().profile} />
             </div>
           </div>
@@ -1113,7 +1113,7 @@ function WaysToTip(props: {
 
   return (
     <div class="flex flex-col gap-6">
-      <div class="flex flex-col items-center gap-6 text-center">
+      <div class="flex flex-col items-center gap-4 text-center">
         <h2 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-5xl">
           {props.streamer ? t("Tip {name}", { name: props.streamer }) : t("Tip the streamer")}
         </h2>
