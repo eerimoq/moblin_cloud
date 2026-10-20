@@ -1316,7 +1316,9 @@ function SpinWheel(props: {
           <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
             <p class="flex flex-col items-center gap-1 text-center">
               <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
-                {t("Your tip · {spins}", { spins: spinsText(choice().spins) })}
+                {tRich("Your tip · {spins}", {
+                  spins: <span class="font-body">{spinsText(choice().spins)}</span>,
+                })}
               </span>
               <span class="font-display text-4xl font-semibold">
                 {formatPrice({ price: choice().price, currency: spin.currency })}
