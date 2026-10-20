@@ -2841,14 +2841,16 @@ export default function Dashboard() {
         <Show
           when={session()}
           fallback={
-            <Hero title={t("Let viewers tip you.")}>
-              <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-                {t(
-                  "Tips go straight to your PayPal or Stripe account. Moblin takes nothing, PayPal and " +
-                    "Stripe charge their usual fees.",
-                )}
-              </p>
-            </Hero>
+            <Show when={!loading()}>
+              <Hero title={t("Let viewers tip you.")}>
+                <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
+                  {t(
+                    "Tips go straight to your PayPal or Stripe account. Moblin takes nothing, PayPal and " +
+                      "Stripe charge their usual fees.",
+                  )}
+                </p>
+              </Hero>
+            </Show>
           }
         >
           {(current) => (
