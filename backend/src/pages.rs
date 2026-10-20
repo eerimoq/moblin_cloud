@@ -183,7 +183,6 @@ impl Spin {
     pub fn normalize(self) -> Option<Self> {
         let mut options = self.options;
         options.sort_unstable_by_key(|option| (option.spins, option.price));
-        options.dedup();
         let valid = (1..=5).contains(&options.len())
             && options
                 .iter()
@@ -474,7 +473,7 @@ mod tests {
         );
         assert_eq!(
             pages.set("a", spin(&[(1, 800), (1, 500), (1, 500)])),
-            Ok(spin(&[(1, 500), (1, 800)]))
+            Ok(spin(&[(1, 500), (1, 500), (1, 800)]))
         );
         for options in [
             &[(1, 49)][..],
