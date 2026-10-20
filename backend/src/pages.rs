@@ -159,7 +159,7 @@ pub fn format_price(price: u32) -> String {
 }
 
 fn valid_price(price: u32) -> bool {
-    (50..=100_000).contains(&price)
+    (50..=10_000_000).contains(&price)
 }
 
 impl Paywall {
@@ -401,7 +401,7 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(pages.set("a", settings(250)), Ok(settings(250)));
-        for price in [49, 100_001] {
+        for price in [49, 10_000_001] {
             assert_eq!(
                 pages.set("a", settings(price)),
                 Err(SettingsError::InvalidPaywall)
@@ -446,7 +446,7 @@ mod tests {
             &[][..],
             &[100, 200, 300, 400, 500, 600],
             &[49, 200],
-            &[100_001],
+            &[10_000_001],
         ] {
             assert_eq!(
                 pages.set("a", tips(amounts)),
@@ -592,6 +592,6 @@ mod tests {
     fn prices_are_formatted() {
         assert_eq!(format_price(50), "0.50");
         assert_eq!(format_price(205), "2.05");
-        assert_eq!(format_price(100_000), "1000.00");
+        assert_eq!(format_price(10_000_000), "100000.00");
     }
 }

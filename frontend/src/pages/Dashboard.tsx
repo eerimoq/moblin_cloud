@@ -885,7 +885,7 @@ function SongSettings(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(paymentErrorText(error, t("Enter a price from 0.50 to 1000.")));
+      setError(paymentErrorText(error, t("Enter a price from 0.50 to 100000.")));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -1374,7 +1374,7 @@ function TipSettings(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(paymentErrorText(error, t("Enter amounts from 0.50 to 1000.")));
+      setError(paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
@@ -1503,7 +1503,7 @@ function SpinSettings(props: {
       });
       flashSaved();
     } catch (error) {
-      setError(paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 1000 per price.")));
+      setError(paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")));
       setSignInAgain(error instanceof BackendError && error.status === 403);
     } finally {
       setSaving(false);
