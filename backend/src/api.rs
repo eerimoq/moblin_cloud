@@ -963,6 +963,8 @@ struct Recent {
     tier: Option<u8>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     moderator: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider: Option<&'static str>,
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     devices: Option<Vec<RecentDevice>>,
@@ -980,13 +982,14 @@ async fn handle_account_recent(
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    recent(&api, account.page, query)
+    recent(&api, account.page, query, true)
 }
 
 fn recent(
     api: &Api,
     page: Page,
     query: RecentQuery,
+    owner: bool,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     if !["song", "tip", "spin"].contains(&query.kind.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string()));
@@ -1012,6 +1015,10 @@ fn recent(
                 _ => None,
             };
             let moderator = order.payee == Payee::Moderator;
+            let provider = match order.payee {
+                Payee::PayPal(_) | Payee::Stripe(_) if owner => Some(order.payee.slug()),
+                _ => None,
+            };
             let (name, link, message, spins) = match order.item {
                 Item::Song {
                     link,
@@ -1033,6 +1040,7 @@ fn recent(
                 spins,
                 tier,
                 moderator,
+                provider,
                 status: match &delivery {
                     None => "delivered",
                     Some(delivery) if delivery.finished => "delivered",
@@ -2485,7 +2493,7 @@ async fn handle_moderator_recent(
         StatusCode::NOT_FOUND,
         "This page does not exist.",
     ))?;
-    recent(&api, page, query).map_err(|(status, text)| Failure {
+    recent(&api, page, query, false).map_err(|(status, text)| Failure {
         reason: "invalid-kind",
         status,
         text,
@@ -4222,9 +4230,24 @@ mod tests {
         assert_eq!(tip["user"], "Viewer");
         assert_eq!(tip["amount"], 700);
         assert_eq!(tip["currency"], "USD");
+        assert_eq!(tip["provider"], "paypal");
         assert_eq!(tip["status"], "waiting");
         assert!(tip["at"].as_u64().unwrap() > 0);
         assert!(tip.get("message").is_none());
+        let id = api.accounts.get("1").unwrap().page.id;
+        let moderated: Value = client
+            .get(format!(
+                "http://{address}/account/pages/{id}/recent?kind=tip"
+            ))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(moderated["items"][0]["id"], "ORDER1");
+        assert!(moderated["items"][0].get("provider").is_none());
         let devices_url = format!("http://{address}/account/devices");
         let account: Value = client
             .post(&devices_url)

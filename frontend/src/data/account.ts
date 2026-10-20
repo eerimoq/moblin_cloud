@@ -54,6 +54,7 @@ export type Recent = {
   spins?: number;
   tier?: number;
   moderator?: boolean;
+  provider?: "paypal" | "stripe";
   status: "delivered" | "waiting" | "notAdded";
   devices?: { name: string; received: boolean }[];
 };

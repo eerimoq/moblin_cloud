@@ -76,6 +76,14 @@ export function Latest(props: {
                             : item.tier
                               ? t("Tier {tier} subscriber", { tier: item.tier })
                               : formatPrice({ price: item.amount, currency: item.currency })}
+                          <Show when={item.provider}>
+                            {(provider) => (
+                              <span class="text-muted">
+                                {" · "}
+                                {provider() === "paypal" ? "PayPal" : "Stripe"}
+                              </span>
+                            )}
+                          </Show>
                         </span>
                       </span>
                       <Show when={item.name}>
