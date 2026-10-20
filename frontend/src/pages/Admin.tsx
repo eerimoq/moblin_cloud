@@ -651,13 +651,13 @@ function Loaded(props: { stats: AdminStats }) {
 
   const accounts = [
     ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
-    ["PayPal connected", "A PayPal merchant that can take payments.", props.stats.accounts.paypal],
-    ["Stripe connected", "A Stripe account that takes card payments.", props.stats.accounts.stripe],
     [
       "Premium",
       "Signed in accounts with the premium features: the admins and the premium accounts list.",
       props.stats.accounts.premium,
     ],
+    ["PayPal connected", "A PayPal merchant that can take payments.", props.stats.accounts.paypal],
+    ["Stripe connected", "A Stripe account that takes card payments.", props.stats.accounts.stripe],
   ] as const;
 
   return (
