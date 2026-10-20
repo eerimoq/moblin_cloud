@@ -1138,21 +1138,30 @@ function ModeratorSettings(props: {
   onAccount: (account: Account) => void;
   onSignOut: () => void;
 }) {
-  const [changing, setChanging] = createSignal<string | null>(null);
+  const [pending, setPending] = createSignal<Record<string, boolean>>({});
   const [error, setError] = createSignal<string | null>(null);
 
   const change = async (moderator: ChannelModerator, enabled: boolean) => {
     setError(null);
-    setChanging(moderator.id);
+    setPending((pending) => ({ ...pending, [moderator.id]: enabled }));
     try {
-      props.onAccount(await enableModerator(props.session, moderator.id, enabled));
+      const account = await enableModerator(props.session, moderator.id, enabled);
+      const shown = { ...pending(), [moderator.id]: enabled };
+      props.onAccount({
+        ...account,
+        moderators: account.moderators.map((known) =>
+          known.id in shown ? { ...known, enabled: shown[known.id] } : known,
+        ),
+      });
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
       }
       setError(t("Something went wrong. Try again."));
     } finally {
-      setChanging(null);
+      setPending((pending) =>
+        Object.fromEntries(Object.entries(pending).filter(([id]) => id !== moderator.id)),
+      );
     }
   };
 
@@ -1181,8 +1190,8 @@ function ModeratorSettings(props: {
                 <label class="flex items-center gap-3">
                   <input
                     type="checkbox"
-                    checked={moderator.enabled}
-                    disabled={changing() !== null}
+                    checked={pending()[moderator.id] ?? moderator.enabled}
+                    disabled={moderator.id in pending()}
                     onChange={(event) => void change(moderator, event.currentTarget.checked)}
                     class="size-5 shrink-0 accent-moss"
                   />
