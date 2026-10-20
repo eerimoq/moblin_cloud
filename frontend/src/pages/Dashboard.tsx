@@ -2334,7 +2334,7 @@ function Avatar(props: { account: Account }) {
     <Show
       when={props.account.avatar}
       fallback={
-        <span class="flex size-14 shrink-0 items-center justify-center rounded-full bg-moss font-display text-2xl font-semibold text-white ring-4 ring-moss/40 sm:size-16">
+        <span class="flex size-15 shrink-0 items-center justify-center rounded-full bg-moss font-display text-2xl font-semibold text-white sm:size-18">
           {props.account.name.slice(0, 1).toUpperCase()}
         </span>
       }
@@ -2343,7 +2343,7 @@ function Avatar(props: { account: Account }) {
         <img
           src={avatar()}
           alt=""
-          class="size-14 shrink-0 rounded-full bg-ghost object-cover ring-4 ring-moss sm:size-16"
+          class="size-15 shrink-0 rounded-full bg-ghost object-cover sm:size-18"
         />
       )}
     </Show>
