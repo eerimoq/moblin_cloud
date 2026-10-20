@@ -2210,7 +2210,7 @@ const moderatedChannelKey = "moderatedChannel";
 function readModeratedChannel() {
   const fromUrl = new URLSearchParams(location.search).get("streamer");
   if (fromUrl !== null) {
-    return fromUrl;
+    return fromUrl.startsWith("twitch:") ? fromUrl.slice(7) : "";
   }
   try {
     return sessionStorage.getItem(moderatedChannelKey) ?? "";
@@ -2740,11 +2740,11 @@ export default function Dashboard() {
   };
 
   const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
-  const chooseChannel = (id: string) => {
-    setChosenChannel(id);
+  const chooseChannel = (login: string) => {
+    setChosenChannel(login);
     const search = new URLSearchParams(location.search);
-    if (id) {
-      search.set("streamer", id);
+    if (login) {
+      search.set("streamer", `twitch:${login}`);
     } else {
       search.delete("streamer");
     }
@@ -2755,11 +2755,11 @@ export default function Dashboard() {
       `${location.pathname}${query ? `?${query}` : ""}${location.hash}`,
     );
     try {
-      sessionStorage.setItem(moderatedChannelKey, id);
+      sessionStorage.setItem(moderatedChannelKey, login);
     } catch {}
   };
   const channel = (account: Account) =>
-    account.moderating.find((channel) => channel.id === chosenChannel()) ?? null;
+    account.moderating.find((channel) => channel.login === chosenChannel()) ?? null;
 
   return (
     <>
@@ -2795,12 +2795,12 @@ export default function Dashboard() {
                   <select
                     aria-label={t("Streamer")}
                     class={`${ghostButtonClass} h-11! w-full appearance-none truncate pr-10! pl-12! text-base!`}
-                    value={channel(current().account)?.id ?? ""}
+                    value={channel(current().account)?.login ?? ""}
                     onChange={(event) => chooseChannel(event.currentTarget.value)}
                   >
                     <option value="">{t("You")}</option>
                     <For each={current().account.moderating}>
-                      {(channel) => <option value={channel.id}>{channel.name}</option>}
+                      {(channel) => <option value={channel.login}>{channel.name}</option>}
                     </For>
                   </select>
                   <Icon
