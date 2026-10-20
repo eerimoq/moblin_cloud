@@ -2620,7 +2620,26 @@ export default function Dashboard() {
           }
         >
           {(current) => (
-            <div class="flex items-center gap-3">
+            <div class="flex min-w-0 items-center gap-3">
+              <Show when={current().account.moderating.length > 0}>
+                <div class="relative min-w-0">
+                  <select
+                    aria-label={t("Streamer")}
+                    class={`${ghostButtonClass} h-11! w-full appearance-none truncate pr-10! pl-4! text-base!`}
+                    value={channel(current().account)?.id ?? ""}
+                    onChange={(event) => chooseChannel(event.currentTarget.value)}
+                  >
+                    <option value="">{t("You")}</option>
+                    <For each={current().account.moderating}>
+                      {(channel) => <option value={channel.id}>{channel.name}</option>}
+                    </For>
+                  </select>
+                  <Icon
+                    name="chevron-down"
+                    class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2"
+                  />
+                </div>
+              </Show>
               <Show when={current().account.premium} fallback={<GoPremium />}>
                 <span
                   title={t("Premium")}
@@ -2666,28 +2685,11 @@ export default function Dashboard() {
           }
         >
           {(current) => (
-            <section class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 pt-10 pb-8 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-              <div class="flex items-center gap-4">
-                <Avatar account={current().account} />
-                <h1 class="min-w-0 text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
-                  {t("Hi, {name}", { name: current().account.name })}
-                </h1>
-              </div>
-              <Show when={current().account.moderating.length > 0}>
-                <label class="flex flex-col gap-2 sm:w-64">
-                  <span class="text-[15px] font-semibold text-ink-2">{t("Streamer")}</span>
-                  <select
-                    class={inputClass}
-                    value={channel(current().account)?.id ?? ""}
-                    onChange={(event) => chooseChannel(event.currentTarget.value)}
-                  >
-                    <option value="">{t("You")}</option>
-                    <For each={current().account.moderating}>
-                      {(channel) => <option value={channel.id}>{channel.name}</option>}
-                    </For>
-                  </select>
-                </label>
-              </Show>
+            <section class="mx-auto flex max-w-[1120px] items-center gap-4 px-5 pt-10 pb-8 sm:px-8">
+              <Avatar account={current().account} />
+              <h1 class="min-w-0 text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
+                {t("Hi, {name}", { name: current().account.name })}
+              </h1>
             </section>
           )}
         </Show>
