@@ -68,6 +68,7 @@ class AccountSignIn(AccountTestCase):
             {
                 "name": "signin",
                 "login": "signin",
+                "avatar": None,
                 "devices": [],
                 "musicDevice": None,
                 "wheelDevice": None,

@@ -2329,6 +2329,27 @@ function SignedIn(props: {
   );
 }
 
+function Avatar(props: { account: Account }) {
+  return (
+    <Show
+      when={props.account.avatar}
+      fallback={
+        <span class="flex size-14 shrink-0 items-center justify-center rounded-full bg-moss font-display text-2xl font-semibold text-white ring-4 ring-moss/40 sm:size-16">
+          {props.account.name.slice(0, 1).toUpperCase()}
+        </span>
+      }
+    >
+      {(avatar) => (
+        <img
+          src={avatar()}
+          alt=""
+          class="size-14 shrink-0 rounded-full bg-ghost object-cover ring-4 ring-moss sm:size-16"
+        />
+      )}
+    </Show>
+  );
+}
+
 function Preview(props: { failed: boolean }) {
   return (
     <div class="flex flex-col gap-6">
@@ -2350,6 +2371,7 @@ function Preview(props: { failed: boolean }) {
             account={{
               name: "",
               login: "",
+              avatar: null,
               devices: [
                 { id: "", name: "Moblin", key: "moblin-cloud-key-preview", connected: true },
               ],
@@ -2514,9 +2536,12 @@ export default function Dashboard() {
         >
           {(current) => (
             <section class="mx-auto flex max-w-[1120px] flex-col gap-2 px-5 pt-10 pb-8 sm:px-8">
-              <h1 class="text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
-                {t("Hi, {name}", { name: current().account.name })}
-              </h1>
+              <div class="flex items-center gap-4">
+                <Avatar account={current().account} />
+                <h1 class="min-w-0 text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
+                  {t("Hi, {name}", { name: current().account.name })}
+                </h1>
+              </div>
               {terms()}
             </section>
           )}

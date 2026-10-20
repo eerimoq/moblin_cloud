@@ -670,6 +670,7 @@ async fn viewer_redirect(api: &Api, page: &str, sign_in: Result<SignIn>) -> Redi
 struct AccountResponse {
     name: String,
     login: String,
+    avatar: Option<String>,
     devices: Vec<DeviceResponse>,
     music_device: Option<String>,
     wheel_device: Option<String>,
@@ -740,6 +741,7 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
     Json(AccountResponse {
         name: account.name,
         login: account.login,
+        avatar: account.avatar,
         devices: page
             .iter()
             .flat_map(|page| &page.devices)
@@ -6690,6 +6692,7 @@ mod tests {
             json!({
                 "name": "Erik",
                 "login": "erik",
+                "avatar": null,
                 "devices": [],
                 "musicDevice": null,
                 "wheelDevice": null,

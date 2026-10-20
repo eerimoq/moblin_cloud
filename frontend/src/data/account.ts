@@ -11,6 +11,7 @@ export type Device = {
 export type Account = {
   name: string;
   login: string;
+  avatar: string | null;
   devices: Device[];
   musicDevice: string | null;
   wheelDevice: string | null;
