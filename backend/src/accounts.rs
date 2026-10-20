@@ -393,21 +393,26 @@ impl Accounts {
         })
     }
 
-    pub fn set_moderated_channels(&self, id: &str, broadcasters: &[String]) {
+    pub fn add_channel_moderator(&self, broadcasters: &[String], moderator: &ChannelModerator) {
         let result = (|| {
             let mut database = self.database.lock();
             let transaction = database.transaction()?;
-            transaction.execute("DELETE FROM moderated_channels WHERE moderator = ?1", [id])?;
-            for broadcaster in broadcasters.iter().filter(|broadcaster| *broadcaster != id) {
+            for broadcaster in broadcasters
+                .iter()
+                .filter(|broadcaster| **broadcaster != moderator.id)
+            {
                 transaction.execute(
-                    "INSERT OR IGNORE INTO moderated_channels (moderator, broadcaster) VALUES (?1, ?2)",
-                    [id, broadcaster.as_str()],
+                    "INSERT OR REPLACE INTO channel_moderators (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)",
+                    [broadcaster.as_str(), &moderator.id, &moderator.login, &moderator.name],
                 )?;
             }
             transaction.commit()
         })();
         if let Err(error) = result {
-            warn!("failed to save the channels {id} moderates: {error:#}");
+            warn!(
+                "failed to save the channels {} moderates: {error:#}",
+                moderator.id
+            );
         }
     }
 
@@ -428,6 +433,12 @@ impl Accounts {
                     [broadcaster, &moderator.id, &moderator.login, &moderator.name],
                 )?;
             }
+            transaction.execute(
+                "DELETE FROM enabled_moderators WHERE broadcaster = ?1 AND moderator NOT IN (
+                     SELECT moderator FROM channel_moderators WHERE broadcaster = ?1
+                 )",
+                [broadcaster],
+            )?;
             transaction.commit()
         })();
         if let Err(error) = result {
@@ -439,19 +450,12 @@ impl Accounts {
         let database = self.database.lock();
         let result = database
             .prepare(
-                "SELECT id, login, name, EXISTS (
+                "SELECT moderator, login, name, EXISTS (
                      SELECT 1 FROM enabled_moderators
-                     WHERE enabled_moderators.broadcaster = ?1 AND enabled_moderators.moderator = id
+                     WHERE enabled_moderators.broadcaster = ?1
+                     AND enabled_moderators.moderator = channel_moderators.moderator
                  )
-                 FROM (
-                     SELECT moderator AS id, login, name FROM channel_moderators WHERE broadcaster = ?1
-                     UNION
-                     SELECT moderated_channels.moderator, accounts.login, accounts.name
-                     FROM moderated_channels JOIN accounts ON accounts.id = moderated_channels.moderator
-                     WHERE moderated_channels.broadcaster = ?1 AND moderated_channels.moderator NOT IN (
-                         SELECT moderator FROM channel_moderators WHERE broadcaster = ?1
-                     )
-                 )
+                 FROM channel_moderators WHERE broadcaster = ?1
                  ORDER BY name COLLATE NOCASE",
             )
             .and_then(|mut statement| {
@@ -505,7 +509,7 @@ impl Accounts {
         self.database
             .lock()
             .query_row(
-                "SELECT 1 FROM moderated_channels JOIN enabled_moderators USING (moderator, broadcaster)
+                "SELECT 1 FROM channel_moderators JOIN enabled_moderators USING (moderator, broadcaster)
                  WHERE moderator = ?1 AND broadcaster = ?2",
                 [id, broadcaster],
                 |_| Ok(()),
@@ -523,7 +527,7 @@ impl Accounts {
             let database = self.database.lock();
             let result = database
                 .prepare(
-                    "SELECT broadcaster FROM moderated_channels
+                    "SELECT broadcaster FROM channel_moderators
                      JOIN enabled_moderators USING (moderator, broadcaster)
                      JOIN accounts ON accounts.id = broadcaster
                      WHERE moderator = ?1 ORDER BY accounts.name COLLATE NOCASE",
@@ -567,10 +571,6 @@ impl Accounts {
         for (statement, key) in [
             ("DELETE FROM accounts WHERE id = ?1", id),
             ("DELETE FROM devices WHERE account = ?1", id),
-            (
-                "DELETE FROM moderated_channels WHERE moderator = ?1 OR broadcaster = ?1",
-                id,
-            ),
             (
                 "DELETE FROM channel_moderators WHERE broadcaster = ?1 OR moderator = ?1",
                 id,
@@ -754,48 +754,67 @@ mod tests {
             name: name.to_string(),
             enabled,
         };
-        accounts.set_moderated_channels(
-            "1",
-            &[
-                "2".to_string(),
-                "3".to_string(),
-                "1".to_string(),
-                "9".to_string(),
-            ],
-        );
-        assert!(names("1").is_empty());
-        assert!(!accounts.moderates("1", "2"));
-        assert_eq!(
-            accounts.channel_moderators("2"),
-            [moderator("1", "Erik", false)]
-        );
         accounts.set_channel_moderators(
             "2",
-            &[moderator("4", "Zed", false), moderator("2", "Bob", false)],
+            &[
+                moderator("4", "Zed", false),
+                moderator("2", "Bob", false),
+                moderator("1", "Erik", false),
+            ],
         );
         assert_eq!(
             accounts.channel_moderators("2"),
             [moderator("1", "Erik", false), moderator("4", "Zed", false)]
         );
+        assert!(names("1").is_empty());
+        assert!(!accounts.moderates("1", "2"));
         assert_eq!(
             accounts.enable_moderator("2", "5", true),
             Err(AccountError::UnknownModerator)
         );
         accounts.enable_moderator("2", "1", true).unwrap();
+        accounts.set_channel_moderators("3", &[moderator("1", "Erik", false)]);
         accounts.enable_moderator("3", "1", true).unwrap();
         accounts.enable_moderator("2", "4", true).unwrap();
         assert_eq!(names("1"), ["Alice", "Bob"]);
         assert!(accounts.moderates("1", "2"));
-        assert!(!accounts.moderates("4", "2"));
+        assert!(accounts.moderates("4", "2"));
+        assert!(!accounts.moderates("4", "3"));
         assert_eq!(
             accounts.channel_moderators("2"),
             [moderator("1", "Erik", true), moderator("4", "Zed", true)]
         );
         accounts.enable_moderator("3", "1", false).unwrap();
         assert_eq!(names("1"), ["Bob"]);
-        accounts.set_moderated_channels("1", &["3".to_string()]);
+        accounts.add_channel_moderator(
+            &["1".to_string(), "3".to_string(), "9".to_string()],
+            &moderator("1", "Erik", true),
+        );
+        assert!(accounts.channel_moderators("1").is_empty());
+        assert_eq!(
+            accounts.channel_moderators("3"),
+            [moderator("1", "Erik", false)]
+        );
+        assert_eq!(
+            accounts.channel_moderators("9"),
+            [moderator("1", "Erik", false)]
+        );
+        accounts.set_channel_moderators("2", &[moderator("4", "Zed", false)]);
         assert!(names("1").is_empty());
         assert!(!accounts.moderates("1", "2"));
+        assert_eq!(
+            accounts.channel_moderators("2"),
+            [moderator("4", "Zed", true)]
+        );
+        accounts.set_channel_moderators(
+            "2",
+            &[moderator("1", "Erik", false), moderator("4", "Zed", false)],
+        );
+        assert!(!accounts.moderates("1", "2"));
+        assert_eq!(
+            accounts.channel_moderators("2"),
+            [moderator("1", "Erik", false), moderator("4", "Zed", true)]
+        );
     }
 
     #[test]

@@ -16,15 +16,12 @@ impl Database {
                 .with_context(|| format!("failed to open {}", path.display()))?,
             None => Connection::open_in_memory()?,
         };
-        if has_column(&connection, "moderators", "broadcaster")? {
-            connection
-                .execute_batch("ALTER TABLE moderators RENAME TO moderated_channels")
-                .context("failed to rename the moderators table")?;
-        }
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
                  PRAGMA synchronous = FULL;
+                 DROP TABLE IF EXISTS moderators;
+                 DROP TABLE IF EXISTS moderated_channels;
                  CREATE TABLE IF NOT EXISTS accounts (
                      id TEXT PRIMARY KEY,
                      name TEXT NOT NULL,
@@ -49,11 +46,6 @@ impl Database {
                      position INTEGER NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS devices_account ON devices (account);
-                 CREATE TABLE IF NOT EXISTS moderated_channels (
-                     moderator TEXT NOT NULL,
-                     broadcaster TEXT NOT NULL,
-                     PRIMARY KEY (moderator, broadcaster)
-                 );
                  CREATE TABLE IF NOT EXISTS channel_moderators (
                      broadcaster TEXT NOT NULL,
                      moderator TEXT NOT NULL,
@@ -245,30 +237,18 @@ mod tests {
     }
 
     #[test]
-    fn the_moderators_table_is_renamed() {
+    fn the_moderated_channels_tables_are_dropped() {
         let path = temporary_path("moderators");
         Connection::open(&path)
             .unwrap()
             .execute_batch(
-                "CREATE TABLE moderators (
-                     moderator TEXT NOT NULL,
-                     broadcaster TEXT NOT NULL,
-                     PRIMARY KEY (moderator, broadcaster)
-                 );
-                 INSERT INTO moderators (moderator, broadcaster) VALUES ('1', '2');",
+                "CREATE TABLE moderators (moderator TEXT NOT NULL, broadcaster TEXT NOT NULL);
+                 CREATE TABLE moderated_channels (moderator TEXT NOT NULL, broadcaster TEXT NOT NULL);",
             )
             .unwrap();
         let database = Database::open(Some(&path)).unwrap();
-        let rows: Vec<(String, String)> = database
-            .lock()
-            .prepare("SELECT moderator, broadcaster FROM moderated_channels")
-            .unwrap()
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        assert_eq!(rows, [("1".to_string(), "2".to_string())]);
         assert!(!has_column(&database.lock(), "moderators", "broadcaster").unwrap());
+        assert!(!has_column(&database.lock(), "moderated_channels", "broadcaster").unwrap());
         drop(database);
         remove(&path);
     }

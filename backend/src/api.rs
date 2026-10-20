@@ -700,16 +700,20 @@ async fn signed_in_redirect(
             return Redirect::to(&format!("{dashboard}#signInFailed"));
         }
     };
-    match api.auth.moderated_channels(&sign_in).await {
-        Ok(broadcasters) => api.accounts.set_moderated_channels(&user.id, &broadcasters),
-        Err(error) => warn!(
-            "looking up the channels {} moderates failed: {error:#}",
-            user.id
+    match api.auth.fake_moderated_channels(&sign_in) {
+        Some(broadcasters) => api.accounts.add_channel_moderator(
+            &broadcasters,
+            &ChannelModerator {
+                id: user.id.clone(),
+                login: user.login.clone(),
+                name: user.name.clone(),
+                enabled: false,
+            },
         ),
-    }
-    match api.auth.channel_moderators(&sign_in).await {
-        Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
-        Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
+        None => match api.auth.channel_moderators(&sign_in).await {
+            Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
+            Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
+        },
     }
     info!("Twitch user {} ({}) signed in", user.id, user.login);
     Redirect::to(&format!(
@@ -5415,6 +5419,15 @@ mod tests {
             .unwrap()
     }
 
+    fn channel_moderator(id: &str, login: &str, name: &str) -> ChannelModerator {
+        ChannelModerator {
+            id: id.to_string(),
+            login: login.to_string(),
+            name: name.to_string(),
+            enabled: false,
+        }
+    }
+
     async fn streamer(_address: &str, api: &Api) -> (String, String, String) {
         let account = create_account(api, "1", "Erik", "erik");
         (
@@ -6737,35 +6750,6 @@ mod tests {
                         }
                     }
                 }),
-            )
-            .route(
-                "/moderation",
-                get({
-                    let calls = Arc::new(AtomicUsize::new(0));
-                    move |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| {
-                        let calls = calls.clone();
-                        async move {
-                            assert_eq!(headers[AUTHORIZATION], "Bearer u");
-                            assert_eq!(query["user_id"], "42");
-                            assert_eq!(query["first"], "100");
-                            if calls.fetch_add(1, Ordering::SeqCst) >= 2 {
-                                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                            }
-                            match query.get("after").map(String::as_str) {
-                                None => Json(json!({
-                                    "data": [{"broadcaster_id": "9"}],
-                                    "pagination": {"cursor": "next"},
-                                })),
-                                Some("next") => Json(json!({
-                                    "data": [{"broadcaster_id": "1"}],
-                                    "pagination": {},
-                                })),
-                                Some(after) => panic!("unexpected cursor {after}"),
-                            }
-                            .into_response()
-                        }
-                    }
-                }),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -6786,7 +6770,6 @@ mod tests {
             token_url: format!("{twitch}/token"),
             users_url: format!("{twitch}/users"),
             subscriptions_url: format!("{twitch}/subscriptions"),
-            moderated_channels_url: format!("{twitch}/moderation"),
             moderators_url: format!("{twitch}/moderators"),
         }
     }
@@ -7440,6 +7423,8 @@ mod tests {
             ]
         );
         create_account(&api, "1", "One", "one");
+        api.accounts
+            .set_channel_moderators("1", &[channel_moderator("42", "fortytwo", "42")]);
         api.accounts.enable_moderator("1", "42", true).unwrap();
         assert!(api.accounts.moderates("42", "1"));
         assert!(!api.accounts.moderates("42", "9"));
@@ -7719,10 +7704,10 @@ mod tests {
         let (session, key, id) = streamer(&address, &api).await;
         let moderator = create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
-            .set_moderated_channels("21", &["1".to_string()]);
+            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
         api.accounts.enable_moderator("1", "21", true).unwrap();
         api.accounts
-            .set_moderated_channels("1", &["21".to_string()]);
+            .set_channel_moderators("21", &[channel_moderator("1", "erik", "Erik")]);
         api.accounts.enable_moderator("21", "1", true).unwrap();
         let client = reqwest::Client::new();
         let response = client
@@ -7764,7 +7749,8 @@ mod tests {
         assert_eq!(api.accounts.get("21").unwrap(), moderator);
         for (table, column, value) in [
             ("pages", "id", id.as_str()),
-            ("moderated_channels", "broadcaster", "1"),
+            ("channel_moderators", "broadcaster", "1"),
+            ("channel_moderators", "moderator", "1"),
             ("enabled_moderators", "broadcaster", "1"),
             ("enabled_moderators", "moderator", "1"),
         ] {
@@ -8352,9 +8338,9 @@ mod tests {
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
-            .set_moderated_channels("21", &["1".to_string()]);
+            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
         api.accounts
-            .set_moderated_channels("22", &["9".to_string()]);
+            .set_channel_moderators("9", &[channel_moderator("22", "viewer22", "Viewer 22")]);
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
         let moderating = async |session: &str| {
             client
@@ -8565,7 +8551,7 @@ mod tests {
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
-            .set_moderated_channels("21", &["1".to_string()]);
+            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
         let get = async |session: &str, path: &str| {
             client
@@ -8757,7 +8743,7 @@ mod tests {
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
-            .set_moderated_channels("21", &["1".to_string()]);
+            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
         let send = |session: String, body: Value| {
             let (address, id) = (address.clone(), id.clone());
