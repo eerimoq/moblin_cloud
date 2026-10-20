@@ -70,8 +70,6 @@ const reasonLabels: Record<string, string> = {
   "no-spins-left": "Viewer used this month's spins",
   "tier-excluded": "Viewer's tier gets nothing on the page",
   "too-long": "Song longer than the viewer's minutes left",
-  "not-premium": "Not a premium account",
-  "invalid-image": "Unreadable or too small image",
 };
 
 const problemReasons = [
@@ -646,6 +644,7 @@ function Loaded(props: { stats: AdminStats }) {
       caption: `${format(problemsToday())} today`,
       attention: problemsToday() > 0,
     },
+    { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
     ...kinds.map((kind) => ({
       id: kind.kind,
       label: kind.label,
@@ -657,8 +656,6 @@ function Loaded(props: { stats: AdminStats }) {
       caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
     },
     { id: "moblin", label: "Moblin", caption: `${format(today("moblinConnections"))} today` },
-    { id: "images", label: "Banner images", caption: `${format(today("imageUploads"))} today` },
-    { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
   ];
 
   const accounts = [
@@ -721,6 +718,13 @@ function Loaded(props: { stats: AdminStats }) {
               }))}
             />
           </Section>
+          <Section id="accounts" title="Accounts" hint="Right now, not per day.">
+            <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              <For each={accounts}>
+                {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
+              </For>
+            </div>
+          </Section>
           <For each={kinds}>
             {(kind) => (
               <Section
@@ -748,38 +752,17 @@ function Loaded(props: { stats: AdminStats }) {
               </For>
             </div>
           </Section>
-          <div class="flex flex-col gap-10">
-            <Section id="moblin" title="Moblin">
-              <StepTable
-                steps={[
-                  counters().step(
-                    "moblinConnections",
-                    "Connections",
-                    "Moblin connecting to Moblin Cloud with the key of a current device.",
-                    ["unknown-key"],
-                  ),
-                ]}
-              />
-            </Section>
-            <Section id="images" title="Banner images">
-              <StepTable
-                steps={[
-                  counters().step(
-                    "imageUploads",
-                    "Uploads",
-                    "Banner images uploaded by premium accounts for their tip pages.",
-                    ["invalid-image", "not-premium", "not-saved"],
-                  ),
-                ]}
-              />
-            </Section>
-          </div>
-          <Section id="accounts" title="Accounts" hint="Right now, not per day.">
-            <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              <For each={accounts}>
-                {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
-              </For>
-            </div>
+          <Section id="moblin" title="Moblin">
+            <StepTable
+              steps={[
+                counters().step(
+                  "moblinConnections",
+                  "Connections",
+                  "Moblin connecting to Moblin Cloud with the key of a current device.",
+                  ["unknown-key"],
+                ),
+              ]}
+            />
           </Section>
         </div>
       </div>
