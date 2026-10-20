@@ -16,7 +16,6 @@ class RemoteControlTestCase(TestCase):
     def setup(self):
         self.skip_if_no_moblin()
         self.dashboard = self.sign_in()
-        self.dashboard.create_page()
         self.viewer = self.website.viewer(self.dashboard.page_id())
 
     @property

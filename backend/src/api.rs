@@ -83,7 +83,6 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/auth/twitch/login", get(handle_login))
         .route("/auth/twitch/callback", get(handle_callback))
         .route("/account", get(handle_account))
-        .route("/account/page", post(handle_account_page))
         .route("/account/devices", post(handle_account_devices))
         .route(
             "/account/devices/choose",
@@ -266,7 +265,7 @@ async fn handle_remote_control_streamer(
 }
 
 fn page_of(api: &Api, id: &str) -> Option<Page> {
-    api.accounts.of_page(id).and_then(|account| account.page)
+    Some(api.accounts.of_page(id)?.page)
 }
 
 fn music_device(api: &Api, id: &str) -> String {
@@ -317,8 +316,8 @@ struct SettingsResponse {
 fn any_connected(api: &Api, account: &Account) -> bool {
     account
         .page
+        .devices
         .iter()
-        .flat_map(|page| &page.devices)
         .any(|device| api.remote_control.is_connected(&device.id))
 }
 
@@ -616,17 +615,28 @@ async fn signed_in_redirect(
             return Redirect::to(&format!("{dashboard}#signInFailed"));
         }
     };
-    let account =
-        match api
-            .accounts
-            .signed_in(&user.id, &user.name, &user.login, user.avatar.as_deref())
-        {
-            Ok(account) => account,
-            Err(error) => {
-                warn!("saving account {} failed: {error:?}", user.id);
-                return Redirect::to(&format!("{dashboard}#signInFailed"));
-            }
-        };
+    let Some((key, page)) = api.remote_control.new_key() else {
+        warn!("no page could be created for {}", user.id);
+        return Redirect::to(&format!("{dashboard}#signInFailed"));
+    };
+    let device = Device {
+        id: page.clone(),
+        name: "Moblin".to_string(),
+        key,
+    };
+    let account = match api.accounts.signed_in(
+        &user.id,
+        &user.name,
+        &user.login,
+        user.avatar.as_deref(),
+        Page::new(page, device),
+    ) {
+        Ok(account) => account,
+        Err(error) => {
+            warn!("saving account {} failed: {error:?}", user.id);
+            return Redirect::to(&format!("{dashboard}#signInFailed"));
+        }
+    };
     info!("Twitch user {} ({}) signed in", user.id, user.login);
     Redirect::to(&format!(
         "{dashboard}#session={}",
@@ -674,7 +684,7 @@ struct AccountResponse {
     devices: Vec<DeviceResponse>,
     music_device: Option<String>,
     wheel_device: Option<String>,
-    settings: Option<SettingsResponse>,
+    settings: SettingsResponse,
     admin: bool,
     premium: bool,
 }
@@ -733,18 +743,15 @@ fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String
 }
 
 fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountResponse> {
-    let settings = account.page.as_ref().map(|page| {
-        let settings = api.pages.get(&page.id);
-        settings_response(api, page.id.clone(), settings).0
-    });
-    let page = account.page.as_ref();
+    let page = &account.page;
+    let settings = api.pages.get(&page.id);
     Json(AccountResponse {
         name: account.name,
         login: account.login,
         avatar: account.avatar,
         devices: page
+            .devices
             .iter()
-            .flat_map(|page| &page.devices)
             .map(|device| DeviceResponse {
                 id: device.id.clone(),
                 name: device.name.clone(),
@@ -752,13 +759,9 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
                 connected: api.remote_control.is_connected(&device.id),
             })
             .collect(),
-        music_device: page
-            .and_then(Page::music_device)
-            .map(|device| device.id.clone()),
-        wheel_device: page
-            .and_then(Page::wheel_device)
-            .map(|device| device.id.clone()),
-        settings,
+        music_device: page.music_device().map(|device| device.id.clone()),
+        wheel_device: page.wheel_device().map(|device| device.id.clone()),
+        settings: settings_response(api, page.id.clone(), settings).0,
         admin: is_admin(api, id),
         premium: is_premium(api, id),
     })
@@ -767,7 +770,6 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
 fn account_error(error: AccountError) -> (StatusCode, String) {
     match error {
         AccountError::Unknown => not_signed_in(),
-        AccountError::NoPage => no_page(),
         AccountError::Full => (
             StatusCode::SERVICE_UNAVAILABLE,
             "too many accounts".to_string(),
@@ -781,10 +783,6 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
             "the account could not be saved".to_string(),
         ),
     }
-}
-
-fn no_page() -> (StatusCode, String) {
-    (StatusCode::NOT_FOUND, "no page".to_string())
 }
 
 fn new_key(api: &Api) -> Result<(String, String), (StatusCode, String)> {
@@ -903,12 +901,7 @@ async fn handle_account_recent(
     if !["song", "tip", "spin"].contains(&query.kind.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string()));
     }
-    let Some(page) = account.page else {
-        return Ok(Json(RecentResponse {
-            items: Vec::new(),
-            more: false,
-        }));
-    };
+    let page = account.page;
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
     let mut orders = api
         .orders
@@ -975,28 +968,6 @@ fn recent_devices(page: &Page, delivery: &deliveries::Delivery) -> Vec<RecentDev
             })
         })
         .collect()
-}
-
-async fn handle_account_page(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    if account.page.is_some() {
-        return Ok(account_response(&api, &id, account));
-    }
-    let (key, page) = new_key(&api)?;
-    let device = Device {
-        id: page.clone(),
-        name: "Moblin".to_string(),
-        key,
-    };
-    let account = api
-        .accounts
-        .give_page(&id, Page::new(page, device))
-        .map_err(account_error)?;
-    info!("{id} got a page");
-    Ok(account_response(&api, &id, account))
 }
 
 #[derive(Deserialize)]
@@ -1103,7 +1074,7 @@ async fn account_image(
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
     let SignedIn { id, account, .. } = signed_in(api, headers)?;
-    let page = account.page.ok_or_else(no_page)?.id;
+    let page = account.page.id;
     if !is_premium(api, &id) {
         return Err(Failure {
             reason: "not-premium",
@@ -1139,7 +1110,7 @@ async fn handle_account_image_remove(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.ok_or_else(no_page)?.id;
+    let page = account.page.id;
     api.pages.remove_image(&page).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1157,7 +1128,7 @@ async fn handle_account_settings(
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.ok_or_else(no_page)?.id;
+    let page = account.page.id;
     update_settings(&api, page, is_premium(&api, &id), request).await
 }
 
@@ -1217,7 +1188,7 @@ async fn handle_account_paypal_check(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.ok_or_else(no_page)?.id;
+    let page = account.page.id;
     let paypal = api.paypal.as_ref().ok_or_else(payments_unavailable)?;
     if let Some(tracking_id) = account.paypal_tracking_id {
         let seller = paypal.seller(&tracking_id).await.map_err(|error| {
@@ -1239,7 +1210,7 @@ async fn handle_account_paypal_disconnect(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.ok_or_else(no_page)?.id;
+    let page = account.page.id;
     api.accounts.forget_paypal(&id).map_err(account_error)?;
     info!("{id} disconnected PayPal");
     let settings = api.pages.get(&page);
@@ -1415,7 +1386,7 @@ async fn handle_account_stripe_check(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.ok_or_else(no_page)?.id;
+    let page = account.page.id;
     let stripe = api.stripe.as_ref().ok_or_else(payments_unavailable)?;
     if let Some(stripe_account_id) = account.stripe_account_id {
         let ready = stripe
@@ -1447,7 +1418,7 @@ async fn handle_account_stripe_disconnect(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.ok_or_else(no_page)?.id;
+    let page = account.page.id;
     api.accounts.forget_stripe(&id).map_err(account_error)?;
     info!("{id} disconnected Stripe");
     let settings = api.pages.get(&page);
@@ -2834,7 +2805,7 @@ fn within_limit(limits: &Mutex<HashMap<String, Vec<Instant>>>, id: &str, max: us
 
 fn test_page(api: &Api, headers: &HeaderMap) -> Result<(String, Account, String), Failure> {
     let account = signed_in(api, headers)?.account;
-    let id = account.page.as_ref().ok_or_else(no_page)?.id.clone();
+    let id = account.page.id.clone();
     if !within_limit(&api.tests, &id, 10) {
         return Err(failure(
             "too-many-tests",
@@ -3957,9 +3928,7 @@ mod tests {
                 {"name": "Backup", "received": false},
             ])
         );
-        let key = api.accounts.get("1").unwrap().page.unwrap().devices[0]
-            .key
-            .clone();
+        let key = api.accounts.get("1").unwrap().page.devices[0].key.clone();
         let mut socket = connect(&address, &key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], "ORDER1");
@@ -4187,9 +4156,7 @@ mod tests {
             assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
             settle(&api, Duration::ZERO).await;
             assert_eq!(api.deliveries.pending().len(), 1, "{fault:?}");
-            let key = api.accounts.get("1").unwrap().page.unwrap().devices[0]
-                .key
-                .clone();
+            let key = api.accounts.get("1").unwrap().page.devices[0].key.clone();
             let socket = connect(&address, &key).await;
             tip_delivered_once(socket, &address, &key, &api, currency).await;
             let recent: Value = client
@@ -4785,22 +4752,24 @@ mod tests {
         account["devices"][0]["key"].as_str().unwrap().to_string()
     }
 
-    async fn streamer(address: &str, api: &Api) -> (String, String, String) {
-        api.accounts.signed_in("1", "Erik", "erik", None).unwrap();
-        let session = api.auth.session("1", 0);
-        let account: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/page"))
-            .bearer_auth(&session)
-            .send()
-            .await
+    fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Account {
+        let (key, page) = api.remote_control.new_key().unwrap();
+        let device = Device {
+            id: page.clone(),
+            name: "Moblin".to_string(),
+            key,
+        };
+        api.accounts
+            .signed_in(id, name, login, None, Page::new(page, device))
             .unwrap()
-            .json()
-            .await
-            .unwrap();
+    }
+
+    async fn streamer(_address: &str, api: &Api) -> (String, String, String) {
+        let account = create_account(api, "1", "Erik", "erik");
         (
-            session,
-            key_of(&account),
-            account["settings"]["id"].as_str().unwrap().to_string(),
+            api.auth.session("1", 0),
+            account.page.devices[0].key.clone(),
+            account.page.id,
         )
     }
 
@@ -6076,33 +6045,15 @@ mod tests {
         );
         assert_eq!(api.accounts.get("42"), None);
         assert_eq!(api.auth.session_of(session), None);
-        api.accounts.signed_in("2", "Other", "other", None).unwrap();
-        let other: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/page"))
-            .bearer_auth(api.auth.session("2", 0))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let other = other["settings"]["id"].as_str().unwrap();
+        let other = create_account(&api, "2", "Other", "other").page.id;
+        let other = other.as_str();
         let page = sign_in(other).await;
         let session = page
             .strip_prefix("https://moblin.app/twitch/other#viewer=")
             .unwrap();
         assert_eq!(api.auth.viewer_of(session).unwrap().tier, None);
-        api.accounts.signed_in("3", "Third", "third", None).unwrap();
-        let third: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/page"))
-            .bearer_auth(api.auth.session("3", 0))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let third = third["settings"]["id"].as_str().unwrap();
+        let third = create_account(&api, "3", "Third", "third").page.id;
+        let third = third.as_str();
         assert_eq!(
             sign_in(third).await,
             "https://moblin.app/twitch/third#viewerSignInFailed"
@@ -6687,42 +6638,20 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(
-            account,
-            json!({
-                "name": "Erik",
-                "login": "erik",
-                "avatar": "https://static-cdn.jtvnw.net/erik.png",
-                "devices": [],
-                "musicDevice": null,
-                "wheelDevice": null,
-                "settings": null,
-                "admin": false,
-                "premium": false,
-            })
-        );
-        let response = client
-            .post(format!("http://{address}/account/settings"))
-            .bearer_auth(&session)
-            .json(&json!({"paywall": null}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let account: Value = client
-            .post(format!("http://{address}/account/page"))
-            .bearer_auth(&session)
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
         let key = key_of(&account);
-        assert_eq!(
-            account["settings"]["id"].as_str(),
-            remote_control::id_of(&key).as_deref()
-        );
+        let page = account["settings"]["id"].as_str().unwrap();
+        assert_eq!(remote_control::id_of(&key).as_deref(), Some(page));
+        assert_eq!(account["name"], "Erik");
+        assert_eq!(account["login"], "erik");
+        assert_eq!(account["avatar"], "https://static-cdn.jtvnw.net/erik.png");
+        assert_eq!(account["devices"][0]["id"], page);
+        assert_eq!(account["devices"][0]["name"], "Moblin");
+        assert_eq!(account["devices"][0]["connected"], false);
+        assert_eq!(account["devices"].as_array().unwrap().len(), 1);
+        assert_eq!(account["musicDevice"], page);
+        assert_eq!(account["wheelDevice"], page);
+        assert_eq!(account["admin"], false);
+        assert_eq!(account["premium"], false);
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
@@ -6806,7 +6735,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let again: Value = client
-            .post(format!("http://{address}/account/page"))
+            .get(format!("http://{address}/account"))
             .bearer_auth(&session)
             .send()
             .await
@@ -7149,7 +7078,6 @@ mod tests {
         let client = reqwest::Client::new();
         for (method, path) in [
             ("GET", "/account"),
-            ("POST", "/account/page"),
             ("POST", "/account/devices"),
             ("POST", "/account/devices/choose"),
             ("POST", "/account/devices/d/key"),
@@ -7216,12 +7144,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        api.accounts
-            .signed_in("premium", "Premium", "premium", None)
-            .unwrap();
+        create_account(&api, "premium", "Premium", "premium");
         let premium = api.auth.session("premium", 0);
         let account: Value = client
-            .post(format!("http://{address}/account/page"))
+            .get(format!("http://{address}/account"))
             .bearer_auth(&premium)
             .send()
             .await
@@ -7334,12 +7260,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let response = save(session, "pink").await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        api.accounts
-            .signed_in("premium", "Premium", "premium", None)
-            .unwrap();
+        create_account(&api, "premium", "Premium", "premium");
         let premium = api.auth.session("premium", 0);
         let account: Value = client
-            .post(format!("http://{address}/account/page"))
+            .get(format!("http://{address}/account"))
             .bearer_auth(&premium)
             .send()
             .await
@@ -7397,9 +7321,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(account["admin"], false);
-        api.accounts
-            .signed_in("admin", "Admin", "admin", None)
-            .unwrap();
+        create_account(&api, "admin", "Admin", "admin");
         let admin = api.auth.session("admin", 0);
         let account: Value = client
             .get(format!("http://{address}/account"))
@@ -7419,7 +7341,7 @@ mod tests {
         assert_eq!(
             stats,
             json!({
-                "accounts": {"total": 2, "withPage": 1, "paypal": 0, "stripe": 0, "images": 0},
+                "accounts": {"total": 2, "paypal": 0, "stripe": 0, "images": 0},
                 "moblin": {"connectedDevices": 0},
                 "pending": {"orders": 0, "deliveries": 0},
                 "database": { "bytes": 0 },

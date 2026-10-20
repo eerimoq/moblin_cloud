@@ -32,7 +32,7 @@ class PayPalConnect(PayPalTestCase):
 
     def run(self):
         dashboard = self.sign_in()
-        settings = dashboard.create_page()["settings"]
+        settings = dashboard.account()["settings"]
         if settings["merchantId"] is not None:
             settings = dashboard.disconnect_paypal()
             self.assert_is_none(settings["merchantId"])
@@ -53,7 +53,6 @@ class PayPalConnectNeedsFreshSignIn(PayPalTestCase):
 
     def run(self):
         dashboard = self.sign_in()
-        dashboard.create_page()
         stale = Dashboard(self.backend.url, session_issued_at(dashboard.session, int(time.time()) - 11 * 60))
         stale.account()
         self.assert_backend_error(403, stale.connect_paypal, "sign in again to connect PayPal")

@@ -33,7 +33,7 @@ use reqwest::Client;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 
-use crate::accounts::Accounts;
+use crate::accounts::{Accounts, Device, Page};
 use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
 use crate::auth::{Auth, OAuthApp};
@@ -202,6 +202,16 @@ async fn main() -> Result<()> {
     let database = Database::open(cli.database.as_deref())?;
     let store = Arc::new(Store::new(cli.max_streamers, database.clone()));
     let accounts = Accounts::new(database.clone());
+    let remote_control = Streamers::new();
+    accounts.give_missing_pages(|| {
+        let (key, page) = remote_control.new_key()?;
+        let device = Device {
+            id: page.clone(),
+            name: "Moblin".to_string(),
+            key,
+        };
+        Some(Page::new(page, device))
+    });
     let twitch = match (cli.twitch_client_id, cli.twitch_client_secret) {
         (Some(client_id), Some(client_secret)) => Some(Arc::new(Twitch::new(
             client.clone(),
@@ -310,7 +320,7 @@ async fn main() -> Result<()> {
         challenges: Challenges::new(),
         app_attest,
         live: twitch.map(|twitch| Live::new(twitch, cli.twitch_live_channel)),
-        remote_control: Streamers::new(),
+        remote_control,
         pages,
         paypal,
         stripe,

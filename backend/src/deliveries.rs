@@ -221,7 +221,7 @@ impl Deliveries {
             for delivery in self.pending() {
                 let page = accounts
                     .of_page(&delivery.streamer)
-                    .and_then(|account| account.page);
+                    .map(|account| account.page);
                 let devices: Vec<String> = match (&delivery.item, &page) {
                     (_, None) => Vec::new(),
                     (Item::Song { .. }, Some(page)) => page

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::warn;
+use log::{info, warn};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ pub struct Account {
     pub name: String,
     pub login: String,
     pub avatar: Option<String>,
-    pub page: Option<Page>,
+    pub page: Page,
     pub sessions: u64,
     pub merchant_id: Option<String>,
     pub paypal_tracking_id: Option<String>,
@@ -19,7 +19,7 @@ pub struct Account {
     pub stripe_ready: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Page {
     pub id: String,
     pub devices: Vec<Device>,
@@ -71,7 +71,6 @@ impl Page {
 #[serde(rename_all = "camelCase")]
 pub struct AccountStats {
     pub total: u64,
-    pub with_page: u64,
     pub paypal: u64,
     pub stripe: u64,
     pub images: u64,
@@ -80,7 +79,6 @@ pub struct AccountStats {
 #[derive(Debug, PartialEq)]
 pub enum AccountError {
     Unknown,
-    NoPage,
     Full,
     TooManyDevices,
     UnknownDevice,
@@ -92,7 +90,6 @@ const COLUMNS: &str = "name, login, avatar, page_id, page_devices, music_device,
 const SAME_LOGIN: &str = "login != '' AND lower(login) = lower(trim(?1))";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
-    let page_id: Option<String> = row.get(3)?;
     let devices: Option<String> = row.get(4)?;
     let devices = devices
         .map(|devices| {
@@ -112,12 +109,12 @@ fn account(row: &Row) -> rusqlite::Result<Account> {
         name: row.get(0)?,
         login: row.get(1)?,
         avatar: row.get(2)?,
-        page: page_id.map(|id| Page {
-            id,
+        page: Page {
+            id: row.get(3)?,
             devices,
             music_device,
             wheel_device,
-        }),
+        },
         sessions: row.get(7)?,
         merchant_id: row.get(8)?,
         paypal_tracking_id: row.get(9)?,
@@ -150,8 +147,9 @@ impl Accounts {
         name: &str,
         login: &str,
         avatar: Option<&str>,
+        page: Page,
     ) -> Result<Account, AccountError> {
-        let account = self.change(id, true, |account| {
+        let account = self.change(id, Some(page), |account| {
             account.name = name.to_string();
             account.login = login.to_string();
             account.avatar = avatar.map(str::to_string);
@@ -167,7 +165,7 @@ impl Accounts {
     }
 
     pub fn page_of_login(&self, login: &str) -> Option<String> {
-        self.find(SAME_LOGIN, login)?.page.map(|page| page.id)
+        Some(self.find(SAME_LOGIN, login)?.page.id)
     }
 
     pub fn of_page(&self, page: &str) -> Option<Account> {
@@ -194,23 +192,46 @@ impl Accounts {
             "EXISTS (SELECT 1 FROM json_each(page_devices) WHERE value ->> 'key' = ?1)",
             key,
         )?
-        .page?
+        .page
         .devices
         .into_iter()
         .find(|device| device.key == key)
         .map(|device| device.id)
     }
 
-    pub fn give_page(&self, id: &str, page: Page) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
-            account.page.get_or_insert(page);
-            Ok(())
-        })
+    pub fn give_missing_pages(&self, mut new_page: impl FnMut() -> Option<Page>) {
+        let database = self.database.lock();
+        let ids: Vec<String> = match database
+            .prepare("SELECT id FROM accounts WHERE page_id IS NULL")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get(0))?
+                    .collect::<rusqlite::Result<_>>()
+            }) {
+            Ok(ids) => ids,
+            Err(error) => {
+                warn!("failed to read accounts: {error:#}");
+                return;
+            }
+        };
+        for id in ids {
+            let Some(page) = new_page() else {
+                warn!("no page could be created for account {id}");
+                return;
+            };
+            if let Err(error) = database.execute(
+                "UPDATE accounts SET page_id = ?2, page_devices = ?3 WHERE id = ?1",
+                params![id, page.id, serde_json::to_string(&page.devices).unwrap()],
+            ) {
+                warn!("failed to save accounts: {error:#}");
+            }
+            info!("{id} got a page");
+        }
     }
 
     pub fn add_device(&self, id: &str, device: Device) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
-            let page = account.page.as_mut().ok_or(AccountError::NoPage)?;
+        self.change(id, None, |account| {
+            let page = &mut account.page;
             if page.devices.len() >= 5 {
                 return Err(AccountError::TooManyDevices);
             }
@@ -220,8 +241,8 @@ impl Accounts {
     }
 
     pub fn remove_device(&self, id: &str, device: &str) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
-            let page = account.page.as_mut().ok_or(AccountError::NoPage)?;
+        self.change(id, None, |account| {
+            let page = &mut account.page;
             page.device_mut(device)?;
             page.devices.retain(|other| other.id != device);
             for chosen in [&mut page.music_device, &mut page.wheel_device] {
@@ -239,8 +260,8 @@ impl Accounts {
         device: &str,
         key: String,
     ) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
-            let page = account.page.as_mut().ok_or(AccountError::NoPage)?;
+        self.change(id, None, |account| {
+            let page = &mut account.page;
             page.device_mut(device)?.key = key;
             Ok(())
         })
@@ -252,8 +273,8 @@ impl Accounts {
         music: String,
         wheel: String,
     ) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
-            let page = account.page.as_mut().ok_or(AccountError::NoPage)?;
+        self.change(id, None, |account| {
+            let page = &mut account.page;
             page.device_mut(&music)?;
             page.device_mut(&wheel)?;
             page.music_device = Some(music);
@@ -263,7 +284,7 @@ impl Accounts {
     }
 
     pub fn start_paypal(&self, id: &str, tracking_id: String) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
+        self.change(id, None, |account| {
             account.paypal_tracking_id = Some(tracking_id);
             Ok(())
         })
@@ -275,7 +296,7 @@ impl Accounts {
         tracking_id: &str,
         merchant_id: String,
     ) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
+        self.change(id, None, |account| {
             if account.paypal_tracking_id.as_deref() == Some(tracking_id) {
                 account.merchant_id = Some(merchant_id);
                 account.paypal_tracking_id = None;
@@ -315,7 +336,7 @@ impl Accounts {
     }
 
     pub fn forget_paypal(&self, id: &str) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
+        self.change(id, None, |account| {
             account.merchant_id = None;
             account.paypal_tracking_id = None;
             Ok(())
@@ -323,7 +344,7 @@ impl Accounts {
     }
 
     pub fn start_stripe(&self, id: &str, account_id: String) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
+        self.change(id, None, |account| {
             if account.stripe_account_id.as_ref() != Some(&account_id) {
                 account.stripe_account_id = Some(account_id);
                 account.stripe_ready = false;
@@ -338,7 +359,7 @@ impl Accounts {
         account_id: &str,
         ready: bool,
     ) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
+        self.change(id, None, |account| {
             if account.stripe_account_id.as_deref() == Some(account_id) {
                 account.stripe_ready = ready;
             }
@@ -347,7 +368,7 @@ impl Accounts {
     }
 
     pub fn forget_stripe(&self, id: &str) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
+        self.change(id, None, |account| {
             account.stripe_account_id = None;
             account.stripe_ready = false;
             Ok(())
@@ -355,7 +376,7 @@ impl Accounts {
     }
 
     pub fn sign_out(&self, id: &str) -> Result<Account, AccountError> {
-        self.change(id, false, |account| {
+        self.change(id, None, |account| {
             account.sessions += 1;
             Ok(())
         })
@@ -365,14 +386,13 @@ impl Accounts {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*), count(page_id), count(merchant_id), coalesce(sum(stripe_ready), 0) FROM accounts",
+                "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0) FROM accounts",
                 [],
                 |row| {
                     Ok(AccountStats {
                         total: row.get(0)?,
-                        with_page: row.get(1)?,
-                        paypal: row.get(2)?,
-                        stripe: row.get(3)?,
+                        paypal: row.get(1)?,
+                        stripe: row.get(2)?,
                         images: 0,
                     })
                 },
@@ -401,7 +421,7 @@ impl Accounts {
     fn change(
         &self,
         id: &str,
-        create: bool,
+        create: Option<Page>,
         change: impl FnOnce(&mut Account) -> Result<(), AccountError>,
     ) -> Result<Account, AccountError> {
         let database = self.database.lock();
@@ -415,11 +435,16 @@ impl Accounts {
             .map_err(not_saved)?;
         let mut account = match &old {
             Some(account) => account.clone(),
-            None if !create => return Err(AccountError::Unknown),
-            None if count(&database).map_err(not_saved)? >= 10000 => {
-                return Err(AccountError::Full);
-            }
-            None => Account::default(),
+            None => match create {
+                None => return Err(AccountError::Unknown),
+                Some(_) if count(&database).map_err(not_saved)? >= 10000 => {
+                    return Err(AccountError::Full);
+                }
+                Some(page) => Account {
+                    page,
+                    ..Account::default()
+                },
+            },
         };
         change(&mut account)?;
         if old.as_ref() == Some(&account) {
@@ -433,13 +458,10 @@ impl Accounts {
                     account.name,
                     account.login,
                     account.avatar,
-                    account.page.as_ref().map(|page| &page.id),
-                    account
-                        .page
-                        .as_ref()
-                        .map(|page| serde_json::to_string(&page.devices).unwrap()),
-                    account.page.as_ref().and_then(|page| page.music_device.as_ref()),
-                    account.page.as_ref().and_then(|page| page.wheel_device.as_ref()),
+                    account.page.id,
+                    serde_json::to_string(&account.page.devices).unwrap(),
+                    account.page.music_device,
+                    account.page.wheel_device,
                     account.sessions,
                     account.merchant_id,
                     account.paypal_tracking_id,
@@ -478,56 +500,75 @@ mod tests {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.get("1"), None);
         assert_eq!(
-            accounts.give_page("1", page("p", "k")),
-            Err(AccountError::Unknown)
-        );
-        assert_eq!(
-            accounts.signed_in("1", "Erik", "erik", None),
+            accounts.signed_in("1", "Erik", "erik", None, page("p", "k")),
             Ok(Account {
                 name: "Erik".to_string(),
                 login: "erik".to_string(),
+                page: page("p", "k"),
                 ..Account::default()
             })
         );
         assert_eq!(
-            accounts.replace_key("1", "p", "k".to_string()),
-            Err(AccountError::NoPage)
-        );
-        accounts.give_page("1", page("p", "k")).unwrap();
-        assert_eq!(
-            accounts.give_page("1", page("q", "o")).unwrap().page,
-            Some(page("p", "k"))
-        );
-        assert_eq!(
             accounts
-                .signed_in("1", "Eerimoq", "eerimoq", None)
+                .signed_in("1", "Eerimoq", "eerimoq", None, page("q", "o"))
                 .unwrap()
                 .page,
-            Some(page("p", "k"))
+            page("p", "k")
         );
         assert_eq!(accounts.get("1").unwrap().name, "Eerimoq");
+    }
+
+    #[test]
+    fn accounts_without_a_page_get_one() {
+        let accounts = Accounts::new(Database::memory());
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
+        accounts
+            .database
+            .lock()
+            .execute_batch(
+                "INSERT INTO accounts (id, name, login, sessions) VALUES ('2', 'Old', 'old', 0), ('3', 'Older', 'older', 0)",
+            )
+            .unwrap();
+        assert_eq!(accounts.get("2"), None);
+        let mut pages = vec![page("b", "l"), page("a", "k")];
+        accounts.give_missing_pages(|| pages.pop());
+        assert_eq!(accounts.get("1").unwrap().page, page("p", "k"));
+        assert_eq!(accounts.get("2").unwrap().page, page("a", "k"));
+        assert_eq!(accounts.get("3").unwrap().page, page("b", "l"));
+        assert_eq!(accounts.device_of_key("l").as_deref(), Some("b"));
+        accounts.give_missing_pages(|| panic!("no page is missing"));
     }
 
     #[test]
     fn pages_find_their_account() {
         let accounts = Accounts::new(Database::memory());
         accounts
-            .signed_in("1", "Erik", "erik", Some("https://example.com/a.png"))
+            .signed_in(
+                "1",
+                "Erik",
+                "erik",
+                Some("https://example.com/a.png"),
+                page("p", "k"),
+            )
             .unwrap();
-        assert_eq!(accounts.of_page("p"), None);
-        accounts.give_page("1", page("p", "k")).unwrap();
+        assert_eq!(accounts.of_page("q"), None);
         let account = accounts.of_page("p").unwrap();
         assert_eq!(account.login, "erik");
         assert_eq!(account.avatar.as_deref(), Some("https://example.com/a.png"));
-        accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
         assert_eq!(accounts.of_page("p").unwrap().avatar, None);
     }
 
     #[test]
     fn keys_are_replaced() {
         let accounts = Accounts::new(Database::memory());
-        accounts.signed_in("1", "Erik", "erik", None).unwrap();
-        accounts.give_page("1", page("p", "k")).unwrap();
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
         assert_eq!(accounts.device_of_key("k").as_deref(), Some("p"));
         assert_eq!(
             accounts.replace_key("1", "d", "n".to_string()),
@@ -538,7 +579,7 @@ mod tests {
                 .replace_key("1", "p", "n".to_string())
                 .unwrap()
                 .page,
-            Some(page("p", "n"))
+            page("p", "n")
         );
         assert_eq!(accounts.device_of_key("k"), None);
         assert_eq!(accounts.device_of_key("n").as_deref(), Some("p"));
@@ -547,12 +588,13 @@ mod tests {
     #[test]
     fn devices_are_added_chosen_and_removed() {
         let accounts = Accounts::new(Database::memory());
-        accounts.signed_in("1", "Erik", "erik", None).unwrap();
         assert_eq!(
             accounts.add_device("1", device("a", "ka")),
-            Err(AccountError::NoPage)
+            Err(AccountError::Unknown)
         );
-        accounts.give_page("1", page("p", "k")).unwrap();
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
         for name in ["a", "b", "c", "d"] {
             accounts
                 .add_device("1", device(name, &format!("k{name}")))
@@ -563,7 +605,7 @@ mod tests {
             Err(AccountError::TooManyDevices)
         );
         assert_eq!(accounts.device_of_key("kc").as_deref(), Some("c"));
-        let page = accounts.get("1").unwrap().page.unwrap();
+        let page = accounts.get("1").unwrap().page;
         assert_eq!(page.music_device().unwrap().id, "p");
         assert_eq!(page.wheel_device().unwrap().id, "p");
         assert_eq!(
@@ -573,11 +615,10 @@ mod tests {
         let page = accounts
             .choose_devices("1", "a".to_string(), "b".to_string())
             .unwrap()
-            .page
-            .unwrap();
+            .page;
         assert_eq!(page.music_device().unwrap().id, "a");
         assert_eq!(page.wheel_device().unwrap().id, "b");
-        let page = accounts.remove_device("1", "a").unwrap().page.unwrap();
+        let page = accounts.remove_device("1", "a").unwrap().page;
         assert_eq!(page.music_device, None);
         assert_eq!(page.music_device().unwrap().id, "p");
         assert_eq!(page.wheel_device().unwrap().id, "b");
@@ -589,7 +630,7 @@ mod tests {
         for name in ["p", "b", "c", "d"] {
             accounts.remove_device("1", name).unwrap();
         }
-        let page = accounts.get("1").unwrap().page.unwrap();
+        let page = accounts.get("1").unwrap().page;
         assert!(page.devices.is_empty());
         assert_eq!(page.music_device(), None);
         assert_eq!(accounts.page_of_login("erik").as_deref(), Some("p"));
@@ -599,11 +640,13 @@ mod tests {
     fn signing_out_ends_sessions() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.sign_out("1"), Err(AccountError::Unknown));
-        accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
         assert_eq!(accounts.sign_out("1").unwrap().sessions, 1);
         assert_eq!(
             accounts
-                .signed_in("1", "Erik", "erik", None)
+                .signed_in("1", "Erik", "erik", None, page("q", "o"))
                 .unwrap()
                 .sessions,
             1
@@ -617,7 +660,9 @@ mod tests {
             accounts.start_paypal("1", "a".to_string()),
             Err(AccountError::Unknown)
         );
-        accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
         accounts.start_paypal("1", "a".to_string()).unwrap();
         accounts.start_paypal("1", "b".to_string()).unwrap();
         let account = accounts
@@ -657,7 +702,9 @@ mod tests {
             accounts.start_stripe("1", "acct_1".to_string()),
             Err(AccountError::Unknown)
         );
-        accounts.signed_in("1", "Erik", "erik", None).unwrap();
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
         accounts.start_stripe("1", "acct_1".to_string()).unwrap();
         assert!(
             !accounts
@@ -710,9 +757,8 @@ mod tests {
         let account = accounts.get("1").unwrap();
         assert_eq!(account.merchant_id.as_deref(), Some("M"));
         assert_eq!(account.stripe_account_id, None);
-        let page = account.page.unwrap();
-        assert_eq!(page.id, "p");
-        assert!(page.devices.is_empty());
+        assert_eq!(account.page.id, "p");
+        assert!(account.page.devices.is_empty());
         assert_eq!(accounts.device_of_key("k"), None);
         accounts.start_stripe("1", "acct_1".to_string()).unwrap();
         accounts.stripe_ready("1", "acct_1", true).unwrap();
@@ -724,14 +770,16 @@ mod tests {
     #[test]
     fn logins_find_pages() {
         let accounts = Accounts::new(Database::memory());
-        accounts.signed_in("1", "Erik", "erik", None).unwrap();
         assert_eq!(accounts.page_of_login("erik"), None);
-        accounts.give_page("1", page("a", "k")).unwrap();
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("a", "k"))
+            .unwrap();
         assert_eq!(accounts.page_of_login("ERIK").as_deref(), Some("a"));
         assert_eq!(accounts.page_of_login("other"), None);
         assert_eq!(accounts.page_of_login(""), None);
-        accounts.signed_in("2", "Erik", "erik", None).unwrap();
-        accounts.give_page("2", page("c", "l")).unwrap();
+        accounts
+            .signed_in("2", "Erik", "erik", None, page("c", "l"))
+            .unwrap();
         assert_eq!(accounts.page_of_login("erik").as_deref(), Some("c"));
         assert_eq!(accounts.get("1").unwrap().login, "");
     }
@@ -740,8 +788,9 @@ mod tests {
     fn accounts_are_saved() {
         let path = database::temporary_path("accounts");
         let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
-        accounts.signed_in("3", "erik", "erik", None).unwrap();
-        accounts.give_page("3", page("p", "k")).unwrap();
+        accounts
+            .signed_in("3", "erik", "erik", None, page("p", "k"))
+            .unwrap();
         let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
         assert_eq!(
             accounts.get("3"),
@@ -749,7 +798,7 @@ mod tests {
                 name: "erik".to_string(),
                 login: "erik".to_string(),
                 avatar: None,
-                page: Some(page("p", "k")),
+                page: page("p", "k"),
                 ..Account::default()
             })
         );

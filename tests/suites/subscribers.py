@@ -27,7 +27,6 @@ class SubscribersTestCase(TestCase):
     def setup(self):
         self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in()
-        self.dashboard.create_page()
         self.page_id = self.dashboard.page_id()
         self.viewer = self.website.viewer(self.page_id)
 
@@ -67,7 +66,6 @@ class SubscribersSignIn(SubscribersTestCase):
         response = Client(self.website.url, subscriber.token).request("GET", "/account")
         self.assert_equal(response.status_code, 401)
         other = self.website.fake_sign_in("otherstreamer")
-        other.create_page()
         stranger = Subscriber(self.website.url, other.page_id(), subscriber.token)
         self.assert_backend_error(401, stranger.songs, "Sign in with Twitch again.")
         callback_url, browser = self.website.start_viewer_sign_in(self.page_id, "signin3")

@@ -15,7 +15,7 @@ export type Account = {
   devices: Device[];
   musicDevice: string | null;
   wheelDevice: string | null;
-  settings: Settings | null;
+  settings: Settings;
   admin: boolean;
   premium: boolean;
 };
@@ -40,7 +40,7 @@ export type RecentKind = "song" | "tip" | "spin";
 export type RecentList = { items: Recent[]; more: boolean };
 
 export type AdminStats = {
-  accounts: { total: number; withPage: number; paypal: number; stripe: number; images: number };
+  accounts: { total: number; paypal: number; stripe: number; images: number };
   moblin: { connectedDevices: number };
   pending: { orders: number; deliveries: number };
   database: { bytes: number };
@@ -113,9 +113,6 @@ export async function signOutEverywhere(session: string) {
     headers: { authorization: `Bearer ${session}` },
   });
 }
-
-export const createStreamer = (session: string) =>
-  call<Account>(session, "/account/page", { method: "POST" });
 
 export const addDevice = (session: string, name: string) =>
   call<Account>(session, "/account/devices", post({ name }));

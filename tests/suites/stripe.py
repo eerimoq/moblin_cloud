@@ -19,7 +19,7 @@ class StripeConnectStarts(StripeTestCase):
 
     def run(self):
         dashboard = self.sign_in("stripepending")
-        settings = dashboard.create_page()["settings"]
+        settings = dashboard.account()["settings"]
         self.assert_true(settings["stripe"])
         self.assert_true(settings["stripeTest"])
         self.assert_is_none(settings["stripeAccountId"])
@@ -57,7 +57,6 @@ class StripeConnectNeedsFreshSignIn(StripeTestCase):
 
     def run(self):
         dashboard = self.sign_in()
-        dashboard.create_page()
         stale = Dashboard(self.backend.url, session_issued_at(dashboard.session, int(time.time()) - 11 * 60))
         stale.account()
         self.assert_backend_error(403, stale.connect_stripe, "sign in again to connect Stripe")
@@ -68,7 +67,7 @@ class StripeNotForPagesWithoutIt(StripeTestCase):
 
     def run(self):
         dashboard = self.sign_in("stripepending")
-        page_id = dashboard.create_page()["settings"]["id"]
+        page_id = dashboard.page_id()
         viewer = self.website.viewer(page_id)
         self.assert_equal(viewer.tips(), None)
         self.skip_if_no_paypal()

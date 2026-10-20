@@ -59,8 +59,8 @@ class Context:
         return self.website.dashboard_of(self.browser().run(job))
 
     def page_with_paypal(self, dashboard: Dashboard) -> dict:
-        """Gives the signed in streamer a page and connects the sandbox seller to it, if not already."""
-        account = dashboard.create_page()
+        """Connects the sandbox seller to the signed in streamer's page, if not already."""
+        account = dashboard.account()
         if account["settings"]["merchantId"] is not None:
             return account["settings"]
         action_url = dashboard.connect_paypal()
@@ -73,7 +73,7 @@ class Context:
         A new account must be set up by hand in Stripe's onboarding, once per run, so it is
         skipped unless interactive.
         """
-        account = dashboard.create_page()
+        account = dashboard.account()
         if account["settings"]["stripeAccountId"] is not None:
             return account["settings"]
         if not self.interactive:

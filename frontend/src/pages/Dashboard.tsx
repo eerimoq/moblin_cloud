@@ -28,7 +28,6 @@ import {
   disconnectStripe,
   fetchAccount,
   fetchRecent,
-  createStreamer,
   newDeviceKey,
   readSession,
   removeDevice,
@@ -1551,12 +1550,11 @@ function Latest(props: {
 function Admin(props: {
   session: string;
   account: Account;
-  settings: Settings;
   onSignOut: () => void;
   preview?: boolean;
 }) {
   const [account, setAccount] = createSignal(props.account);
-  const [settings, setSettings] = createSignal(props.settings);
+  const [settings, setSettings] = createSignal(props.account.settings);
   const [busy, setBusy] = createSignal(false);
   const empty = { items: [], more: false };
   const [recent, setRecent] = createSignal<Record<RecentKind, RecentList> | null>(
@@ -1657,9 +1655,7 @@ function Admin(props: {
       try {
         const account = await fetchAccount(props.session);
         setAccount(account);
-        if (account.settings) {
-          setSettings(account.settings);
-        }
+        setSettings(account.settings);
       } catch (error) {
         if (signedOut(error)) {
           props.onSignOut();
@@ -2270,65 +2266,6 @@ function DeviceSettings(props: {
   );
 }
 
-function SignedIn(props: {
-  session: string;
-  account: Account;
-  onAccount: (account: Account) => void;
-  onSignOut: () => void;
-}) {
-  const [failed, setFailed] = createSignal(false);
-
-  const create = async () => {
-    setFailed(false);
-    try {
-      const account = await createStreamer(props.session);
-      if (account.settings) {
-        props.onAccount(account);
-      } else {
-        setFailed(true);
-      }
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      } else {
-        setFailed(true);
-      }
-    }
-  };
-
-  onMount(() => {
-    if (!props.account.settings) {
-      void create();
-    }
-  });
-
-  return (
-    <Show
-      when={props.account.settings ? props.account : null}
-      keyed
-      fallback={
-        <Show when={failed()} fallback={<Spinner />}>
-          <div class="flex flex-wrap items-center gap-4">
-            <Notice status>{t("Could not create your tip page.")}</Notice>
-            <button type="button" class={ghostButtonClass} onClick={create}>
-              {t("Try again")}
-            </button>
-          </div>
-        </Show>
-      }
-    >
-      {(account) => (
-        <Admin
-          session={props.session}
-          account={account}
-          settings={account.settings!}
-          onSignOut={props.onSignOut}
-        />
-      )}
-    </Show>
-  );
-}
-
 function Avatar(props: { account: Account }) {
   return (
     <Show
@@ -2377,37 +2314,36 @@ function Preview(props: { failed: boolean }) {
               ],
               musicDevice: null,
               wheelDevice: null,
-              settings: null,
+              settings: {
+                id: "",
+                title: null,
+                message: null,
+                accent: null,
+                font: null,
+                image: null,
+                connected: true,
+                currency: "USD",
+                paywall: { price: 100 },
+                subSongs: { tier1: 1, tier2: 5, tier3: 10 },
+                subSpins: { tier1: 1, tier2: 5, tier3: 10 },
+                tips: { amounts: [300, 500, 1000] },
+                spin: {
+                  options: [
+                    { spins: 1, price: 200 },
+                    { spins: 5, price: 800 },
+                  ],
+                },
+                paypal: true,
+                merchantId: "preview",
+                paypalPending: false,
+                paypalSandbox: false,
+                stripe: true,
+                stripeAccountId: null,
+                stripePending: false,
+                stripeTest: false,
+              },
               admin: false,
               premium: false,
-            }}
-            settings={{
-              id: "",
-              title: null,
-              message: null,
-              accent: null,
-              font: null,
-              image: null,
-              connected: true,
-              currency: "USD",
-              paywall: { price: 100 },
-              subSongs: { tier1: 1, tier2: 5, tier3: 10 },
-              subSpins: { tier1: 1, tier2: 5, tier3: 10 },
-              tips: { amounts: [300, 500, 1000] },
-              spin: {
-                options: [
-                  { spins: 1, price: 200 },
-                  { spins: 5, price: 800 },
-                ],
-              },
-              paypal: true,
-              merchantId: "preview",
-              paypalPending: false,
-              paypalSandbox: false,
-              stripe: true,
-              stripeAccountId: null,
-              stripePending: false,
-              stripeTest: false,
             }}
             onSignOut={() => {}}
           />
@@ -2550,12 +2486,7 @@ export default function Dashboard() {
           <Show when={!loading()} fallback={<Spinner />}>
             <Show when={session()} keyed fallback={<Preview failed={signInFailed()} />}>
               {(current) => (
-                <SignedIn
-                  session={current.session}
-                  account={current.account}
-                  onAccount={(account) => setSession({ ...current, account })}
-                  onSignOut={signOut}
-                />
+                <Admin session={current.session} account={current.account} onSignOut={signOut} />
               )}
             </Show>
           </Show>

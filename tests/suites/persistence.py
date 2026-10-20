@@ -7,7 +7,6 @@ class PersistenceBackendRestart(TestCase):
 
     def run(self):
         dashboard = self.sign_in()
-        dashboard.create_page()
         dashboard.save_settings(title="Still here", accent="blue")
         account = dashboard.account()
         if self.context.moblin is not None:

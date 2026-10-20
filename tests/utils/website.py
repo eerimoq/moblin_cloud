@@ -135,9 +135,6 @@ class Dashboard(Client):
     def account(self) -> dict:
         return self.get("/account")
 
-    def create_page(self) -> dict:
-        return self.post("/account/page")
-
     def add_device(self, name: str) -> dict:
         return self.post("/account/devices", {"name": name})
 

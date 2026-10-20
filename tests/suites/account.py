@@ -54,7 +54,7 @@ class AccountTestCase(TestCase):
 
 
 class AccountSignIn(AccountTestCase):
-    """Sign in with Twitch from the dashboard and get the account, which has no page yet."""
+    """Sign in with Twitch from the dashboard and get the account with its page."""
 
     def run(self):
         callback_url, browser = self.website.start_sign_in("signin")
@@ -63,16 +63,23 @@ class AccountSignIn(AccountTestCase):
         dashboard_url = self.website.finish_sign_in(callback_url, browser)
         self.assert_true(dashboard_url.startswith(f"{FRONTEND_URL}/dashboard/#session="))
         account = self.website.dashboard_of(dashboard_url).account()
+        page_id = account["settings"]["id"]
         self.assert_equal(
-            account,
+            {key: account[key] for key in account if key != "settings"},
             {
                 "name": "signin",
                 "login": "signin",
                 "avatar": None,
-                "devices": [],
-                "musicDevice": None,
-                "wheelDevice": None,
-                "settings": None,
+                "devices": [
+                    {
+                        "id": page_id,
+                        "name": "Moblin",
+                        "key": account["devices"][0]["key"],
+                        "connected": False,
+                    }
+                ],
+                "musicDevice": page_id,
+                "wheelDevice": page_id,
                 "admin": False,
                 "premium": False,
             },
@@ -115,7 +122,6 @@ class AccountNotSignedIn(TestCase):
         for session in [None, "garbage", "a.b", session_issued_at("ZmFrZS14OjA6MA.x", int(time.time()))]:
             dashboard = Dashboard(self.backend.url, session)
             self.assert_backend_error(401, dashboard.account, "not signed in")
-            self.assert_backend_error(401, dashboard.create_page, "not signed in")
             self.assert_backend_error(401, partial(dashboard.new_moblin_cloud_key, "d"), "not signed in")
             self.assert_backend_error(401, partial(dashboard.add_device, "Moblin"), "not signed in")
             self.assert_backend_error(401, partial(dashboard.remove_device, "d"), "not signed in")
@@ -135,16 +141,12 @@ class AccountExpiredSession(AccountTestCase):
         self.assert_signed_out(Dashboard(self.backend.url, old))
 
 
-class AccountCreatePage(AccountTestCase):
-    """Create the streamer's page on the first visit, and get the same page on later visits."""
+class AccountPageAtSignIn(AccountTestCase):
+    """Give the streamer a page with a first Moblin device when signing in, and keep it on later sign ins."""
 
     def run(self):
         dashboard = self.sign_in("createpage")
-        self.assert_backend_error(404, dashboard.save_settings, "no page")
-        self.assert_backend_error(404, dashboard.check_paypal, "no page")
-        self.assert_backend_error(404, dashboard.disconnect_paypal, "no page")
-        self.assert_backend_error(404, lambda: dashboard.add_device("Moblin"), "no page")
-        account = dashboard.create_page()
+        account = dashboard.account()
         self.assert_equal(len(account["devices"]), 1)
         self.assert_regex(account["devices"][0]["key"], RE_MOBLIN_CLOUD_KEY)
         settings = account["settings"]
@@ -164,8 +166,8 @@ class AccountCreatePage(AccountTestCase):
         )
         self.assert_equal(settings["paypal"], self.context.config.paypal() is not None)
         self.assert_equal(settings["paypalSandbox"], self.context.config.paypal() is not None)
-        self.assert_equal(dashboard.create_page(), account)
-        self.assert_equal(dashboard.account(), account)
+        if self.context.config.twitch_sign_in() == "fake":
+            self.assert_equal(self.sign_in("createpage").account(), account)
         page_id = settings["id"]
         self.assert_equal(self.website.id_of_twitch_login(account["login"]), page_id)
         self.assert_equal(self.website.id_of_twitch_login(account["login"].upper()), page_id)
@@ -197,7 +199,7 @@ class AccountNewMoblinCloudKey(AccountTestCase):
 
     def run(self):
         dashboard = self.sign_in("newcloudkey")
-        account = dashboard.create_page()
+        account = dashboard.account()
         port = self.backend.port
         old_key = account["devices"][0]["key"]
         self.assert_true(streamer_connects(port, old_key))
@@ -216,7 +218,7 @@ class AccountDevices(AccountTestCase):
 
     def run(self):
         dashboard = self.sign_in("devices")
-        account = dashboard.create_page()
+        account = dashboard.account()
         first = account["devices"][0]["id"]
         self.assert_backend_error(
             400, lambda: dashboard.add_device(" "), "the name must be 1 to 30 characters"
@@ -250,7 +252,7 @@ class AccountSignOutEverywhere(AccountTestCase):
     def run(self):
         first = self.sign_in("signout")
         second = self.sign_in("signout")
-        page_id = first.create_page()["settings"]["id"]
+        page_id = first.page_id()
         first.sign_out_everywhere()
         self.assert_signed_out(first)
         self.assert_signed_out(second)
@@ -263,7 +265,7 @@ class AccountPageLook(AccountTestCase):
 
     def run(self):
         dashboard = self.sign_in("pagelook")
-        page_id = dashboard.create_page()["settings"]["id"]
+        page_id = dashboard.page_id()
         settings = dashboard.save_settings(
             title="  Hello!  ", message="Thanks for watching.", accent="purple", font="serif"
         )
@@ -293,7 +295,6 @@ class AccountPageLook(AccountTestCase):
         self.assert_backend_error(400, lambda: dashboard.save_settings(font="comic"), invalid)
         self.assert_equal(dashboard.account()["settings"]["title"], 60 * "å")
         normal = self.sign_in("normallook")
-        normal.create_page()
         self.assert_backend_error(
             403, lambda: normal.save_settings(font="serif"), "fonts are only for premium accounts"
         )
@@ -305,7 +306,6 @@ class AccountCurrency(AccountTestCase):
 
     def run(self):
         dashboard = self.sign_in("currency")
-        dashboard.create_page()
         self.assert_equal(dashboard.save_settings(currency=" eur ")["currency"], "EUR")
         self.assert_equal(dashboard.save_settings()["currency"], "EUR")
         self.assert_backend_error(
@@ -319,7 +319,7 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
 
     def run(self):
         dashboard = self.sign_in("paidneedspaypal")
-        page_id = dashboard.create_page()["settings"]["id"]
+        page_id = dashboard.page_id()
         if self.context.config.paypal() is None and self.context.config.stripe() is None:
             status, text = 503, "payments are unavailable"
         else:
@@ -339,15 +339,13 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
 
 
 class AccountTestDeliveriesNeedMoblin(AccountTestCase):
-    """Refuse the dashboard's free test song and wheel spin without a page or a connected Moblin, and queue the test tip."""
+    """Refuse the dashboard's free test song and wheel spin without a connected Moblin, and queue the test tip."""
 
     def run(self):
         dashboard = self.sign_in("testneedsmoblin")
         empty = {"items": [], "more": False}
         for kind in ["song", "tip", "spin"]:
             self.assert_equal(dashboard.recent(kind), empty)
-        self.assert_backend_error(404, dashboard.test_tip, "no page")
-        dashboard.create_page()
         song = "https://music.apple.com/us/album/take-on-me/380907762?i=380907765"
         self.assert_backend_error(409, lambda: dashboard.test_song(song), "Connect Moblin first.")
         self.assert_backend_error(409, dashboard.test_spin, "Connect Moblin first.")
@@ -361,17 +359,15 @@ class AccountAdmin(AccountTestCase):
 
     def run(self):
         streamer = self.sign_in("notadmin")
-        streamer.create_page()
         self.assert_false(streamer.account()["admin"])
         self.assert_backend_error(403, streamer.admin_stats, "not an admin")
         self.assert_backend_error(401, Dashboard(self.backend.url, None).admin_stats, "not signed in")
         admin = self.sign_in("admin")
         self.assert_true(admin.account()["admin"])
         stats = admin.admin_stats()
-        self.assert_equal(sorted(stats), ["accounts", "counters", "moblin", "pending"])
-        self.assert_equal(sorted(stats["accounts"]), ["images", "paypal", "stripe", "total", "withPage"])
+        self.assert_equal(sorted(stats), ["accounts", "counters", "database", "moblin", "pending"])
+        self.assert_equal(sorted(stats["accounts"]), ["images", "paypal", "stripe", "total"])
         self.assert_true(stats["accounts"]["total"] >= 2)
-        self.assert_true(stats["accounts"]["withPage"] >= 1)
         self.assert_in("connectedDevices", stats["moblin"])
         self.assert_equal(sorted(stats["pending"]), ["deliveries", "orders"])
         for counter in stats["counters"]:
@@ -405,7 +401,7 @@ def tests(context: Context):
         AccountSignInFromAnotherBrowser(context),
         AccountNotSignedIn(context),
         AccountExpiredSession(context),
-        AccountCreatePage(context),
+        AccountPageAtSignIn(context),
         AccountUnknownPage(context),
         AccountNewMoblinCloudKey(context),
         AccountDevices(context),
