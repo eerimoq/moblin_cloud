@@ -1798,7 +1798,13 @@ function Admin(props: {
         <div hidden={active() !== "tips"} class="flex flex-col gap-6">
           <Show
             when={paid(settings().tips !== null)}
-            fallback={<NeedsPayments title={t("Tips")} onConnect={() => select("payments")} />}
+            fallback={
+              <NeedsPayments
+                title={t("Tips")}
+                available={payments()}
+                onConnect={() => select("payments")}
+              />
+            }
           >
             <TipSettings
               tips={settings().tips}
@@ -1819,7 +1825,11 @@ function Admin(props: {
           <Show
             when={paid(settings().spin !== null)}
             fallback={
-              <NeedsPayments title={t("Wheel of luck")} onConnect={() => select("payments")} />
+              <NeedsPayments
+                title={t("Wheel of luck")}
+                available={payments()}
+                onConnect={() => select("payments")}
+              />
             }
           >
             <SpinSettings
@@ -1847,7 +1857,11 @@ function Admin(props: {
           <Show
             when={paid(settings().paywall !== null)}
             fallback={
-              <NeedsPayments title={t("Song requests")} onConnect={() => select("payments")} />
+              <NeedsPayments
+                title={t("Song requests")}
+                available={payments()}
+                onConnect={() => select("payments")}
+              />
             }
           >
             <SongSettings
@@ -1915,18 +1929,23 @@ const onOff = (on: boolean) => ({ on, text: on ? t("On") : t("Off") });
 
 const connectedOrNot = (on: boolean) => ({ on, text: on ? t("Connected") : t("Not connected") });
 
-function NeedsPayments(props: { title: string; onConnect: () => void }) {
+function NeedsPayments(props: { title: string; available: boolean; onConnect: () => void }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{props.title}</h2>
-      <p class="text-ink-2">
-        {t("Connect PayPal or Stripe first, so the money goes straight to you.")}
-      </p>
-      <div>
-        <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
-          {t("Go to payments")}
-        </button>
-      </div>
+      <Show
+        when={props.available}
+        fallback={<p class="text-ink-2">{t("Payments are not available right now.")}</p>}
+      >
+        <p class="text-ink-2">
+          {t("Connect PayPal or Stripe first, so the money goes straight to you.")}
+        </p>
+        <div>
+          <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
+            {t("Go to payments")}
+          </button>
+        </div>
+      </Show>
     </div>
   );
 }

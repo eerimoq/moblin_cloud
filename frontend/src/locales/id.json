@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Pembayaran dibatalkan. Tidak ada tip yang dikirim dan roda tidak diputar.",
   "Payment cancelled. No tip was sent.": "Pembayaran dibatalkan. Tidak ada tip yang dikirim.",
   "Payments": "Pembayaran",
+  "Payments are not available right now.": "Pembayaran sedang tidak tersedia saat ini.",
   "Payments are unavailable right now.": "Pembayaran sedang tidak tersedia.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "Pilih Kustom di wizard (SRT(LA), RTMP(S), RIST, atau WHIP), atau pengaturan jaringan Server saya (SRT(LA) atau RTMP(S)), untuk streaming ke server SRT, penerima SRTLA, atau BELABOX cloud. Saat Tampilkan semua pengaturan aktif, Pengaturan → Stream → <stream kamu> → SRT(LA) punya Latensi (default 3000 ms), bitrate adaptif, dan prioritas koneksi.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Pilih Tipe, beri Nama, atur, lalu pilih scene tempat widget akan ditambahkan.",

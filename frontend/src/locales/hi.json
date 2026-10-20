@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "भुगतान रद्द हुआ। कोई टिप नहीं भेजी गई और व्हील नहीं घुमाया गया।",
   "Payment cancelled. No tip was sent.": "भुगतान रद्द किया गया। कोई टिप नहीं भेजी गई।",
   "Payments": "भुगतान",
+  "Payments are not available right now.": "भुगतान अभी उपलब्ध नहीं हैं।",
   "Payments are unavailable right now.": "अभी भुगतान उपलब्ध नहीं हैं।",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "SRT सर्वर, SRTLA रिसीवर या BELABOX cloud पर स्ट्रीम करने के लिए विज़ार्ड में Custom (SRT(LA), RTMP(S), RIST या WHIP) चुनें, या नेटवर्क सेटअप My server(s) (SRT(LA) या RTMP(S)) चुनें। सभी सेटिंग्स दिखाएँ चालू होने पर, सेटिंग्स → स्ट्रीम → <आपकी स्ट्रीम> → SRT(LA) में लेटेंसी (डिफ़ॉल्ट 3000 ms), एडैप्टिव bitrate और कनेक्शन प्राथमिकताएँ मिलती हैं।",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "एक टाइप चुनें, उसे नाम दें, उसे कॉन्फ़िगर करें और वे सीन चुनें जिनमें विजेट जोड़ना है।",

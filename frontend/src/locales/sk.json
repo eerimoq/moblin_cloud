@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Platba bola zrušená. Tip sa neodoslal a koleso sa nezatočilo.",
   "Payment cancelled. No tip was sent.": "Platba zrušená. Tip nebol odoslaný.",
   "Payments": "Platby",
+  "Payments are not available right now.": "Platby momentálne nie sú dostupné.",
   "Payments are unavailable right now.": "Platby momentálne nie sú dostupné.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "V sprievodcovi vyber Vlastné (SRT(LA), RTMP(S), RIST alebo WHIP), alebo sieťové nastavenie Moje servery (SRT(LA) alebo RTMP(S)), aby si mohol streamovať na SRT server, SRTLA prijímač alebo BELABOX cloud. Keď je zapnuté Zobraziť všetky nastavenia, v Nastavenia → Streamy → <tvoj stream> → SRT(LA) nájdeš Latenciu (predvolene 3000 ms), adaptívny bitrate a priority pripojení.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Vyber Typ, daj mu Názov, nastav ho a vyber scény, do ktorých sa widget pridá.",

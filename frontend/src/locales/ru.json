@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Платёж отменён. Чаевые не отправлены, колесо не вращалось.",
   "Payment cancelled. No tip was sent.": "Платёж отменён. Чаевые не отправлены.",
   "Payments": "Платежи",
+  "Payments are not available right now.": "Платежи сейчас недоступны.",
   "Payments are unavailable right now.": "Платежи сейчас недоступны.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "Выберите «Свой» в мастере (SRT(LA), RTMP(S), RIST или WHIP) либо сетевую настройку «Мои серверы» (SRT(LA) или RTMP(S)), чтобы стримить на SRT-сервер, SRTLA-приёмник или в BELABOX cloud. Если включено «Показать все настройки», в разделе Настройки → Стримы → <ваш стрим> → SRT(LA) есть задержка (по умолчанию 3000 мс), адаптивный bitrate и приоритеты соединений.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Выбери Тип, задай Название, настрой виджет и выбери сцены, в которые его добавить.",

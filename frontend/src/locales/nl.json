@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Betaling geannuleerd. Er is geen tip verstuurd en het rad is niet gedraaid.",
   "Payment cancelled. No tip was sent.": "Betaling geannuleerd. Er is geen tip verstuurd.",
   "Payments": "Betalingen",
+  "Payments are not available right now.": "Betalingen zijn op dit moment niet beschikbaar.",
   "Payments are unavailable right now.": "Betalingen zijn momenteel niet beschikbaar.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "Kies Aangepast in de wizard (SRT(LA), RTMP(S), RIST of WHIP), of de netwerkinstelling Mijn server(s) (SRT(LA) of RTMP(S)), om te streamen naar een SRT-server, SRTLA-ontvanger of BELABOX cloud. Met Alle instellingen tonen aan vind je onder Instellingen → Streams → <jouw stream> → SRT(LA) de Latency (standaard 3000 ms), adaptieve bitrate en verbindingsprioriteiten.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Kies een Type, geef het een Naam, stel het in en kies de scènes waaraan je de widget wilt toevoegen.",

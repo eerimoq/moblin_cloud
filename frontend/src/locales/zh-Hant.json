@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "付款已取消。未送出贊助,轉盤也沒有轉動。",
   "Payment cancelled. No tip was sent.": "付款已取消，未送出贊助。",
   "Payments": "付款",
+  "Payments are not available right now.": "目前無法使用付款功能。",
   "Payments are unavailable right now.": "目前無法使用付款功能。",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "在精靈中選擇「自訂」(SRT(LA)、RTMP(S)、RIST 或 WHIP),或選擇網路設定「我的伺服器」(SRT(LA) 或 RTMP(S)),即可串流到 SRT 伺服器、SRTLA 接收器或 BELABOX cloud。開啟「顯示所有設定」後,設定 → 串流 → <你的串流> → SRT(LA) 中有延遲(預設 3000 ms)、自適應 bitrate 和連線優先順序。",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "選擇類型、為它命名並進行設定,然後選擇要加入此小工具的場景。",

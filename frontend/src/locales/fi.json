@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Maksu peruttu. Tippiä ei lähetetty eikä pyörää pyöräytetty.",
   "Payment cancelled. No tip was sent.": "Maksu peruttu. Tippiä ei lähetetty.",
   "Payments": "Maksut",
+  "Payments are not available right now.": "Maksut eivät ole käytettävissä juuri nyt.",
   "Payments are unavailable right now.": "Maksut eivät ole tällä hetkellä käytettävissä.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "Valitse ohjatussa toiminnossa Mukautettu (SRT(LA), RTMP(S), RIST tai WHIP) tai verkkoasetus Omat palvelimet (SRT(LA) tai RTMP(S)) striimataksesi SRT-palvelimelle, SRTLA-vastaanottimelle tai BELABOX cloudiin. Kun Näytä kaikki asetukset on päällä, kohdassa Asetukset → Striimit → <striimisi> → SRT(LA) on Viive (oletuksena 3000 ms), mukautuva bitrate ja yhteyksien prioriteetit.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Valitse Tyyppi, anna sille Nimi, määritä se ja valitse kohtaukset, joihin widget lisätään.",

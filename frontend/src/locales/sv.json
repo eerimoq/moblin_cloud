@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Betalningen avbröts. Inget tips skickades och hjulet snurrades inte.",
   "Payment cancelled. No tip was sent.": "Betalningen avbröts. Inget tips skickades.",
   "Payments": "Betalningar",
+  "Payments are not available right now.": "Betalningar är inte tillgängliga just nu.",
   "Payments are unavailable right now.": "Betalningar är inte tillgängliga just nu.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "Välj Anpassad i guiden (SRT(LA), RTMP(S), RIST eller WHIP), eller nätverksinställningen Mina servrar (SRT(LA) eller RTMP(S)), för att streama till en SRT-server, SRTLA-mottagare eller BELABOX cloud. Med Visa alla inställningar på finns under Inställningar → Strömmar → <din ström> → SRT(LA) Latens (3000 ms som standard), adaptiv bitrate och anslutningsprioriteringar.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Välj en Typ, ge den ett Namn, konfigurera den och välj de scener som widgeten ska läggas till i.",

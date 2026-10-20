@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Đã hủy thanh toán. Không có tip nào được gửi và vòng quay chưa quay.",
   "Payment cancelled. No tip was sent.": "Đã hủy thanh toán. Không có tip nào được gửi.",
   "Payments": "Thanh toán",
+  "Payments are not available right now.": "Hiện tại chưa thể thanh toán.",
   "Payments are unavailable right now.": "Hiện không thể thanh toán.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "Chọn Tùy chỉnh trong trình hướng dẫn (SRT(LA), RTMP(S), RIST hoặc WHIP), hoặc thiết lập mạng Máy chủ của tôi (SRT(LA) hoặc RTMP(S)), để phát tới máy chủ SRT, bộ nhận SRTLA hoặc BELABOX cloud. Khi bật Hiện tất cả cài đặt, Cài đặt → Luồng → <luồng của bạn> → SRT(LA) có Độ trễ (mặc định 3000 ms), bitrate thích ứng và mức ưu tiên kết nối.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Chọn một Loại, đặt Tên, cấu hình và chọn các cảnh để thêm widget vào.",

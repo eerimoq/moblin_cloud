@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "支付已取消。未发送打赏,转盘也没有转动。",
   "Payment cancelled. No tip was sent.": "付款已取消，未发送打赏。",
   "Payments": "付款",
+  "Payments are not available right now.": "目前无法使用支付功能。",
   "Payments are unavailable right now.": "支付目前不可用。",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "在向导中选择“自定义”(SRT(LA)、RTMP(S)、RIST 或 WHIP),或选择网络设置“我的服务器”(SRT(LA) 或 RTMP(S)),即可推流到 SRT 服务器、SRTLA 接收器或 BELABOX cloud。开启“显示所有设置”后,设置 → 直播流 → <你的直播流> → SRT(LA) 中有延迟(默认 3000 ms)、自适应 bitrate 和连接优先级。",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "选择类型,为其命名并进行配置,然后选择要添加该小组件的场景。",

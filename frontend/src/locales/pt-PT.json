@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Pagamento cancelado. Não foi enviada nenhuma gorjeta e a roda não girou.",
   "Payment cancelled. No tip was sent.": "Pagamento cancelado. Nenhuma gorjeta foi enviada.",
   "Payments": "Pagamentos",
+  "Payments are not available right now.": "Os pagamentos não estão disponíveis neste momento.",
   "Payments are unavailable right now.": "Os pagamentos estão indisponíveis neste momento.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "Escolha Personalizado no assistente (SRT(LA), RTMP(S), RIST ou WHIP), ou a configuração de rede Os meus servidores (SRT(LA) ou RTMP(S)), para transmitir para um servidor SRT, recetor SRTLA ou BELABOX cloud. Com Mostrar todas as definições ativado, Definições → Streams → <a sua stream> → SRT(LA) tem Latência (3000 ms por predefinição), bitrate adaptativo e prioridades de ligação.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Escolha um Tipo, dê-lhe um Nome, configure-o e escolha as cenas onde adicionar o widget.",

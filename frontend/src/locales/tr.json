@@ -342,6 +342,7 @@
   "Payment cancelled. No tip was sent and the wheel was not spun.": "Ödeme iptal edildi. Bahşiş gönderilmedi ve çark çevrilmedi.",
   "Payment cancelled. No tip was sent.": "Ödeme iptal edildi. Bahşiş gönderilmedi.",
   "Payments": "Ödemeler",
+  "Payments are not available right now.": "Ödemeler şu anda kullanılamıyor.",
   "Payments are unavailable right now.": "Ödemeler şu anda kullanılamıyor.",
   "Pick Custom in the wizard (SRT(LA), RTMP(S), RIST or WHIP), or the My server(s) network setup (SRT(LA) or RTMP(S)), to stream to an SRT server, SRTLA receiver or BELABOX cloud. With Show all settings on, Settings → Streams → <your stream> → SRT(LA) has Latency (3000 ms by default), adaptive bitrate and connection priorities.": "SRT sunucusuna, SRTLA alıcısına veya BELABOX cloud'a yayın yapmak için sihirbazda Özel'i (SRT(LA), RTMP(S), RIST veya WHIP) ya da Sunucularım ağ kurulumunu (SRT(LA) veya RTMP(S)) seç. Tüm ayarları göster açıkken Ayarlar → Yayınlar → <yayının> → SRT(LA) altında Gecikme (varsayılan 3000 ms), uyarlanabilir bitrate ve bağlantı öncelikleri bulunur.",
   "Pick a Type, give it a Name, configure it and choose the scenes to add the widget to.": "Bir Tür seç, ona bir Ad ver, yapılandır ve widget'ın ekleneceği sahneleri seç.",
