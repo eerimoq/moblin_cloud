@@ -2661,6 +2661,15 @@ export default function Dashboard() {
         >
           {(current) => (
             <div class="flex min-w-0 items-center gap-3">
+              <Show when={current().account.premium} fallback={<GoPremium />}>
+                <span
+                  title={t("Premium")}
+                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf px-3.5 font-display text-base font-semibold text-leaf sm:px-4"
+                >
+                  <Icon name="star" class="size-4" />
+                  <span class="max-sm:sr-only">{t("Premium")}</span>
+                </span>
+              </Show>
               <Show when={current().account.moderating.length > 0}>
                 <div class="relative min-w-0">
                   <PickedAvatar picked={channel(current().account) ?? current().account} />
@@ -2680,15 +2689,6 @@ export default function Dashboard() {
                     class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2"
                   />
                 </div>
-              </Show>
-              <Show when={current().account.premium} fallback={<GoPremium />}>
-                <span
-                  title={t("Premium")}
-                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf px-3.5 font-display text-base font-semibold text-leaf sm:px-4"
-                >
-                  <Icon name="star" class="size-4" />
-                  <span class="max-sm:sr-only">{t("Premium")}</span>
-                </span>
               </Show>
               <Show when={current().account.admin}>
                 <a href={asset(pages.admin)} class={`${ghostButtonClass} h-11! px-5! text-base!`}>
