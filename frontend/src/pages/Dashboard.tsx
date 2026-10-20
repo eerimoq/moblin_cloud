@@ -1783,7 +1783,6 @@ function Admin(props: {
   };
 
   const payments = () => settings().paypal || settings().stripe;
-  const connected = () => settings().merchantId !== null || settings().stripeAccountId !== null;
   const sections: {
     id: string;
     label: string;
@@ -1831,7 +1830,7 @@ function Admin(props: {
       label: t("Payments"),
       icon: "wallet",
       shown: payments,
-      status: () => connectedOrNot(connected()),
+      status: () => connectedOrNot(settings().payable),
     },
     {
       id: "moblin",
@@ -1854,7 +1853,7 @@ function Admin(props: {
     setChosen(id);
     history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
   };
-  const paid = (configured: boolean) => !moderating() && (connected() || configured);
+  const paid = (configured: boolean) => settings().payable || configured;
 
   return (
     <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
@@ -1903,24 +1902,23 @@ function Admin(props: {
           />
         </div>
         <div hidden={active() !== "tips"} class="flex flex-col gap-6">
-          <Show when={!moderating()}>
-            <Show
-              when={paid(settings().tips !== null)}
-              fallback={
-                <NeedsPayments
-                  title={t("Tips")}
-                  available={payments()}
-                  onConnect={() => select("payments")}
-                />
-              }
-            >
-              <TipSettings
-                tips={settings().tips}
-                currency={settings().currency}
-                busy={busy()}
-                onSave={save}
+          <Show
+            when={paid(settings().tips !== null)}
+            fallback={
+              <NeedsPayments
+                title={t("Tips")}
+                available={payments()}
+                streamer={moderating() ? account().name : null}
+                onConnect={() => select("payments")}
               />
-            </Show>
+            }
+          >
+            <TipSettings
+              tips={settings().tips}
+              currency={settings().currency}
+              busy={busy()}
+              onSave={save}
+            />
           </Show>
           <TestSend
             kind="tip"
@@ -1932,24 +1930,23 @@ function Admin(props: {
           <Latest kind="tip" list={recent()?.tip} onMore={() => loadMore("tip")} />
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
-          <Show when={!moderating()}>
-            <Show
-              when={paid(settings().spin !== null)}
-              fallback={
-                <NeedsPayments
-                  title={t("Wheel of luck")}
-                  available={payments()}
-                  onConnect={() => select("payments")}
-                />
-              }
-            >
-              <SpinSettings
-                spin={settings().spin}
-                currency={settings().currency}
-                busy={busy()}
-                onSave={save}
+          <Show
+            when={paid(settings().spin !== null)}
+            fallback={
+              <NeedsPayments
+                title={t("Wheel of luck")}
+                available={payments()}
+                streamer={moderating() ? account().name : null}
+                onConnect={() => select("payments")}
               />
-            </Show>
+            }
+          >
+            <SpinSettings
+              spin={settings().spin}
+              currency={settings().currency}
+              busy={busy()}
+              onSave={save}
+            />
           </Show>
           <SubscriberSettings
             kind="spin"
@@ -1967,24 +1964,23 @@ function Admin(props: {
           <Latest kind="spin" list={recent()?.spin} onMore={() => loadMore("spin")} />
         </div>
         <div hidden={active() !== "songs"} class="flex flex-col gap-6">
-          <Show when={!moderating()}>
-            <Show
-              when={paid(settings().paywall !== null)}
-              fallback={
-                <NeedsPayments
-                  title={t("Song requests")}
-                  available={payments()}
-                  onConnect={() => select("payments")}
-                />
-              }
-            >
-              <SongSettings
-                paywall={settings().paywall}
-                currency={settings().currency}
-                busy={busy()}
-                onSave={save}
+          <Show
+            when={paid(settings().paywall !== null)}
+            fallback={
+              <NeedsPayments
+                title={t("Song requests")}
+                available={payments()}
+                streamer={moderating() ? account().name : null}
+                onConnect={() => select("payments")}
               />
-            </Show>
+            }
+          >
+            <SongSettings
+              paywall={settings().paywall}
+              currency={settings().currency}
+              busy={busy()}
+              onSave={save}
+            />
           </Show>
           <SubscriberSettings
             kind="song"
@@ -2034,7 +2030,7 @@ function Admin(props: {
                 onSignOut={props.onSignOut}
               />
             </Show>
-            <Show when={connected()}>
+            <Show when={settings().payable}>
               <CurrencySettings currency={settings().currency} busy={busy()} onSave={save} />
             </Show>
           </div>
@@ -2120,22 +2116,41 @@ const onOff = (on: boolean) => ({ on, text: on ? t("On") : t("Off") });
 
 const connectedOrNot = (on: boolean) => ({ on, text: on ? t("Connected") : t("Not connected") });
 
-function NeedsPayments(props: { title: string; available: boolean; onConnect: () => void }) {
+function NeedsPayments(props: {
+  title: string;
+  available: boolean;
+  streamer: string | null;
+  onConnect: () => void;
+}) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{props.title}</h2>
       <Show
-        when={props.available}
-        fallback={<p class="text-ink-2">{t("Payments are not available right now.")}</p>}
+        when={props.streamer === null}
+        fallback={
+          <p class="text-ink-2">
+            {t(
+              "{name} has to connect PayPal or Stripe first, so the money goes straight to them.",
+              {
+                name: props.streamer!,
+              },
+            )}
+          </p>
+        }
       >
-        <p class="text-ink-2">
-          {t("Connect PayPal or Stripe first, so the money goes straight to you.")}
-        </p>
-        <div>
-          <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
-            {t("Go to payments")}
-          </button>
-        </div>
+        <Show
+          when={props.available}
+          fallback={<p class="text-ink-2">{t("Payments are not available right now.")}</p>}
+        >
+          <p class="text-ink-2">
+            {t("Connect PayPal or Stripe first, so the money goes straight to you.")}
+          </p>
+          <div>
+            <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
+              {t("Go to payments")}
+            </button>
+          </div>
+        </Show>
       </Show>
     </div>
   );
@@ -2561,6 +2576,7 @@ function Preview(props: { failed: boolean }) {
                 stripeAccountId: null,
                 stripePending: false,
                 stripeTest: false,
+                payable: true,
               },
               admin: false,
               premium: false,

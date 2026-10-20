@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "이번 달 스핀 {allowance}회 중 {left}회 남음",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name}의 연결이 끊기고 Moblin Cloud 키는 작동하지 않아요.",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name}의 연결이 끊기고 현재 Moblin Cloud 키는 작동하지 않아요. 다시 연결하려면 Moblin에 새 키를 붙여넣으세요.",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name}님이 먼저 PayPal 또는 Stripe를 연결해야 돈이 바로 전달돼요.",
   "{name} has turned you off as a moderator.": "{name}님이 회원님의 모더레이터 권한을 껐어요.",
   "{name} isn't taking tips right now.": "{name}님은 지금 팁을 받지 않아요.",
   "{name} on {platform}": "{platform}의 {name}",

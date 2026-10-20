@@ -179,7 +179,10 @@ class ModeratorsManageTheQueue(ModeratorsTestCase):
 
 
 class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
-    """Show a moderator the streamer's dashboard without payments, and let them change the rest."""
+    """Show a moderator the streamer's dashboard without payments, and let them change the rest.
+
+    The streamer has no PayPal or Stripe, so the paid features can't be turned on by anyone.
+    """
 
     login = "moddash"
 
@@ -222,21 +225,31 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
             ],
             [False, None, False, False, None, False],
         )
+        self.assert_equal(settings["payable"], False)
+        for paid in [
+            {"paywall": {"price": 100}},
+            {"tips": {"amounts": [100]}},
+            {"spin": {"options": [{"spins": 1, "price": 100}]}},
+        ]:
+            self.assert_backend_error(
+                409,
+                lambda paid=paid: self.moderator.moderated_settings(self.page_id, title="Theirs", **paid),
+                "connect PayPal or Stripe first",
+            )
         settings = self.moderator.moderated_settings(
             self.page_id,
             title="Theirs",
             currency="EUR" if own["settings"]["currency"] != "EUR" else "USD",
-            paywall={"price": 100},
-            tips={"amounts": [100]},
-            spin={"options": [{"spins": 1, "price": 100}]},
             sub_spins={"tier1": 1, "tier2": 2, "tier3": 3},
         )
         self.assert_equal(settings["title"], "Theirs")
         self.assert_equal(settings["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
         self.assert_equal(settings["merchantId"], None)
-        for field in ["currency", "paywall", "tips", "spin"]:
-            self.assert_equal(settings[field], own["settings"][field], f"{field} unchanged by a moderator")
+        self.assert_equal(
+            settings["currency"], own["settings"]["currency"], "currency unchanged by a moderator"
+        )
         own = self.dashboard.account()
+        self.assert_equal(own["settings"]["title"], "Theirs")
         self.assert_equal(own["settings"]["title"], "Theirs")
         self.assert_equal(own["settings"]["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
         self.assert_backend_error(
@@ -257,6 +270,70 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
         super().teardown()
         if hasattr(self, "dashboard"):
             self.dashboard.update_settings(title=None, sub_spins=None)
+
+
+class ModeratorsChangePaidFeatures(ModeratorsTestCase):
+    """Let a moderator turn the streamer's paid tips, wheel and songs on and off and set their amounts.
+
+    The streamer's PayPal sandbox seller is connected, so the money still goes to the streamer, whose
+    currency only they can change.
+    """
+
+    login = "modpaid"
+
+    def setup(self):
+        self.skip_if_no_paypal()
+        super().setup()
+        self.context.page_with_paypal(self.dashboard)
+        self.dashboard.update_settings(currency="USD", paywall=None, tips=None, spin=None)
+
+    def run(self):
+        self.dashboard.enable_moderator(self.moderator_id, True)
+        settings = self.moderator.moderated_account(self.page_id)["settings"]
+        self.assert_equal(
+            [settings["payable"], settings["merchantId"], settings["paypal"]], [True, None, False]
+        )
+        self.assert_equal([settings["paywall"], settings["tips"], settings["spin"]], [None, None, None])
+        settings = self.moderator.moderated_settings(
+            self.page_id,
+            currency="EUR",
+            paywall={"price": 150},
+            tips={"amounts": [200, 700]},
+            spin={"options": [{"spins": 1, "price": 300}, {"spins": 3, "price": 500}]},
+        )
+        self.assert_equal(settings["currency"], "USD", "currency unchanged by a moderator")
+        self.assert_equal(settings["paywall"], {"price": 150})
+        self.assert_equal(settings["tips"], {"amounts": [200, 700]})
+        self.assert_equal(
+            settings["spin"], {"options": [{"spins": 1, "price": 300}, {"spins": 3, "price": 500}]}
+        )
+        self.assert_equal([settings["payable"], settings["merchantId"]], [True, None])
+        own = self.dashboard.account()["settings"]
+        for field in ["currency", "paywall", "tips", "spin"]:
+            self.assert_equal(own[field], settings[field], f"{field} saved by a moderator")
+        self.assert_equal(self.viewer.paywall()["price"], 150)
+        self.assert_equal(self.viewer.tips()["amounts"], [200, 700])
+        self.assert_equal(self.viewer.paywall()["merchantId"], own["merchantId"])
+        settings = self.moderator.moderated_settings(
+            self.page_id, paywall=None, tips={"amounts": [500]}, spin=None
+        )
+        self.assert_equal(
+            [settings["paywall"], settings["tips"], settings["spin"]], [None, {"amounts": [500]}, None]
+        )
+        own = self.dashboard.account()["settings"]
+        self.assert_equal([own["paywall"], own["tips"], own["spin"]], [None, {"amounts": [500]}, None])
+        self.assert_equal(self.viewer.paywall(), None)
+        self.assert_equal(self.viewer.tips()["amounts"], [500])
+        self.dashboard.enable_moderator(self.moderator_id, False)
+        self.assert_backend_error(
+            403, lambda: self.moderator.moderated_settings(self.page_id, tips=None), NOT_MODERATOR
+        )
+        self.assert_equal(self.dashboard.account()["settings"]["tips"], {"amounts": [500]})
+
+    def teardown(self):
+        super().teardown()
+        if hasattr(self, "dashboard"):
+            self.dashboard.update_settings(currency="USD", paywall=None, tips=None, spin=None)
 
 
 class ModeratorsAddSongsForFree(ModeratorsTestCase):

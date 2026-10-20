@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "本月还剩 {left}/{allowance} 次转动",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name} 将断开连接,其 Moblin Cloud 密钥将失效。",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name} 将断开连接,其当前的 Moblin Cloud 密钥将失效。请在 Moblin 中粘贴新密钥以重新连接。",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name}需要先绑定 PayPal 或 Stripe，这样钱会直接打给对方。",
   "{name} has turned you off as a moderator.": "{name} 已关闭你的房管权限。",
   "{name} isn't taking tips right now.": "{name} 目前不接受打赏。",
   "{name} on {platform}": "{platform} 上的 {name}",

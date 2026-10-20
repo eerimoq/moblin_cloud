@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "Còn {left}/{allowance} lượt quay trong tháng này",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name} sẽ ngắt kết nối và khóa Moblin Cloud của thiết bị ngừng hoạt động.",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name} sẽ ngắt kết nối và khóa Moblin Cloud hiện tại của thiết bị ngừng hoạt động. Dán khóa mới vào Moblin để kết nối lại.",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name} cần kết nối PayPal hoặc Stripe trước, để tiền được chuyển thẳng cho họ.",
   "{name} has turned you off as a moderator.": "{name} đã tắt quyền moderator của bạn.",
   "{name} isn't taking tips right now.": "{name} hiện không nhận tip.",
   "{name} on {platform}": "{name} trên {platform}",

@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "今月の残りスピン:{left}/{allowance}回",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name}の接続が切れ、Moblin Cloudキーは使えなくなります。",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name}の接続が切れ、現在のMoblin Cloudキーは使えなくなります。再接続するには、新しいキーをMoblinに貼り付けてください。",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name}さんが先にPayPalまたはStripeを連携する必要があります。お金は本人に直接届きます。",
   "{name} has turned you off as a moderator.": "{name}さんによってモデレーターがオフにされました。",
   "{name} isn't taking tips right now.": "{name} は現在チップを受け付けていません。",
   "{name} on {platform}": "{platform}の{name}",

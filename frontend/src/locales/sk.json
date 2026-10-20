@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "Zostáva {left} z {allowance} otočení v tomto mesiaci",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name} sa odpojí a jeho kľúč Moblin Cloud prestane fungovať.",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name} sa odpojí a jeho aktuálny kľúč Moblin Cloud prestane fungovať. Vložte nový do Moblin a pripojte sa znova.",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name} musí najprv pripojiť PayPal alebo Stripe, aby peniaze išli priamo jemu alebo jej.",
   "{name} has turned you off as a moderator.": "{name} ťa vypol ako moderátora.",
   "{name} isn't taking tips right now.": "{name} momentálne neprijíma tipy.",
   "{name} on {platform}": "{name} na {platform}",

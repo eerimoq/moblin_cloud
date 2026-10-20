@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "{left} van {allowance} spins over deze maand",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name} wordt losgekoppeld en de Moblin Cloud-sleutel werkt niet meer.",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name} wordt losgekoppeld en de huidige Moblin Cloud-sleutel werkt niet meer. Plak de nieuwe in Moblin om opnieuw te verbinden.",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name} moet eerst PayPal of Stripe koppelen, zodat het geld rechtstreeks naar hen gaat.",
   "{name} has turned you off as a moderator.": "{name} heeft je als moderator uitgezet.",
   "{name} isn't taking tips right now.": "{name} neemt op dit moment geen tips aan.",
   "{name} on {platform}": "{name} op {platform}",

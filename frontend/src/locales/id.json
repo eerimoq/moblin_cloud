@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "Sisa {left} dari {allowance} putaran bulan ini",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name} terputus dan kunci Moblin Cloud-nya berhenti berfungsi.",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name} terputus dan kunci Moblin Cloud-nya saat ini berhenti berfungsi. Tempel kunci baru di Moblin untuk menyambung kembali.",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name} harus menghubungkan PayPal atau Stripe dulu, supaya uangnya langsung masuk ke mereka.",
   "{name} has turned you off as a moderator.": "{name} telah menonaktifkan kamu sebagai moderator.",
   "{name} isn't taking tips right now.": "{name} sedang tidak menerima tip saat ini.",
   "{name} on {platform}": "{name} di {platform}",

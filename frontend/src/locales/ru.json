@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "Осталось {left} из {allowance} вращений в этом месяце",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name} отключится, а его ключ Moblin Cloud перестанет работать.",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name} отключится, а его текущий ключ Moblin Cloud перестанет работать. Вставьте новый ключ в Moblin, чтобы подключиться снова.",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name} сначала нужно подключить PayPal или Stripe, чтобы деньги шли напрямую стримеру.",
   "{name} has turned you off as a moderator.": "{name} отключил тебя как модератора.",
   "{name} isn't taking tips right now.": "{name} сейчас не принимает чаевые.",
   "{name} on {platform}": "{name} на {platform}",

@@ -338,6 +338,7 @@ struct SettingsResponse {
     stripe_pending: bool,
     #[serde(rename = "stripeTest")]
     stripe_test: bool,
+    payable: bool,
     title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
@@ -375,6 +376,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         stripe_pending: account.stripe_account_id.is_some() && !account.stripe_ready,
         stripe_account_id: account.stripe_account_id.filter(|_| account.stripe_ready),
         stripe_test: api.stripe.as_ref().is_some_and(Stripe::is_test),
+        payable: merchant_of(api, &id).is_some() || stripe_of(api, &id).is_some(),
         title: settings.title,
         message: settings.message,
         accent: settings.accent,
@@ -1326,12 +1328,8 @@ async fn handle_moderator_settings(
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, Failure> {
     moderator(&api, &headers, &id)?;
-    let current = api.pages.get(&id);
     let request = SettingsRequest {
         currency: None,
-        paywall: current.paywall,
-        tips: current.tips,
-        spin: current.spin,
         ..request
     };
     let premium = streamer_is_premium(&api, &id);
@@ -8319,7 +8317,7 @@ mod tests {
 
     #[tokio::test]
     async fn moderators_use_the_streamers_dashboard() {
-        let (address, api) = start_api(None).await;
+        let (address, api, _fake) = start_paid_fake().await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
         connect_paypal(&api);
@@ -8408,6 +8406,7 @@ mod tests {
         assert_eq!(settings["stripe"], false);
         assert_eq!(settings["stripeAccountId"], Value::Null);
         assert_eq!(settings["stripePending"], false);
+        assert_eq!(settings["payable"], true);
         assert_eq!(get(&viewer1, "").await.status(), StatusCode::FORBIDDEN);
         let response = post(
             &mod1,
@@ -8415,7 +8414,7 @@ mod tests {
             json!({
                 "currency": "USD",
                 "paywall": null,
-                "tips": null,
+                "tips": {"amounts": [300, 700]},
                 "spin": {"options": [{"spins": 1, "price": 100}]},
                 "title": " Hi ",
                 "maxSongMinutes": 7,
@@ -8432,15 +8431,53 @@ mod tests {
             json!({"tier1": 1, "tier2": 2, "tier3": 3})
         );
         assert_eq!(settings["currency"], "SEK");
-        assert_eq!(settings["paywall"], json!({"price": 250}));
-        assert_eq!(settings["tips"], json!({"amounts": [500]}));
-        assert_eq!(settings["spin"], Value::Null);
+        assert_eq!(settings["paywall"], Value::Null);
+        assert_eq!(settings["tips"], json!({"amounts": [300, 700]}));
+        assert_eq!(
+            settings["spin"],
+            json!({"options": [{"spins": 1, "price": 100}]})
+        );
         assert_eq!(settings["merchantId"], Value::Null);
         assert_eq!(settings["paypal"], false);
+        assert_eq!(settings["payable"], true);
         let saved = api.pages.get(&id);
         assert_eq!(saved.title.as_deref(), Some("Hi"));
         assert_eq!(saved.currency(), "SEK");
-        assert_eq!(saved.paywall, Some(Paywall { price: 250 }));
+        assert_eq!(saved.paywall, None);
+        assert_eq!(
+            saved.tips,
+            Some(Tips {
+                amounts: vec![300, 700]
+            })
+        );
+        assert_eq!(
+            saved.spin,
+            Some(Spin {
+                options: vec![SpinOption {
+                    spins: 1,
+                    price: 100
+                }]
+            })
+        );
+        let response = post(&mod1, "/settings", json!({"paywall": {"price": 100}})).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(api.pages.get(&id).paywall, Some(Paywall { price: 100 }));
+        api.accounts.forget_paypal("1").unwrap();
+        let account: Value = get(&mod1, "").await.json().await.unwrap();
+        assert_eq!(account["settings"]["payable"], false);
+        let response = post(&mod1, "/settings", json!({"paywall": {"price": 150}})).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "connect PayPal or Stripe first"
+        );
+        assert_eq!(api.pages.get(&id).paywall, Some(Paywall { price: 100 }));
+        let response = post(&mod1, "/settings", json!({"paywall": {"price": 100}})).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = post(&mod1, "/settings", json!({"title": "Hi"})).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(api.pages.get(&id).paywall, None);
+        connect_paypal(&api);
         let response = post(&mod1, "/settings", json!({"font": "Poppins"})).await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let response = client

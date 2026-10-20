@@ -81,6 +81,7 @@ export type Settings = Page & {
   stripeAccountId: string | null;
   stripePending: boolean;
   stripeTest: boolean;
+  payable: boolean;
   image: string | null;
 };
 

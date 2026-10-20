@@ -754,6 +754,7 @@
   "{left} of {allowance} spins left this month": "{left} de {allowance} rodadas restantes este mês",
   "{name} disconnects and its Moblin Cloud key stops working.": "{name} é desligado e a chave do Moblin Cloud deixa de funcionar.",
   "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.": "{name} é desligado e a chave atual do Moblin Cloud deixa de funcionar. Cole a nova no Moblin para voltar a ligar.",
+  "{name} has to connect PayPal or Stripe first, so the money goes straight to them.": "{name} tem de ligar primeiro o PayPal ou o Stripe, para que o dinheiro vá diretamente para si.",
   "{name} has turned you off as a moderator.": "{name} desativou-o como moderador.",
   "{name} isn't taking tips right now.": "{name} não está a aceitar gorjetas neste momento.",
   "{name} on {platform}": "{name} na {platform}",
