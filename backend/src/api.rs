@@ -6603,6 +6603,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn subscriber_songs_longer_than_the_max_are_refused() {
+        let (address, api) = start_api(None).await;
+        let (session, key, id) = streamer(&address, &api).await;
+        let response = reqwest::Client::new()
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({
+                "subSongs": {"tier1": 0, "tier2": 0, "tier3": 3},
+                "maxSongMinutes": 5,
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let tier3 = api.auth.viewer_session(
+            "31".to_string(),
+            "Viewer 31".to_string(),
+            id.clone(),
+            Some(3),
+        );
+        let mut socket = connect(&address, &key).await;
+        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(301)).await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer only takes songs up to 5 minutes long."
+        );
+        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(300)).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 2}));
+        let request = receive(&mut socket).await;
+        answer(&mut socket, &request, music(json!([]))).await;
+        wait_until_added(&api).await;
+        assert!(
+            api.counters
+                .all()
+                .iter()
+                .any(|counter| counter.name == "subSongsFailed:over-max-length"
+                    && counter.total == 1)
+        );
+    }
+
+    #[tokio::test]
     async fn twitch_subscribers_request_songs_every_month() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
