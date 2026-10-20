@@ -40,7 +40,7 @@ export type RecentKind = "song" | "tip" | "spin";
 export type RecentList = { items: Recent[]; more: boolean };
 
 export type AdminStats = {
-  accounts: { total: number; paypal: number; stripe: number; images: number };
+  accounts: { total: number; paypal: number; stripe: number; premium: number };
   moblin: { connectedDevices: number };
   pending: { orders: number; deliveries: number };
   database: { bytes: number };

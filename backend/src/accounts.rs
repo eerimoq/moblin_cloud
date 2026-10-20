@@ -73,7 +73,7 @@ pub struct AccountStats {
     pub total: u64,
     pub paypal: u64,
     pub stripe: u64,
-    pub images: u64,
+    pub premium: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -382,18 +382,20 @@ impl Accounts {
         })
     }
 
-    pub fn stats(&self) -> AccountStats {
+    pub fn stats(&self, premium: &[&str]) -> AccountStats {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0) FROM accounts",
-                [],
+                "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0),
+                        count(*) FILTER (WHERE id IN (SELECT value FROM json_each(?1)))
+                 FROM accounts",
+                [serde_json::to_string(premium).unwrap()],
                 |row| {
                     Ok(AccountStats {
                         total: row.get(0)?,
                         paypal: row.get(1)?,
                         stripe: row.get(2)?,
-                        images: 0,
+                        premium: row.get(3)?,
                     })
                 },
             )
@@ -782,6 +784,21 @@ mod tests {
             .unwrap();
         assert_eq!(accounts.page_of_login("erik").as_deref(), Some("c"));
         assert_eq!(accounts.get("1").unwrap().login, "");
+    }
+
+    #[test]
+    fn premium_accounts_are_counted() {
+        let accounts = Accounts::new(Database::memory());
+        assert_eq!(accounts.stats(&["1"]).premium, 0);
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("p", "k"))
+            .unwrap();
+        accounts
+            .signed_in("2", "Other", "other", None, page("q", "l"))
+            .unwrap();
+        let stats = accounts.stats(&["1", "1", "3"]);
+        assert_eq!((stats.total, stats.premium), (2, 1));
+        assert_eq!(accounts.stats(&[]).premium, 0);
     }
 
     #[test]

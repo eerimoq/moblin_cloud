@@ -654,9 +654,9 @@ function Loaded(props: { stats: AdminStats }) {
     ["PayPal connected", "A PayPal merchant that can take payments.", props.stats.accounts.paypal],
     ["Stripe connected", "A Stripe account that takes card payments.", props.stats.accounts.stripe],
     [
-      "With a banner image",
-      "Pages showing an image uploaded by a premium account.",
-      props.stats.accounts.images,
+      "Premium",
+      "Signed in accounts with the premium features: the admins and the premium accounts list.",
+      props.stats.accounts.premium,
     ],
   ] as const;
 

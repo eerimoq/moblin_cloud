@@ -825,10 +825,13 @@ async fn handle_admin_stats(
 ) -> Result<Json<AdminStatsResponse>, (StatusCode, String)> {
     admin(&api, &headers)?;
     Ok(Json(AdminStatsResponse {
-        accounts: AccountStats {
-            images: api.pages.image_count(),
-            ..api.accounts.stats()
-        },
+        accounts: api.accounts.stats(
+            &api.admins
+                .iter()
+                .chain(&api.premium_accounts)
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        ),
         moblin: MoblinStats {
             connected_devices: api.remote_control.connected_count(),
         },
@@ -7341,7 +7344,7 @@ mod tests {
         assert_eq!(
             stats,
             json!({
-                "accounts": {"total": 2, "paypal": 0, "stripe": 0, "images": 0},
+                "accounts": {"total": 2, "paypal": 0, "stripe": 0, "premium": 1},
                 "moblin": {"connectedDevices": 0},
                 "pending": {"orders": 0, "deliveries": 0},
                 "database": { "bytes": 0 },

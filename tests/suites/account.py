@@ -366,8 +366,9 @@ class AccountAdmin(AccountTestCase):
         self.assert_true(admin.account()["admin"])
         stats = admin.admin_stats()
         self.assert_equal(sorted(stats), ["accounts", "counters", "database", "moblin", "pending"])
-        self.assert_equal(sorted(stats["accounts"]), ["images", "paypal", "stripe", "total"])
+        self.assert_equal(sorted(stats["accounts"]), ["paypal", "premium", "stripe", "total"])
         self.assert_true(stats["accounts"]["total"] >= 2)
+        self.assert_true(stats["accounts"]["premium"] >= 1)
         self.assert_in("connectedDevices", stats["moblin"])
         self.assert_equal(sorted(stats["pending"]), ["deliveries", "orders"])
         for counter in stats["counters"]:

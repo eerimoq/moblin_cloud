@@ -329,16 +329,6 @@ impl Pages {
             .map_err(not_saved)?;
         Ok(())
     }
-
-    pub fn image_count(&self) -> u64 {
-        self.database
-            .lock()
-            .query_row("SELECT count(*) FROM page_images", [], |row| row.get(0))
-            .unwrap_or_else(|error| {
-                warn!("failed to count page images: {error:#}");
-                0
-            })
-    }
 }
 
 #[cfg(test)]
@@ -390,7 +380,6 @@ mod tests {
         assert_eq!(pages.image_version("a"), Some(second.clone()));
         assert_eq!(pages.image("a"), Some((second, b"second".to_vec())));
         assert_eq!(pages.image("b"), None);
-        assert_eq!(pages.image_count(), 1);
         database::remove(&path);
     }
 
