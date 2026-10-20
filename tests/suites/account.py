@@ -83,7 +83,9 @@ class AccountSignIn(AccountTestCase):
                 "admin": False,
                 "premium": False,
                 "moderating": [],
-                "moderators": [],
+                "moderators": [
+                    {"id": "fake-mod_signin", "login": "mod_signin", "name": "mod_signin", "enabled": False}
+                ],
             },
         )
 

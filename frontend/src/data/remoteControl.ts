@@ -253,8 +253,8 @@ export type Allowance = {
   left: number;
 };
 
-export const viewerSignInUrl = (id: string, login?: string) =>
-  `${backendUrl}/auth/twitch/login?${new URLSearchParams({ page: id, ...(login ? { login } : {}) })}`;
+export const viewerSignInUrl = (id: string) =>
+  `${backendUrl}/auth/twitch/login?${new URLSearchParams({ page: id })}`;
 
 export const fetchSongAllowance = (id: string, viewer: string) =>
   call<Allowance>(`/${encodeURIComponent(id)}/songs/subscriber`, {

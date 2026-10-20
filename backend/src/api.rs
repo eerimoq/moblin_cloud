@@ -588,7 +588,6 @@ async fn update_settings(
 
 #[derive(Deserialize)]
 struct LoginQuery {
-    login: Option<String>,
     page: Option<String>,
 }
 
@@ -603,7 +602,7 @@ async fn handle_login(
     }
     let (url, state) = api
         .auth
-        .login_url(query.login.as_deref(), query.page.as_deref())
+        .login_url(query.page.as_deref())
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     Ok((
         [(SET_COOKIE, api.auth.state_cookie(&state))],
@@ -700,20 +699,9 @@ async fn signed_in_redirect(
             return Redirect::to(&format!("{dashboard}#signInFailed"));
         }
     };
-    match api.auth.fake_moderated_channels(&sign_in) {
-        Some(broadcasters) => api.accounts.add_channel_moderator(
-            &broadcasters,
-            &ChannelModerator {
-                id: user.id.clone(),
-                login: user.login.clone(),
-                name: user.name.clone(),
-                enabled: false,
-            },
-        ),
-        None => match api.auth.channel_moderators(&sign_in).await {
-            Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
-            Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
-        },
+    match api.auth.channel_moderators(&sign_in).await {
+        Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
+        Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
     }
     info!("Twitch user {} ({}) signed in", user.id, user.login);
     Redirect::to(&format!(
@@ -3572,7 +3560,6 @@ mod tests {
                 "http://localhost".to_string(),
                 "https://moblin.app".to_string(),
                 twitch,
-                None,
                 Some("secret"),
             )
             .unwrap(),

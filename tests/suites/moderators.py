@@ -13,9 +13,8 @@ NOT_MODERATOR = "Only the streamer and the moderators they turned on can do this
 class ModeratorsTestCase(TestCase):
     """A streamer and a made-up Twitch user who moderates their channel.
 
-    With the fake Twitch sign in, mod_<login> is added to the made-up user <login>'s moderators
-    when it signs in, standing in for what Twitch would list for the streamer. The streamer still
-    has to turn them on in the dashboard. Each test has its own streamer, since song lookups are limited
+    The fake Twitch lists mod_<login> among the made-up user <login>'s moderators, standing in for
+    what Twitch would list for the streamer. The streamer still has to turn them on in the dashboard. Each test has its own streamer, since song lookups are limited
     per page and minute.
     """
 

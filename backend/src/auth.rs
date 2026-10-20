@@ -31,14 +31,25 @@ pub struct OAuthApp {
 
 impl OAuthApp {
     pub fn twitch(client_id: String, client_secret: String) -> Self {
+        Self::at(
+            "https://id.twitch.tv",
+            "https://api.twitch.tv",
+            client_id,
+            client_secret,
+        )
+    }
+
+    pub fn at(id_url: &str, api_url: &str, client_id: String, client_secret: String) -> Self {
+        let id_url = id_url.trim_end_matches('/');
+        let api_url = api_url.trim_end_matches('/');
         Self {
             client_id,
             client_secret,
-            authorize_url: "https://id.twitch.tv/oauth2/authorize".to_string(),
-            token_url: "https://id.twitch.tv/oauth2/token".to_string(),
-            users_url: "https://api.twitch.tv/helix/users".to_string(),
-            subscriptions_url: "https://api.twitch.tv/helix/subscriptions/user".to_string(),
-            moderators_url: "https://api.twitch.tv/helix/moderation/moderators".to_string(),
+            authorize_url: format!("{id_url}/oauth2/authorize"),
+            token_url: format!("{id_url}/oauth2/token"),
+            users_url: format!("{api_url}/helix/users"),
+            subscriptions_url: format!("{api_url}/helix/subscriptions/user"),
+            moderators_url: format!("{api_url}/helix/moderation/moderators"),
         }
     }
 }
@@ -89,7 +100,6 @@ pub struct Auth {
     public_url: String,
     pub frontend_url: String,
     twitch: Option<OAuthApp>,
-    fake_twitch_login: Option<String>,
     key: hmac::Key,
     random: SystemRandom,
     pending: Mutex<HashMap<String, (Instant, Option<String>)>>,
@@ -101,7 +111,6 @@ impl Auth {
         public_url: String,
         frontend_url: String,
         twitch: Option<OAuthApp>,
-        fake_twitch_login: Option<String>,
         secret: Option<&str>,
     ) -> Result<Self> {
         let random = SystemRandom::new();
@@ -115,7 +124,6 @@ impl Auth {
             public_url: public_url.trim_end_matches('/').to_string(),
             frontend_url: frontend_url.trim_end_matches('/').to_string(),
             twitch,
-            fake_twitch_login,
             key,
             random,
             pending: Mutex::new(HashMap::new()),
@@ -126,26 +134,7 @@ impl Auth {
         format!("{}/auth/twitch/callback", self.public_url)
     }
 
-    pub fn login_url(
-        &self,
-        fake_login: Option<&str>,
-        page: Option<&str>,
-    ) -> Option<(String, String)> {
-        if let Some(default_login) = &self.fake_twitch_login {
-            let login = fake_login.unwrap_or(default_login).to_lowercase();
-            let valid = (1..=25).contains(&login.len())
-                && login.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-            if !valid {
-                return None;
-            }
-            let state = self.new_state(page)?;
-            return Url::parse_with_params(
-                &self.redirect_uri(),
-                [("code", login.as_str()), ("state", state.as_str())],
-            )
-            .ok()
-            .map(|url| (url.into(), state));
-        }
+    pub fn login_url(&self, page: Option<&str>) -> Option<(String, String)> {
         let app = self.twitch.as_ref()?;
         let state = self.new_state(page)?;
         let scope = if page.is_some() {
@@ -224,17 +213,6 @@ impl Auth {
     }
 
     pub async fn callback(&self, code: &str) -> Result<SignIn> {
-        if self.fake_twitch_login.is_some() {
-            return Ok(SignIn {
-                user: User {
-                    id: format!("fake-{code}"),
-                    name: code.to_string(),
-                    login: code.to_string(),
-                    avatar: None,
-                },
-                token: None,
-            });
-        }
         let app = self.twitch.as_ref().context("Twitch not configured")?;
         #[derive(Deserialize)]
         struct Token {
@@ -307,16 +285,6 @@ impl Auth {
         sign_in: &SignIn,
         broadcaster: &str,
     ) -> Result<Option<u8>> {
-        if self.fake_twitch_login.is_some() {
-            return Ok(sign_in
-                .user
-                .login
-                .chars()
-                .last()
-                .and_then(|last| last.to_digit(10))
-                .filter(|tier| (1..=3).contains(tier))
-                .map(|tier| tier as u8));
-        }
         let app = self.twitch.as_ref().context("Twitch not configured")?;
         let token = sign_in.token.as_deref().context("no access token")?;
         let response = self
@@ -359,27 +327,7 @@ impl Auth {
             }))
     }
 
-    pub fn fake_moderated_channels(&self, sign_in: &SignIn) -> Option<Vec<String>> {
-        self.fake_twitch_login.as_ref()?;
-        Some(
-            sign_in
-                .user
-                .login
-                .strip_prefix("mod_")
-                .map(|broadcasters| {
-                    broadcasters
-                        .split('_')
-                        .map(|broadcaster| format!("fake-{broadcaster}"))
-                        .collect()
-                })
-                .unwrap_or_default(),
-        )
-    }
-
     pub async fn channel_moderators(&self, sign_in: &SignIn) -> Result<Vec<ChannelModerator>> {
-        if self.fake_twitch_login.is_some() {
-            return Ok(Vec::new());
-        }
         let app = self.twitch.as_ref().context("Twitch not configured")?;
         let token = sign_in.token.as_deref().context("no access token")?;
         #[derive(Deserialize)]
@@ -525,7 +473,6 @@ mod tests {
             "https://api.example.com/".to_string(),
             "https://example.com".to_string(),
             Some(OAuthApp::twitch("id".to_string(), "secret".to_string())),
-            None,
             Some(secret),
         )
         .unwrap()
@@ -555,7 +502,7 @@ mod tests {
     #[test]
     fn states_are_single_use() {
         let auth = new_auth("secret");
-        let (url, state) = auth.login_url(Some("other"), None).unwrap();
+        let (url, state) = auth.login_url(None).unwrap();
         let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(url.host_str(), Some("id.twitch.tv"));
@@ -573,7 +520,7 @@ mod tests {
             (Instant::now() - STATE_LIFETIME * 2, None),
         );
         assert!(auth.consume_state("old", Some("old")).is_err());
-        let (url, state) = auth.login_url(None, Some("page")).unwrap();
+        let (url, state) = auth.login_url(Some("page")).unwrap();
         let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(query["scope"], "user:read:subscriptions");
@@ -584,7 +531,7 @@ mod tests {
                 .as_deref(),
             Some("page")
         );
-        let (_, state) = auth.login_url(None, Some("page")).unwrap();
+        let (_, state) = auth.login_url(Some("page")).unwrap();
         assert_eq!(
             auth.consume_state(&state, Some(&state)).unwrap().as_deref(),
             Some("page")
@@ -624,60 +571,48 @@ mod tests {
         assert_eq!(auth.viewer_of(&expired), None);
     }
 
-    #[tokio::test]
-    async fn fake_sign_in_skips_twitch() {
-        let auth = Auth::new(
+    #[test]
+    fn state_cookie_is_secure_over_https() {
+        assert_eq!(
+            new_auth("secret").state_cookie("s"),
+            "moblin_sign_in_state=s; Max-Age=600; HttpOnly; SameSite=Lax; Secure"
+        );
+        let local = Auth::new(
             Client::new(),
             "http://localhost:5173/api".to_string(),
             "http://localhost:5173".to_string(),
             None,
-            Some("streamer".to_string()),
             None,
         )
         .unwrap();
-        let url = Url::parse(&auth.login_url(Some("Erik"), None).unwrap().0).unwrap();
-        assert_eq!(url.path(), "/api/auth/twitch/callback");
-        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
-        let state = query["state"].as_str();
-        let (_, other) = auth.login_url(None, None).unwrap();
-        assert!(auth.consume_state(&other, Some(state)).is_err());
-        assert_eq!(auth.consume_state(state, Some(state)).unwrap(), None);
-        let sign_in = auth.callback(&query["code"]).await.unwrap();
         assert_eq!(
-            sign_in.user,
-            User {
-                id: "fake-erik".to_string(),
-                name: "erik".to_string(),
-                login: "erik".to_string(),
-                avatar: None,
-            }
-        );
-        assert_eq!(auth.subscription_tier(&sign_in, "1").await.unwrap(), None);
-        for (login, tier) in [("sub1", Some(1)), ("sub3", Some(3)), ("sub4", None)] {
-            let sign_in = auth.callback(login).await.unwrap();
-            assert_eq!(auth.subscription_tier(&sign_in, "1").await.unwrap(), tier);
-        }
-        for (login, broadcasters) in [
-            ("mod_erik", vec!["fake-erik"]),
-            ("mod_erik_bob", vec!["fake-erik", "fake-bob"]),
-            ("erik", vec![]),
-        ] {
-            let sign_in = auth.callback(login).await.unwrap();
-            assert_eq!(
-                auth.fake_moderated_channels(&sign_in).unwrap(),
-                broadcasters
-            );
-        }
-        assert_eq!(auth.login_url(Some("bad login"), None), None);
-        assert!(
-            auth.login_url(None, None)
-                .unwrap()
-                .0
-                .contains("code=streamer")
-        );
-        assert_eq!(
-            auth.state_cookie("s"),
+            local.state_cookie("s"),
             "moblin_sign_in_state=s; Max-Age=600; HttpOnly; SameSite=Lax"
+        );
+    }
+
+    #[test]
+    fn oauth_app_at_another_twitch() {
+        let app = OAuthApp::at(
+            "http://localhost:8081/",
+            "http://localhost:8081",
+            "id".to_string(),
+            "secret".to_string(),
+        );
+        assert_eq!(app.authorize_url, "http://localhost:8081/oauth2/authorize");
+        assert_eq!(app.token_url, "http://localhost:8081/oauth2/token");
+        assert_eq!(app.users_url, "http://localhost:8081/helix/users");
+        assert_eq!(
+            app.subscriptions_url,
+            "http://localhost:8081/helix/subscriptions/user"
+        );
+        assert_eq!(
+            app.moderators_url,
+            "http://localhost:8081/helix/moderation/moderators"
+        );
+        assert_eq!(
+            OAuthApp::twitch("id".to_string(), "secret".to_string()).authorize_url,
+            "https://id.twitch.tv/oauth2/authorize"
         );
     }
 }

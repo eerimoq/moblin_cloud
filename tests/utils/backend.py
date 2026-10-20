@@ -12,6 +12,7 @@ from systest import wait_until
 
 from .config import FRONTEND_URL
 from .config import Config
+from .fake_twitch import FakeTwitch
 from .utils import FILES_DIR
 from .utils import REPO_DIR
 
@@ -36,6 +37,7 @@ class Backend:
         self._lines_lock = threading.Lock()
         self._lines: list[str] = []
         self._process: ManagedProcess | None = None
+        self.fake_twitch: FakeTwitch | None = None
 
     def __enter__(self):
         self.start()
@@ -49,6 +51,9 @@ class Backend:
             if sock.connect_ex(("127.0.0.1", self.port)) == 0:
                 raise Exception(f"Port {self.port} is in use, maybe by a backend left from an earlier run.")
         self.files_dir.mkdir(parents=True, exist_ok=True)
+        if self.config.twitch_sign_in() == "fake":
+            self.fake_twitch = FakeTwitch()
+            self.fake_twitch.start()
         self._process = ManagedProcess(
             [str(BINARY), *self._arguments()],
             LOGGER_PROCESS,
@@ -62,6 +67,9 @@ class Backend:
         if self._process is not None:
             self._process.stop()
             self._process = None
+        if self.fake_twitch is not None:
+            self.fake_twitch.stop()
+            self.fake_twitch = None
 
     def restart(self):
         self.stop()
@@ -127,8 +135,8 @@ class Backend:
             arguments += ["--app-attest-environment", self.config.app_attest_environment()]
             if (app_id := self.config.app_id()) is not None:
                 arguments += ["--app-id", app_id]
-        if self.config.twitch_sign_in() == "fake":
-            arguments += ["--fake-twitch-sign-in", "streamer"]
+        if self.fake_twitch is not None:
+            arguments += ["--twitch-sign-in-url", self.fake_twitch.url]
         twitch = self.config.twitch()
         if twitch is not None:
             arguments += [

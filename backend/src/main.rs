@@ -145,9 +145,10 @@ struct Cli {
     /// Accept live posts without App Attest, for development.
     #[arg(long)]
     allow_unattested: bool,
-    /// Fake Twitch sign in as this login, unless the sign in names another, for development.
-    #[arg(long, value_name = "LOGIN")]
-    fake_twitch_sign_in: Option<String>,
+    /// Base URL of the OAuth and Helix endpoints to sign in with instead of Twitch's, for a
+    /// fake Twitch in development and tests. No client ID and secret are needed to sign in then.
+    #[arg(long, value_name = "URL")]
+    twitch_sign_in_url: Option<String>,
     /// Twitch user IDs allowed to see the admin page.
     #[arg(long, env = "ADMINS", value_delimiter = ',')]
     admins: Vec<String>,
@@ -174,24 +175,36 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
     let client = http_client();
-    let twitch_app = match (&cli.twitch_client_id, &cli.twitch_client_secret) {
-        (Some(client_id), Some(client_secret)) => {
+    let twitch_app = match (
+        &cli.twitch_client_id,
+        &cli.twitch_client_secret,
+        &cli.twitch_sign_in_url,
+    ) {
+        (client_id, client_secret, Some(url)) => {
+            warn!("signing in with {url} instead of Twitch");
+            Some(OAuthApp::at(
+                url,
+                url,
+                client_id.clone().unwrap_or_default(),
+                client_secret.clone().unwrap_or_default(),
+            ))
+        }
+        (Some(client_id), Some(client_secret), None) => {
             Some(OAuthApp::twitch(client_id.clone(), client_secret.clone()))
         }
-        _ => None,
+        _ => {
+            warn!("no Twitch client ID and secret, not signing in with Twitch");
+            None
+        }
     };
     if cli.session_secret.is_none() {
         warn!("no session secret, signing everyone out on restart");
-    }
-    if cli.fake_twitch_sign_in.is_some() {
-        warn!("signing anyone in as any Twitch user without asking Twitch");
     }
     let auth = Auth::new(
         http_client(),
         cli.public_url,
         cli.frontend_url,
         twitch_app,
-        cli.fake_twitch_sign_in,
         cli.session_secret.as_deref(),
     )?;
     if cli.database.is_none() {
@@ -220,7 +233,7 @@ async fn main() -> Result<()> {
         ))),
         _ => {
             warn!(
-                "no Twitch client ID and secret, not looking Twitch profiles up, checking who is live nor signing in with Twitch"
+                "no Twitch client ID and secret, not looking Twitch profiles up nor checking who is live"
             );
             None
         }

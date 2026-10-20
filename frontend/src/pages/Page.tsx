@@ -126,13 +126,10 @@ function takeViewerSignIn(): { viewer: string | null; failed: boolean; section: 
 }
 
 function signInAsViewer(id: string, section: Section) {
-  const login = import.meta.env.DEV
-    ? prompt("Fake Twitch login (sub1, sub2, sub3 or any other)", "sub1")
-    : null;
   try {
     sessionStorage.setItem(sectionKey, section);
   } catch {}
-  location.href = viewerSignInUrl(id, login ?? undefined);
+  location.href = viewerSignInUrl(id);
 }
 
 function errorText(error: unknown) {

@@ -68,15 +68,23 @@ class Website(Client):
     def id_of_twitch_login(self, login: str) -> str:
         return self.get(f"/pages/twitch/{quote(login, safe='')}")["id"]
 
-    def start_sign_in(self, login: str | None = None) -> tuple[str, requests.Session]:
-        """Opens the sign in URL like the dashboard's sign in button, returning where it redirects."""
+    def start_sign_in(self, login: str) -> tuple[str, requests.Session]:
+        """Opens the sign in URL like the dashboard's sign in button and signs in as the made-up user
+        on the fake Twitch it redirects to, returning the callback URL the fake Twitch redirects back to."""
+        return self._start_sign_in({}, login)
+
+    def _start_sign_in(self, params: dict[str, str], login: str) -> tuple[str, requests.Session]:
         browser = requests.Session()
-        params = {"login": login} if login is not None else None
         response = browser.get(
             f"{self.url}/auth/twitch/login", params=params, allow_redirects=False, timeout=TIMEOUT
         )
         if response.status_code != 303:
             raise BackendError(response.status_code, response.text)
+        response = browser.get(
+            response.headers["location"], params={"login": login}, allow_redirects=False, timeout=TIMEOUT
+        )
+        if response.status_code != 302:
+            raise Exception(f"The fake Twitch answered {response.status_code}: {response.text}")
         return response.headers["location"], browser
 
     def finish_sign_in(self, callback_url: str, browser: requests.Session) -> str:
@@ -86,15 +94,8 @@ class Website(Client):
             raise BackendError(response.status_code, response.text)
         return response.headers["location"]
 
-    def start_viewer_sign_in(self, page_id: str, login: str | None = None) -> tuple[str, requests.Session]:
-        browser = requests.Session()
-        params = {"page": page_id, **({"login": login} if login is not None else {})}
-        response = browser.get(
-            f"{self.url}/auth/twitch/login", params=params, allow_redirects=False, timeout=TIMEOUT
-        )
-        if response.status_code != 303:
-            raise BackendError(response.status_code, response.text)
-        return response.headers["location"], browser
+    def start_viewer_sign_in(self, page_id: str, login: str = "viewer") -> tuple[str, requests.Session]:
+        return self._start_sign_in({"page": page_id}, login)
 
     def fake_viewer_sign_in(self, page_id: str, login: str) -> str:
         callback_url, browser = self.start_viewer_sign_in(page_id, login)

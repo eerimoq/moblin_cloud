@@ -5,7 +5,10 @@ Everything but the frontend is tested.
 
 The streamer's Moblin is the fake one in `tests/utils/fake_moblin.py` by default, which speaks
 Moblin's remote control protocol, both as its remote control streamer and as Moblin Cloud.
-Give `--device` to test with a real Moblin device instead.
+Give `--device` to test with a real Moblin device instead. Streamers and viewers sign in with
+the fake Twitch in `tests/utils/fake_twitch.py` by default, which the backend is pointed at with
+`--twitch-sign-in-url` and which signs any made-up login in; `just backend-run` starts the same
+one for development.
 
 All commands below are run from the repository root.
 

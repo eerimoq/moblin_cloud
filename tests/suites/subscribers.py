@@ -20,7 +20,7 @@ MISSING_SONG = "https://music.apple.com/us/song/does-not-exist/99999999999"
 class SubscribersTestCase(TestCase):
     """A streamer's page with songs and spins for Twitch subscribers, who sign in as made-up users.
 
-    The fake Twitch sign in gives the tier of the login's last digit, 1 to 3, and no subscription
+    The fake Twitch gives the tier of the login's last digit, 1 to 3, and no subscription
     otherwise. Each test signs in its own viewers, since what they use is counted per month.
     """
 

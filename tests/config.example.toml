@@ -27,7 +27,7 @@ capabilities = ["apple-music"]
 # [twitch]
 # client-id = "..."
 # client-secret = "..."
-# "fake" signs in as made-up users without Twitch, "real" in the browser with a Twitch account.
+# "fake" signs in as made-up users with the fake Twitch in tests/utils/fake_twitch.py, "real" in the browser with a Twitch account.
 # sign-in = "fake"
 # live-channel = "eerimoq"
 

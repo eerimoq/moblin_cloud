@@ -393,29 +393,6 @@ impl Accounts {
         })
     }
 
-    pub fn add_channel_moderator(&self, broadcasters: &[String], moderator: &ChannelModerator) {
-        let result = (|| {
-            let mut database = self.database.lock();
-            let transaction = database.transaction()?;
-            for broadcaster in broadcasters
-                .iter()
-                .filter(|broadcaster| **broadcaster != moderator.id)
-            {
-                transaction.execute(
-                    "INSERT OR REPLACE INTO channel_moderators (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)",
-                    [broadcaster.as_str(), &moderator.id, &moderator.login, &moderator.name],
-                )?;
-            }
-            transaction.commit()
-        })();
-        if let Err(error) = result {
-            warn!(
-                "failed to save the channels {} moderates: {error:#}",
-                moderator.id
-            );
-        }
-    }
-
     pub fn set_channel_moderators(&self, broadcaster: &str, moderators: &[ChannelModerator]) {
         let result = (|| {
             let mut database = self.database.lock();
@@ -786,19 +763,6 @@ mod tests {
         );
         accounts.enable_moderator("3", "1", false).unwrap();
         assert_eq!(names("1"), ["Bob"]);
-        accounts.add_channel_moderator(
-            &["1".to_string(), "3".to_string(), "9".to_string()],
-            &moderator("1", "Erik", true),
-        );
-        assert!(accounts.channel_moderators("1").is_empty());
-        assert_eq!(
-            accounts.channel_moderators("3"),
-            [moderator("1", "Erik", false)]
-        );
-        assert_eq!(
-            accounts.channel_moderators("9"),
-            [moderator("1", "Erik", false)]
-        );
         accounts.set_channel_moderators("2", &[moderator("4", "Zed", false)]);
         assert!(names("1").is_empty());
         assert!(!accounts.moderates("1", "2"));

@@ -51,18 +51,16 @@ frontend-run:
 	npm run dev
 
 # Runs the backend and fills it with a few streamers, for developing the website.
-# Signs in as the fake Twitch user admin (an admin), premium (a premium account) or normal, each with its own account.
-backend-run role="admin" *args:
+# Signing in goes through the fake Twitch in tests/utils/fake_twitch.py, which signs in as any made-up
+# user, each with its own account: admin is an admin, premium a premium account, normal neither.
+backend-run *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	case "{{role}}" in
-		admin|premium|normal) ;;
-		*) echo "Unknown role '{{role}}', expected admin, premium or normal." >&2; exit 1 ;;
-	esac
+	python3 -m tests.utils.fake_twitch --port 8081 &
+	trap 'kill $(jobs -p)' EXIT
 	cd backend
 	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --fake-twitch-sign-in {{role}} --admins fake-admin --premium-accounts fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
-	trap 'kill $!' EXIT
+	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --admins fake-admin --premium-accounts fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	just backend-seed
 	wait
