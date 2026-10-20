@@ -311,9 +311,13 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         own = self.dashboard.account()["settings"]
         for field in ["currency", "paywall", "tips", "spin"]:
             self.assert_equal(own[field], settings[field], f"{field} saved by a moderator")
-        self.assert_equal(self.viewer.paywall()["price"], 150)
-        self.assert_equal(self.viewer.tips()["amounts"], [200, 700])
-        self.assert_equal(self.viewer.paywall()["merchantId"], own["merchantId"])
+        paywall = self.viewer.paywall()
+        assert paywall is not None
+        tips = self.viewer.tips()
+        assert tips is not None
+        self.assert_equal(paywall["price"], 150)
+        self.assert_equal(tips["amounts"], [200, 700])
+        self.assert_equal(paywall["merchantId"], own["merchantId"])
         settings = self.moderator.moderated_settings(
             self.page_id, paywall=None, tips={"amounts": [500]}, spin=None
         )
@@ -323,7 +327,9 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         own = self.dashboard.account()["settings"]
         self.assert_equal([own["paywall"], own["tips"], own["spin"]], [None, {"amounts": [500]}, None])
         self.assert_equal(self.viewer.paywall(), None)
-        self.assert_equal(self.viewer.tips()["amounts"], [500])
+        tips = self.viewer.tips()
+        assert tips is not None
+        self.assert_equal(tips["amounts"], [500])
         self.dashboard.enable_moderator(self.moderator_id, False)
         self.assert_backend_error(
             403, lambda: self.moderator.moderated_settings(self.page_id, tips=None), NOT_MODERATOR
