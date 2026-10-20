@@ -1183,10 +1183,10 @@ function ModeratorSettings(props: {
           </p>
         }
       >
-        <ul class="flex flex-col divide-y divide-line">
+        <ul class="flex flex-col gap-3">
           <For each={props.moderators}>
             {(moderator) => (
-              <li class="py-3 first:pt-0 last:pb-0">
+              <li>
                 <label class="flex items-center gap-3">
                   <input
                     type="checkbox"
