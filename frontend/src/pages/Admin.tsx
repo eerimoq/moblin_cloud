@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
-import Icon from "../components/Icon";
+import Icon, { type IconName } from "../components/Icon";
 import {
   Band,
   cardClass,
@@ -334,19 +334,19 @@ function Cells(props: { counts: Counts; class: string; attention?: boolean }) {
   );
 }
 
-function Info(props: { text: string }) {
+function Info(props: { icon?: IconName; label?: string; children: JSX.Element }) {
   const [open, setOpen] = createSignal(false);
   return (
-    <>
+    <span class="relative">
       <button
         type="button"
-        aria-label="What is this?"
+        aria-label={props.label ?? "What is this?"}
         aria-expanded={open()}
         class="peer ml-1.5 inline-flex size-6 items-center justify-center rounded-full align-middle text-muted transition-colors hover:bg-ghost hover:text-ink aria-expanded:bg-ghost aria-expanded:text-ink"
         onClick={() => setOpen(!open())}
         onBlur={() => setOpen(false)}
       >
-        <Icon name="info" class="size-4" />
+        <Icon name={props.icon ?? "info"} class="size-4" />
       </button>
       <span
         role="tooltip"
@@ -354,9 +354,9 @@ function Info(props: { text: string }) {
           open() ? "block" : "hidden peer-hover:block peer-focus-visible:block"
         }`}
       >
-        {props.text}
+        {props.children}
       </span>
-    </>
+    </span>
   );
 }
 
@@ -388,17 +388,25 @@ function StepTable(props: { steps: Step[] }) {
             const never = () => step.failures.filter((failure) => failure.counts.total === 0);
             const failed = () => seen().reduce((sum, failure) => add(sum, failure.counts), zero);
             return (
-              <tbody class="border-t-[1.5px] border-line">
+              <tbody class="border-t-[1.5px] border-line [&>tr:last-child>td]:pb-3">
                 <tr>
                   <td
                     class={`px-4 pt-3 pb-2 align-top text-[16px] font-semibold sm:px-5 ${
                       step.problem && step.counts.total > 0 ? "text-amber-ink" : "text-ink"
                     }`}
                   >
-                    <span class="relative">
-                      {step.label}
-                      <Show when={step.hint}>{(hint) => <Info text={hint()} />}</Show>
-                    </span>
+                    {step.label}
+                    <Show when={step.hint}>{(hint) => <Info>{hint()}</Info>}</Show>
+                    <Show when={never().length > 0}>
+                      <Info icon="failed" label="Never failed with">
+                        <span class="font-semibold">Never failed with</span>
+                        <ul class="mt-1 list-disc pl-4">
+                          <For each={never()}>
+                            {(failure) => <li>{reasonLabels[failure.reason] ?? failure.reason}</li>}
+                          </For>
+                        </ul>
+                      </Info>
+                    </Show>
                   </td>
                   <Cells
                     counts={step.counts}
@@ -439,21 +447,6 @@ function StepTable(props: { steps: Step[] }) {
                     )}
                   </For>
                 </Show>
-                <tr>
-                  <td
-                    colspan={4}
-                    class={`px-4 pt-1 text-[13px] text-muted text-pretty sm:px-5 ${
-                      step.failures.length > 0 ? "pb-3" : "pb-1"
-                    }`}
-                  >
-                    <Show when={never().length > 0}>
-                      <span class="font-semibold">Never failed with </span>
-                      {never()
-                        .map((failure) => reasonLabels[failure.reason] ?? failure.reason)
-                        .join(" · ")}
-                    </Show>
-                  </td>
-                </tr>
               </tbody>
             );
           }}
@@ -467,10 +460,8 @@ function Section(props: { id: string; title: string; hint?: string; children: JS
   return (
     <section id={props.id} class="flex scroll-mt-24 flex-col gap-3">
       <h2 class="font-display text-2xl font-bold">
-        <span class="relative">
-          {props.title}
-          <Show when={props.hint}>{(hint) => <Info text={hint()} />}</Show>
-        </span>
+        {props.title}
+        <Show when={props.hint}>{(hint) => <Info>{hint()}</Info>}</Show>
       </h2>
       {props.children}
     </section>
@@ -487,9 +478,9 @@ function Tile(props: { label: string; value: string; hint: string; attention?: b
       >
         {props.value}
       </span>
-      <span class="relative self-start text-[15px] font-semibold text-ink-2">
+      <span class="self-start text-[15px] font-semibold text-ink-2">
         {props.label}
-        <Info text={props.hint} />
+        <Info>{props.hint}</Info>
       </span>
     </div>
   );

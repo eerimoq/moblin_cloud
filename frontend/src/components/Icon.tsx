@@ -26,6 +26,7 @@ export type IconName =
   | "close"
   | "copy"
   | "check"
+  | "failed"
   | "clock"
   | "info"
   | "eye"
@@ -59,6 +60,10 @@ export default function Icon(props: Props) {
       aria-hidden="true"
     >
       <Switch>
+        <Match when={props.name === "failed"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9 9l6 6M15 9l-6 6" />
+        </Match>
         <Match when={props.name === "chat"}>
           <path d="M4 5h16v11H9l-5 4V5Z" />
           <path d="M8 9h8M8 12h5" />
