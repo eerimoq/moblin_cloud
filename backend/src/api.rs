@@ -135,6 +135,27 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/pages/{id}/music", post(handle_moderator_music))
         .route("/account/pages/{id}/songs", post(handle_moderator_song))
         .route("/account/pages/{id}/recent", get(handle_moderator_recent))
+        .route("/account/pages/{id}", get(handle_moderator_account))
+        .route(
+            "/account/pages/{id}/settings",
+            post(handle_moderator_settings),
+        )
+        .route(
+            "/account/pages/{id}/image",
+            post(handle_moderator_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
+        .route(
+            "/account/pages/{id}/image/remove",
+            post(handle_moderator_image_remove),
+        )
+        .route(
+            "/account/pages/{id}/test/tip",
+            post(handle_moderator_test_tip),
+        )
+        .route(
+            "/account/pages/{id}/test/spin",
+            post(handle_moderator_test_spin),
+        )
         .route("/admin/stats", get(handle_admin_stats))
         .route("/pages/{id}/songs", get(handle_songs))
         .route("/pages/{id}", get(handle_page))
@@ -361,6 +382,16 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         image: api.pages.image_version(&id),
         id,
     })
+}
+
+fn without_payments(mut response: Json<SettingsResponse>) -> Json<SettingsResponse> {
+    response.paypal = false;
+    response.merchant_id = None;
+    response.paypal_pending = false;
+    response.stripe = false;
+    response.stripe_account_id = None;
+    response.stripe_pending = false;
+    response
 }
 
 #[derive(Deserialize)]
@@ -1173,8 +1204,47 @@ async fn account_image(
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
     let SignedIn { id, account, .. } = signed_in(api, headers)?;
-    let page = account.page.id;
-    if !is_premium(api, &id) {
+    let premium = is_premium(api, &id);
+    save_image(api, &id, account.page.id, premium, body).await
+}
+
+async fn handle_moderator_image(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<SettingsResponse>, Failure> {
+    let result = moderator_image(&api, &id, &headers, body).await;
+    counted(&api, "imageUploads", result)
+}
+
+async fn moderator_image(
+    api: &Api,
+    page: &str,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Result<Json<SettingsResponse>, Failure> {
+    let user = moderator(api, headers, page)?.id;
+    let premium = streamer_is_premium(api, page);
+    save_image(api, &user, page.to_string(), premium, body)
+        .await
+        .map(without_payments)
+}
+
+fn streamer_is_premium(api: &Api, page: &str) -> bool {
+    api.accounts
+        .streamer_of_page(page)
+        .is_some_and(|(streamer, _)| is_premium(api, &streamer))
+}
+
+async fn save_image(
+    api: &Api,
+    id: &str,
+    page: String,
+    premium: bool,
+    body: Bytes,
+) -> Result<Json<SettingsResponse>, Failure> {
+    if !premium {
         return Err(Failure {
             reason: "not-premium",
             status: StatusCode::FORBIDDEN,
@@ -1209,7 +1279,25 @@ async fn handle_account_image_remove(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.id;
+    remove_image(&api, &id, account.page.id)
+}
+
+async fn handle_moderator_image_remove(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<SettingsResponse>, Failure> {
+    let user = moderator(&api, &headers, &id)?.id;
+    remove_image(&api, &user, id)
+        .map(without_payments)
+        .map_err(Failure::from)
+}
+
+fn remove_image(
+    api: &Api,
+    id: &str,
+    page: String,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     api.pages.remove_image(&page).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1218,7 +1306,7 @@ async fn handle_account_image_remove(
     })?;
     info!("{id} removed the banner image of page {page}");
     let settings = api.pages.get(&page);
-    Ok(settings_response(&api, page, settings))
+    Ok(settings_response(api, page, settings))
 }
 
 async fn handle_account_settings(
@@ -1229,6 +1317,55 @@ async fn handle_account_settings(
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     let page = account.page.id;
     update_settings(&api, page, is_premium(&api, &id), request).await
+}
+
+async fn handle_moderator_settings(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<SettingsRequest>,
+) -> Result<Json<SettingsResponse>, Failure> {
+    moderator(&api, &headers, &id)?;
+    let current = api.pages.get(&id);
+    let request = SettingsRequest {
+        currency: None,
+        paywall: current.paywall,
+        tips: current.tips,
+        spin: current.spin,
+        ..request
+    };
+    let premium = streamer_is_premium(&api, &id);
+    update_settings(&api, id, premium, request)
+        .await
+        .map(without_payments)
+        .map_err(Failure::from)
+}
+
+async fn handle_moderator_account(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<AccountResponse>, Failure> {
+    moderator(&api, &headers, &id)?;
+    let account = api.accounts.of_page(&id).ok_or(failure(
+        "not-found",
+        StatusCode::NOT_FOUND,
+        "This page does not exist.",
+    ))?;
+    let settings = api.pages.get(&id);
+    Ok(Json(AccountResponse {
+        name: account.name,
+        login: account.login,
+        avatar: account.avatar,
+        devices: Vec::new(),
+        music_device: None,
+        wheel_device: None,
+        settings: without_payments(settings_response(&api, id.clone(), settings)).0,
+        admin: false,
+        premium: streamer_is_premium(&api, &id),
+        moderators: Vec::new(),
+        moderating: Vec::new(),
+    }))
 }
 
 #[derive(Serialize)]
@@ -3112,9 +3249,18 @@ fn within_limit(limits: &Mutex<HashMap<String, Vec<Instant>>>, id: &str, max: us
     true
 }
 
-fn test_page(api: &Api, headers: &HeaderMap) -> Result<(String, Account, String), Failure> {
-    let account = signed_in(api, headers)?.account;
-    let id = account.page.id.clone();
+fn test_page(
+    api: &Api,
+    headers: &HeaderMap,
+    page: Option<&str>,
+) -> Result<(String, Account, String), Failure> {
+    let (id, account) = match page {
+        Some(page) => (page.to_string(), moderator(api, headers, page)?.account),
+        None => {
+            let account = signed_in(api, headers)?.account;
+            (account.page.id.clone(), account)
+        }
+    };
     if !within_limit(&api.tests, &id, 10) {
         return Err(failure(
             "too-many-tests",
@@ -3148,7 +3294,7 @@ async fn account_test_song(
     headers: &HeaderMap,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(api, headers)?;
+    let (id, account, request_id) = test_page(api, headers, None)?;
     if !api.remote_control.is_connected(&music_device(api, &id)) {
         return Err(moblin_not_connected());
     }
@@ -3168,16 +3314,27 @@ async fn handle_account_test_tip(
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_tip(&api, &headers, request).await;
+    let result = account_test_tip(&api, &headers, None, request).await;
+    counted(&api, "tipTests", result)
+}
+
+async fn handle_moderator_test_tip(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let result = account_test_tip(&api, &headers, Some(&id), request).await;
     counted(&api, "tipTests", result)
 }
 
 async fn account_test_tip(
     api: &Api,
     headers: &HeaderMap,
+    page: Option<&str>,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(api, headers)?;
+    let (id, account, request_id) = test_page(api, headers, page)?;
     let settings = api.pages.get(&id);
     let amount = settings
         .tips
@@ -3203,16 +3360,27 @@ async fn handle_account_test_spin(
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_spin(&api, &headers, request).await;
+    let result = account_test_spin(&api, &headers, None, request).await;
+    counted(&api, "spinTests", result)
+}
+
+async fn handle_moderator_test_spin(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let result = account_test_spin(&api, &headers, Some(&id), request).await;
     counted(&api, "spinTests", result)
 }
 
 async fn account_test_spin(
     api: &Api,
     headers: &HeaderMap,
+    page: Option<&str>,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(api, headers)?;
+    let (id, account, request_id) = test_page(api, headers, page)?;
     let device = wheel_device(api, &id);
     if api.remote_control.wheel(&device).is_none() {
         return Err(if api.remote_control.is_connected(&device) {
@@ -8147,6 +8315,171 @@ mod tests {
         assert_eq!(count("moderatorMusicFailed:invalid-command"), 2);
         assert_eq!(count("moderatorMusicFailed:offline"), 1);
         assert_eq!(count("modSongs"), 1);
+    }
+
+    #[tokio::test]
+    async fn moderators_use_the_streamers_dashboard() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        connect_paypal(&api);
+        api.pages
+            .set(
+                &id,
+                Settings {
+                    currency: Some("SEK".to_string()),
+                    paywall: Some(Paywall { price: 250 }),
+                    tips: Some(Tips { amounts: vec![500] }),
+                    ..Settings::default()
+                },
+            )
+            .unwrap();
+        create_account(&api, "21", "Mod 21", "mod21");
+        create_account(&api, "22", "Viewer 22", "viewer22");
+        api.accounts
+            .set_moderated_channels("21", &["1".to_string()]);
+        let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
+        let get = async |session: &str, path: &str| {
+            client
+                .get(format!("http://{address}/account/pages/{id}{path}"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+        };
+        let post = async |session: &str, path: &str, body: Value| {
+            client
+                .post(format!("http://{address}/account/pages/{id}{path}"))
+                .bearer_auth(session)
+                .json(&body)
+                .send()
+                .await
+                .unwrap()
+        };
+        for (session, status) in [
+            ("", StatusCode::UNAUTHORIZED),
+            (mod1.as_str(), StatusCode::FORBIDDEN),
+            (viewer1.as_str(), StatusCode::FORBIDDEN),
+        ] {
+            assert_eq!(get(session, "").await.status(), status);
+            assert_eq!(
+                post(session, "/settings", json!({"title": "Hi"}))
+                    .await
+                    .status(),
+                status
+            );
+            assert_eq!(post(session, "/test/tip", json!({})).await.status(), status);
+            assert_eq!(
+                post(session, "/test/spin", json!({})).await.status(),
+                status
+            );
+            assert_eq!(
+                post(session, "/image/remove", json!({})).await.status(),
+                status
+            );
+        }
+        api.accounts.enable_moderator("1", "21", true).unwrap();
+        let own: Value = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(own["settings"]["merchantId"], "MERCHANT00001");
+        let account: Value = get(&mod1, "").await.json().await.unwrap();
+        assert_eq!(account["name"], "Erik");
+        assert_eq!(account["login"], "erik");
+        assert_eq!(account["devices"], json!([]));
+        assert_eq!(account["admin"], false);
+        assert_eq!(account["premium"], false);
+        assert_eq!(account["moderating"], json!([]));
+        assert_eq!(account["moderators"], json!([]));
+        let settings = &account["settings"];
+        assert_eq!(settings["id"], id);
+        assert_eq!(settings["currency"], "SEK");
+        assert_eq!(settings["paywall"], json!({"price": 250}));
+        assert_eq!(settings["tips"], json!({"amounts": [500]}));
+        assert_eq!(settings["paypal"], false);
+        assert_eq!(settings["merchantId"], Value::Null);
+        assert_eq!(settings["paypalPending"], false);
+        assert_eq!(settings["stripe"], false);
+        assert_eq!(settings["stripeAccountId"], Value::Null);
+        assert_eq!(settings["stripePending"], false);
+        assert_eq!(get(&viewer1, "").await.status(), StatusCode::FORBIDDEN);
+        let response = post(
+            &mod1,
+            "/settings",
+            json!({
+                "currency": "USD",
+                "paywall": null,
+                "tips": null,
+                "spin": {"options": [{"spins": 1, "price": 100}]},
+                "title": " Hi ",
+                "maxSongMinutes": 7,
+                "subSongs": {"tier1": 1, "tier2": 2, "tier3": 3},
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let settings: Value = response.json().await.unwrap();
+        assert_eq!(settings["title"], "Hi");
+        assert_eq!(settings["maxSongMinutes"], 7);
+        assert_eq!(
+            settings["subSongs"],
+            json!({"tier1": 1, "tier2": 2, "tier3": 3})
+        );
+        assert_eq!(settings["currency"], "SEK");
+        assert_eq!(settings["paywall"], json!({"price": 250}));
+        assert_eq!(settings["tips"], json!({"amounts": [500]}));
+        assert_eq!(settings["spin"], Value::Null);
+        assert_eq!(settings["merchantId"], Value::Null);
+        assert_eq!(settings["paypal"], false);
+        let saved = api.pages.get(&id);
+        assert_eq!(saved.title.as_deref(), Some("Hi"));
+        assert_eq!(saved.currency(), "SEK");
+        assert_eq!(saved.paywall, Some(Paywall { price: 250 }));
+        let response = post(&mod1, "/settings", json!({"font": "Poppins"})).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = client
+            .post(format!("http://{address}/account/pages/{id}/image"))
+            .bearer_auth(&mod1)
+            .header("content-type", "image/png")
+            .body(images::tests::png(1200, 400))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = post(&mod1, "/image/remove", json!({})).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = post(&mod1, "/test/spin", json!({})).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.text().await.unwrap(), "Connect Moblin first.");
+        let response = post(&mod1, "/test/tip", json!({"message": " From a mod "})).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let mut socket = connect(&address, &key).await;
+        let request = receive(&mut socket).await;
+        let tip = &request["request"]["data"]["tip"];
+        assert_eq!(tip["name"], "Mod 21");
+        assert_eq!(tip["message"], "From a mod");
+        assert_eq!(tip["amount"], "5.00");
+        assert_eq!(tip["currency"], "SEK");
+        answer(&mut socket, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("tipTests"), 1);
+        assert_eq!(count("tipTestsFailed:not-moderator"), 2);
+        assert_eq!(count("spinTestsFailed:offline"), 1);
+        assert_eq!(count("imageUploadsFailed:not-premium"), 1);
+        assert_eq!(count("imageUploadsFailed:not-moderator"), 0);
     }
 
     #[tokio::test]

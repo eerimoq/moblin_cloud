@@ -178,6 +178,87 @@ class ModeratorsManageTheQueue(ModeratorsTestCase):
             self.moblin.clear_music()
 
 
+class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
+    """Show a moderator the streamer's dashboard without payments, and let them change the rest."""
+
+    login = "moddash"
+
+    def run(self):
+        self.dashboard.update_settings(title="Mine", sub_spins=None)
+        for call in [
+            lambda: self.moderator.moderated_account(self.page_id),
+            lambda: self.moderator.moderated_settings(self.page_id, title="Theirs"),
+            lambda: self.moderator.moderated_test_tip(self.page_id),
+            lambda: self.moderator.moderated_test_spin(self.page_id),
+            lambda: self.moderator.moderated_remove_image(self.page_id),
+        ]:
+            self.assert_backend_error(403, call, NOT_MODERATOR)
+        self.dashboard.enable_moderator(self.moderator_id, True)
+        own = self.dashboard.account()
+        account = self.moderator.moderated_account(self.page_id)
+        self.assert_equal(
+            [
+                account["name"],
+                account["login"],
+                account["devices"],
+                account["moderators"],
+                account["moderating"],
+            ],
+            [own["name"], own["login"], [], [], []],
+        )
+        self.assert_equal([account["admin"], account["premium"]], [False, own["premium"]])
+        settings = account["settings"]
+        self.assert_equal(settings["id"], self.page_id)
+        self.assert_equal(settings["title"], "Mine")
+        self.assert_equal(settings["currency"], own["settings"]["currency"])
+        self.assert_equal(
+            [
+                settings["paypal"],
+                settings["merchantId"],
+                settings["paypalPending"],
+                settings["stripe"],
+                settings["stripeAccountId"],
+                settings["stripePending"],
+            ],
+            [False, None, False, False, None, False],
+        )
+        settings = self.moderator.moderated_settings(
+            self.page_id,
+            title="Theirs",
+            currency="EUR" if own["settings"]["currency"] != "EUR" else "USD",
+            paywall={"price": 100},
+            tips={"amounts": [100]},
+            spin={"options": [{"spins": 1, "price": 100}]},
+            sub_spins={"tier1": 1, "tier2": 2, "tier3": 3},
+        )
+        self.assert_equal(settings["title"], "Theirs")
+        self.assert_equal(settings["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
+        self.assert_equal(settings["merchantId"], None)
+        for field in ["currency", "paywall", "tips", "spin"]:
+            self.assert_equal(settings[field], own["settings"][field], f"{field} unchanged by a moderator")
+        own = self.dashboard.account()
+        self.assert_equal(own["settings"]["title"], "Theirs")
+        self.assert_equal(own["settings"]["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
+        self.assert_backend_error(
+            409, lambda: self.moderator.moderated_test_spin(self.page_id), "Connect Moblin first."
+        )
+        self.moderator.moderated_remove_image(self.page_id)
+        self.connect_moblin()
+        start = self.moblin.backend_requests_position()
+        self.moderator.moderated_test_tip(self.page_id, " Checking ")
+        tip = self.moblin.wait_for_new_backend_request("tip", start)
+        self.assert_equal(
+            [tip.body["name"], tip.body["message"], tip.body["amount"]],
+            [self.moderator_login, "Checking", "5.00"],
+        )
+        self.assert_equal(self.moderator.moderated_recent(self.page_id, "tip")["items"], [])
+
+    def teardown(self):
+        super().teardown()
+        if hasattr(self, "dashboard"):
+            self.dashboard.update_settings(title=None, sub_spins=None)
+
+
 class ModeratorsAddSongsForFree(ModeratorsTestCase):
     """Let a moderator add songs of any length without paying, listed as theirs for both of them."""
 
@@ -332,6 +413,7 @@ def tests(context: Context):
     return [
         ModeratorsTurnedOn(context),
         ModeratorsManageTheQueue(context),
+        ModeratorsUseTheStreamersDashboard(context),
         ModeratorsAddSongsForFree(context),
         ModeratorsSongRequestsOff(context),
         ModeratorsKeptOnRestart(context),

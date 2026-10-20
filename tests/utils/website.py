@@ -245,6 +245,43 @@ class Dashboard(Client):
     def moderated_recent(self, page_id: str, kind: str) -> dict:
         return self.get(f"/account/pages/{quote(page_id, safe='')}/recent?kind={kind}")
 
+    def moderated_account(self, page_id: str) -> dict:
+        return self.get(f"/account/pages/{quote(page_id, safe='')}")
+
+    def moderated_settings(self, page_id: str, **changes) -> dict:
+        """Saves the moderated page's settings with some changed, like the moderator's dashboard does."""
+        settings = self.moderated_account(page_id)["settings"]
+        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongMinutes": "max_song_minutes"}
+        body = {
+            field: settings[field]
+            for field in [
+                "currency",
+                "paywall",
+                "tips",
+                "spin",
+                "title",
+                "message",
+                "accent",
+                "font",
+                "subSongs",
+                "subSpins",
+                "maxSongMinutes",
+            ]
+        }
+        for field in body:
+            if names.get(field, field) in changes:
+                body[field] = changes[names.get(field, field)]
+        return self.post(f"/account/pages/{quote(page_id, safe='')}/settings", body)
+
+    def moderated_test_tip(self, page_id: str, message: str | None = None) -> dict:
+        return self.post(f"/account/pages/{quote(page_id, safe='')}/test/tip", {"message": message})
+
+    def moderated_test_spin(self, page_id: str, message: str | None = None) -> dict:
+        return self.post(f"/account/pages/{quote(page_id, safe='')}/test/spin", {"message": message})
+
+    def moderated_remove_image(self, page_id: str) -> dict:
+        return self.post(f"/account/pages/{quote(page_id, safe='')}/image/remove")
+
     def sign_out_everywhere(self):
         response = self.request("POST", "/account/sign-out")
         if not response.ok:

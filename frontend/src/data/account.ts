@@ -121,14 +121,24 @@ const post = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 
-export const fetchAccount = (session: string) => call<Account>(session, "/account");
+const accountPath = (page?: string) =>
+  page === undefined ? "/account" : `/account/pages/${encodeURIComponent(page)}`;
+
+export const fetchAccount = (session: string, page?: string) =>
+  call<Account>(session, accountPath(page));
 
 export const fetchAdminStats = (session: string) => call<AdminStats>(session, "/admin/stats");
 
-export const fetchRecent = (session: string, kind: RecentKind, limit: number, before?: string) =>
+export const fetchRecent = (
+  session: string,
+  page: string | undefined,
+  kind: RecentKind,
+  limit: number,
+  before?: string,
+) =>
   call<RecentList>(
     session,
-    `/account/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
+    `${accountPath(page)}/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
   );
 
 export const enableModerator = (session: string, moderator: string, enabled: boolean) =>
@@ -151,18 +161,6 @@ export const addModeratorSong = (session: string, page: string, song: string, me
     session,
     `/account/pages/${encodeURIComponent(page)}/songs`,
     post({ song, message: message || null }),
-  );
-
-export const fetchModeratorRecent = (
-  session: string,
-  page: string,
-  kind: RecentKind,
-  limit: number,
-  before?: string,
-) =>
-  call<RecentList>(
-    session,
-    `/account/pages/${encodeURIComponent(page)}/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
   );
 
 export async function signOutEverywhere(session: string) {
@@ -253,15 +251,15 @@ export const checkStripe = (session: string) =>
 export const disconnectStripe = (session: string) =>
   call<Settings>(session, "/account/stripe/disconnect", { method: "POST" });
 
-export const uploadImage = (session: string, image: File) =>
-  call<Settings>(session, "/account/image", {
+export const uploadImage = (session: string, image: File, page?: string) =>
+  call<Settings>(session, `${accountPath(page)}/image`, {
     method: "POST",
     headers: { "content-type": image.type || "application/octet-stream" },
     body: image,
   });
 
-export const removeImage = (session: string) =>
-  call<Settings>(session, "/account/image/remove", { method: "POST" });
+export const removeImage = (session: string, page?: string) =>
+  call<Settings>(session, `${accountPath(page)}/image/remove`, { method: "POST" });
 
 export type SettingsChanges = Page &
   Pick<
@@ -273,12 +271,13 @@ export const sendTest = (
   session: string,
   kind: "song" | "tip" | "spin",
   body: { song?: string; message?: string },
-) => call<object>(session, `/account/test/${kind}`, post(body));
+  page?: string,
+) => call<object>(session, `${accountPath(page)}/test/${kind}`, post(body));
 
-export const saveAccountSettings = (session: string, settings: SettingsChanges) =>
+export const saveAccountSettings = (session: string, settings: SettingsChanges, page?: string) =>
   call<Settings>(
     session,
-    "/account/settings",
+    `${accountPath(page)}/settings`,
     post({
       currency: settings.currency,
       paywall: settings.paywall,

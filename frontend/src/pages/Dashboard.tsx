@@ -24,7 +24,6 @@ import {
   addModeratorSong,
   enableModerator,
   type ChannelModerator,
-  fetchModeratorRecent,
   moderateMusic,
   type Moderating,
   checkPayPal,
@@ -674,6 +673,7 @@ function YourPage(props: {
   account: Account;
   page: Settings;
   busy: boolean;
+  moderating: boolean;
   onSave: (changes: Page) => Promise<void>;
   onImage: (image: File | null) => Promise<void>;
 }) {
@@ -708,7 +708,11 @@ function YourPage(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">{t("Your tip page")}</h2>
+      <h2 class="text-[23px] font-semibold">
+        {props.moderating
+          ? t("The tip page of {name}", { name: props.account.name })
+          : t("Your tip page")}
+      </h2>
       <p class="text-ink-2">
         {t(
           "Share it with your viewers so they can send you tips, request songs and spin your wheel.",
@@ -1156,7 +1160,7 @@ function ModeratorSettings(props: {
         {t(
           "Turn on the Twitch moderators who may manage your song queue, add songs for free and " +
             "see recent song requests, tips and spins. They sign in to Moblin Cloud with Twitch, " +
-            "like you, and find your channel under Moderate.",
+            "like you, and pick your channel at the top of their dashboard.",
         )}
       </p>
       <Show
@@ -1316,92 +1320,6 @@ function FreeSong(props: { session: string; page: string; onSignOut: () => void 
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
     </form>
-  );
-}
-
-function ModeratedChannel(props: { session: string; channel: Moderating; onSignOut: () => void }) {
-  const { recent, loadRecent, loadMore } = createRecent(
-    (kind, limit, before) =>
-      fetchModeratorRecent(props.session, props.channel.id, kind, limit, before),
-    (error) => {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-    },
-  );
-
-  onMount(() => {
-    void loadRecent();
-    const timer = setInterval(() => void loadRecent(), 10_000);
-    onCleanup(() => clearInterval(timer));
-  });
-
-  return (
-    <>
-      <MusicQueue session={props.session} page={props.channel.id} onSignOut={props.onSignOut} />
-      <FreeSong session={props.session} page={props.channel.id} onSignOut={props.onSignOut} />
-      <Latest kind="song" list={recent()?.song} onMore={() => loadMore("song")} />
-      <Latest kind="tip" list={recent()?.tip} onMore={() => loadMore("tip")} />
-      <Latest kind="spin" list={recent()?.spin} onMore={() => loadMore("spin")} />
-    </>
-  );
-}
-
-const moderatedChannelKey = "moderatedChannel";
-
-function readModeratedChannel() {
-  try {
-    return localStorage.getItem(moderatedChannelKey);
-  } catch {
-    return null;
-  }
-}
-
-function Moderate(props: { session: string; channels: Moderating[]; onSignOut: () => void }) {
-  const [chosen, setChosen] = createSignal(readModeratedChannel());
-  const choose = (id: string) => {
-    setChosen(id);
-    try {
-      localStorage.setItem(moderatedChannelKey, id);
-    } catch {}
-  };
-  const channel = () =>
-    props.channels.find((channel) => channel.id === chosen()) ?? props.channels[0];
-
-  return (
-    <div class="flex flex-col gap-6">
-      <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">{t("Moderate")}</h2>
-        <p class="text-ink-2">
-          {t(
-            "Help the streamers you moderate on Twitch with their song requests. The list is " +
-              "updated when you sign in.",
-          )}
-        </p>
-        <Show when={props.channels.length > 1}>
-          <label class="flex flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">{t("Channel")}</span>
-            <select
-              class={inputClass}
-              value={channel().id}
-              onChange={(event) => choose(event.currentTarget.value)}
-            >
-              <For each={props.channels}>
-                {(channel) => <option value={channel.id}>{channel.name}</option>}
-              </For>
-            </select>
-          </label>
-        </Show>
-        <Show when={props.channels.length === 1}>
-          <p class="font-semibold">{channel().name}</p>
-        </Show>
-      </div>
-      <Show when={channel()} keyed>
-        {(current) => (
-          <ModeratedChannel session={props.session} channel={current} onSignOut={props.onSignOut} />
-        )}
-      </Show>
-    </div>
   );
 }
 
@@ -1679,6 +1597,7 @@ function SpinSettings(props: {
 function TestSend(props: {
   kind: "song" | "tip" | "spin";
   session: string;
+  page?: string;
   preview?: boolean;
   onSignOut: () => void;
 }) {
@@ -1700,6 +1619,7 @@ function TestSend(props: {
         props.session,
         props.kind,
         props.kind === "song" ? { song: song(), message: message() } : { message: message() },
+        props.page,
       );
       if (props.kind === "song") {
         setSong("");
@@ -1776,14 +1696,16 @@ function TestSend(props: {
 function Admin(props: {
   session: string;
   account: Account;
+  page?: string;
   onSignOut: () => void;
   preview?: boolean;
 }) {
   const [account, setAccount] = createSignal(props.account);
   const [settings, setSettings] = createSignal(props.account.settings);
   const [busy, setBusy] = createSignal(false);
+  const moderating = () => props.page !== undefined;
   const { recent, loadRecent, loadMore } = createRecent(
-    (kind, limit, before) => fetchRecent(props.session, kind, limit, before),
+    (kind, limit, before) => fetchRecent(props.session, props.page, kind, limit, before),
     (error) => {
       if (signedOut(error)) {
         props.onSignOut();
@@ -1795,7 +1717,11 @@ function Admin(props: {
   const changeImage = async (image: File | null) => {
     setBusy(true);
     try {
-      setSettings(await (image ? uploadImage(props.session, image) : removeImage(props.session)));
+      setSettings(
+        await (image
+          ? uploadImage(props.session, image, props.page)
+          : removeImage(props.session, props.page)),
+      );
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
@@ -1828,7 +1754,7 @@ function Admin(props: {
     const timer = setInterval(async () => {
       void loadRecent();
       try {
-        const account = await fetchAccount(props.session);
+        const account = await fetchAccount(props.session, props.page);
         setAccount(account);
         setSettings(account.settings);
       } catch (error) {
@@ -1843,7 +1769,9 @@ function Admin(props: {
   const save = async (changes: Partial<SettingsChanges>) => {
     setBusy(true);
     try {
-      setSettings(await saveAccountSettings(props.session, { ...settings(), ...changes }));
+      setSettings(
+        await saveAccountSettings(props.session, { ...settings(), ...changes }, props.page),
+      );
     } catch (error) {
       if (signedOut(error)) {
         props.onSignOut();
@@ -1874,7 +1802,7 @@ function Admin(props: {
       id: "tips",
       label: t("Tips"),
       icon: "heart",
-      shown: () => payments() || settings().tips !== null,
+      shown: () => moderating() || payments() || settings().tips !== null,
       status: () => onOff(settings().tips !== null),
     },
     {
@@ -1895,7 +1823,7 @@ function Admin(props: {
       id: "moderators",
       label: t("Moderators"),
       icon: "shield",
-      shown: () => true,
+      shown: () => !moderating(),
       status: () => onOff(account().moderators.some((moderator) => moderator.enabled)),
     },
     {
@@ -1909,15 +1837,8 @@ function Admin(props: {
       id: "moblin",
       label: "Moblin",
       icon: "smartphone",
-      shown: () => true,
+      shown: () => !moderating(),
       status: () => connectedOrNot(settings().connected),
-    },
-    {
-      id: "moderate",
-      label: t("Moderate"),
-      icon: "remote",
-      shown: () => account().moderating.length > 0,
-      status: () => null,
     },
   ];
   const visible = () => sections.filter((section) => section.shown());
@@ -1933,7 +1854,7 @@ function Admin(props: {
     setChosen(id);
     history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
   };
-  const paid = (configured: boolean) => connected() || configured;
+  const paid = (configured: boolean) => !moderating() && (connected() || configured);
 
   return (
     <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
@@ -1976,53 +1897,59 @@ function Admin(props: {
             account={account()}
             page={settings()}
             busy={busy()}
+            moderating={moderating()}
             onSave={save}
             onImage={changeImage}
           />
         </div>
         <div hidden={active() !== "tips"} class="flex flex-col gap-6">
-          <Show
-            when={paid(settings().tips !== null)}
-            fallback={
-              <NeedsPayments
-                title={t("Tips")}
-                available={payments()}
-                onConnect={() => select("payments")}
+          <Show when={!moderating()}>
+            <Show
+              when={paid(settings().tips !== null)}
+              fallback={
+                <NeedsPayments
+                  title={t("Tips")}
+                  available={payments()}
+                  onConnect={() => select("payments")}
+                />
+              }
+            >
+              <TipSettings
+                tips={settings().tips}
+                currency={settings().currency}
+                busy={busy()}
+                onSave={save}
               />
-            }
-          >
-            <TipSettings
-              tips={settings().tips}
-              currency={settings().currency}
-              busy={busy()}
-              onSave={save}
-            />
+            </Show>
           </Show>
           <TestSend
             kind="tip"
             session={props.session}
+            page={props.page}
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
           <Latest kind="tip" list={recent()?.tip} onMore={() => loadMore("tip")} />
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
-          <Show
-            when={paid(settings().spin !== null)}
-            fallback={
-              <NeedsPayments
-                title={t("Wheel of luck")}
-                available={payments()}
-                onConnect={() => select("payments")}
+          <Show when={!moderating()}>
+            <Show
+              when={paid(settings().spin !== null)}
+              fallback={
+                <NeedsPayments
+                  title={t("Wheel of luck")}
+                  available={payments()}
+                  onConnect={() => select("payments")}
+                />
+              }
+            >
+              <SpinSettings
+                spin={settings().spin}
+                currency={settings().currency}
+                busy={busy()}
+                onSave={save}
               />
-            }
-          >
-            <SpinSettings
-              spin={settings().spin}
-              currency={settings().currency}
-              busy={busy()}
-              onSave={save}
-            />
+            </Show>
           </Show>
           <SubscriberSettings
             kind="spin"
@@ -2033,28 +1960,31 @@ function Admin(props: {
           <TestSend
             kind="spin"
             session={props.session}
+            page={props.page}
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
           <Latest kind="spin" list={recent()?.spin} onMore={() => loadMore("spin")} />
         </div>
         <div hidden={active() !== "songs"} class="flex flex-col gap-6">
-          <Show
-            when={paid(settings().paywall !== null)}
-            fallback={
-              <NeedsPayments
-                title={t("Song requests")}
-                available={payments()}
-                onConnect={() => select("payments")}
+          <Show when={!moderating()}>
+            <Show
+              when={paid(settings().paywall !== null)}
+              fallback={
+                <NeedsPayments
+                  title={t("Song requests")}
+                  available={payments()}
+                  onConnect={() => select("payments")}
+                />
+              }
+            >
+              <SongSettings
+                paywall={settings().paywall}
+                currency={settings().currency}
+                busy={busy()}
+                onSave={save}
               />
-            }
-          >
-            <SongSettings
-              paywall={settings().paywall}
-              currency={settings().currency}
-              busy={busy()}
-              onSave={save}
-            />
+            </Show>
           </Show>
           <SubscriberSettings
             kind="song"
@@ -2070,12 +2000,20 @@ function Admin(props: {
           <Show when={!props.preview && active() === "songs"}>
             <MusicQueue session={props.session} page={settings().id} onSignOut={props.onSignOut} />
           </Show>
-          <TestSend
-            kind="song"
-            session={props.session}
-            preview={props.preview}
-            onSignOut={props.onSignOut}
-          />
+          <Show
+            when={props.page}
+            keyed
+            fallback={
+              <TestSend
+                kind="song"
+                session={props.session}
+                preview={props.preview}
+                onSignOut={props.onSignOut}
+              />
+            }
+          >
+            {(page) => <FreeSong session={props.session} page={page} onSignOut={props.onSignOut} />}
+          </Show>
           <Latest kind="song" list={recent()?.song} onMore={() => loadMore("song")} />
         </div>
         <Show when={payments()}>
@@ -2101,20 +2039,15 @@ function Admin(props: {
             </Show>
           </div>
         </Show>
-        <div hidden={active() !== "moderators"}>
-          <ModeratorSettings
-            session={props.session}
-            moderators={account().moderators}
-            onAccount={setAccount}
-            onSignOut={props.onSignOut}
-          />
-        </div>
-        <Show when={active() === "moderate"}>
-          <Moderate
-            session={props.session}
-            channels={account().moderating}
-            onSignOut={props.onSignOut}
-          />
+        <Show when={!moderating()}>
+          <div hidden={active() !== "moderators"}>
+            <ModeratorSettings
+              session={props.session}
+              moderators={account().moderators}
+              onAccount={setAccount}
+              onSignOut={props.onSignOut}
+            />
+          </div>
         </Show>
         <div hidden={active() !== "moblin"}>
           <MoblinSettings
@@ -2131,6 +2064,56 @@ function Admin(props: {
       </div>
     </div>
   );
+}
+
+function Moderated(props: { session: string; channel: Moderating; onSignOut: () => void }) {
+  const [account, setAccount] = createSignal<Account | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+
+  onMount(async () => {
+    try {
+      setAccount(await fetchAccount(props.session, props.channel.id));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setError(
+        error instanceof BackendError && error.status === 403
+          ? t("{name} has turned you off as a moderator.", { name: props.channel.name })
+          : t("Something went wrong. Try again."),
+      );
+    }
+  });
+
+  return (
+    <Show
+      when={account()}
+      fallback={
+        <Show when={error()} fallback={<Spinner />}>
+          {(error) => <Notice status>{error()}</Notice>}
+        </Show>
+      }
+    >
+      {(account) => (
+        <Admin
+          session={props.session}
+          account={account()}
+          page={props.channel.id}
+          onSignOut={props.onSignOut}
+        />
+      )}
+    </Show>
+  );
+}
+
+const moderatedChannelKey = "moderatedChannel";
+
+function readModeratedChannel() {
+  try {
+    return localStorage.getItem(moderatedChannelKey) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 const onOff = (on: boolean) => ({ on, text: on ? t("On") : t("Off") });
@@ -2609,6 +2592,16 @@ export default function Dashboard() {
     setSession(null);
   };
 
+  const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
+  const chooseChannel = (id: string) => {
+    setChosenChannel(id);
+    try {
+      localStorage.setItem(moderatedChannelKey, id);
+    } catch {}
+  };
+  const channel = (account: Account) =>
+    account.moderating.find((channel) => channel.id === chosenChannel()) ?? null;
+
   return (
     <>
       <CloudHeader>
@@ -2673,13 +2666,28 @@ export default function Dashboard() {
           }
         >
           {(current) => (
-            <section class="mx-auto flex max-w-[1120px] flex-col px-5 pt-10 pb-8 sm:px-8">
+            <section class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 pt-10 pb-8 sm:flex-row sm:items-center sm:justify-between sm:px-8">
               <div class="flex items-center gap-4">
                 <Avatar account={current().account} />
                 <h1 class="min-w-0 text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
                   {t("Hi, {name}", { name: current().account.name })}
                 </h1>
               </div>
+              <Show when={current().account.moderating.length > 0}>
+                <label class="flex flex-col gap-2 sm:w-64">
+                  <span class="text-[15px] font-semibold text-ink-2">{t("Streamer")}</span>
+                  <select
+                    class={inputClass}
+                    value={channel(current().account)?.id ?? ""}
+                    onChange={(event) => chooseChannel(event.currentTarget.value)}
+                  >
+                    <option value="">{t("You")}</option>
+                    <For each={current().account.moderating}>
+                      {(channel) => <option value={channel.id}>{channel.name}</option>}
+                    </For>
+                  </select>
+                </label>
+              </Show>
             </section>
           )}
         </Show>
@@ -2687,7 +2695,21 @@ export default function Dashboard() {
           <Show when={!loading()} fallback={<Spinner />}>
             <Show when={session()} keyed fallback={<Preview failed={signInFailed()} />}>
               {(current) => (
-                <Admin session={current.session} account={current.account} onSignOut={signOut} />
+                <Show
+                  when={channel(current.account)}
+                  keyed
+                  fallback={
+                    <Admin
+                      session={current.session}
+                      account={current.account}
+                      onSignOut={signOut}
+                    />
+                  }
+                >
+                  {(channel) => (
+                    <Moderated session={current.session} channel={channel} onSignOut={signOut} />
+                  )}
+                </Show>
               )}
             </Show>
           </Show>
