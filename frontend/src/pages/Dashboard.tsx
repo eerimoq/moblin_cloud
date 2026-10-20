@@ -2743,12 +2743,10 @@ export default function Dashboard() {
   const chooseChannel = (login: string) => {
     setChosenChannel(login);
     const search = new URLSearchParams(location.search);
-    if (login) {
-      search.set("streamer", `twitch:${login}`);
-    } else {
-      search.delete("streamer");
-    }
-    const query = search.toString();
+    search.delete("streamer");
+    const query = [search.toString(), login ? `streamer=twitch:${login}` : ""]
+      .filter(Boolean)
+      .join("&");
     history.replaceState(
       null,
       "",
