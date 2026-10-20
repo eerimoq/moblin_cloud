@@ -1,3 +1,4 @@
+import { Show, type JSX } from "solid-js";
 import { asset } from "../asset";
 import { links, pages } from "../data/links";
 import { language, languages, setLanguage, t } from "../i18n";
@@ -15,10 +16,13 @@ const footerLinks: { label: string; href: string; icon?: IconName }[] = [
 
 const isExternal = (href: string) => /^https?:/.test(href);
 
-export default function Footer() {
+export default function Footer(props: { note?: JSX.Element }) {
   return (
     <footer class="border-t border-line/40 py-10">
       <div class="mx-auto flex max-w-[1120px] flex-col items-center px-5 text-center sm:px-8">
+        <Show when={props.note}>
+          <p class="mb-6 text-[15px] text-muted">{props.note}</p>
+        </Show>
         <nav class="flex flex-wrap justify-center gap-x-7 gap-y-2" aria-label="Footer">
           {footerLinks.map((l) => (
             <a

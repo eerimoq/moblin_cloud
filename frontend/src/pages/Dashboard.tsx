@@ -2271,7 +2271,7 @@ function Avatar(props: { account: Account }) {
     <Show
       when={props.account.avatar}
       fallback={
-        <span class="flex size-15 shrink-0 items-center justify-center rounded-full bg-moss font-display text-2xl font-semibold text-white sm:size-18">
+        <span class="flex size-17 shrink-0 items-center justify-center rounded-full bg-moss font-display text-3xl font-semibold text-white sm:size-20">
           {props.account.name.slice(0, 1).toUpperCase()}
         </span>
       }
@@ -2280,7 +2280,7 @@ function Avatar(props: { account: Account }) {
         <img
           src={avatar()}
           alt=""
-          class="size-15 shrink-0 rounded-full bg-ghost object-cover sm:size-18"
+          class="size-17 shrink-0 rounded-full bg-ghost object-cover sm:size-20"
         />
       )}
     </Show>
@@ -2394,18 +2394,6 @@ export default function Dashboard() {
     setSession(null);
   };
 
-  const terms = () => (
-    <p class="text-[15px] text-muted">
-      {tRich("Using Moblin Cloud and your tip page means you agree to the {terms}.", {
-        terms: (
-          <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
-            {t("terms")}
-          </a>
-        ),
-      })}
-    </p>
-  );
-
   return (
     <>
       <CloudHeader>
@@ -2466,19 +2454,17 @@ export default function Dashboard() {
                     "Stripe charge their usual fees.",
                 )}
               </p>
-              {terms()}
             </Hero>
           }
         >
           {(current) => (
-            <section class="mx-auto flex max-w-[1120px] flex-col gap-2 px-5 pt-10 pb-8 sm:px-8">
+            <section class="mx-auto flex max-w-[1120px] flex-col px-5 pt-10 pb-8 sm:px-8">
               <div class="flex items-center gap-4">
                 <Avatar account={current().account} />
                 <h1 class="min-w-0 text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
                   {t("Hi, {name}", { name: current().account.name })}
                 </h1>
               </div>
-              {terms()}
             </section>
           )}
         </Show>
