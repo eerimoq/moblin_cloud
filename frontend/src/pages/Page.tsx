@@ -6,6 +6,7 @@ import {
   type StripePaymentElement,
 } from "@stripe/stripe-js";
 import {
+  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -18,7 +19,7 @@ import {
   Switch,
 } from "solid-js";
 import { asset } from "../asset";
-import { fetchAccount, readSession } from "../data/account";
+import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
 import Queue, { type Status } from "../components/Queue";
 import { fireConfetti } from "../confetti";
@@ -967,27 +968,33 @@ function DashboardLink(props: { link: DashboardLink | null }) {
   );
 }
 
-async function dashboardLink(profile: Profile): Promise<DashboardLink | null> {
+async function signedInAccount(): Promise<Account | null> {
   const session = readSession();
   if (!session) {
     return null;
   }
   try {
-    const account = await fetchAccount(session);
-    const login = profile.login.toLowerCase();
-    if (account.login.toLowerCase() === login) {
-      return { href: asset(pages.dashboard), own: true };
-    }
-    const channel = account.moderating.find((channel) => channel.login.toLowerCase() === login);
-    return channel
-      ? {
-          href: asset(`${pages.dashboard}?streamer=twitch:${encodeURIComponent(channel.login)}`),
-          own: false,
-        }
-      : null;
+    return await fetchAccount(session);
   } catch {
     return null;
   }
+}
+
+function dashboardLink(profile: Profile, account: Account | null): DashboardLink | null {
+  if (!account) {
+    return null;
+  }
+  const login = profile.login.toLowerCase();
+  if (account.login.toLowerCase() === login) {
+    return { href: asset(pages.dashboard), own: true };
+  }
+  const channel = account.moderating.find((channel) => channel.login.toLowerCase() === login);
+  return channel
+    ? {
+        href: asset(`${pages.dashboard}?streamer=twitch:${encodeURIComponent(channel.login)}`),
+        own: false,
+      }
+    : null;
 }
 
 function StreamerHeader(props: {
@@ -1735,12 +1742,14 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       } else if (signIn.failed) {
         setResult({ text: t("Signing in with Twitch failed. Try again.") });
       }
-      streamerProfile(current)
-        .then((found) => {
-          setProfile(found);
+      Promise.all([streamerProfile(current), signedInAccount()])
+        .then(([found, account]) => {
+          batch(() => {
+            setDashboard(dashboardLink(found, account));
+            setProfile(found);
+          });
           loadFonts(found.font ? [found.font] : []);
           document.title = `${found.name} – Moblin`;
-          void dashboardLink(found).then(setDashboard);
         })
         .catch(() => {})
         .finally(() => setStyled(true));
