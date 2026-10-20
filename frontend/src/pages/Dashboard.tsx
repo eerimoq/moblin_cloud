@@ -2208,8 +2208,12 @@ function Moderated(props: { session: string; channel: Moderating; onSignOut: () 
 const moderatedChannelKey = "moderatedChannel";
 
 function readModeratedChannel() {
+  const fromUrl = new URLSearchParams(location.search).get("streamer");
+  if (fromUrl !== null) {
+    return fromUrl;
+  }
   try {
-    return localStorage.getItem(moderatedChannelKey) ?? "";
+    return sessionStorage.getItem(moderatedChannelKey) ?? "";
   } catch {
     return "";
   }
@@ -2738,8 +2742,20 @@ export default function Dashboard() {
   const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
   const chooseChannel = (id: string) => {
     setChosenChannel(id);
+    const search = new URLSearchParams(location.search);
+    if (id) {
+      search.set("streamer", id);
+    } else {
+      search.delete("streamer");
+    }
+    const query = search.toString();
+    history.replaceState(
+      null,
+      "",
+      `${location.pathname}${query ? `?${query}` : ""}${location.hash}`,
+    );
     try {
-      localStorage.setItem(moderatedChannelKey, id);
+      sessionStorage.setItem(moderatedChannelKey, id);
     } catch {}
   };
   const channel = (account: Account) =>
