@@ -89,7 +89,7 @@ const COLUMNS: &str = "name, login, avatar, page_id, music_device, wheel_device,
 
 const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', name, 'key', key) ORDER BY position) FROM devices WHERE account = accounts.id)";
 
-const SAME_LOGIN: &str = "login != '' AND lower(login) = lower(trim(?1))";
+const SAME_LOGIN: &str = "login != '' AND login = lower(trim(?1))";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
     let devices: String = row.get(11)?;

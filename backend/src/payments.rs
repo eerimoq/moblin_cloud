@@ -152,7 +152,7 @@ impl Orders {
             .database
             .lock()
             .query_row(
-                "SELECT count(*) FROM orders WHERE state != 'captured'",
+                "SELECT (SELECT count(*) FROM orders WHERE state = 'created') + (SELECT count(*) FROM orders WHERE state = 'capturing')",
                 [],
                 |row| row.get(0),
             )
@@ -281,7 +281,7 @@ impl Orders {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*) FROM orders WHERE state != 'captured'",
+                "SELECT (SELECT count(*) FROM orders WHERE state = 'created') + (SELECT count(*) FROM orders WHERE state = 'capturing')",
                 [],
                 |row| row.get(0),
             )

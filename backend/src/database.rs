@@ -35,6 +35,7 @@ impl Database {
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
+                 CREATE INDEX IF NOT EXISTS accounts_login ON accounts (login);
                  CREATE TABLE IF NOT EXISTS devices (
                      key TEXT PRIMARY KEY,
                      account TEXT NOT NULL,
@@ -61,6 +62,8 @@ impl Database {
                      details TEXT NOT NULL,
                      kind TEXT
                  );
+                 CREATE INDEX IF NOT EXISTS orders_created ON orders (created_at) WHERE state = 'created';
+                 CREATE INDEX IF NOT EXISTS orders_capturing ON orders (updated_at) WHERE state = 'capturing';
                  CREATE TABLE IF NOT EXISTS deliveries (
                      request_id TEXT PRIMARY KEY,
                      streamer TEXT NOT NULL,
@@ -117,9 +120,10 @@ impl Database {
                      WHEN json_extract(details, '$.item.Tip') IS NOT NULL THEN 'tip'
                      ELSE 'spin'
                  END WHERE kind IS NULL;
-                 CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);",
+                 CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);
+                 CREATE INDEX IF NOT EXISTS deliveries_open ON deliveries (requested_at) WHERE NOT finished AND failure IS NOT 'not-found';",
             )
-            .context("failed to index the orders")?;
+            .context("failed to index the orders and deliveries")?;
         if has_column(&connection, "accounts", "page_devices")? {
             connection
                 .execute_batch(
