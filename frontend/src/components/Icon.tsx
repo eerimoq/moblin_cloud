@@ -41,7 +41,8 @@ export type IconName =
   | "play"
   | "pause"
   | "trash"
-  | "shield";
+  | "shield"
+  | "user";
 
 type Props = {
   name: IconName;
@@ -72,6 +73,10 @@ export default function Icon(props: Props) {
         </Match>
         <Match when={props.name === "trash"}>
           <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+        </Match>
+        <Match when={props.name === "user"}>
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21c0-4 3.5-6.5 8-6.5s8 2.5 8 6.5" />
         </Match>
         <Match when={props.name === "shield"}>
           <path d="M12 3l8 3v6c0 4.5-3.5 8-8 9-4.5-1-8-4.5-8-9V6l8-3Z" />

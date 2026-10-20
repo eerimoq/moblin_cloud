@@ -44,6 +44,7 @@ import {
   sendTest,
   signInUrl,
   signOutEverywhere,
+  deleteAccount,
   stripeCountries,
   takeSignInResult,
   uploadImage,
@@ -1839,6 +1840,13 @@ function Admin(props: {
       shown: () => !moderating(),
       status: () => connectedOrNot(settings().connected),
     },
+    {
+      id: "account",
+      label: t("Account"),
+      icon: "user",
+      shown: () => !moderating(),
+      status: () => null,
+    },
   ];
   const visible = () => sections.filter((section) => section.shown());
   const search = new URLSearchParams(location.search);
@@ -2057,6 +2065,69 @@ function Admin(props: {
             onRemove={(device) => changeDevices(() => removeDevice(props.session, device))}
           />
         </div>
+        <Show when={!moderating()}>
+          <div hidden={active() !== "account"}>
+            <DeleteAccount
+              session={props.session}
+              preview={props.preview}
+              onSignOut={props.onSignOut}
+            />
+          </div>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+function DeleteAccount(props: { session: string; preview?: boolean; onSignOut: () => void }) {
+  const [working, setWorking] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const remove = async () => {
+    if (
+      props.preview ||
+      !confirm(
+        t(
+          "Your account is deleted with its tip page, Moblin devices, settings and history. This can't be undone.",
+        ),
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setWorking(true);
+    try {
+      await deleteAccount(props.session);
+      props.onSignOut();
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+        return;
+      }
+      setError(t("Deleting did not work. Try again."));
+    } finally {
+      setWorking(false);
+    }
+  };
+  return (
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">{t("Delete account")}</h2>
+      <p class="text-ink-2">
+        {t(
+          "Deletes your account with its tip page, Moblin devices, settings and history. Your PayPal " +
+            "and Stripe accounts stay as they are, and viewers keep what they paid for. Signing in " +
+            "again starts over with a new account.",
+        )}
+      </p>
+      <div class="flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          class={`${ghostButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
+          disabled={working()}
+          onClick={remove}
+        >
+          {t("Delete account")}
+        </button>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
     </div>
   );

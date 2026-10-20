@@ -131,6 +131,7 @@ class AccountNotSignedIn(TestCase):
             self.assert_backend_error(401, dashboard.check_paypal, "not signed in")
             self.assert_backend_error(401, dashboard.disconnect_paypal, "not signed in")
             self.assert_backend_error(401, dashboard.sign_out_everywhere, "not signed in")
+            self.assert_backend_error(401, dashboard.delete_account, "not signed in")
 
 
 class AccountExpiredSession(AccountTestCase):
@@ -260,6 +261,31 @@ class AccountSignOutEverywhere(AccountTestCase):
         self.assert_signed_out(second)
         third = self.sign_in("signout")
         self.assert_equal(third.account()["settings"]["id"], page_id)
+
+
+class AccountDelete(AccountTestCase):
+    """Delete the account, which removes its page, ends all sessions and disconnects Moblin."""
+
+    def run(self):
+        first = self.sign_in("delete")
+        second = self.sign_in("delete")
+        page_id = first.page_id()
+        key = first.moblin_cloud_key()
+        first.save_settings(title="Hello!")
+        port = self.backend.port
+        self.assert_true(streamer_connects(port, key))
+        first.delete_account()
+        self.assert_signed_out(first)
+        self.assert_signed_out(second)
+        self.assert_backend_error(401, first.delete_account, "not signed in")
+        self.assert_false(streamer_connects(port, key))
+        self.assert_backend_error(404, lambda: self.website.id_of_twitch_login("delete"))
+        self.assert_backend_error(404, lambda: self.website.get(f"/pages/{page_id}"))
+        third = self.sign_in("delete")
+        account = third.account()
+        self.assert_not_equal(account["settings"]["id"], page_id)
+        self.assert_equal(account["settings"].get("title"), None)
+        self.assert_equal(self.website.id_of_twitch_login("delete"), account["settings"]["id"])
 
 
 class AccountPageLook(AccountTestCase):
@@ -409,6 +435,7 @@ def tests(context: Context):
         AccountNewMoblinCloudKey(context),
         AccountDevices(context),
         AccountSignOutEverywhere(context),
+        AccountDelete(context),
         AccountPageLook(context),
         AccountCurrency(context),
         AccountPaidFeaturesNeedPayments(context),

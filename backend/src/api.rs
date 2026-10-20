@@ -124,6 +124,7 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_account_stripe_disconnect),
         )
         .route("/account/sign-out", post(handle_account_sign_out))
+        .route("/account/delete", post(handle_account_delete))
         .route("/account/recent", get(handle_account_recent))
         .route("/account/test/song", post(handle_account_test_song))
         .route("/account/test/tip", post(handle_account_test_tip))
@@ -1666,6 +1667,19 @@ async fn handle_account_sign_out(
     let id = signed_in(&api, &headers)?.id;
     api.accounts.sign_out(&id).map_err(account_error)?;
     info!("{id} signed out everywhere");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn handle_account_delete(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?.id;
+    let account = api.accounts.delete(&id).map_err(account_error)?;
+    for device in &account.page.devices {
+        api.remote_control.disconnect(&device.id);
+    }
+    info!("{id} deleted their account");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -3474,16 +3488,17 @@ mod tests {
     }
 
     async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
-        start_api_with(paypal, None, None, Pages::new(Database::memory())).await
+        start_api_with(paypal, None, None, None).await
     }
 
     async fn start_api_with(
         paypal: Option<PayPal>,
         stripe: Option<Stripe>,
         twitch: Option<OAuthApp>,
-        pages: Pages,
+        pages: Option<Pages>,
     ) -> (String, Arc<Api>) {
         let database = Database::memory();
+        let pages = pages.unwrap_or_else(|| Pages::new(database.clone()));
         let api = Arc::new(Api {
             store: Arc::new(Store::new(6, Database::memory())),
             challenges: Challenges::new(),
@@ -3505,7 +3520,7 @@ mod tests {
                 Some("secret"),
             )
             .unwrap(),
-            accounts: Accounts::new(Database::memory()),
+            accounts: Accounts::new(database.clone()),
             counters: Counters::new(database.clone()),
             database,
             admins: vec!["admin".to_string()],
@@ -4001,13 +4016,7 @@ mod tests {
 
     async fn start_stripe_api() -> (String, Arc<Api>, FakeStripe) {
         let (stripe_url, fake) = start_stripe().await;
-        let (address, api) = start_api_with(
-            None,
-            Some(new_stripe(stripe_url)),
-            None,
-            Pages::new(Database::memory()),
-        )
-        .await;
+        let (address, api) = start_api_with(None, Some(new_stripe(stripe_url)), None, None).await;
         (address, api, fake)
     }
 
@@ -5230,7 +5239,8 @@ mod tests {
             )
             .unwrap();
         let (paypal_url, _) = start_paypal().await;
-        let (address, _) = start_api_with(Some(new_paypal(paypal_url)), None, None, pages).await;
+        let (address, _) =
+            start_api_with(Some(new_paypal(paypal_url)), None, None, Some(pages)).await;
         let client = reqwest::Client::new();
         let public: Value = client
             .get(format!("http://{address}/pages/p/songs"))
@@ -6655,13 +6665,7 @@ mod tests {
     #[tokio::test]
     async fn viewers_sign_in_with_their_subscription_tier() {
         let twitch = start_twitch().await;
-        let (address, api) = start_api_with(
-            None,
-            None,
-            Some(twitch_app(&twitch)),
-            Pages::new(Database::memory()),
-        )
-        .await;
+        let (address, api) = start_api_with(None, None, Some(twitch_app(&twitch)), None).await;
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -7242,13 +7246,7 @@ mod tests {
     #[tokio::test]
     async fn streamers_sign_in_and_manage_their_page() {
         let twitch = start_twitch().await;
-        let (address, api) = start_api_with(
-            None,
-            None,
-            Some(twitch_app(&twitch)),
-            Pages::new(Database::memory()),
-        )
-        .await;
+        let (address, api) = start_api_with(None, None, Some(twitch_app(&twitch)), None).await;
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -7587,6 +7585,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn deleting_an_account_removes_everything_it_owns() {
+        let (address, api) = start_api(None).await;
+        let (session, key, id) = streamer(&address, &api).await;
+        let moderator = create_account(&api, "21", "Mod 21", "mod21");
+        api.accounts
+            .set_moderated_channels("21", &["1".to_string()]);
+        api.accounts.enable_moderator("1", "21", true).unwrap();
+        api.accounts
+            .set_moderated_channels("1", &["21".to_string()]);
+        api.accounts.enable_moderator("21", "1", true).unwrap();
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"title": "Hi"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        api.deliveries.add_test(
+            id.clone(),
+            "r".to_string(),
+            crate::deliveries::Item::Tip {
+                user: "Erik".to_string(),
+                message: String::new(),
+                amount: 500,
+                currency: "USD".to_string(),
+            },
+        );
+        let socket = connect(&address, &key).await;
+        assert!(api.remote_control.is_connected(&id));
+        assert_eq!(api.deliveries.count(), 1);
+        let response = client
+            .post(format!("http://{address}/account/delete"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        drop(socket);
+        assert!(!api.remote_control.is_connected(&id));
+        assert_eq!(api.deliveries.count(), 0);
+        assert!(api.accounts.get("1").is_none());
+        assert!(api.accounts.page_of_login("erik").is_none());
+        assert!(api.accounts.device_of_key(&key).is_none());
+        assert!(api.accounts.channel_moderators("21").is_empty());
+        assert!(api.accounts.moderated("21").is_empty());
+        assert_eq!(api.accounts.get("21").unwrap(), moderator);
+        for (table, column, value) in [
+            ("pages", "id", id.as_str()),
+            ("moderated_channels", "broadcaster", "1"),
+            ("enabled_moderators", "broadcaster", "1"),
+            ("enabled_moderators", "moderator", "1"),
+        ] {
+            let count: u64 = api
+                .database
+                .lock()
+                .query_row(
+                    &format!("SELECT count(*) FROM {table} WHERE {column} = ?1"),
+                    [value],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "{table}");
+        }
+        for path in ["/account", "/account/delete"] {
+            let response = client
+                .request(
+                    if path == "/account" {
+                        Method::GET
+                    } else {
+                        Method::POST
+                    },
+                    format!("http://{address}{path}"),
+                )
+                .bearer_auth(&session)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        for path in ["/pages/twitch/erik".to_string(), format!("/pages/{id}")] {
+            let response = client
+                .get(format!("http://{address}{path}"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+        assert!(
+            tokio_tungstenite::connect_async(format!(
+                "ws://{address}/remote-control/streamer/{key}"
+            ))
+            .await
+            .is_err()
+        );
+        let again = create_account(&api, "1", "Erik", "erik");
+        assert_ne!(again.page.id, id);
+        assert_eq!(api.accounts.page_of_login("erik"), Some(again.page.id));
+    }
+
+    #[tokio::test]
     async fn paypal_is_connected_through_onboarding() {
         let (paypal_url, fake) = start_paypal().await;
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
@@ -7850,6 +7950,7 @@ mod tests {
             ("POST", "/account/paypal/connect"),
             ("POST", "/account/paypal/check"),
             ("POST", "/account/sign-out"),
+            ("POST", "/account/delete"),
         ] {
             for token in [
                 None,

@@ -551,6 +551,46 @@ impl Accounts {
         })
     }
 
+    pub fn delete(&self, id: &str) -> Result<Account, AccountError> {
+        let mut database = self.database.lock();
+        let transaction = database.transaction().map_err(not_saved)?;
+        let account = transaction
+            .query_row(
+                &format!("SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE id = ?1"),
+                [id],
+                account,
+            )
+            .optional()
+            .map_err(not_saved)?
+            .ok_or(AccountError::Unknown)?;
+        let page = account.page.id.as_str();
+        for (statement, key) in [
+            ("DELETE FROM accounts WHERE id = ?1", id),
+            ("DELETE FROM devices WHERE account = ?1", id),
+            (
+                "DELETE FROM moderated_channels WHERE moderator = ?1 OR broadcaster = ?1",
+                id,
+            ),
+            (
+                "DELETE FROM channel_moderators WHERE broadcaster = ?1 OR moderator = ?1",
+                id,
+            ),
+            (
+                "DELETE FROM enabled_moderators WHERE broadcaster = ?1 OR moderator = ?1",
+                id,
+            ),
+            ("DELETE FROM pages WHERE id = ?1", page),
+            ("DELETE FROM page_images WHERE id = ?1", page),
+            ("DELETE FROM orders WHERE streamer = ?1", page),
+            ("DELETE FROM deliveries WHERE streamer = ?1", page),
+            ("DELETE FROM subscriber_allowances WHERE page = ?1", page),
+        ] {
+            transaction.execute(statement, [key]).map_err(not_saved)?;
+        }
+        transaction.commit().map_err(not_saved)?;
+        Ok(account)
+    }
+
     pub fn stats(&self, premium: &[&str]) -> AccountStats {
         self.database
             .lock()

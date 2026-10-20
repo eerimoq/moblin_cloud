@@ -170,6 +170,16 @@ export async function signOutEverywhere(session: string) {
   });
 }
 
+export async function deleteAccount(session: string) {
+  const response = await fetch(`${backendUrl}/account/delete`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${session}` },
+  });
+  if (!response.ok) {
+    throw new BackendError(response.status, await response.text());
+  }
+}
+
 export const addDevice = (session: string, name: string) =>
   call<Account>(session, "/account/devices", post({ name }));
 

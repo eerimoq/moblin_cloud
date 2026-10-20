@@ -287,6 +287,11 @@ class Dashboard(Client):
         if not response.ok:
             raise BackendError(response.status_code, response.text)
 
+    def delete_account(self):
+        response = self.request("POST", "/account/delete")
+        if not response.ok:
+            raise BackendError(response.status_code, response.text)
+
     def page_id(self) -> str:
         return self.account()["settings"]["id"]
 
