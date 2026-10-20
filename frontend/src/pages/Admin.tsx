@@ -344,7 +344,7 @@ function Info(props: { text: string }) {
         type="button"
         aria-label="What is this?"
         aria-expanded={open()}
-        class="ml-1.5 inline-flex size-6 items-center justify-center rounded-full align-middle text-muted transition-colors hover:bg-ghost hover:text-ink aria-expanded:bg-ghost aria-expanded:text-ink"
+        class="peer ml-1.5 inline-flex size-6 items-center justify-center rounded-full align-middle text-muted transition-colors hover:bg-ghost hover:text-ink aria-expanded:bg-ghost aria-expanded:text-ink"
         onClick={() => setOpen(!open())}
         onBlur={() => setOpen(false)}
       >
@@ -353,7 +353,7 @@ function Info(props: { text: string }) {
       <span
         role="tooltip"
         class={`absolute top-full left-0 z-10 mt-1.5 w-max max-w-[min(24rem,calc(100vw-4rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-left font-body text-[14px] leading-snug font-normal text-ink-2 shadow-xl text-pretty ${
-          open() ? "block" : "hidden group-focus-within:block group-hover:block"
+          open() ? "block" : "hidden peer-hover:block peer-focus-visible:block"
         }`}
       >
         {props.text}
@@ -397,7 +397,7 @@ function StepTable(props: { steps: Step[] }) {
                       step.problem && step.counts.total > 0 ? "text-amber-ink" : "text-ink"
                     }`}
                   >
-                    <span class="group relative">
+                    <span class="relative">
                       {step.label}
                       <Show when={step.hint}>{(hint) => <Info text={hint()} />}</Show>
                     </span>
@@ -469,7 +469,7 @@ function Section(props: { id: string; title: string; hint?: string; children: JS
   return (
     <section id={props.id} class="flex scroll-mt-24 flex-col gap-3">
       <h2 class="font-display text-2xl font-bold">
-        <span class="group relative">
+        <span class="relative">
           {props.title}
           <Show when={props.hint}>{(hint) => <Info text={hint()} />}</Show>
         </span>
@@ -489,7 +489,7 @@ function Tile(props: { label: string; value: string; hint: string; attention?: b
       >
         {props.value}
       </span>
-      <span class="group relative self-start text-[15px] font-semibold text-ink-2">
+      <span class="relative self-start text-[15px] font-semibold text-ink-2">
         {props.label}
         <Info text={props.hint} />
       </span>
