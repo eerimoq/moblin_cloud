@@ -1363,6 +1363,10 @@ function TestSend(props: {
         props.kind,
         props.kind === "song" ? { song: song(), message: message() } : { message: message() },
       );
+      if (props.kind === "song") {
+        setSong("");
+        setMessage("");
+      }
       flashSent();
     } catch (error) {
       if (signedOut(error)) {
