@@ -1237,20 +1237,17 @@ function MusicQueue(props: { session: string; page: string; onSignOut: () => voi
   });
 
   return (
-    <>
-      <Show when={error()}>{(error) => <Notice error>{error()}</Notice>}</Show>
-      <Show
-        when={status() !== "offline"}
-        fallback={
-          <div class={cardClass}>
-            <h2 class="text-[23px] font-semibold">{t("Queue")}</h2>
-            <p class="text-ink-2">{t("Moblin is offline, so the queue can't be changed now.")}</p>
-          </div>
-        }
-      >
-        <Queue status={status()} moderate={moderate} busy={busy()} />
-      </Show>
-    </>
+    <Show
+      when={status() !== "offline"}
+      fallback={
+        <div class={cardClass}>
+          <h2 class="text-[23px] font-semibold">{t("Queue")}</h2>
+          <p class="text-ink-2">{t("Moblin is offline, so the queue can't be changed now.")}</p>
+        </div>
+      }
+    >
+      <Queue status={status()} moderate={moderate} busy={busy()} error={error()} />
+    </Show>
   );
 }
 

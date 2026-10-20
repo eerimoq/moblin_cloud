@@ -1,6 +1,6 @@
-import { For, Match, Show, Switch } from "solid-js";
+import { createSignal, For, Match, Show, Switch } from "solid-js";
 import Icon from "./Icon";
-import { ghostButtonClass } from "./PageParts";
+import { ghostButtonClass, Notice } from "./PageParts";
 import { formatDuration, type MusicCommand, type MusicStatus } from "../data/remoteControl";
 import { t, tRich } from "../i18n";
 
@@ -14,13 +14,26 @@ const iconButtonClass =
 const dangerIconButtonClass =
   "flex size-10 shrink-0 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50";
 
-export default function Queue(props: { status: Status; moderate?: Moderate; busy?: boolean }) {
+export default function Queue(props: {
+  status: Status;
+  moderate?: Moderate;
+  busy?: boolean;
+  error?: string | null;
+}) {
   const music = () => (typeof props.status === "object" ? props.status : null);
+  const [target, setTarget] = createSignal<string | null>(null);
+  const moderate = (target: string, command: MusicCommand, song?: string) => {
+    setTarget(target);
+    props.moderate?.(command, song);
+  };
   const clear = () => {
     if (confirm(t("Remove every song from the queue?"))) {
-      props.moderate?.("clear");
+      moderate("controls", "clear");
     }
   };
+  const errorFor = (at: string) => (
+    <Show when={props.error && target() === at}>{(error) => <Notice error>{error()}</Notice>}</Show>
+  );
 
   return (
     <div class="flex flex-col gap-4 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8">
@@ -33,7 +46,7 @@ export default function Queue(props: { status: Status; moderate?: Moderate; busy
                 type="button"
                 class={ghostButtonClass}
                 disabled={props.busy}
-                onClick={() => props.moderate?.(status().playing ? "pause" : "play")}
+                onClick={() => moderate("controls", status().playing ? "pause" : "play")}
               >
                 <Icon name={status().playing ? "pause" : "play"} class="size-5" />
                 {status().playing ? t("Pause") : t("Play")}
@@ -51,6 +64,7 @@ export default function Queue(props: { status: Status; moderate?: Moderate; busy
           )}
         </Show>
       </div>
+      {errorFor("controls")}
       <Switch>
         <Match when={props.status === "loading"}>
           <p class="text-muted">{t("Loading…")}</p>
@@ -67,41 +81,41 @@ export default function Queue(props: { status: Status; moderate?: Moderate; busy
                     const current = () => index() === status().currentSongIndex;
                     return (
                       <li
-                        class={`flex items-center gap-4 border-t border-line py-3 first:border-t-0 ${
+                        class={`flex flex-col gap-3 border-t border-line py-3 first:border-t-0 ${
                           current() ? "text-leaf" : ""
                         }`}
                       >
-                        <span class="w-6 shrink-0 text-right font-mono text-sm text-muted">
-                          <Show when={current()} fallback={index() + 1}>
-                            <Icon name="music" class="size-5 text-leaf" />
-                          </Show>
-                        </span>
-                        <span class="flex min-w-0 flex-col">
-                          <span
-                            class={`truncate font-semibold ${current() ? "text-leaf" : "text-ink"}`}
-                          >
-                            {song.title}
+                        <div class="flex items-center gap-4">
+                          <span class="w-6 shrink-0 text-right font-mono text-sm text-muted">
+                            <Show when={current()} fallback={index() + 1}>
+                              <Icon name="music" class="size-5 text-leaf" />
+                            </Show>
                           </span>
-                          <Show when={song.artist}>
-                            <span class="truncate text-[15px] text-muted">{song.artist}</span>
-                          </Show>
-                          <Show when={song.user}>
-                            <span class="truncate text-[15px] text-muted">
-                              {tRich("added by {name}", {
-                                name: <span class="font-medium text-ink">{song.user}</span>,
-                              })}
+                          <span class="flex min-w-0 flex-col">
+                            <span
+                              class={`truncate font-semibold ${current() ? "text-leaf" : "text-ink"}`}
+                            >
+                              {song.title}
                             </span>
+                            <Show when={song.artist}>
+                              <span class="truncate text-[15px] text-muted">{song.artist}</span>
+                            </Show>
+                            <Show when={song.user}>
+                              <span class="truncate text-[15px] text-muted">
+                                {tRich("added by {name}", {
+                                  name: <span class="font-medium text-ink">{song.user}</span>,
+                                })}
+                              </span>
+                            </Show>
+                          </span>
+                          <Show when={song.duration}>
+                            {(duration) => (
+                              <span class="ml-auto shrink-0 font-mono text-sm text-muted tabular-nums">
+                                {formatDuration(duration())}
+                              </span>
+                            )}
                           </Show>
-                        </span>
-                        <Show when={song.duration}>
-                          {(duration) => (
-                            <span class="ml-auto shrink-0 font-mono text-sm text-muted tabular-nums">
-                              {formatDuration(duration())}
-                            </span>
-                          )}
-                        </Show>
-                        <Show when={props.moderate}>
-                          {(moderate) => (
+                          <Show when={props.moderate}>
                             <span class={`flex shrink-0 gap-1 ${song.duration ? "" : "ml-auto"}`}>
                               <button
                                 type="button"
@@ -109,7 +123,7 @@ export default function Queue(props: { status: Status; moderate?: Moderate; busy
                                 disabled={props.busy || current()}
                                 aria-label={t("Play {song} now", { song: song.title })}
                                 title={t("Play now")}
-                                onClick={() => moderate()("select", song.id)}
+                                onClick={() => moderate(song.id, "select", song.id)}
                               >
                                 <Icon name="play" class="size-5" />
                               </button>
@@ -119,13 +133,14 @@ export default function Queue(props: { status: Status; moderate?: Moderate; busy
                                 disabled={props.busy}
                                 aria-label={t("Remove {song}", { song: song.title })}
                                 title={t("Remove")}
-                                onClick={() => moderate()("remove", song.id)}
+                                onClick={() => moderate(song.id, "remove", song.id)}
                               >
                                 <Icon name="trash" class="size-5" />
                               </button>
                             </span>
-                          )}
-                        </Show>
+                          </Show>
+                        </div>
+                        {errorFor(song.id)}
                       </li>
                     );
                   }}
