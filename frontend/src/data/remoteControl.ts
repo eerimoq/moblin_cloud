@@ -327,14 +327,20 @@ export const requestSubscriberSpin = (id: string, viewer: string, message: strin
 
 export const orderSpin = (
   id: string,
-  spins: number,
+  option: SpinOption,
   user: string,
   message: string,
   provider: Provider,
 ) =>
   call<Order>(
     `/${encodeURIComponent(id)}/spin/orders`,
-    post({ spins, user: user || null, message: message || null, provider }),
+    post({
+      spins: option.spins,
+      price: option.price,
+      user: user || null,
+      message: message || null,
+      provider,
+    }),
   );
 
 export const captureSpin = (id: string, orderId: string) =>

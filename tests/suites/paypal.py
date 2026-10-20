@@ -123,7 +123,6 @@ class PayPalInvalidPaidSettings(PayPalTestCase):
             ({"spin": {"options": []}}, spin),
             ({"spin": {"options": [{"spins": 11, "price": 100}]}}, spin),
             ({"spin": {"options": [{"spins": 0, "price": 100}]}}, spin),
-            ({"spin": {"options": [{"spins": 1, "price": 100}, {"spins": 1, "price": 200}]}}, spin),
             ({"spin": {"options": [{"spins": 1, "price": 10}]}}, spin),
         ]:
             self.assert_backend_error(400, lambda changes=changes: dashboard.save_settings(**changes), text)

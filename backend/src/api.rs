@@ -3158,6 +3158,8 @@ fn accepted() -> (StatusCode, Json<Value>) {
 #[derive(Deserialize)]
 struct SpinRequest {
     spins: u32,
+    #[serde(default)]
+    price: Option<u32>,
     user: Option<String>,
     message: Option<String>,
     #[serde(default)]
@@ -3190,7 +3192,9 @@ async fn spin_order(
     let option = spin
         .options
         .iter()
-        .find(|option| option.spins == request.spins)
+        .find(|option| {
+            option.spins == request.spins && request.price.is_none_or(|price| price == option.price)
+        })
         .ok_or(failure(
             "invalid-option",
             StatusCode::BAD_REQUEST,

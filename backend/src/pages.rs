@@ -182,14 +182,12 @@ impl Tips {
 impl Spin {
     pub fn normalize(self) -> Option<Self> {
         let mut options = self.options;
-        options.sort_unstable_by_key(|option| option.spins);
+        options.sort_unstable_by_key(|option| (option.spins, option.price));
+        options.dedup();
         let valid = (1..=5).contains(&options.len())
             && options
                 .iter()
-                .all(|option| (1..=10).contains(&option.spins) && valid_price(option.price))
-            && options
-                .windows(2)
-                .all(|pair| pair[0].spins != pair[1].spins);
+                .all(|option| (1..=10).contains(&option.spins) && valid_price(option.price));
         valid.then_some(Self { options })
     }
 }
@@ -474,11 +472,14 @@ mod tests {
             pages.set("a", spin(&[(2, 800), (1, 500)])),
             Ok(spin(&[(1, 500), (2, 800)]))
         );
+        assert_eq!(
+            pages.set("a", spin(&[(1, 800), (1, 500), (1, 500)])),
+            Ok(spin(&[(1, 500), (1, 800)]))
+        );
         for options in [
             &[(1, 49)][..],
             &[(0, 500)],
             &[(11, 500)],
-            &[(1, 500), (1, 800)],
             &[],
             &[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)],
         ] {

@@ -1132,13 +1132,7 @@ function SpinWheel(props: {
     createOrder: async (provider) => {
       orderError = null;
       try {
-        return await orderSpin(
-          props.id,
-          choice().spins,
-          props.name.trim(),
-          message().trim(),
-          provider,
-        );
+        return await orderSpin(props.id, choice(), props.name.trim(), message().trim(), provider);
       } catch (error) {
         orderError = error;
         throw error;
@@ -1230,7 +1224,7 @@ function SpinWheel(props: {
                   <input
                     type="radio"
                     name="spin"
-                    checked={choice().spins === option.spins}
+                    checked={choice() === option}
                     onChange={() => setChoice(option)}
                     class="sr-only"
                   />
@@ -1274,7 +1268,7 @@ function SpinWheel(props: {
               payment={spin.payment}
               options={options}
               disabled={busy() || !props.wheel}
-              resetKey={`${choice().spins}\n${props.name}\n${message()}`}
+              resetKey={`${choice().spins}\n${choice().price}\n${props.name}\n${message()}`}
             />
             <p class="text-center text-sm text-muted">
               {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
