@@ -85,12 +85,18 @@ const problemReasons = [
 
 type Problem = { label: string; hint: string; matches: (name: string, reason: string) => boolean };
 
+const providers = [
+  { slug: "paypal", label: "PayPal" },
+  { slug: "stripe", label: "Stripe" },
+];
+
 const problems: Problem[] = [
-  {
-    label: "PayPal or Stripe failed",
-    hint: "The provider could not start or complete a payment.",
-    matches: (_, reason) => reason === "provider",
-  },
+  ...providers.map((provider) => ({
+    label: `${provider.label} failed`,
+    hint: `${provider.label} could not start or complete a payment, or did not answer.`,
+    matches: (name: string, reason: string) =>
+      name.startsWith(provider.slug) && (reason === "provider" || reason === "unknown"),
+  })),
   {
     label: "PayPal or Stripe not connected",
     hint: "A viewer tried to pay on a page whose streamer has no working payment account.",
@@ -143,8 +149,18 @@ const kinds: Kind[] = [
       "amount-too-low",
       "invalid-message",
       "provider",
+      "not-saved",
     ],
-    payments: ["expired", "not-approved", "pending", "payments-unavailable", "provider"],
+    payments: [
+      "expired",
+      "payments-unavailable",
+      "not-saved",
+      "not-approved",
+      "pending",
+      "provider",
+      "unknown",
+      "crashed",
+    ],
     tests: ["account", "too-many-tests", "invalid-message", "crashed"],
     deliveries: ["moblin-error"],
   },
@@ -159,14 +175,18 @@ const kinds: Kind[] = [
       "invalid-option",
       "invalid-message",
       "provider",
+      "not-saved",
     ],
     payments: [
       "expired",
       "no-wheel",
+      "payments-unavailable",
+      "not-saved",
       "not-approved",
       "pending",
-      "payments-unavailable",
       "provider",
+      "unknown",
+      "crashed",
     ],
     subscribers: {
       event: "subSpins",
@@ -200,15 +220,19 @@ const kinds: Kind[] = [
       "moblin-timeout",
       "moblin-error",
       "provider",
+      "not-saved",
     ],
     payments: [
       "expired",
       "offline",
       "requests-off",
+      "payments-unavailable",
+      "not-saved",
       "not-approved",
       "pending",
-      "payments-unavailable",
       "provider",
+      "unknown",
+      "crashed",
     ],
     subscribers: {
       event: "subSongs",
@@ -247,7 +271,7 @@ const kinds: Kind[] = [
   },
 ];
 
-type Failure = { reason: string; counts: Counts; problem: boolean };
+type Failure = { reason: string; label: string; counts: Counts; problem: boolean };
 
 type Step = {
   label: string;
@@ -293,7 +317,7 @@ class Counters {
     return sum;
   }
 
-  failures(event: string, expected: string[]): Failure[] {
+  failures(event: string, expected: string[], labels: Record<string, string> = {}): Failure[] {
     const prefix = `${event}Failed:`;
     const unexpected = [...this.byName.keys()]
       .filter((name) => name.startsWith(prefix))
@@ -301,13 +325,25 @@ class Counters {
       .filter((reason) => !expected.includes(reason));
     return [...expected, ...unexpected].map((reason) => ({
       reason,
+      label: labels[reason] ?? reasonLabels[reason] ?? reason,
       counts: this.get(`${prefix}${reason}`),
       problem: problemReasons.includes(reason),
     }));
   }
 
-  step(name: string, label: string, hint: string, expected: string[]): Step {
-    return { label, hint, counts: this.get(name), failures: this.failures(name, expected) };
+  step(
+    name: string,
+    label: string,
+    hint: string,
+    expected: string[],
+    labels?: Record<string, string>,
+  ): Step {
+    return {
+      label,
+      hint,
+      counts: this.get(name),
+      failures: this.failures(name, expected, labels),
+    };
   }
 }
 
@@ -401,9 +437,7 @@ function StepTable(props: { steps: Step[] }) {
                       <Info icon="failed" label="Never failed with">
                         <span class="font-semibold">Never failed with</span>
                         <ul class="mt-1 list-disc pl-4">
-                          <For each={never()}>
-                            {(failure) => <li>{reasonLabels[failure.reason] ?? failure.reason}</li>}
-                          </For>
+                          <For each={never()}>{(failure) => <li>{failure.label}</li>}</For>
                         </ul>
                       </Info>
                     </Show>
@@ -435,7 +469,7 @@ function StepTable(props: { steps: Step[] }) {
                                 failure.problem ? "bg-amber" : "bg-muted/40"
                               }`}
                             />
-                            {reasonLabels[failure.reason] ?? failure.reason}
+                            {failure.label}
                           </span>
                         </td>
                         <Cells
@@ -624,6 +658,30 @@ function Loaded(props: { stats: AdminStats }) {
     },
   ];
 
+  const provider = ({ slug, label }: (typeof providers)[number]): Step[] => {
+    const labels = {
+      provider: `${label} failed`,
+      pending: `${label} still reviewing the payment`,
+      unknown: `${label} did not answer, settled later`,
+    };
+    return [
+      counters().step(
+        `${slug}Orders`,
+        "Orders",
+        `Payments started at ${label}, after the page's own checks passed.`,
+        ["provider", "not-saved"],
+        labels,
+      ),
+      counters().step(
+        `${slug}Payments`,
+        "Payments",
+        `Payments ${label} completed, however they were found. Only what happened after ${label} was asked to capture counts as failed here.`,
+        ["not-approved", "pending", "provider", "unknown", "expired"],
+        labels,
+      ),
+    ];
+  };
+
   const problemsToday = () =>
     problems.filter((problem) => counters().sum(problem.matches).today > 0).length;
   const today = (name: string) => counters().get(name).today;
@@ -636,6 +694,13 @@ function Loaded(props: { stats: AdminStats }) {
       attention: problemsToday() > 0,
     },
     { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
+    {
+      id: "providers",
+      label: "Providers",
+      caption: providers
+        .map(({ slug, label }) => `${format(today(`${slug}Payments`))} ${label}`)
+        .join(", "),
+    },
     ...kinds.map((kind) => ({
       id: kind.kind,
       label: kind.label,
@@ -708,6 +773,22 @@ function Loaded(props: { stats: AdminStats }) {
             <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
               <For each={accounts}>
                 {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
+              </For>
+            </div>
+          </Section>
+          <Section
+            id="providers"
+            title="Providers"
+            hint="Payments by provider, across tips, wheel spins and songs, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
+          >
+            <div class="flex flex-col gap-5">
+              <For each={providers}>
+                {(item) => (
+                  <div class="flex flex-col gap-2">
+                    <h3 class="text-[17px] font-semibold text-ink-2">{item.label}</h3>
+                    <StepTable steps={provider(item)} />
+                  </div>
+                )}
               </For>
             </div>
           </Section>

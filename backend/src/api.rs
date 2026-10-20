@@ -2237,6 +2237,12 @@ fn payee(api: &Api, id: &str, provider: Option<&str>) -> Result<Payee, Failure> 
 }
 
 async fn start_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> {
+    let name = format!("{}Orders", order.payee.slug());
+    let result = create_order(api, order).await;
+    counted(api, &name, result)
+}
+
+async fn create_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> {
     let provider = order.payee.provider();
     let created = async {
         api.orders.make_room()?;
@@ -2400,7 +2406,6 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         }
         return Err(failure(reason, status, refusal));
     }
-    let provider = order.payee.provider();
     let available = match &order.payee {
         Payee::PayPal(_) => api.paypal.is_some(),
         Payee::Stripe(_) => api.stripe.is_some(),
@@ -2420,18 +2425,28 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
             "Payments are unavailable right now, so no money was taken. Try again later.",
         ));
     }
+    capture_at_provider(api, order_id, &order, kind).await
+}
+
+async fn capture_at_provider(
+    api: &Api,
+    order_id: &str,
+    order: &Order,
+    kind: &str,
+) -> Result<(), Failure> {
+    let provider = order.payee.provider();
     let captured = match &order.payee {
         Payee::PayPal(merchant_id) => {
             let paypal = api.paypal.as_ref().ok_or_else(payment_unavailable)?;
-            paypal.capture(order_id, &order, merchant_id).await
+            paypal.capture(order_id, order, merchant_id).await
         }
         Payee::Stripe(account) => {
             let stripe = api.stripe.as_ref().ok_or_else(payment_unavailable)?;
-            stripe.capture(order_id, &order, account).await
+            stripe.capture(order_id, order, account).await
         }
         Payee::Twitch(_) => return Err(payment_unavailable()),
     };
-    match captured {
+    let result = match captured {
         Ok(()) | Err(CaptureError::AlreadyCaptured) => {
             info!(
                 "{:?} paid {} {} in {provider} order {order_id}",
@@ -2439,12 +2454,12 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
                 format_price(order.price),
                 order.currency
             );
-            record_capture(api, order_id, &order);
+            record_capture(api, order_id, order);
             Ok(())
         }
         Err(CaptureError::Unknown) => {
-            let status = settle_one(api, order_id, &order).await;
-            settled(&order, status)
+            let status = settle_one(api, order_id, order).await;
+            settled(order, status)
         }
         Err(error) => {
             if error != CaptureError::Pending
@@ -2469,7 +2484,15 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
                 _ => provider_failed(provider),
             })
         }
+    };
+    if let Err(failure) = &result {
+        api.counters.bump(&format!(
+            "{}PaymentsFailed:{}",
+            order.payee.slug(),
+            failure.reason
+        ));
     }
+    result
 }
 
 fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> {
@@ -2600,6 +2623,7 @@ fn record_capture(api: &Api, order_id: &str, order: &Order) {
     let saved = api.orders.captured(order_id, |connection| {
         deliveries::insert(connection, &order.streamer, order_id, &item)?;
         counters::bump(connection, &format!("{}Payments", order.item.kind()));
+        counters::bump(connection, &format!("{}Payments", order.payee.slug()));
         Ok(())
     });
     match saved {
@@ -3689,6 +3713,22 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("stripeOrders"), 1);
+        assert_eq!(count("stripePaymentsFailed:not-approved"), 1);
+        assert_eq!(count("stripePayments"), 1);
+        assert_eq!(count("tipPayments"), 1);
+        assert!(
+            !counters
+                .iter()
+                .any(|counter| counter.name.starts_with("paypal"))
+        );
         let settings: Value = post("/account/stripe/disconnect")
             .send()
             .await
@@ -4285,12 +4325,17 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
-        assert!(
-            api.counters
-                .all()
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
                 .iter()
-                .any(|counter| counter.name == "tipPayments" && counter.total == 1)
-        );
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("tipPayments"), 1);
+        assert_eq!(count("paypalOrders"), 1);
+        assert_eq!(count("paypalPaymentsFailed:unknown"), 1);
+        assert_eq!(count("paypalPayments"), 1);
     }
 
     #[tokio::test]

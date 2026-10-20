@@ -51,6 +51,14 @@ impl Payee {
             Payee::Twitch(_) => "Twitch",
         }
     }
+
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Payee::PayPal(_) => "paypal",
+            Payee::Stripe(_) => "stripe",
+            Payee::Twitch(_) => "twitch",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
