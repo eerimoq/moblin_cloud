@@ -41,6 +41,7 @@ import {
   removeImage,
   saveAccountSettings,
   saveSession,
+  resendRecent,
   sendTest,
   signInUrl,
   signOutEverywhere,
@@ -50,6 +51,7 @@ import {
   uploadImage,
   type Account,
   type Device,
+  type Recent,
   type SettingsChanges,
 } from "../data/account";
 import { links, pages } from "../data/links";
@@ -1715,6 +1717,21 @@ function Admin(props: {
     props.preview,
   );
 
+  const resend = async (item: Recent) => {
+    if (props.preview) {
+      return;
+    }
+    try {
+      await resendRecent(props.session, item.id, props.page);
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      throw error;
+    }
+    await loadRecent();
+  };
+
   const changeImage = async (image: File | null) => {
     setBusy(true);
     try {
@@ -1935,7 +1952,12 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
-          <Latest kind="tip" list={recent()?.tip} onMore={() => loadMore("tip")} />
+          <Latest
+            kind="tip"
+            list={recent()?.tip}
+            onMore={() => loadMore("tip")}
+            onResend={resend}
+          />
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
           <Show
@@ -1969,7 +1991,12 @@ function Admin(props: {
             preview={props.preview}
             onSignOut={props.onSignOut}
           />
-          <Latest kind="spin" list={recent()?.spin} onMore={() => loadMore("spin")} />
+          <Latest
+            kind="spin"
+            list={recent()?.spin}
+            onMore={() => loadMore("spin")}
+            onResend={resend}
+          />
         </div>
         <div hidden={active() !== "songs"} class="flex flex-col gap-6">
           <Show
@@ -2018,7 +2045,12 @@ function Admin(props: {
           >
             {(page) => <FreeSong session={props.session} page={page} onSignOut={props.onSignOut} />}
           </Show>
-          <Latest kind="song" list={recent()?.song} onMore={() => loadMore("song")} />
+          <Latest
+            kind="song"
+            list={recent()?.song}
+            onMore={() => loadMore("song")}
+            onResend={resend}
+          />
         </div>
         <Show when={payments()}>
           <div hidden={active() !== "payments"} class="flex flex-col gap-6">

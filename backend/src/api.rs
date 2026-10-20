@@ -126,6 +126,10 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/sign-out", post(handle_account_sign_out))
         .route("/account/delete", post(handle_account_delete))
         .route("/account/recent", get(handle_account_recent))
+        .route(
+            "/account/recent/{order}/resend",
+            post(handle_account_resend),
+        )
         .route("/account/test/song", post(handle_account_test_song))
         .route("/account/test/tip", post(handle_account_test_tip))
         .route("/account/test/spin", post(handle_account_test_spin))
@@ -136,6 +140,10 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/pages/{id}/music", post(handle_moderator_music))
         .route("/account/pages/{id}/songs", post(handle_moderator_song))
         .route("/account/pages/{id}/recent", get(handle_moderator_recent))
+        .route(
+            "/account/pages/{id}/recent/{order}/resend",
+            post(handle_moderator_resend),
+        )
         .route("/account/pages/{id}", get(handle_moderator_account))
         .route(
             "/account/pages/{id}/settings",
@@ -2649,6 +2657,46 @@ async fn handle_moderator_recent(
     })
 }
 
+async fn handle_account_resend(
+    State(api): State<Arc<Api>>,
+    Path(order_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
+    resend(&api, &account.page.id, &order_id)
+}
+
+async fn handle_moderator_resend(
+    State(api): State<Arc<Api>>,
+    Path((id, order_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    moderator(&api, &headers, &id)?;
+    resend(&api, &id, &order_id)
+}
+
+fn resend(api: &Api, page: &str, order_id: &str) -> Result<(StatusCode, Json<Value>), Failure> {
+    let order = match api.orders.get(order_id) {
+        Some((Stage::Captured, order)) if order.streamer == page => order,
+        _ => {
+            return Err(failure(
+                "not-found",
+                StatusCode::NOT_FOUND,
+                "This request does not exist.",
+            ));
+        }
+    };
+    api.deliveries
+        .resend(&order.streamer, order_id, &delivery_item(&order))
+        .map_err(|error| not_saved(error.into()))?;
+    info!(
+        "queued {:?} in order {order_id} again for remote control streamer {}",
+        order.description(),
+        order.streamer
+    );
+    Ok(accepted())
+}
+
 async fn handle_song_capture(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
@@ -4324,11 +4372,11 @@ mod tests {
         }}})
     }
 
-    async fn connect(
-        address: &str,
-        key: &str,
-    ) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>
-    {
+    type Socket = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+
+    async fn connect(address: &str, key: &str) -> Socket {
         let (mut socket, _) = tokio_tungstenite::connect_async(format!(
             "ws://{address}/remote-control/streamer/{key}"
         ))
@@ -4494,6 +4542,83 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn recent_payments_can_be_sent_again() {
+        let (address, api, _) = start_paid_fake().await;
+        let (session, capture_url) = paypal_tip_order_as(&address, &api).await;
+        let client = reqwest::Client::new();
+        let status = || async {
+            client
+                .get(format!("http://{address}/account/recent?kind=tip"))
+                .bearer_auth(&session)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()["items"][0]["status"]
+                .clone()
+        };
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let key = api.accounts.get("1").unwrap().page.devices[0].key.clone();
+        let mut socket = connect(&address, &key).await;
+        let acknowledge = async |socket: &mut Socket, request_id: &str| {
+            let request = receive(socket).await;
+            assert_eq!(request["request"]["data"]["tip"]["requestId"], request_id);
+            socket
+                .send(Message::text(
+                    json!({"response": {"id": request["request"]["id"], "result": {"ok": {}}}})
+                        .to_string(),
+                ))
+                .await
+                .unwrap();
+            wait_until_added(&api).await;
+        };
+        acknowledge(&mut socket, "ORDER1").await;
+        assert_eq!(status().await, "delivered");
+        let id = api.accounts.get("1").unwrap().page.id;
+        for (n, url) in [
+            format!("http://{address}/account/recent/ORDER1/resend"),
+            format!("http://{address}/account/pages/{id}/recent/ORDER1/resend"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let response = client
+                .post(&url)
+                .bearer_auth(&session)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::ACCEPTED);
+            acknowledge(&mut socket, &format!("ORDER1-{}", n + 1)).await;
+            assert_eq!(status().await, "delivered");
+        }
+        for url in [
+            format!("http://{address}/account/recent/ORDER2/resend"),
+            format!("http://{address}/account/pages/OTHER/recent/ORDER1/resend"),
+        ] {
+            let response = client
+                .post(&url)
+                .bearer_auth(&session)
+                .send()
+                .await
+                .unwrap();
+            assert!(
+                [StatusCode::NOT_FOUND, StatusCode::FORBIDDEN].contains(&response.status()),
+                "{url}"
+            );
+        }
+        let response = client
+            .post(format!("http://{address}/account/recent/ORDER1/resend"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(status().await, "delivered");
     }
 
     #[derive(Clone, Copy, Debug)]

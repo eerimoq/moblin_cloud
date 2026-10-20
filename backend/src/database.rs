@@ -94,7 +94,8 @@ impl Database {
                      delivered TEXT NOT NULL DEFAULT '[]',
                      failure TEXT,
                      finished INTEGER NOT NULL DEFAULT 0,
-                     test TEXT
+                     test TEXT,
+                     resends INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE TABLE IF NOT EXISTS streamers (
                      position INTEGER PRIMARY KEY,
@@ -125,6 +126,7 @@ impl Database {
             ("deliveries", "failure", "TEXT"),
             ("deliveries", "finished", "INTEGER NOT NULL DEFAULT 0"),
             ("deliveries", "test", "TEXT"),
+            ("deliveries", "resends", "INTEGER NOT NULL DEFAULT 0"),
             ("orders", "kind", "TEXT"),
         ] {
             if !has_column(&connection, table, column)? {

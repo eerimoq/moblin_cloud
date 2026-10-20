@@ -141,6 +141,11 @@ export const fetchRecent = (
     `${accountPath(page)}/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
   );
 
+export const resendRecent = (session: string, id: string, page?: string) =>
+  call<object>(session, `${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, {
+    method: "POST",
+  });
+
 export const enableModerator = (session: string, moderator: string, enabled: boolean) =>
   call<Account>(session, `/account/moderators/${encodeURIComponent(moderator)}`, post({ enabled }));
 

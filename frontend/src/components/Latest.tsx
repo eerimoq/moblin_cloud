@@ -25,8 +25,11 @@ export function Latest(props: {
   kind: RecentKind;
   list: RecentList | undefined;
   onMore: () => Promise<void>;
+  onResend: (item: Recent) => Promise<void>;
 }) {
   const [loading, setLoading] = createSignal(false);
+  const [resending, setResending] = createSignal<string | null>(null);
+  const [failed, setFailed] = createSignal<string | null>(null);
   const title = () =>
     props.kind === "song"
       ? t("Received song requests")
@@ -51,6 +54,20 @@ export function Latest(props: {
       await props.onMore();
     } finally {
       setLoading(false);
+    }
+  };
+  const resend = async (item: Recent) => {
+    if (resending()) {
+      return;
+    }
+    setFailed(null);
+    setResending(item.id);
+    try {
+      await props.onResend(item);
+    } catch {
+      setFailed(item.id);
+    } finally {
+      setResending(null);
     }
   };
 
@@ -122,9 +139,24 @@ export function Latest(props: {
                         )}
                       </Show>
                     </div>
-                    <div class="flex items-baseline gap-3 text-[15px]">
-                      <span class="text-muted">{timeAgo(item.at)}</span>
-                      <span class={`font-semibold ${status(item).class}`}>{status(item).text}</span>
+                    <div class="flex flex-col items-end gap-1 text-[15px]">
+                      <div class="flex items-baseline gap-3">
+                        <span class="text-muted">{timeAgo(item.at)}</span>
+                        <span class={`font-semibold ${status(item).class}`}>
+                          {status(item).text}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        class={`${ghostButtonClass} h-9! px-4! text-[15px]!`}
+                        disabled={resending() !== null}
+                        onClick={() => resend(item)}
+                      >
+                        {resending() === item.id ? t("Sending…") : t("Send again")}
+                      </button>
+                      <Show when={failed() === item.id}>
+                        <span class="text-danger">{t("Sending did not work. Try again.")}</span>
+                      </Show>
                     </div>
                   </li>
                 )}

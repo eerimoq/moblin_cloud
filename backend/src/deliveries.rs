@@ -24,9 +24,18 @@ pub struct Delivery {
     pub failure: Option<String>,
     pub finished: bool,
     pub test: bool,
+    pub resends: u32,
 }
 
 impl Delivery {
+    fn moblin_request_id(&self) -> String {
+        if self.resends == 0 {
+            self.request_id.clone()
+        } else {
+            format!("{}-{}", self.request_id, self.resends)
+        }
+    }
+
     fn counter(&self, event: &str) -> String {
         let test = if self.test { "Test" } else { "" };
         format!("{}{test}{event}", self.item.kind())
@@ -105,6 +114,16 @@ impl Deliveries {
         }
         drop(database);
         self.notify();
+    }
+
+    pub fn resend(&self, streamer: &str, request_id: &str, item: &Item) -> rusqlite::Result<()> {
+        self.database.lock().execute(
+            "INSERT INTO deliveries (request_id, streamer, requested_at, item, resends) VALUES (?1, ?2, ?3, ?4, 1)
+             ON CONFLICT (request_id) DO UPDATE SET requested_at = excluded.requested_at, delivered = '[]', failure = NULL, finished = 0, resends = resends + 1",
+            params![request_id, streamer, now(), serde_json::to_string(item).unwrap()],
+        )?;
+        self.notify();
+        Ok(())
     }
 
     pub fn notify(&self) {
@@ -340,6 +359,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     row.get("failure")?,
                     row.get("finished")?,
                     row.get::<_, Option<String>>("test")?.is_some(),
+                    row.get("resends")?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -348,7 +368,17 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
         Ok(deliveries) => deliveries
             .into_iter()
             .filter_map(
-                |(request_id, streamer, requested_at, item, delivered, failure, finished, test)| {
+                |(
+                    request_id,
+                    streamer,
+                    requested_at,
+                    item,
+                    delivered,
+                    failure,
+                    finished,
+                    test,
+                    resends,
+                )| {
                     match serde_json::from_str(&item) {
                         Ok(item) => Some(Delivery {
                             streamer,
@@ -359,6 +389,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                             failure,
                             finished,
                             test,
+                            resends,
                         }),
                         Err(error) => {
                             warn!("failed to parse delivery {request_id}: {error}");
@@ -385,7 +416,7 @@ async fn deliver(
     id: &str,
     delivery: &Delivery,
 ) -> Result<Outcome, RequestError> {
-    let request_id = delivery.request_id.clone();
+    let request_id = delivery.moblin_request_id();
     match &delivery.item {
         Item::Song {
             link,
@@ -519,6 +550,33 @@ mod tests {
         assert_eq!(ids("S"), vec!["SPIN", "T6", "T5", "T4", "T3", "T2"]);
         assert_eq!(ids("O"), vec!["OTHER"]);
         assert!(deliveries.get("PAID").is_some());
+    }
+
+    #[test]
+    fn resends_start_over_with_a_new_moblin_request_id() {
+        let deliveries = Deliveries::new(Database::memory());
+        insert(&deliveries.database.lock(), "S", "PAID", &tip()).unwrap();
+        deliveries.delivered("PAID", None, "phone", &["phone".to_string()]);
+        let delivery = deliveries.get("PAID").unwrap();
+        assert!(delivery.finished);
+        assert_eq!(delivery.moblin_request_id(), "PAID");
+        deliveries.resend("S", "PAID", &tip()).unwrap();
+        let delivery = deliveries.get("PAID").unwrap();
+        assert!(!delivery.finished);
+        assert!(delivery.delivered.is_empty());
+        assert_eq!(delivery.resends, 1);
+        assert_eq!(delivery.moblin_request_id(), "PAID-1");
+        assert!(deliveries.failed(&delivery, "not-found"));
+        deliveries.resend("S", "PAID", &tip()).unwrap();
+        let delivery = deliveries.get("PAID").unwrap();
+        assert_eq!(delivery.failure, None);
+        assert_eq!(delivery.moblin_request_id(), "PAID-2");
+        assert_eq!(request_ids(&deliveries), vec!["PAID"]);
+        deliveries.resend("S", "GONE", &song()).unwrap();
+        assert_eq!(
+            deliveries.get("GONE").unwrap().moblin_request_id(),
+            "GONE-1"
+        );
     }
 
     #[test]
