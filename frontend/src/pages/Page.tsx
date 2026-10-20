@@ -1029,8 +1029,8 @@ function StreamerHeader(props: {
               {(profile) => (
                 <>
                   <Avatar profile={profile()} class="size-28 text-5xl sm:size-32" />
-                  <TwitchLink profile={profile()} />
                   <DashboardLink link={props.dashboard} />
+                  <TwitchLink profile={profile()} />
                   <Greeting profile={profile()} />
                 </>
               )}
@@ -1051,9 +1051,11 @@ function StreamerHeader(props: {
                 cutout
                 class="relative -mt-10 size-20 text-3xl sm:-mt-12 sm:size-24 sm:text-4xl"
               />
-              <div class="mt-3 flex min-w-0 flex-col items-end gap-1.5">
+              <div class="mt-3 flex min-w-0 flex-1 items-center justify-end gap-4">
+                <div class="mr-auto flex min-w-0">
+                  <DashboardLink link={props.dashboard} />
+                </div>
                 <TwitchLink profile={banner().profile} />
-                <DashboardLink link={props.dashboard} />
               </div>
             </div>
             <div class="px-4 sm:px-6">
