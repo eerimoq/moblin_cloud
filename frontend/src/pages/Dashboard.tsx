@@ -2801,7 +2801,7 @@ export default function Dashboard() {
                   <PickedAvatar picked={channel(current().account) ?? current().account} />
                   <select
                     aria-label={t("Streamer")}
-                    class={`${ghostButtonClass} h-11! w-full appearance-none truncate pr-10! pl-12! text-base!`}
+                    class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base!`}
                     value={channel(current().account)?.login ?? ""}
                     onChange={(event) => chooseChannel(event.currentTarget.value)}
                   >
