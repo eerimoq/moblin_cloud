@@ -1,5 +1,11 @@
 import { backendUrl } from "./backend";
-import { BackendError, type Page, type Settings } from "./remoteControl";
+import {
+  BackendError,
+  type MusicCommand,
+  type MusicStatus,
+  type Page,
+  type Settings,
+} from "./remoteControl";
 
 export type Device = {
   id: string;
@@ -18,6 +24,22 @@ export type Account = {
   settings: Settings;
   admin: boolean;
   premium: boolean;
+  moderating: Moderating[];
+  moderators: ChannelModerator[];
+};
+
+export type ChannelModerator = {
+  id: string;
+  login: string;
+  name: string;
+  enabled: boolean;
+};
+
+export type Moderating = {
+  id: string;
+  name: string;
+  login: string;
+  avatar: string | null;
 };
 
 export type Recent = {
@@ -31,6 +53,7 @@ export type Recent = {
   message?: string;
   spins?: number;
   tier?: number;
+  moderator?: boolean;
   status: "delivered" | "waiting" | "notAdded";
   devices?: { name: string; received: boolean }[];
 };
@@ -105,6 +128,40 @@ export const fetchRecent = (session: string, kind: RecentKind, limit: number, be
   call<RecentList>(
     session,
     `/account/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
+  );
+
+export const enableModerator = (session: string, moderator: string, enabled: boolean) =>
+  call<Account>(session, `/account/moderators/${encodeURIComponent(moderator)}`, post({ enabled }));
+
+export const moderateMusic = (
+  session: string,
+  page: string,
+  command: MusicCommand,
+  song?: string,
+) =>
+  call<MusicStatus>(
+    session,
+    `/account/pages/${encodeURIComponent(page)}/music`,
+    post({ command, id: song }),
+  );
+
+export const addModeratorSong = (session: string, page: string, song: string, message: string) =>
+  call<object>(
+    session,
+    `/account/pages/${encodeURIComponent(page)}/songs`,
+    post({ song, message: message || null }),
+  );
+
+export const fetchModeratorRecent = (
+  session: string,
+  page: string,
+  kind: RecentKind,
+  limit: number,
+  before?: string,
+) =>
+  call<RecentList>(
+    session,
+    `/account/pages/${encodeURIComponent(page)}/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
   );
 
 export async function signOutEverywhere(session: string) {

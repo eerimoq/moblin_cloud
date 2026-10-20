@@ -19,7 +19,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::accounts::{Account, AccountError, AccountStats, Accounts, Device, Page};
+use crate::accounts::{
+    Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, Page,
+};
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
 use crate::challenges::Challenges;
@@ -126,6 +128,13 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/test/song", post(handle_account_test_song))
         .route("/account/test/tip", post(handle_account_test_tip))
         .route("/account/test/spin", post(handle_account_test_spin))
+        .route(
+            "/account/moderators/{moderator}",
+            post(handle_account_moderator),
+        )
+        .route("/account/pages/{id}/music", post(handle_moderator_music))
+        .route("/account/pages/{id}/songs", post(handle_moderator_song))
+        .route("/account/pages/{id}/recent", get(handle_moderator_recent))
         .route("/admin/stats", get(handle_admin_stats))
         .route("/pages/{id}/songs", get(handle_songs))
         .route("/pages/{id}", get(handle_page))
@@ -608,13 +617,14 @@ async fn signed_in_redirect(
     if let Some(page) = page {
         return viewer_redirect(api, &page, sign_in).await;
     }
-    let user = match sign_in {
-        Ok(sign_in) => sign_in.user,
+    let sign_in = match sign_in {
+        Ok(sign_in) => sign_in,
         Err(error) => {
             warn!("signing in with Twitch failed: {error:#}");
             return Redirect::to(&format!("{dashboard}#signInFailed"));
         }
     };
+    let user = &sign_in.user;
     let Some((key, page)) = api.remote_control.new_key() else {
         warn!("no page could be created for {}", user.id);
         return Redirect::to(&format!("{dashboard}#signInFailed"));
@@ -637,6 +647,17 @@ async fn signed_in_redirect(
             return Redirect::to(&format!("{dashboard}#signInFailed"));
         }
     };
+    match api.auth.moderated_channels(&sign_in).await {
+        Ok(broadcasters) => api.accounts.set_moderated_channels(&user.id, &broadcasters),
+        Err(error) => warn!(
+            "looking up the channels {} moderates failed: {error:#}",
+            user.id
+        ),
+    }
+    match api.auth.channel_moderators(&sign_in).await {
+        Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
+        Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
+    }
     info!("Twitch user {} ({}) signed in", user.id, user.login);
     Redirect::to(&format!(
         "{dashboard}#session={}",
@@ -687,6 +708,16 @@ struct AccountResponse {
     settings: SettingsResponse,
     admin: bool,
     premium: bool,
+    moderating: Vec<ModeratingResponse>,
+    moderators: Vec<ChannelModerator>,
+}
+
+#[derive(Serialize)]
+struct ModeratingResponse {
+    id: String,
+    name: String,
+    login: String,
+    avatar: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -764,7 +795,41 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
         settings: settings_response(api, page.id.clone(), settings).0,
         admin: is_admin(api, id),
         premium: is_premium(api, id),
+        moderators: api.accounts.channel_moderators(id),
+        moderating: api
+            .accounts
+            .moderated(id)
+            .into_iter()
+            .map(|streamer| ModeratingResponse {
+                id: streamer.page.id,
+                name: streamer.name,
+                login: streamer.login,
+                avatar: streamer.avatar,
+            })
+            .collect(),
     })
+}
+
+#[derive(Deserialize)]
+struct ModeratorRequest {
+    enabled: bool,
+}
+
+async fn handle_account_moderator(
+    State(api): State<Arc<Api>>,
+    Path(moderator): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<ModeratorRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    api.accounts
+        .enable_moderator(&id, &moderator, request.enabled)
+        .map_err(account_error)?;
+    info!(
+        "{id} turned moderator {moderator} {}",
+        if request.enabled { "on" } else { "off" }
+    );
+    Ok(account_response(&api, &id, account))
 }
 
 fn account_error(error: AccountError) -> (StatusCode, String) {
@@ -778,6 +843,7 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
             (StatusCode::CONFLICT, "at most 5 Moblin devices".to_string())
         }
         AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
+        AccountError::UnknownModerator => (StatusCode::NOT_FOUND, "no such moderator".to_string()),
         AccountError::NotSaved => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "the account could not be saved".to_string(),
@@ -884,6 +950,8 @@ struct Recent {
     spins: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tier: Option<u8>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    moderator: bool,
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     devices: Option<Vec<RecentDevice>>,
@@ -901,10 +969,17 @@ async fn handle_account_recent(
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
+    recent(&api, account.page, query)
+}
+
+fn recent(
+    api: &Api,
+    page: Page,
+    query: RecentQuery,
+) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     if !["song", "tip", "spin"].contains(&query.kind.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string()));
     }
-    let page = account.page;
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
     let mut orders = api
         .orders
@@ -925,6 +1000,7 @@ async fn handle_account_recent(
                 Payee::Twitch(tier) => Some(tier),
                 _ => None,
             };
+            let moderator = order.payee == Payee::Moderator;
             let (name, link, message, spins) = match order.item {
                 Item::Song {
                     link,
@@ -945,6 +1021,7 @@ async fn handle_account_recent(
                 message,
                 spins,
                 tier,
+                moderator,
                 status: match &delivery {
                     None => "delivered",
                     Some(delivery) if delivery.finished => "delivered",
@@ -2106,6 +2183,14 @@ fn subscriber(
     })
 }
 
+fn new_request_id(api: &Api) -> Result<String, Failure> {
+    api.remote_control.new_request_id().ok_or(failure(
+        "crashed",
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Something went wrong. Try again.",
+    ))
+}
+
 fn queue_for_subscriber(
     api: &Api,
     subscriber: &Subscriber,
@@ -2113,11 +2198,7 @@ fn queue_for_subscriber(
     units: u32,
     order: &Order,
 ) -> Result<u32, Failure> {
-    let request_id = api.remote_control.new_request_id().ok_or(failure(
-        "crashed",
-        StatusCode::SERVICE_UNAVAILABLE,
-        "Something went wrong. Try again.",
-    ))?;
+    let request_id = new_request_id(api)?;
     let item = delivery_item(order);
     let left = api
         .allowances
@@ -2218,6 +2299,169 @@ fn subscriber_spin(
     Ok((StatusCode::ACCEPTED, Json(LeftResponse { left })))
 }
 
+fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+    let signed_in = signed_in(api, headers)?;
+    let allowed = signed_in.account.page.id == id
+        || api
+            .accounts
+            .streamer_of_page(id)
+            .is_some_and(|(broadcaster, _)| api.accounts.moderates(&signed_in.id, &broadcaster));
+    if !allowed {
+        return Err(failure(
+            "not-moderator",
+            StatusCode::FORBIDDEN,
+            "Only the streamer and the moderators they turned on can do this.",
+        ));
+    }
+    Ok(signed_in)
+}
+
+#[derive(Deserialize)]
+struct ModeratorMusicRequest {
+    command: String,
+    #[serde(default)]
+    id: Option<String>,
+}
+
+async fn handle_moderator_music(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<ModeratorMusicRequest>,
+) -> Result<Json<QueueResponse>, Failure> {
+    let result = moderator_music(&api, &id, &headers, request).await;
+    counted(&api, "moderatorMusic", result)
+}
+
+async fn moderator_music(
+    api: &Api,
+    id: &str,
+    headers: &HeaderMap,
+    request: ModeratorMusicRequest,
+) -> Result<Json<QueueResponse>, Failure> {
+    let SignedIn {
+        id: user, account, ..
+    } = moderator(api, headers, id)?;
+    let song = || {
+        request
+            .id
+            .clone()
+            .filter(|id| !id.is_empty() && id.len() <= 200)
+            .ok_or(failure(
+                "invalid-command",
+                StatusCode::BAD_REQUEST,
+                "Pick a song in the queue.",
+            ))
+    };
+    let command = match request.command.as_str() {
+        "play" => MusicCommand::Play {},
+        "pause" => MusicCommand::Pause {},
+        "clear" => MusicCommand::Clear {},
+        "remove" => MusicCommand::Remove { id: song()? },
+        "select" => MusicCommand::Select { id: song()? },
+        _ => {
+            return Err(failure(
+                "invalid-command",
+                StatusCode::BAD_REQUEST,
+                "Unknown command.",
+            ));
+        }
+    };
+    info!(
+        "{user} ({}) sent {command:?} to remote control streamer {id}",
+        account.name
+    );
+    let device = music_device(api, id);
+    let status = api
+        .remote_control
+        .music_uncached(&device, command)
+        .await
+        .map_err(music_error)?;
+    Ok(Json(QueueResponse {
+        status,
+        song_requests: api.remote_control.takes_song_requests(&device),
+    }))
+}
+
+async fn handle_moderator_song(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<SubscriberSongRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let result = moderator_song(&api, id, &headers, request).await;
+    counted(&api, "modSongs", result)
+}
+
+async fn moderator_song(
+    api: &Api,
+    id: String,
+    headers: &HeaderMap,
+    request: SubscriberSongRequest,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let account = moderator(api, headers, &id)?.account;
+    let message = viewer_message(request.message)?;
+    let song_and_user = song_and_user(SongRequest {
+        song: request.song,
+        user: Some(account.name),
+        message: None,
+        provider: None,
+    })?;
+    limit_song_finds(api, &id)?;
+    let song = requested_song(api, &id, song_and_user).await?;
+    let order = Order {
+        currency: api.pages.get(&id).currency().to_string(),
+        streamer: id,
+        item: Item::Song {
+            link: song.link,
+            name: song.name,
+            message,
+        },
+        user: song.user,
+        payee: Payee::Moderator,
+        price: 0,
+    };
+    let request_id = new_request_id(api)?;
+    let item = delivery_item(&order);
+    {
+        let mut database = api.database.lock();
+        let transaction = database
+            .transaction()
+            .map_err(|error| not_saved(error.into()))?;
+        insert_captured(&transaction, &request_id, &order)
+            .and_then(|()| deliveries::insert(&transaction, &order.streamer, &request_id, &item))
+            .and_then(|()| transaction.commit())
+            .map_err(|error| not_saved(error.into()))?;
+    }
+    api.deliveries.notify();
+    info!(
+        "queued {:?} for moderator {:?} in request {request_id} for remote control streamer {}",
+        order.description(),
+        order.user,
+        order.streamer
+    );
+    Ok(accepted())
+}
+
+async fn handle_moderator_recent(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Query(query): Query<RecentQuery>,
+) -> Result<Json<RecentResponse>, Failure> {
+    moderator(&api, &headers, &id)?;
+    let page = page_of(&api, &id).ok_or(failure(
+        "not-found",
+        StatusCode::NOT_FOUND,
+        "This page does not exist.",
+    ))?;
+    recent(&api, page, query).map_err(|(status, text)| Failure {
+        reason: "invalid-kind",
+        status,
+        text,
+    })
+}
+
 async fn handle_song_capture(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
@@ -2264,7 +2508,7 @@ async fn create_order(api: &Api, order: Order) -> Result<OrderResponse, Failure>
                     }),
                 ))
             }
-            Payee::Twitch(_) => anyhow::bail!("subscriber requests are not paid"),
+            Payee::Twitch(_) | Payee::Moderator => anyhow::bail!("free requests are not paid"),
         }
     };
     let (order_id, stripe) = created.await.map_err(|error| {
@@ -2409,7 +2653,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
     let available = match &order.payee {
         Payee::PayPal(_) => api.paypal.is_some(),
         Payee::Stripe(_) => api.stripe.is_some(),
-        Payee::Twitch(_) => false,
+        Payee::Twitch(_) | Payee::Moderator => false,
     };
     if !available {
         return Err(payment_unavailable());
@@ -2444,7 +2688,7 @@ async fn capture_at_provider(
             let stripe = api.stripe.as_ref().ok_or_else(payment_unavailable)?;
             stripe.capture(order_id, order, account).await
         }
-        Payee::Twitch(_) => return Err(payment_unavailable()),
+        Payee::Twitch(_) | Payee::Moderator => return Err(payment_unavailable()),
     };
     let result = match captured {
         Ok(()) | Err(CaptureError::AlreadyCaptured) => {
@@ -2527,7 +2771,7 @@ async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentS
                 .await
         }
         Payee::Stripe(account) => api.stripe.as_ref()?.status(order_id, order, account).await,
-        Payee::Twitch(_) => return None,
+        Payee::Twitch(_) | Payee::Moderator => return None,
     };
     let status = match status {
         Ok(status) => status,
@@ -6012,6 +6256,43 @@ mod tests {
                         }
                     },
                 ),
+            )
+            .route(
+                "/moderators",
+                get(
+                    |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
+                        assert_eq!(headers[AUTHORIZATION], "Bearer u");
+                        assert_eq!(query["broadcaster_id"], "42");
+                        Json(json!({
+                            "data": [
+                                {"user_id": "7", "user_login": "Seven", "user_name": "Seven"},
+                                {"user_id": "8", "user_login": "eight", "user_name": ""},
+                            ],
+                            "pagination": {},
+                        }))
+                    },
+                ),
+            )
+            .route(
+                "/moderation",
+                get(
+                    |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
+                        assert_eq!(headers[AUTHORIZATION], "Bearer u");
+                        assert_eq!(query["user_id"], "42");
+                        assert_eq!(query["first"], "100");
+                        match query.get("after").map(String::as_str) {
+                            None => Json(json!({
+                                "data": [{"broadcaster_id": "9"}],
+                                "pagination": {"cursor": "next"},
+                            })),
+                            Some("next") => Json(json!({
+                                "data": [{"broadcaster_id": "1"}],
+                                "pagination": {},
+                            })),
+                            Some(after) => panic!("unexpected cursor {after}"),
+                        }
+                    },
+                ),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -6032,6 +6313,8 @@ mod tests {
             token_url: format!("{twitch}/token"),
             users_url: format!("{twitch}/users"),
             subscriptions_url: format!("{twitch}/subscriptions"),
+            moderated_channels_url: format!("{twitch}/moderation"),
+            moderators_url: format!("{twitch}/moderators"),
         }
     }
 
@@ -6582,7 +6865,7 @@ mod tests {
     #[tokio::test]
     async fn streamers_sign_in_and_manage_their_page() {
         let twitch = start_twitch().await;
-        let (address, _) = start_api_with(
+        let (address, api) = start_api_with(
             None,
             None,
             Some(twitch_app(&twitch)),
@@ -6635,6 +6918,27 @@ mod tests {
             .strip_prefix("https://moblin.app/dashboard/#session=")
             .unwrap()
             .to_string();
+        assert_eq!(
+            api.accounts.channel_moderators("42"),
+            [
+                ChannelModerator {
+                    id: "8".to_string(),
+                    login: "eight".to_string(),
+                    name: "eight".to_string(),
+                    enabled: false,
+                },
+                ChannelModerator {
+                    id: "7".to_string(),
+                    login: "seven".to_string(),
+                    name: "Seven".to_string(),
+                    enabled: false,
+                },
+            ]
+        );
+        create_account(&api, "1", "One", "one");
+        api.accounts.enable_moderator("1", "42", true).unwrap();
+        assert!(api.accounts.moderates("42", "1"));
+        assert!(!api.accounts.moderates("42", "9"));
         assert_eq!(
             location(
                 &client
@@ -7396,5 +7700,206 @@ mod tests {
                 "counters": [{"name": "songOrders", "today": 2, "week": 2, "total": 2}],
             })
         );
+    }
+
+    #[tokio::test]
+    async fn moderators_manage_the_queue() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        create_account(&api, "21", "Mod 21", "mod21");
+        create_account(&api, "22", "Viewer 22", "viewer22");
+        api.accounts
+            .set_moderated_channels("21", &["1".to_string()]);
+        api.accounts
+            .set_moderated_channels("22", &["9".to_string()]);
+        let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
+        let moderating = async |session: &str| {
+            client
+                .get(format!("http://{address}/account"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()["moderating"]
+                .clone()
+        };
+        let command = async |session: &str, body: Value| {
+            client
+                .post(format!("http://{address}/account/pages/{id}/music"))
+                .bearer_auth(session)
+                .json(&body)
+                .send()
+                .await
+                .unwrap()
+        };
+        let toggle = async |moderator: &str, enabled: bool| {
+            client
+                .post(format!("http://{address}/account/moderators/{moderator}"))
+                .bearer_auth(&session)
+                .json(&json!({"enabled": enabled}))
+                .send()
+                .await
+                .unwrap()
+        };
+        let settings = async |enabled: bool| {
+            let response = toggle("21", enabled).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.json::<Value>().await.unwrap()["moderators"],
+                json!([{"id": "21", "login": "mod21", "name": "Mod 21", "enabled": enabled}])
+            );
+        };
+        assert_eq!(toggle("22", true).await.status(), StatusCode::NOT_FOUND);
+        assert_eq!(moderating(&mod1).await, json!([]));
+        let response = command(&mod1, json!({"command": "play"})).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        settings(true).await;
+        assert_eq!(
+            moderating(&mod1).await,
+            json!([{"id": id, "name": "Erik", "login": "erik", "avatar": null}])
+        );
+        assert_eq!(moderating(&viewer1).await, json!([]));
+        let response = command(&viewer1, json!({"command": "clear"})).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = command("garbage", json!({"command": "clear"})).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let response = command(&mod1, json!({"command": "remove"})).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = command(&mod1, json!({"command": "shuffle"})).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = command(&mod1, json!({"command": "play"})).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let mut socket = connect(&address, &key).await;
+        for (body, command) in [
+            (json!({"command": "play"}), json!({"play": {}})),
+            (json!({"command": "pause"}), json!({"pause": {}})),
+            (json!({"command": "clear"}), json!({"clear": {}})),
+            (
+                json!({"command": "remove", "id": "e1"}),
+                json!({"remove": {"id": "e1"}}),
+            ),
+            (
+                json!({"command": "select", "id": "e2"}),
+                json!({"select": {"id": "e2"}}),
+            ),
+        ] {
+            let sent = tokio::spawn({
+                let (address, id, mod1) = (address.clone(), id.clone(), mod1.clone());
+                async move {
+                    reqwest::Client::new()
+                        .post(format!("http://{address}/account/pages/{id}/music"))
+                        .bearer_auth(mod1)
+                        .json(&body)
+                        .send()
+                        .await
+                        .unwrap()
+                }
+            });
+            let request = receive(&mut socket).await;
+            assert_eq!(
+                request["request"]["data"],
+                json!({"music": {"command": command}})
+            );
+            answer(
+                &mut socket,
+                &request,
+                music(json!([{"id": "e2", "title": "Song", "user": "Viewer"}])),
+            )
+            .await;
+            let response = sent.await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let queue: Value = response.json().await.unwrap();
+            assert_eq!(queue["songs"][0]["id"], "e2");
+            assert_eq!(queue["songRequests"], true);
+        }
+        let sent = tokio::spawn({
+            let (address, id, mod1) = (address.clone(), id.clone(), mod1.clone());
+            async move {
+                reqwest::Client::new()
+                    .post(format!("http://{address}/account/pages/{id}/songs"))
+                    .bearer_auth(mod1)
+                    .json(&json!({"song": LINK, "message": " Hi "}))
+                    .send()
+                    .await
+                    .unwrap()
+            }
+        });
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"music": {"command": {"find": {"title": LINK}}}})
+        );
+        answer(
+            &mut socket,
+            &request,
+            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": 900}}}),
+        )
+        .await;
+        assert_eq!(sent.await.unwrap().status(), StatusCode::ACCEPTED);
+        let request = receive(&mut socket).await;
+        let add = &request["request"]["data"]["music"]["command"]["add"];
+        assert_eq!(add["title"], LINK);
+        assert_eq!(add["user"], "Mod 21");
+        assert_eq!(add["message"], "Hi");
+        answer(&mut socket, &request, music(json!([]))).await;
+        wait_until_added(&api).await;
+        let recent = async |session: &str| {
+            client
+                .get(format!(
+                    "http://{address}/account/pages/{id}/recent?kind=song"
+                ))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+        };
+        assert_eq!(recent(&viewer1).await.status(), StatusCode::FORBIDDEN);
+        let recent: Value = recent(&mod1).await.json().await.unwrap();
+        let items = recent["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["user"], "Mod 21");
+        assert_eq!(items[0]["name"], "Band - Song");
+        assert_eq!(items[0]["amount"], 0);
+        assert_eq!(items[0]["moderator"], true);
+        assert_eq!(items[0]["status"], "delivered");
+        settings(false).await;
+        assert_eq!(moderating(&mod1).await, json!([]));
+        let response = command(&mod1, json!({"command": "play"})).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let sent = tokio::spawn({
+            let (address, id, session) = (address.clone(), id.clone(), session.clone());
+            async move {
+                reqwest::Client::new()
+                    .post(format!("http://{address}/account/pages/{id}/music"))
+                    .bearer_auth(session)
+                    .json(&json!({"command": "pause"}))
+                    .send()
+                    .await
+                    .unwrap()
+            }
+        });
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"music": {"command": {"pause": {}}}})
+        );
+        answer(&mut socket, &request, music(json!([]))).await;
+        assert_eq!(sent.await.unwrap().status(), StatusCode::OK);
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("moderatorMusic"), 6);
+        assert_eq!(count("moderatorMusicFailed:not-moderator"), 3);
+        assert_eq!(count("moderatorMusicFailed:account"), 1);
+        assert_eq!(count("moderatorMusicFailed:invalid-command"), 2);
+        assert_eq!(count("moderatorMusicFailed:offline"), 1);
+        assert_eq!(count("modSongs"), 1);
     }
 }

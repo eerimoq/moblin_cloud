@@ -4,6 +4,8 @@ import { asset } from "../asset";
 import { createFlash } from "../flash";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
+import { createRecent, Latest } from "../components/Latest";
+import Queue, { type Moderate, type Status } from "../components/Queue";
 import {
   Band,
   buttonClass,
@@ -19,6 +21,12 @@ import {
 } from "../components/PageParts";
 import {
   addDevice,
+  addModeratorSong,
+  enableModerator,
+  type ChannelModerator,
+  fetchModeratorRecent,
+  moderateMusic,
+  type Moderating,
   checkPayPal,
   chooseDevices,
   checkStripe,
@@ -42,9 +50,6 @@ import {
   uploadImage,
   type Account,
   type Device,
-  type Recent,
-  type RecentKind,
-  type RecentList,
   type SettingsChanges,
 } from "../data/account";
 import { links, pages } from "../data/links";
@@ -55,10 +60,10 @@ import {
   currencies,
   defaultTitle,
   fonts,
-  formatPrice,
   hundredths,
   isColor,
   loadFonts,
+  musicStatus,
   pageImageUrl,
   tierCount,
   tierNumbers,
@@ -93,22 +98,6 @@ const pageUrl = (account: Account) =>
   new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
 
 const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
-
-const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
-
-function timeAgo(at: number) {
-  const seconds = Math.max(0, Math.round(Date.now() / 1000 - at));
-  if (seconds < 60) {
-    return t("Just now");
-  }
-  if (seconds < 3600) {
-    return relativeTime.format(-Math.round(seconds / 60), "minute");
-  }
-  if (seconds < 86_400) {
-    return relativeTime.format(-Math.round(seconds / 3600), "hour");
-  }
-  return relativeTime.format(-Math.round(seconds / 86_400), "day");
-}
 
 function paymentErrorText(error: unknown, invalid: string) {
   if (error instanceof BackendError) {
@@ -1067,6 +1056,289 @@ function SubscriberSettings(props: {
   );
 }
 
+function ModeratorSettings(props: {
+  session: string;
+  moderators: ChannelModerator[];
+  onAccount: (account: Account) => void;
+  onSignOut: () => void;
+}) {
+  const [changing, setChanging] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const change = async (moderator: ChannelModerator, enabled: boolean) => {
+    setError(null);
+    setChanging(moderator.id);
+    try {
+      props.onAccount(await enableModerator(props.session, moderator.id, enabled));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setError(t("Something went wrong. Try again."));
+    } finally {
+      setChanging(null);
+    }
+  };
+
+  return (
+    <section class={cardClass}>
+      <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
+      <p class="text-ink-2">
+        {t(
+          "Turn on the Twitch moderators who may manage your song queue, add songs for free and " +
+            "see recent song requests, tips and spins. They sign in to Moblin Cloud with Twitch, " +
+            "like you, and find your channel under Moderate.",
+        )}
+      </p>
+      <Show
+        when={props.moderators.length > 0}
+        fallback={
+          <p class="text-ink-2">
+            {t("No moderators yet. Add them on Twitch, then sign in here again.")}
+          </p>
+        }
+      >
+        <ul class="flex flex-col divide-y divide-line">
+          <For each={props.moderators}>
+            {(moderator) => (
+              <li class="py-3 first:pt-0 last:pb-0">
+                <label class="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={moderator.enabled}
+                    disabled={changing() !== null}
+                    onChange={(event) => void change(moderator, event.currentTarget.checked)}
+                    class="size-5 shrink-0 accent-moss"
+                  />
+                  <span class="flex min-w-0 flex-col">
+                    <span class="truncate font-semibold">{moderator.name}</span>
+                    <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
+                      <span class="truncate text-[15px] text-muted">{moderator.login}</span>
+                    </Show>
+                  </span>
+                </label>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <p class="text-[15px] text-muted">{t("The list is updated from Twitch when you sign in.")}</p>
+      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+    </section>
+  );
+}
+
+const moderationErrorText = (error: unknown) =>
+  error instanceof BackendError && error.status < 500 && error.message
+    ? error.message
+    : t("Something went wrong. Try again.");
+
+function MusicQueue(props: { session: string; page: string; onSignOut: () => void }) {
+  const [status, setStatus] = createSignal<Status>("loading");
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const refresh = async () => {
+    try {
+      setStatus(await musicStatus(props.page));
+    } catch {
+      setStatus("offline");
+    }
+  };
+
+  const moderate: Moderate = async (command, song) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await moderateMusic(props.session, props.page, command, song));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setError(moderationErrorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  onMount(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), 10_000);
+    onCleanup(() => clearInterval(timer));
+  });
+
+  return (
+    <>
+      <Show when={error()}>{(error) => <Notice error>{error()}</Notice>}</Show>
+      <Show
+        when={status() !== "offline"}
+        fallback={
+          <div class={cardClass}>
+            <h2 class="text-[23px] font-semibold">{t("Queue")}</h2>
+            <p class="text-ink-2">{t("Moblin is offline, so the queue can't be changed now.")}</p>
+          </div>
+        }
+      >
+        <Queue status={status()} moderate={moderate} busy={busy()} />
+      </Show>
+    </>
+  );
+}
+
+function FreeSong(props: { session: string; page: string; onSignOut: () => void }) {
+  const [song, setSong] = createSignal("");
+  const [message, setMessage] = createSignal("");
+  const [sending, setSending] = createSignal(false);
+  const [sent, flashSent] = createFlash(3000);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (sending()) {
+      return;
+    }
+    setError(null);
+    setSending(true);
+    try {
+      await addModeratorSong(props.session, props.page, song().trim(), message().trim());
+      setSong("");
+      setMessage("");
+      flashSent();
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setError(moderationErrorText(error));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">{t("Add a song for free")}</h2>
+      <input
+        type="url"
+        required
+        maxLength={500}
+        aria-label={t("Apple Music song link")}
+        placeholder="https://music.apple.com/…"
+        value={song()}
+        onInput={(event) => setSong(event.currentTarget.value)}
+        autocomplete="off"
+        spellcheck={false}
+        class={inputClass}
+      />
+      <input
+        type="text"
+        maxLength={200}
+        aria-label={t("Message (optional)")}
+        placeholder={t("Message (optional)")}
+        value={message()}
+        onInput={(event) => setMessage(event.currentTarget.value)}
+        class={inputClass}
+      />
+      <div class="flex flex-wrap items-center gap-4">
+        <button type="submit" class={buttonClass} disabled={sending() || !song().trim()}>
+          <Show when={sent()}>
+            <Icon name="check" class="size-5" />
+          </Show>
+          <span aria-live="polite">
+            {sending() ? t("Sending…") : sent() ? t("Queued for Moblin") : t("Add song")}
+          </span>
+        </button>
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      </div>
+    </form>
+  );
+}
+
+function ModeratedChannel(props: { session: string; channel: Moderating; onSignOut: () => void }) {
+  const { recent, loadRecent, loadMore } = createRecent(
+    (kind, limit, before) =>
+      fetchModeratorRecent(props.session, props.channel.id, kind, limit, before),
+    (error) => {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+    },
+  );
+
+  onMount(() => {
+    void loadRecent();
+    const timer = setInterval(() => void loadRecent(), 10_000);
+    onCleanup(() => clearInterval(timer));
+  });
+
+  return (
+    <>
+      <MusicQueue session={props.session} page={props.channel.id} onSignOut={props.onSignOut} />
+      <FreeSong session={props.session} page={props.channel.id} onSignOut={props.onSignOut} />
+      <Latest kind="song" list={recent()?.song} onMore={() => loadMore("song")} />
+      <Latest kind="tip" list={recent()?.tip} onMore={() => loadMore("tip")} />
+      <Latest kind="spin" list={recent()?.spin} onMore={() => loadMore("spin")} />
+    </>
+  );
+}
+
+const moderatedChannelKey = "moderatedChannel";
+
+function readModeratedChannel() {
+  try {
+    return localStorage.getItem(moderatedChannelKey);
+  } catch {
+    return null;
+  }
+}
+
+function Moderate(props: { session: string; channels: Moderating[]; onSignOut: () => void }) {
+  const [chosen, setChosen] = createSignal(readModeratedChannel());
+  const choose = (id: string) => {
+    setChosen(id);
+    try {
+      localStorage.setItem(moderatedChannelKey, id);
+    } catch {}
+  };
+  const channel = () =>
+    props.channels.find((channel) => channel.id === chosen()) ?? props.channels[0];
+
+  return (
+    <div class="flex flex-col gap-6">
+      <div class={cardClass}>
+        <h2 class="text-[23px] font-semibold">{t("Moderate")}</h2>
+        <p class="text-ink-2">
+          {t(
+            "Help the streamers you moderate on Twitch with their song requests. The list is " +
+              "updated when you sign in.",
+          )}
+        </p>
+        <Show when={props.channels.length > 1}>
+          <label class="flex flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">{t("Channel")}</span>
+            <select
+              class={inputClass}
+              value={channel().id}
+              onChange={(event) => choose(event.currentTarget.value)}
+            >
+              <For each={props.channels}>
+                {(channel) => <option value={channel.id}>{channel.name}</option>}
+              </For>
+            </select>
+          </label>
+        </Show>
+        <Show when={props.channels.length === 1}>
+          <p class="font-semibold">{channel().name}</p>
+        </Show>
+      </div>
+      <Show when={channel()} keyed>
+        {(current) => (
+          <ModeratedChannel session={props.session} channel={current} onSignOut={props.onSignOut} />
+        )}
+      </Show>
+    </div>
+  );
+}
+
 function MoneyInput(props: {
   value: string;
   onValue: (value: string) => void;
@@ -1435,122 +1707,6 @@ function TestSend(props: {
   );
 }
 
-function Latest(props: {
-  kind: RecentKind;
-  list: RecentList | undefined;
-  onMore: () => Promise<void>;
-}) {
-  const [loading, setLoading] = createSignal(false);
-  const title = () =>
-    props.kind === "song"
-      ? t("Received song requests")
-      : props.kind === "tip"
-        ? t("Received tips")
-        : t("Received spins");
-  const empty = () =>
-    props.kind === "song"
-      ? t("No song requests yet.")
-      : props.kind === "tip"
-        ? t("No tips yet.")
-        : t("No spins yet.");
-  const status = (item: Recent) =>
-    item.status === "delivered"
-      ? { text: t("In Moblin"), class: "text-leaf" }
-      : item.status === "waiting"
-        ? { text: t("Waiting for Moblin"), class: "text-muted" }
-        : { text: t("Not added by Moblin"), class: "text-amber-ink" };
-  const more = async () => {
-    setLoading(true);
-    try {
-      await props.onMore();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <section class={cardClass}>
-      <div class="flex flex-col gap-1">
-        <h2 class="text-[23px] font-semibold">{title()}</h2>
-        <p class="text-[15px] text-muted">{t("From the last 30 days.")}</p>
-      </div>
-      <Show when={props.list} fallback={<Spinner />}>
-        {(list) => (
-          <Show when={list().items.length > 0} fallback={<p class="text-ink-2">{empty()}</p>}>
-            <ul class="flex flex-col divide-y divide-line">
-              <For each={list().items}>
-                {(item) => (
-                  <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
-                    <div class="flex min-w-0 flex-col gap-0.5">
-                      <span class="flex flex-wrap items-baseline gap-x-2">
-                        <span class="font-semibold">{item.user}</span>
-                        <span class="text-ink-2">
-                          {item.tier
-                            ? t("Tier {tier} subscriber", { tier: item.tier })
-                            : formatPrice({ price: item.amount, currency: item.currency })}
-                        </span>
-                      </span>
-                      <Show when={item.name}>
-                        {(name) => <span class="truncate text-ink-2">{name()}</span>}
-                      </Show>
-                      <Show when={item.spins}>
-                        {(spins) => (
-                          <span class="text-ink-2">
-                            {spins() === 1 ? t("1 spin") : t("{count} spins", { count: spins() })}
-                          </span>
-                        )}
-                      </Show>
-                      <Show when={item.message}>
-                        {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
-                      </Show>
-                      <Show when={item.devices && item.devices.length > 1 && item.devices}>
-                        {(devices) => (
-                          <ul class="flex flex-wrap gap-x-3 gap-y-0.5 text-[15px]">
-                            <For each={devices()}>
-                              {(device) => (
-                                <li
-                                  class={`flex items-center gap-1 ${device.received ? "text-leaf" : "text-muted"}`}
-                                >
-                                  <Icon
-                                    name={device.received ? "check" : "clock"}
-                                    class="size-4 shrink-0"
-                                  />
-                                  <span class="sr-only">
-                                    {device.received ? t("Received:") : t("Not received yet:")}
-                                  </span>
-                                  {device.name}
-                                </li>
-                              )}
-                            </For>
-                          </ul>
-                        )}
-                      </Show>
-                    </div>
-                    <div class="flex items-baseline gap-3 text-[15px]">
-                      <span class="text-muted">{timeAgo(item.at)}</span>
-                      <span class={`font-semibold ${status(item).class}`}>{status(item).text}</span>
-                    </div>
-                  </li>
-                )}
-              </For>
-            </ul>
-            <Show when={list().more}>
-              <button
-                type="button"
-                class={`${ghostButtonClass} self-start`}
-                disabled={loading()}
-                onClick={more}
-              >
-                {loading() ? t("Loading…") : t("Show more")}
-              </button>
-            </Show>
-          </Show>
-        )}
-      </Show>
-    </section>
-  );
-}
-
 function Admin(props: {
   session: string;
   account: Account;
@@ -1560,66 +1716,15 @@ function Admin(props: {
   const [account, setAccount] = createSignal(props.account);
   const [settings, setSettings] = createSignal(props.account.settings);
   const [busy, setBusy] = createSignal(false);
-  const empty = { items: [], more: false };
-  const [recent, setRecent] = createSignal<Record<RecentKind, RecentList> | null>(
-    props.preview ? { song: empty, tip: empty, spin: empty } : null,
+  const { recent, loadRecent, loadMore } = createRecent(
+    (kind, limit, before) => fetchRecent(props.session, kind, limit, before),
+    (error) => {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+    },
+    props.preview,
   );
-
-  const loadRecent = async () => {
-    const shown = recent();
-    try {
-      const [song, tip, spin] = await Promise.all(
-        (["song", "tip", "spin"] as const).map((kind) =>
-          fetchRecent(
-            props.session,
-            kind,
-            Math.min(Math.max(shown?.[kind].items.length ?? 0, 5), 50),
-          ),
-        ),
-      );
-      const merge = (page: RecentList, old: RecentList | undefined) => {
-        const last = page.items[page.items.length - 1]?.id;
-        const index = old && page.more ? old.items.findIndex((item) => item.id === last) : -1;
-        if (!old || index < 0 || index === old.items.length - 1) {
-          return page;
-        }
-        return { items: [...page.items, ...old.items.slice(index + 1)], more: old.more };
-      };
-      setRecent((old) => ({
-        song: merge(song, old?.song),
-        tip: merge(tip, old?.tip),
-        spin: merge(spin, old?.spin),
-      }));
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-    }
-  };
-
-  const loadMore = async (kind: RecentKind) => {
-    const items = recent()?.[kind].items ?? [];
-    try {
-      const page = await fetchRecent(props.session, kind, 20, items[items.length - 1]?.id);
-      setRecent((old) => {
-        if (!old) {
-          return old;
-        }
-        const ids = new Set(old[kind].items.map((item) => item.id));
-        return {
-          ...old,
-          [kind]: {
-            items: [...old[kind].items, ...page.items.filter((item) => !ids.has(item.id))],
-            more: page.more,
-          },
-        };
-      });
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-    }
-  };
 
   const changeImage = async (image: File | null) => {
     setBusy(true);
@@ -1721,6 +1826,13 @@ function Admin(props: {
       status: () => onOff(settings().paywall !== null || settings().subSongs !== null),
     },
     {
+      id: "moderators",
+      label: t("Moderators"),
+      icon: "shield",
+      shown: () => true,
+      status: () => onOff(account().moderators.some((moderator) => moderator.enabled)),
+    },
+    {
       id: "payments",
       label: t("Payments"),
       icon: "wallet",
@@ -1733,6 +1845,13 @@ function Admin(props: {
       icon: "smartphone",
       shown: () => true,
       status: () => connectedOrNot(settings().connected),
+    },
+    {
+      id: "moderate",
+      label: t("Moderate"),
+      icon: "remote",
+      shown: () => account().moderating.length > 0,
+      status: () => null,
     },
   ];
   const visible = () => sections.filter((section) => section.shown());
@@ -1877,6 +1996,9 @@ function Admin(props: {
             busy={busy()}
             onSave={(subSongs) => save({ subSongs })}
           />
+          <Show when={!props.preview && active() === "songs"}>
+            <MusicQueue session={props.session} page={settings().id} onSignOut={props.onSignOut} />
+          </Show>
           <TestSend
             kind="song"
             session={props.session}
@@ -1907,6 +2029,21 @@ function Admin(props: {
               <CurrencySettings currency={settings().currency} busy={busy()} onSave={save} />
             </Show>
           </div>
+        </Show>
+        <div hidden={active() !== "moderators"}>
+          <ModeratorSettings
+            session={props.session}
+            moderators={account().moderators}
+            onAccount={setAccount}
+            onSignOut={props.onSignOut}
+          />
+        </div>
+        <Show when={active() === "moderate"}>
+          <Moderate
+            session={props.session}
+            channels={account().moderating}
+            onSignOut={props.onSignOut}
+          />
         </Show>
         <div hidden={active() !== "moblin"}>
           <MoblinSettings
@@ -2348,6 +2485,8 @@ function Preview(props: { failed: boolean }) {
               },
               admin: false,
               premium: false,
+              moderating: [],
+              moderators: [],
             }}
             onSignOut={() => {}}
           />

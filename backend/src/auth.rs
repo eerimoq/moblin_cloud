@@ -10,6 +10,8 @@ use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 
+use crate::accounts::ChannelModerator;
+
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
 const SESSION_LIFETIME: u64 = 30 * 24 * 60 * 60;
@@ -24,6 +26,8 @@ pub struct OAuthApp {
     pub token_url: String,
     pub users_url: String,
     pub subscriptions_url: String,
+    pub moderated_channels_url: String,
+    pub moderators_url: String,
 }
 
 impl OAuthApp {
@@ -35,6 +39,8 @@ impl OAuthApp {
             token_url: "https://id.twitch.tv/oauth2/token".to_string(),
             users_url: "https://api.twitch.tv/helix/users".to_string(),
             subscriptions_url: "https://api.twitch.tv/helix/subscriptions/user".to_string(),
+            moderated_channels_url: "https://api.twitch.tv/helix/moderation/channels".to_string(),
+            moderators_url: "https://api.twitch.tv/helix/moderation/moderators".to_string(),
         }
     }
 }
@@ -147,7 +153,7 @@ impl Auth {
         let scope = if page.is_some() {
             "user:read:subscriptions"
         } else {
-            "openid"
+            "openid user:read:moderated_channels moderation:read"
         };
         Url::parse_with_params(
             &app.authorize_url,
@@ -355,6 +361,142 @@ impl Auth {
             }))
     }
 
+    pub async fn moderated_channels(&self, sign_in: &SignIn) -> Result<Vec<String>> {
+        if self.fake_twitch_login.is_some() {
+            return Ok(sign_in
+                .user
+                .login
+                .strip_prefix("mod_")
+                .map(|broadcasters| {
+                    broadcasters
+                        .split('_')
+                        .map(|broadcaster| format!("fake-{broadcaster}"))
+                        .collect()
+                })
+                .unwrap_or_default());
+        }
+        let app = self.twitch.as_ref().context("Twitch not configured")?;
+        let token = sign_in.token.as_deref().context("no access token")?;
+        #[derive(Deserialize)]
+        struct Channels {
+            data: Vec<Channel>,
+            #[serde(default)]
+            pagination: Pagination,
+        }
+        #[derive(Deserialize)]
+        struct Channel {
+            broadcaster_id: String,
+        }
+        #[derive(Default, Deserialize)]
+        struct Pagination {
+            cursor: Option<String>,
+        }
+        let mut broadcasters = Vec::new();
+        let mut after = None;
+        for _ in 0..20 {
+            let mut query = vec![
+                ("user_id", sign_in.user.id.clone()),
+                ("first", "100".to_string()),
+            ];
+            if let Some(cursor) = after {
+                query.push(("after", cursor));
+            }
+            let channels: Channels = self
+                .client
+                .get(&app.moderated_channels_url)
+                .query(&query)
+                .bearer_auth(token)
+                .header("Client-Id", &app.client_id)
+                .send()
+                .await
+                .context("failed to get the moderated channels")?
+                .error_for_status()
+                .context("the moderated channels were refused")?
+                .json()
+                .await
+                .context("unexpected answer to the moderated channels request")?;
+            broadcasters.extend(
+                channels
+                    .data
+                    .into_iter()
+                    .map(|channel| channel.broadcaster_id),
+            );
+            match channels
+                .pagination
+                .cursor
+                .filter(|cursor| !cursor.is_empty())
+            {
+                Some(cursor) => after = Some(cursor),
+                None => break,
+            }
+        }
+        Ok(broadcasters)
+    }
+
+    pub async fn channel_moderators(&self, sign_in: &SignIn) -> Result<Vec<ChannelModerator>> {
+        if self.fake_twitch_login.is_some() {
+            return Ok(Vec::new());
+        }
+        let app = self.twitch.as_ref().context("Twitch not configured")?;
+        let token = sign_in.token.as_deref().context("no access token")?;
+        #[derive(Deserialize)]
+        struct Moderators {
+            data: Vec<Moderator>,
+            #[serde(default)]
+            pagination: Pagination,
+        }
+        #[derive(Deserialize)]
+        struct Moderator {
+            user_id: String,
+            user_login: String,
+            user_name: String,
+        }
+        #[derive(Default, Deserialize)]
+        struct Pagination {
+            cursor: Option<String>,
+        }
+        let mut moderators = Vec::new();
+        let mut after = None;
+        for _ in 0..20 {
+            let mut query = vec![
+                ("broadcaster_id", sign_in.user.id.clone()),
+                ("first", "100".to_string()),
+            ];
+            if let Some(cursor) = after {
+                query.push(("after", cursor));
+            }
+            let page: Moderators = self
+                .client
+                .get(&app.moderators_url)
+                .query(&query)
+                .bearer_auth(token)
+                .header("Client-Id", &app.client_id)
+                .send()
+                .await
+                .context("failed to get the moderators")?
+                .error_for_status()
+                .context("the moderators were refused")?
+                .json()
+                .await
+                .context("unexpected answer to the moderators request")?;
+            moderators.extend(page.data.into_iter().map(|moderator| ChannelModerator {
+                name: if moderator.user_name.is_empty() {
+                    moderator.user_login.clone()
+                } else {
+                    moderator.user_name
+                },
+                login: moderator.user_login.to_lowercase(),
+                id: moderator.user_id,
+                enabled: false,
+            }));
+            match page.pagination.cursor.filter(|cursor| !cursor.is_empty()) {
+                Some(cursor) => after = Some(cursor),
+                None => break,
+            }
+        }
+        Ok(moderators)
+    }
+
     pub fn session(&self, account: &str, generation: u64) -> String {
         self.session_at(account, generation, now())
     }
@@ -478,7 +620,10 @@ mod tests {
             query["redirect_uri"],
             "https://api.example.com/auth/twitch/callback"
         );
-        assert_eq!(query["scope"], "openid");
+        assert_eq!(
+            query["scope"],
+            "openid user:read:moderated_channels moderation:read"
+        );
         assert_eq!(query["state"], state);
         let state = Some(state.as_str());
         assert_eq!(auth.consume_state(&query["state"], state).unwrap(), None);
@@ -571,6 +716,17 @@ mod tests {
         for (login, tier) in [("sub1", Some(1)), ("sub3", Some(3)), ("sub4", None)] {
             let sign_in = auth.callback(login).await.unwrap();
             assert_eq!(auth.subscription_tier(&sign_in, "1").await.unwrap(), tier);
+        }
+        for (login, broadcasters) in [
+            ("mod_erik", vec!["fake-erik"]),
+            ("mod_erik_bob", vec!["fake-erik", "fake-bob"]),
+            ("erik", vec![]),
+        ] {
+            let sign_in = auth.callback(login).await.unwrap();
+            assert_eq!(
+                auth.moderated_channels(&sign_in).await.unwrap(),
+                broadcasters
+            );
         }
         assert_eq!(auth.login_url(Some("bad login"), None), None);
         assert!(

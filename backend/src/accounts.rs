@@ -82,7 +82,16 @@ pub enum AccountError {
     Full,
     TooManyDevices,
     UnknownDevice,
+    UnknownModerator,
     NotSaved,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ChannelModerator {
+    pub id: String,
+    pub login: String,
+    pub name: String,
+    pub enabled: bool,
 }
 
 const COLUMNS: &str = "name, login, avatar, page_id, music_device, wheel_device, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
@@ -384,6 +393,157 @@ impl Accounts {
         })
     }
 
+    pub fn set_moderated_channels(&self, id: &str, broadcasters: &[String]) {
+        let result = (|| {
+            let mut database = self.database.lock();
+            let transaction = database.transaction()?;
+            transaction.execute("DELETE FROM moderated_channels WHERE moderator = ?1", [id])?;
+            for broadcaster in broadcasters.iter().filter(|broadcaster| *broadcaster != id) {
+                transaction.execute(
+                    "INSERT OR IGNORE INTO moderated_channels (moderator, broadcaster) VALUES (?1, ?2)",
+                    [id, broadcaster.as_str()],
+                )?;
+            }
+            transaction.commit()
+        })();
+        if let Err(error) = result {
+            warn!("failed to save the channels {id} moderates: {error:#}");
+        }
+    }
+
+    pub fn set_channel_moderators(&self, broadcaster: &str, moderators: &[ChannelModerator]) {
+        let result = (|| {
+            let mut database = self.database.lock();
+            let transaction = database.transaction()?;
+            transaction.execute(
+                "DELETE FROM channel_moderators WHERE broadcaster = ?1",
+                [broadcaster],
+            )?;
+            for moderator in moderators
+                .iter()
+                .filter(|moderator| moderator.id != broadcaster)
+            {
+                transaction.execute(
+                    "INSERT OR IGNORE INTO channel_moderators (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)",
+                    [broadcaster, &moderator.id, &moderator.login, &moderator.name],
+                )?;
+            }
+            transaction.commit()
+        })();
+        if let Err(error) = result {
+            warn!("failed to save the moderators of {broadcaster}: {error:#}");
+        }
+    }
+
+    pub fn channel_moderators(&self, broadcaster: &str) -> Vec<ChannelModerator> {
+        let database = self.database.lock();
+        let result = database
+            .prepare(
+                "SELECT id, login, name, EXISTS (
+                     SELECT 1 FROM enabled_moderators
+                     WHERE enabled_moderators.broadcaster = ?1 AND enabled_moderators.moderator = id
+                 )
+                 FROM (
+                     SELECT moderator AS id, login, name FROM channel_moderators WHERE broadcaster = ?1
+                     UNION
+                     SELECT moderated_channels.moderator, accounts.login, accounts.name
+                     FROM moderated_channels JOIN accounts ON accounts.id = moderated_channels.moderator
+                     WHERE moderated_channels.broadcaster = ?1 AND moderated_channels.moderator NOT IN (
+                         SELECT moderator FROM channel_moderators WHERE broadcaster = ?1
+                     )
+                 )
+                 ORDER BY name COLLATE NOCASE",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([broadcaster], |row| {
+                        Ok(ChannelModerator {
+                            id: row.get(0)?,
+                            login: row.get(1)?,
+                            name: row.get(2)?,
+                            enabled: row.get(3)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<_>>()
+            });
+        result.unwrap_or_else(|error| {
+            warn!("failed to read the moderators of {broadcaster}: {error:#}");
+            Vec::new()
+        })
+    }
+
+    pub fn enable_moderator(
+        &self,
+        broadcaster: &str,
+        moderator: &str,
+        enabled: bool,
+    ) -> Result<(), AccountError> {
+        if !self
+            .channel_moderators(broadcaster)
+            .iter()
+            .any(|known| known.id == moderator)
+        {
+            return Err(AccountError::UnknownModerator);
+        }
+        let database = self.database.lock();
+        if enabled {
+            database.execute(
+                "INSERT OR IGNORE INTO enabled_moderators (broadcaster, moderator) VALUES (?1, ?2)",
+                [broadcaster, moderator],
+            )
+        } else {
+            database.execute(
+                "DELETE FROM enabled_moderators WHERE broadcaster = ?1 AND moderator = ?2",
+                [broadcaster, moderator],
+            )
+        }
+        .map_err(not_saved)?;
+        Ok(())
+    }
+
+    pub fn moderates(&self, id: &str, broadcaster: &str) -> bool {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT 1 FROM moderated_channels JOIN enabled_moderators USING (moderator, broadcaster)
+                 WHERE moderator = ?1 AND broadcaster = ?2",
+                [id, broadcaster],
+                |_| Ok(()),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read moderators: {error:#}");
+                None
+            })
+            .is_some()
+    }
+
+    pub fn moderated(&self, id: &str) -> Vec<Account> {
+        let broadcasters: Vec<String> = {
+            let database = self.database.lock();
+            let result = database
+                .prepare(
+                    "SELECT broadcaster FROM moderated_channels
+                     JOIN enabled_moderators USING (moderator, broadcaster)
+                     JOIN accounts ON accounts.id = broadcaster
+                     WHERE moderator = ?1 ORDER BY accounts.name COLLATE NOCASE",
+                )
+                .and_then(|mut statement| {
+                    statement
+                        .query_map([id], |row| row.get(0))?
+                        .collect::<rusqlite::Result<_>>()
+                });
+            result.unwrap_or_else(|error| {
+                warn!("failed to read moderators: {error:#}");
+                Vec::new()
+            })
+        };
+        broadcasters
+            .iter()
+            .filter_map(|broadcaster| self.get(broadcaster))
+            .collect()
+    }
+
     pub fn sign_out(&self, id: &str) -> Result<Account, AccountError> {
         self.change(id, None, |account| {
             account.sessions += 1;
@@ -531,6 +691,71 @@ mod tests {
             page("p", "k")
         );
         assert_eq!(accounts.get("1").unwrap().name, "Eerimoq");
+    }
+
+    #[test]
+    fn moderators_need_the_streamer_to_turn_them_on() {
+        let accounts = Accounts::new(Database::memory());
+        for (id, name, key) in [("1", "Erik", "k"), ("2", "Bob", "l"), ("3", "Alice", "m")] {
+            accounts
+                .signed_in(id, name, &name.to_lowercase(), None, page(id, key))
+                .unwrap();
+        }
+        let names = |id| {
+            accounts
+                .moderated(id)
+                .into_iter()
+                .map(|account| account.name)
+                .collect::<Vec<_>>()
+        };
+        let moderator = |id: &str, name: &str, enabled| ChannelModerator {
+            id: id.to_string(),
+            login: name.to_lowercase(),
+            name: name.to_string(),
+            enabled,
+        };
+        accounts.set_moderated_channels(
+            "1",
+            &[
+                "2".to_string(),
+                "3".to_string(),
+                "1".to_string(),
+                "9".to_string(),
+            ],
+        );
+        assert!(names("1").is_empty());
+        assert!(!accounts.moderates("1", "2"));
+        assert_eq!(
+            accounts.channel_moderators("2"),
+            [moderator("1", "Erik", false)]
+        );
+        accounts.set_channel_moderators(
+            "2",
+            &[moderator("4", "Zed", false), moderator("2", "Bob", false)],
+        );
+        assert_eq!(
+            accounts.channel_moderators("2"),
+            [moderator("1", "Erik", false), moderator("4", "Zed", false)]
+        );
+        assert_eq!(
+            accounts.enable_moderator("2", "5", true),
+            Err(AccountError::UnknownModerator)
+        );
+        accounts.enable_moderator("2", "1", true).unwrap();
+        accounts.enable_moderator("3", "1", true).unwrap();
+        accounts.enable_moderator("2", "4", true).unwrap();
+        assert_eq!(names("1"), ["Alice", "Bob"]);
+        assert!(accounts.moderates("1", "2"));
+        assert!(!accounts.moderates("4", "2"));
+        assert_eq!(
+            accounts.channel_moderators("2"),
+            [moderator("1", "Erik", true), moderator("4", "Zed", true)]
+        );
+        accounts.enable_moderator("3", "1", false).unwrap();
+        assert_eq!(names("1"), ["Bob"]);
+        accounts.set_moderated_channels("1", &["3".to_string()]);
+        assert!(names("1").is_empty());
+        assert!(!accounts.moderates("1", "2"));
     }
 
     #[test]

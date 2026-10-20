@@ -37,7 +37,11 @@ export type IconName =
   | "card"
   | "globe"
   | "image"
-  | "chevron-down";
+  | "chevron-down"
+  | "play"
+  | "pause"
+  | "trash"
+  | "shield";
 
 type Props = {
   name: IconName;
@@ -60,6 +64,19 @@ export default function Icon(props: Props) {
       aria-hidden="true"
     >
       <Switch>
+        <Match when={props.name === "play"}>
+          <path d="M7 5v14l11-7L7 5Z" />
+        </Match>
+        <Match when={props.name === "pause"}>
+          <path d="M8 5v14M16 5v14" />
+        </Match>
+        <Match when={props.name === "trash"}>
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+        </Match>
+        <Match when={props.name === "shield"}>
+          <path d="M12 3l8 3v6c0 4.5-3.5 8-8 9-4.5-1-8-4.5-8-9V6l8-3Z" />
+          <path d="M9 12l2 2 4-4" />
+        </Match>
         <Match when={props.name === "failed"}>
           <circle cx="12" cy="12" r="9" />
           <path d="M9 9l6 6M15 9l-6 6" />

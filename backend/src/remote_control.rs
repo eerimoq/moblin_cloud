@@ -140,6 +140,15 @@ pub enum MusicCommand {
     Find {
         title: String,
     },
+    Play {},
+    Pause {},
+    Clear {},
+    Remove {
+        id: String,
+    },
+    Select {
+        id: String,
+    },
 }
 
 #[derive(Deserialize)]

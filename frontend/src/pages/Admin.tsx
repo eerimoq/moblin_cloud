@@ -70,6 +70,8 @@ const reasonLabels: Record<string, string> = {
   "no-spins-left": "Viewer used this month's spins",
   "tier-excluded": "Viewer's tier gets nothing on the page",
   "too-long": "Song longer than the viewer's minutes left",
+  "not-moderator": "Not the streamer or a moderator they turned on",
+  "invalid-command": "Unknown queue command or song",
 };
 
 const problemReasons = [
@@ -135,6 +137,7 @@ type Kind = {
   orders: string[];
   payments: string[];
   subscribers?: { event: string; reasons: string[] };
+  moderators?: { event: string; label: string; hint: string; reasons: string[] }[];
   tests: string[];
   deliveries: string[];
 };
@@ -255,6 +258,40 @@ const kinds: Kind[] = [
         "not-saved",
       ],
     },
+    moderators: [
+      {
+        event: "modSongs",
+        label: "Moderators",
+        hint: "Songs added for free by the streamer's Twitch moderators from the dashboard.",
+        reasons: [
+          "account",
+          "not-moderator",
+          "invalid-message",
+          "invalid-link",
+          "too-many-requests",
+          "offline",
+          "requests-off",
+          "song-not-found",
+          "moblin-timeout",
+          "moblin-error",
+          "crashed",
+          "not-saved",
+        ],
+      },
+      {
+        event: "moderatorMusic",
+        label: "Queue changes",
+        hint: "Play, pause, play now, remove and clear sent to Moblin by streamers and moderators from the dashboard.",
+        reasons: [
+          "account",
+          "not-moderator",
+          "invalid-command",
+          "offline",
+          "moblin-timeout",
+          "moblin-error",
+        ],
+      },
+    ],
     tests: [
       "account",
       "too-many-tests",
@@ -622,9 +659,12 @@ function Loaded(props: { stats: AdminStats }) {
             ),
           ]
         : []),
+      ...(kind.moderators ?? []).map((moderators) =>
+        counters().step(moderators.event, moderators.label, moderators.hint, moderators.reasons),
+      ),
       paid(
         "Deliveries",
-        "Paid and subscriber requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
+        "Paid, subscriber and moderator requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
         kind.deliveries,
       ),
       {

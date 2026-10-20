@@ -1,6 +1,8 @@
 import { backendUrl } from "./backend";
 import { t } from "../i18n";
 
+export type MusicCommand = "play" | "pause" | "clear" | "remove" | "select";
+
 export type Song = {
   id: string;
   title: string;

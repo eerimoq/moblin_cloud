@@ -16,6 +16,11 @@ impl Database {
                 .with_context(|| format!("failed to open {}", path.display()))?,
             None => Connection::open_in_memory()?,
         };
+        if has_column(&connection, "moderators", "broadcaster")? {
+            connection
+                .execute_batch("ALTER TABLE moderators RENAME TO moderated_channels")
+                .context("failed to rename the moderators table")?;
+        }
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
@@ -44,6 +49,23 @@ impl Database {
                      position INTEGER NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS devices_account ON devices (account);
+                 CREATE TABLE IF NOT EXISTS moderated_channels (
+                     moderator TEXT NOT NULL,
+                     broadcaster TEXT NOT NULL,
+                     PRIMARY KEY (moderator, broadcaster)
+                 );
+                 CREATE TABLE IF NOT EXISTS channel_moderators (
+                     broadcaster TEXT NOT NULL,
+                     moderator TEXT NOT NULL,
+                     login TEXT NOT NULL,
+                     name TEXT NOT NULL,
+                     PRIMARY KEY (broadcaster, moderator)
+                 );
+                 CREATE TABLE IF NOT EXISTS enabled_moderators (
+                     broadcaster TEXT NOT NULL,
+                     moderator TEXT NOT NULL,
+                     PRIMARY KEY (broadcaster, moderator)
+                 );
                  CREATE TABLE IF NOT EXISTS pages (
                      id TEXT PRIMARY KEY,
                      settings TEXT NOT NULL
@@ -216,6 +238,35 @@ mod tests {
             .sum();
         assert!(expected > std::fs::metadata(&path).unwrap().len());
         assert_eq!(database.size(), expected);
+        drop(database);
+        remove(&path);
+    }
+
+    #[test]
+    fn the_moderators_table_is_renamed() {
+        let path = temporary_path("moderators");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE moderators (
+                     moderator TEXT NOT NULL,
+                     broadcaster TEXT NOT NULL,
+                     PRIMARY KEY (moderator, broadcaster)
+                 );
+                 INSERT INTO moderators (moderator, broadcaster) VALUES ('1', '2');",
+            )
+            .unwrap();
+        let database = Database::open(Some(&path)).unwrap();
+        let rows: Vec<(String, String)> = database
+            .lock()
+            .prepare("SELECT moderator, broadcaster FROM moderated_channels")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(rows, [("1".to_string(), "2".to_string())]);
+        assert!(!has_column(&database.lock(), "moderators", "broadcaster").unwrap());
         drop(database);
         remove(&path);
     }

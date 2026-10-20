@@ -19,6 +19,7 @@ import {
 } from "solid-js";
 import { asset } from "../asset";
 import Icon from "../components/Icon";
+import Queue, { type Status } from "../components/Queue";
 import { fireConfetti } from "../confetti";
 import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/PageParts";
 import { links, pages } from "../data/links";
@@ -28,7 +29,6 @@ import {
   captureSong,
   captureSpin,
   captureTip,
-  formatDuration,
   formatPrice,
   fetchSongAllowance,
   fetchSpinAllowance,
@@ -50,7 +50,6 @@ import {
   tierNumbers,
   viewerSignInUrl,
   type Allowance,
-  type MusicStatus,
   type Order,
   type PayPalConfig,
   type Profile,
@@ -64,8 +63,6 @@ import {
   type Wheel,
 } from "../data/remoteControl";
 import { t, tRich } from "../i18n";
-
-type Status = MusicStatus | "loading" | "offline" | "unknown";
 
 const nameKey = "songRequestName";
 
@@ -888,72 +885,6 @@ function TipJar(props: {
         </p>
       </div>
     </form>
-  );
-}
-
-function Queue(props: { status: Status }) {
-  return (
-    <div class="flex flex-col gap-4 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8">
-      <h2 class="text-[23px] font-semibold">{t("Queue")}</h2>
-      <Switch>
-        <Match when={props.status === "loading"}>
-          <p class="text-muted">{t("Loading…")}</p>
-        </Match>
-        <Match when={typeof props.status === "object" && props.status}>
-          {(status) => (
-            <Show
-              when={status().songs.length > 0}
-              fallback={<p class="text-ink-2">{t("The queue is empty. Add the first song!")}</p>}
-            >
-              <ol class="flex flex-col">
-                <For each={status().songs}>
-                  {(song, index) => {
-                    const current = () => index() === status().currentSongIndex;
-                    return (
-                      <li
-                        class={`flex items-center gap-4 border-t border-line py-3 first:border-t-0 ${
-                          current() ? "text-leaf" : ""
-                        }`}
-                      >
-                        <span class="w-6 shrink-0 text-right font-mono text-sm text-muted">
-                          <Show when={current()} fallback={index() + 1}>
-                            <Icon name="music" class="size-5 text-leaf" />
-                          </Show>
-                        </span>
-                        <span class="flex min-w-0 flex-col">
-                          <span
-                            class={`truncate font-semibold ${current() ? "text-leaf" : "text-ink"}`}
-                          >
-                            {song.title}
-                          </span>
-                          <Show when={song.artist}>
-                            <span class="truncate text-[15px] text-muted">{song.artist}</span>
-                          </Show>
-                          <Show when={song.user}>
-                            <span class="truncate text-[15px] text-muted">
-                              {tRich("added by {name}", {
-                                name: <span class="font-medium text-ink">{song.user}</span>,
-                              })}
-                            </span>
-                          </Show>
-                        </span>
-                        <Show when={song.duration}>
-                          {(duration) => (
-                            <span class="ml-auto shrink-0 font-mono text-sm text-muted tabular-nums">
-                              {formatDuration(duration())}
-                            </span>
-                          )}
-                        </Show>
-                      </li>
-                    );
-                  }}
-                </For>
-              </ol>
-            </Show>
-          )}
-        </Match>
-      </Switch>
-    </div>
   );
 }
 
