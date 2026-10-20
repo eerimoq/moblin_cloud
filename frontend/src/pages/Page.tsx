@@ -956,9 +956,9 @@ function DashboardLink(props: { link: DashboardLink | null }) {
       {(link) => (
         <a
           href={link().href}
-          class="inline-flex min-w-0 items-center gap-1.5 text-[15px] font-semibold text-leaf transition-colors hover:text-ink"
+          class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
         >
-          <Icon name="remote" class="size-4 shrink-0" />
+          <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto shrink-0" />
           <span class="truncate">
             {link().own ? t("Open your dashboard") : t("Moderate on the dashboard")}
           </span>
