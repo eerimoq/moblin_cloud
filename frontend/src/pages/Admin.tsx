@@ -694,7 +694,7 @@ function Loaded(props: { stats: AdminStats }) {
         <Tile
           label="Waiting for a device"
           value={format(props.stats.pending.deliveries)}
-          hint="Tips, spins and songs not yet accepted by every device they go to. Kept for 7 days."
+          hint="Tips, spins and songs no device has received yet. A tip one of several devices got is not counted. Kept for 7 days."
           attention={props.stats.pending.deliveries > 0}
         />
         <Tile

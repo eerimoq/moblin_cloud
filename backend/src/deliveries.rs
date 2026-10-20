@@ -115,7 +115,7 @@ impl Deliveries {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*) FROM deliveries WHERE NOT finished AND failure IS NOT 'not-found'",
+                "SELECT count(*) FROM deliveries WHERE NOT finished AND failure IS NOT 'not-found' AND delivered = '[]'",
                 [],
                 |row| row.get(0),
             )
@@ -568,6 +568,22 @@ mod tests {
                 ("tipTestExpiries".to_string(), 1),
             ]
         );
+    }
+
+    #[test]
+    fn only_deliveries_no_device_got_are_counted() {
+        let deliveries = Deliveries::new(Database::memory());
+        deliveries.add_test("S".to_string(), "A".to_string(), tip());
+        deliveries.add_test("S".to_string(), "B".to_string(), tip());
+        assert_eq!(deliveries.count(), 2);
+        deliveries.delivered(
+            "A",
+            None,
+            "phone",
+            &["phone".to_string(), "tablet".to_string()],
+        );
+        assert!(!deliveries.get("A").unwrap().finished);
+        assert_eq!(deliveries.count(), 1);
     }
 
     #[test]
