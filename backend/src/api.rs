@@ -6692,7 +6692,7 @@ mod tests {
             json!({
                 "name": "Erik",
                 "login": "erik",
-                "avatar": null,
+                "avatar": "https://static-cdn.jtvnw.net/erik.png",
                 "devices": [],
                 "musicDevice": null,
                 "wheelDevice": null,
