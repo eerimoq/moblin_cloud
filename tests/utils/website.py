@@ -159,6 +159,7 @@ class Dashboard(Client):
         font: str | None = None,
         sub_songs: dict | None = None,
         sub_spins: dict | None = None,
+        max_song_minutes: int | None = None,
     ) -> dict:
         return self.post(
             "/account/settings",
@@ -173,6 +174,7 @@ class Dashboard(Client):
                 "font": font,
                 "subSongs": sub_songs,
                 "subSpins": sub_spins,
+                "maxSongMinutes": max_song_minutes,
             },
         )
 
@@ -190,8 +192,9 @@ class Dashboard(Client):
             "font",
             "subSongs",
             "subSpins",
+            "maxSongMinutes",
         ]
-        names = {"subSongs": "sub_songs", "subSpins": "sub_spins"}
+        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongMinutes": "max_song_minutes"}
         current = {names.get(field, field): settings[field] for field in fields}
         return self.save_settings(**{**current, **changes})
 
@@ -227,6 +230,20 @@ class Dashboard(Client):
 
     def admin_stats(self) -> dict:
         return self.get("/admin/stats")
+
+    def enable_moderator(self, moderator: str, enabled: bool) -> dict:
+        return self.post(f"/account/moderators/{quote(moderator, safe='')}", {"enabled": enabled})
+
+    def moderate_music(self, page_id: str, command: str, song: str | None = None) -> dict:
+        return self.post(f"/account/pages/{quote(page_id, safe='')}/music", {"command": command, "id": song})
+
+    def add_free_song(self, page_id: str, song: str, message: str | None = None) -> dict:
+        return self.post(
+            f"/account/pages/{quote(page_id, safe='')}/songs", {"song": song, "message": message}
+        )
+
+    def moderated_recent(self, page_id: str, kind: str) -> dict:
+        return self.get(f"/account/pages/{quote(page_id, safe='')}/recent?kind={kind}")
 
     def sign_out_everywhere(self):
         response = self.request("POST", "/account/sign-out")

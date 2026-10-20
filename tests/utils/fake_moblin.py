@@ -39,6 +39,8 @@ class FakeMoblin:
         self.wheel: dict | None = None
         self.song_requests = True
         self.songs: list[dict] = []
+        self.playing = True
+        self.current_song_index = 0
         self.next_song_id = 0
         self.handled_request_ids: set[str] = set()
         self._stopped = threading.Event()
@@ -183,13 +185,24 @@ class FakeMoblin:
                 song_not_found = False
         elif kind == "clear":
             self.songs.clear()
+        elif kind == "play":
+            self.playing = True
+        elif kind == "pause":
+            self.playing = False
+        elif kind == "remove":
+            self.songs = [song for song in self.songs if song["id"] != body["id"]]
+        elif kind == "select":
+            self.current_song_index = next(
+                (index for index, song in enumerate(self.songs) if song["id"] == body["id"]),
+                self.current_song_index,
+            )
         return {"ok": {}}, {"music": {"status": self.status(song_not_found)}}
 
     def status(self, song_not_found: bool | None) -> dict:
         songs = [{key: value for key, value in song.items() if key != "requestId"} for song in self.songs]
-        status: dict = {"playing": bool(songs), "songs": songs}
+        status: dict = {"playing": self.playing and bool(songs), "songs": songs}
         if songs:
-            status["currentSongIndex"] = 0
+            status["currentSongIndex"] = min(self.current_song_index, len(songs) - 1)
         if song_not_found is not None:
             status["songNotFound"] = song_not_found
         return status

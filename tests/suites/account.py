@@ -82,6 +82,8 @@ class AccountSignIn(AccountTestCase):
                 "wheelDevice": page_id,
                 "admin": False,
                 "premium": False,
+                "moderating": [],
+                "moderators": [],
             },
         )
 

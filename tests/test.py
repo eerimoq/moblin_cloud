@@ -1,4 +1,5 @@
 from .suites import account
+from .suites import moderators
 from .suites import payments
 from .suites import paypal
 from .suites import persistence
@@ -19,6 +20,7 @@ def create_suites(context):
         stripe.tests(context),
         payments.tests(context),
         subscribers.tests(context),
+        moderators.tests(context),
         persistence.tests(context),
     ]
 

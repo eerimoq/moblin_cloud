@@ -3289,6 +3289,7 @@ fn base64(text: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
@@ -5167,6 +5168,26 @@ mod tests {
         created.await.unwrap()
     }
 
+    async fn song_requests<S>(socket: &mut S, enabled: bool)
+    where
+        S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+            + SinkExt<Message>
+            + Unpin,
+        <S as futures_util::Sink<Message>>::Error: std::fmt::Debug,
+    {
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"songRequests": {"enabled": enabled}}}}).to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(socket).await, json!({"pong": {}}));
+    }
+
     async fn wait_until_added(api: &Api) {
         for _ in 0..100 {
             if api.deliveries.pending().is_empty() {
@@ -6385,40 +6406,61 @@ mod tests {
             )
             .route(
                 "/moderators",
-                get(
-                    |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
-                        assert_eq!(headers[AUTHORIZATION], "Bearer u");
-                        assert_eq!(query["broadcaster_id"], "42");
-                        Json(json!({
-                            "data": [
-                                {"user_id": "7", "user_login": "Seven", "user_name": "Seven"},
-                                {"user_id": "8", "user_login": "eight", "user_name": ""},
-                            ],
-                            "pagination": {},
-                        }))
-                    },
-                ),
+                get({
+                    let calls = Arc::new(AtomicUsize::new(0));
+                    move |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| {
+                        let calls = calls.clone();
+                        async move {
+                            assert_eq!(headers[AUTHORIZATION], "Bearer u");
+                            assert_eq!(query["broadcaster_id"], "42");
+                            assert_eq!(query["first"], "100");
+                            if calls.fetch_add(1, Ordering::SeqCst) >= 2 {
+                                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                            }
+                            match query.get("after").map(String::as_str) {
+                                None => Json(json!({
+                                    "data": [{"user_id": "7", "user_login": "Seven", "user_name": "Seven"}],
+                                    "pagination": {"cursor": "more"},
+                                })),
+                                Some("more") => Json(json!({
+                                    "data": [{"user_id": "8", "user_login": "eight", "user_name": ""}],
+                                    "pagination": {},
+                                })),
+                                Some(after) => panic!("unexpected cursor {after}"),
+                            }
+                            .into_response()
+                        }
+                    }
+                }),
             )
             .route(
                 "/moderation",
-                get(
-                    |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
-                        assert_eq!(headers[AUTHORIZATION], "Bearer u");
-                        assert_eq!(query["user_id"], "42");
-                        assert_eq!(query["first"], "100");
-                        match query.get("after").map(String::as_str) {
-                            None => Json(json!({
-                                "data": [{"broadcaster_id": "9"}],
-                                "pagination": {"cursor": "next"},
-                            })),
-                            Some("next") => Json(json!({
-                                "data": [{"broadcaster_id": "1"}],
-                                "pagination": {},
-                            })),
-                            Some(after) => panic!("unexpected cursor {after}"),
+                get({
+                    let calls = Arc::new(AtomicUsize::new(0));
+                    move |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| {
+                        let calls = calls.clone();
+                        async move {
+                            assert_eq!(headers[AUTHORIZATION], "Bearer u");
+                            assert_eq!(query["user_id"], "42");
+                            assert_eq!(query["first"], "100");
+                            if calls.fetch_add(1, Ordering::SeqCst) >= 2 {
+                                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                            }
+                            match query.get("after").map(String::as_str) {
+                                None => Json(json!({
+                                    "data": [{"broadcaster_id": "9"}],
+                                    "pagination": {"cursor": "next"},
+                                })),
+                                Some("next") => Json(json!({
+                                    "data": [{"broadcaster_id": "1"}],
+                                    "pagination": {},
+                                })),
+                                Some(after) => panic!("unexpected cursor {after}"),
+                            }
+                            .into_response()
                         }
-                    },
-                ),
+                    }
+                }),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -7108,6 +7150,41 @@ mod tests {
         api.accounts.enable_moderator("1", "42", true).unwrap();
         assert!(api.accounts.moderates("42", "1"));
         assert!(!api.accounts.moderates("42", "9"));
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login"))
+            .send()
+            .await
+            .unwrap();
+        let again = reqwest::Url::parse(&location(&response)).unwrap();
+        let again_cookie = response.headers()["set-cookie"]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
+        let again_state = again
+            .query_pairs()
+            .find(|(name, _)| name == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let again = location(
+            &client
+                .get(format!(
+                    "http://{address}/auth/twitch/callback?code=c&state={again_state}"
+                ))
+                .header("cookie", &again_cookie)
+                .send()
+                .await
+                .unwrap(),
+        );
+        assert!(
+            again.starts_with("https://moblin.app/dashboard/#session="),
+            "{again}"
+        );
+        assert_eq!(api.accounts.channel_moderators("42").len(), 2);
+        assert!(api.accounts.moderates("42", "1"));
         assert_eq!(
             location(
                 &client
@@ -8070,5 +8147,142 @@ mod tests {
         assert_eq!(count("moderatorMusicFailed:invalid-command"), 2);
         assert_eq!(count("moderatorMusicFailed:offline"), 1);
         assert_eq!(count("modSongs"), 1);
+    }
+
+    #[tokio::test]
+    async fn moderators_add_songs_of_any_length_for_free() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        create_account(&api, "21", "Mod 21", "mod21");
+        create_account(&api, "22", "Viewer 22", "viewer22");
+        api.accounts
+            .set_moderated_channels("21", &["1".to_string()]);
+        let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
+        let send = |session: String, body: Value| {
+            let (address, id) = (address.clone(), id.clone());
+            tokio::spawn(async move {
+                reqwest::Client::new()
+                    .post(format!("http://{address}/account/pages/{id}/songs"))
+                    .bearer_auth(session)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+            })
+        };
+        let response = send(mod1.clone(), json!({"song": LINK})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        api.accounts.enable_moderator("1", "21", true).unwrap();
+        let response = send(viewer1.clone(), json!({"song": LINK})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let response = send(mod1.clone(), json!({"song": "nope"})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = send(mod1.clone(), json!({"song": LINK})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": null, "maxSongMinutes": 1}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut socket = connect(&address, &key).await;
+        song_requests(&mut socket, false).await;
+        let response = send(mod1.clone(), json!({"song": LINK})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        song_requests(&mut socket, true).await;
+        let sent = send(mod1.clone(), json!({"song": LINK}));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"music": {"command": {"find": {"title": LINK}}}})
+        );
+        answer(&mut socket, &request, json!({"musicFind": {}})).await;
+        assert_eq!(
+            sent.await.unwrap().status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        for (who, name) in [(&mod1, "Mod 21"), (&session, "Erik")] {
+            let sent = send(who.clone(), json!({"song": LINK, "message": " Long one "}));
+            let request = receive(&mut socket).await;
+            answer(
+                &mut socket,
+                &request,
+                json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": 900}}}),
+            )
+            .await;
+            assert_eq!(sent.await.unwrap().status(), StatusCode::ACCEPTED);
+            let request = receive(&mut socket).await;
+            let add = &request["request"]["data"]["music"]["command"]["add"];
+            assert_eq!(add["title"], LINK);
+            assert_eq!(add["user"], name);
+            assert_eq!(add["message"], "Long one");
+            answer(&mut socket, &request, music(json!([]))).await;
+            wait_until_added(&api).await;
+        }
+        let recent = async |kind: &str| {
+            client
+                .get(format!(
+                    "http://{address}/account/pages/{id}/recent?kind={kind}"
+                ))
+                .bearer_auth(&mod1)
+                .send()
+                .await
+                .unwrap()
+        };
+        let songs: Value = recent("song").await.json().await.unwrap();
+        let items = songs["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["user"], "Erik");
+        assert_eq!(items[1]["user"], "Mod 21");
+        for item in items {
+            assert_eq!(item["moderator"], true);
+            assert_eq!(item["amount"], 0);
+            assert_eq!(item["message"], "Long one");
+            assert_eq!(item["status"], "delivered");
+            assert!(item.get("provider").is_none());
+        }
+        for kind in ["tip", "spin"] {
+            let response = recent(kind).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.json::<Value>().await.unwrap()["items"], json!([]));
+        }
+        assert_eq!(recent("bogus").await.status(), StatusCode::BAD_REQUEST);
+        let own: Value = client
+            .get(format!("http://{address}/account/recent?kind=song"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(own["items"][1]["user"], "Mod 21");
+        assert_eq!(own["items"][1]["moderator"], true);
+        assert!(own["items"][1].get("provider").is_none());
+        socket.close(None).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        for _ in 0..5 {
+            let response = send(mod1.clone(), json!({"song": LINK})).await.unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+        let response = send(mod1.clone(), json!({"song": LINK})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("modSongs"), 2);
+        assert_eq!(count("modSongsFailed:not-moderator"), 2);
+        assert_eq!(count("modSongsFailed:invalid-link"), 1);
+        assert_eq!(count("modSongsFailed:offline"), 6);
+        assert_eq!(count("modSongsFailed:requests-off"), 1);
+        assert_eq!(count("modSongsFailed:song-not-found"), 1);
+        assert_eq!(count("modSongsFailed:too-many-requests"), 1);
     }
 }
