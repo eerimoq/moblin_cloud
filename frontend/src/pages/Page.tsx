@@ -950,21 +950,17 @@ function Greeting(props: { profile: Profile }) {
 
 type DashboardLink = { href: string; own: boolean };
 
-function DashboardLink(props: { link: DashboardLink | null }) {
+function DashboardLink(props: { link: DashboardLink }) {
   return (
-    <Show when={props.link}>
-      {(link) => (
-        <a
-          href={link().href}
-          class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
-        >
-          <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto shrink-0" />
-          <span class="truncate">
-            {link().own ? t("Open your dashboard") : t("Moderate on the dashboard")}
-          </span>
-        </a>
-      )}
-    </Show>
+    <a
+      href={props.link.href}
+      class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
+    >
+      <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto shrink-0" />
+      <span class="truncate">
+        {props.link.own ? t("Open your dashboard") : t("Moderate on the dashboard")}
+      </span>
+    </a>
   );
 }
 
@@ -1012,6 +1008,13 @@ function StreamerHeader(props: {
 
   return (
     <header>
+      <Show when={props.dashboard}>
+        {(link) => (
+          <div class="mx-auto flex max-w-[720px] justify-center px-5 pt-5 sm:px-8">
+            <DashboardLink link={link()} />
+          </div>
+        )}
+      </Show>
       <Show
         when={banner()}
         fallback={
@@ -1029,7 +1032,6 @@ function StreamerHeader(props: {
               {(profile) => (
                 <>
                   <Avatar profile={profile()} class="size-28 text-5xl sm:size-32" />
-                  <DashboardLink link={props.dashboard} />
                   <TwitchLink profile={profile()} />
                   <Greeting profile={profile()} />
                 </>
@@ -1051,10 +1053,7 @@ function StreamerHeader(props: {
                 cutout
                 class="relative -mt-10 size-20 text-3xl sm:-mt-12 sm:size-24 sm:text-4xl"
               />
-              <div class="mt-3 flex min-w-0 flex-1 items-center justify-end gap-4">
-                <div class="mr-auto flex min-w-0">
-                  <DashboardLink link={props.dashboard} />
-                </div>
+              <div class="mt-3 min-w-0">
                 <TwitchLink profile={banner().profile} />
               </div>
             </div>
