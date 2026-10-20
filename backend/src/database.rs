@@ -26,7 +26,6 @@ impl Database {
                      login TEXT NOT NULL,
                      avatar TEXT,
                      page_id TEXT,
-                     page_devices TEXT,
                      music_device TEXT,
                      wheel_device TEXT,
                      sessions INTEGER NOT NULL,
@@ -36,6 +35,14 @@ impl Database {
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
+                 CREATE TABLE IF NOT EXISTS devices (
+                     key TEXT PRIMARY KEY,
+                     account TEXT NOT NULL,
+                     id TEXT NOT NULL,
+                     name TEXT NOT NULL,
+                     position INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS devices_account ON devices (account);
                  CREATE TABLE IF NOT EXISTS pages (
                      id TEXT PRIMARY KEY,
                      settings TEXT NOT NULL
@@ -87,7 +94,6 @@ impl Database {
         for (table, column, definition) in [
             ("accounts", "stripe_account_id", "TEXT"),
             ("accounts", "stripe_ready", "INTEGER NOT NULL DEFAULT 0"),
-            ("accounts", "page_devices", "TEXT"),
             ("accounts", "music_device", "TEXT"),
             ("accounts", "wheel_device", "TEXT"),
             ("deliveries", "delivered", "TEXT NOT NULL DEFAULT '[]'"),
@@ -114,6 +120,16 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);",
             )
             .context("failed to index the orders")?;
+        if has_column(&connection, "accounts", "page_devices")? {
+            connection
+                .execute_batch(
+                    "INSERT OR IGNORE INTO devices (key, account, id, name, position)
+                     SELECT value ->> 'key', accounts.id, value ->> 'id', value ->> 'name', json_each.key
+                     FROM accounts, json_each(accounts.page_devices);
+                     ALTER TABLE accounts DROP COLUMN page_devices;",
+                )
+                .context("failed to move the Moblin devices to their own table")?;
+        }
         if has_column(&connection, "accounts", "page_key")? {
             connection
                 .execute_batch(

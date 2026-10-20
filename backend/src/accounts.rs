@@ -85,26 +85,17 @@ pub enum AccountError {
     NotSaved,
 }
 
-const COLUMNS: &str = "name, login, avatar, page_id, page_devices, music_device, wheel_device, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
+const COLUMNS: &str = "name, login, avatar, page_id, music_device, wheel_device, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
+
+const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', name, 'key', key) ORDER BY position) FROM devices WHERE account = accounts.id)";
 
 const SAME_LOGIN: &str = "login != '' AND lower(login) = lower(trim(?1))";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
-    let devices: Option<String> = row.get(4)?;
-    let devices = devices
-        .map(|devices| {
-            serde_json::from_str(&devices).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    4,
-                    rusqlite::types::Type::Text,
-                    error.into(),
-                )
-            })
-        })
-        .transpose()?
-        .unwrap_or_default();
-    let music_device = row.get(5)?;
-    let wheel_device = row.get(6)?;
+    let devices: String = row.get(11)?;
+    let devices = serde_json::from_str(&devices).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, error.into())
+    })?;
     Ok(Account {
         name: row.get(0)?,
         login: row.get(1)?,
@@ -112,15 +103,26 @@ fn account(row: &Row) -> rusqlite::Result<Account> {
         page: Page {
             id: row.get(3)?,
             devices,
-            music_device,
-            wheel_device,
+            music_device: row.get(4)?,
+            wheel_device: row.get(5)?,
         },
-        sessions: row.get(7)?,
-        merchant_id: row.get(8)?,
-        paypal_tracking_id: row.get(9)?,
-        stripe_account_id: row.get(10)?,
-        stripe_ready: row.get(11)?,
+        sessions: row.get(6)?,
+        merchant_id: row.get(7)?,
+        paypal_tracking_id: row.get(8)?,
+        stripe_account_id: row.get(9)?,
+        stripe_ready: row.get(10)?,
     })
+}
+
+fn save_devices(connection: &Connection, id: &str, devices: &[Device]) -> rusqlite::Result<()> {
+    connection.execute("DELETE FROM devices WHERE account = ?1", [id])?;
+    for (position, device) in devices.iter().enumerate() {
+        connection.execute(
+            "INSERT INTO devices (key, account, id, name, position) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![device.key, id, device.id, device.name, position],
+        )?;
+    }
+    Ok(())
 }
 
 fn not_saved(error: rusqlite::Error) -> AccountError {
@@ -188,19 +190,20 @@ impl Accounts {
     }
 
     pub fn device_of_key(&self, key: &str) -> Option<String> {
-        self.find(
-            "EXISTS (SELECT 1 FROM json_each(page_devices) WHERE value ->> 'key' = ?1)",
-            key,
-        )?
-        .page
-        .devices
-        .into_iter()
-        .find(|device| device.key == key)
-        .map(|device| device.id)
+        self.database
+            .lock()
+            .query_row("SELECT id FROM devices WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read devices: {error:#}");
+                None
+            })
     }
 
     pub fn give_missing_pages(&self, mut new_page: impl FnMut() -> Option<Page>) {
-        let database = self.database.lock();
+        let mut database = self.database.lock();
         let ids: Vec<String> = match database
             .prepare("SELECT id FROM accounts WHERE page_id IS NULL")
             .and_then(|mut statement| {
@@ -219,13 +222,19 @@ impl Accounts {
                 warn!("no page could be created for account {id}");
                 return;
             };
-            if let Err(error) = database.execute(
-                "UPDATE accounts SET page_id = ?2, page_devices = ?3 WHERE id = ?1",
-                params![id, page.id, serde_json::to_string(&page.devices).unwrap()],
-            ) {
+            let saved = database.transaction().and_then(|transaction| {
+                transaction.execute(
+                    "UPDATE accounts SET page_id = ?2 WHERE id = ?1",
+                    params![id, page.id],
+                )?;
+                save_devices(&transaction, &id, &page.devices)?;
+                transaction.commit()
+            });
+            if let Err(error) = saved {
                 warn!("failed to save accounts: {error:#}");
+            } else {
+                info!("{id} got a page");
             }
-            info!("{id} got a page");
         }
     }
 
@@ -409,7 +418,7 @@ impl Accounts {
         self.database
             .lock()
             .query_row(
-                &format!("SELECT {COLUMNS} FROM accounts WHERE {condition} LIMIT 1"),
+                &format!("SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE {condition} LIMIT 1"),
                 [value],
                 account,
             )
@@ -426,10 +435,11 @@ impl Accounts {
         create: Option<Page>,
         change: impl FnOnce(&mut Account) -> Result<(), AccountError>,
     ) -> Result<Account, AccountError> {
-        let database = self.database.lock();
-        let old = database
+        let mut database = self.database.lock();
+        let transaction = database.transaction().map_err(not_saved)?;
+        let old = transaction
             .query_row(
-                &format!("SELECT {COLUMNS} FROM accounts WHERE id = ?1"),
+                &format!("SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE id = ?1"),
                 [id],
                 account,
             )
@@ -439,7 +449,7 @@ impl Accounts {
             Some(account) => account.clone(),
             None => match create {
                 None => return Err(AccountError::Unknown),
-                Some(_) if count(&database).map_err(not_saved)? >= 10000 => {
+                Some(_) if count(&transaction).map_err(not_saved)? >= 10000 => {
                     return Err(AccountError::Full);
                 }
                 Some(page) => Account {
@@ -452,16 +462,15 @@ impl Accounts {
         if old.as_ref() == Some(&account) {
             return Ok(account);
         }
-        database
+        transaction
             .execute(
-                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"),
+                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"),
                 params![
                     id,
                     account.name,
                     account.login,
                     account.avatar,
                     account.page.id,
-                    serde_json::to_string(&account.page.devices).unwrap(),
                     account.page.music_device,
                     account.page.wheel_device,
                     account.sessions,
@@ -472,6 +481,10 @@ impl Accounts {
                 ],
             )
             .map_err(not_saved)?;
+        if old.as_ref().map(|old| &old.page.devices) != Some(&account.page.devices) {
+            save_devices(&transaction, id, &account.page.devices).map_err(not_saved)?;
+        }
+        transaction.commit().map_err(not_saved)?;
         Ok(account)
     }
 }
@@ -534,10 +547,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(accounts.get("2"), None);
-        let mut pages = vec![page("b", "l"), page("a", "k")];
+        let mut pages = vec![page("b", "l"), page("a", "m")];
         accounts.give_missing_pages(|| pages.pop());
         assert_eq!(accounts.get("1").unwrap().page, page("p", "k"));
-        assert_eq!(accounts.get("2").unwrap().page, page("a", "k"));
+        assert_eq!(accounts.get("2").unwrap().page, page("a", "m"));
         assert_eq!(accounts.get("3").unwrap().page, page("b", "l"));
         assert_eq!(accounts.device_of_key("l").as_deref(), Some("b"));
         accounts.give_missing_pages(|| panic!("no page is missing"));
@@ -766,6 +779,53 @@ mod tests {
         accounts.stripe_ready("1", "acct_1", true).unwrap();
         let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
         assert!(accounts.get("1").unwrap().stripe_ready);
+        database::remove(&path);
+    }
+
+    #[test]
+    fn old_databases_get_their_devices_moved() {
+        let path = database::temporary_path("old-devices");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE accounts (
+                     id TEXT PRIMARY KEY,
+                     name TEXT NOT NULL,
+                     login TEXT NOT NULL,
+                     avatar TEXT,
+                     page_id TEXT,
+                     page_devices TEXT,
+                     music_device TEXT,
+                     wheel_device TEXT,
+                     sessions INTEGER NOT NULL,
+                     merchant_id TEXT,
+                     paypal_tracking_id TEXT,
+                     stripe_account_id TEXT,
+                     stripe_ready INTEGER NOT NULL DEFAULT 0
+                 );
+                 INSERT INTO accounts (id, name, login, page_id, page_devices, wheel_device, sessions) VALUES
+                     ('1', 'Erik', 'erik', 'p', '[{\"id\":\"p\",\"name\":\"Moblin\",\"key\":\"k\"},{\"id\":\"b\",\"name\":\"Tablet\",\"key\":\"l\"}]', 'b', 0),
+                     ('2', 'Old', 'old', NULL, NULL, NULL, 0);",
+            )
+            .unwrap();
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        let page = accounts.get("1").unwrap().page;
+        assert_eq!(
+            page.devices,
+            [
+                device("p", "k"),
+                Device {
+                    id: "b".to_string(),
+                    name: "Tablet".to_string(),
+                    key: "l".to_string(),
+                }
+            ]
+        );
+        assert_eq!(page.wheel_device().unwrap().id, "b");
+        assert_eq!(accounts.device_of_key("l").as_deref(), Some("b"));
+        assert_eq!(accounts.get("2"), None);
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        assert_eq!(accounts.device_of_key("k").as_deref(), Some("p"));
         database::remove(&path);
     }
 
