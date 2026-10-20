@@ -1965,7 +1965,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                 </div>
               )}
             </Show>
-            <div class={shown() === "songs" && status() !== "offline" ? "" : "hidden"}>
+            <div
+              class={`flex flex-col gap-6 ${shown() === "songs" && status() !== "offline" ? "" : "hidden"}`}
+            >
               <Queue status={status()} />
             </div>
           </div>
