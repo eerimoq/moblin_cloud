@@ -24,6 +24,7 @@
   --color-danger-bg: #2c1614;
   --color-danger-line: #6b2620;
   --color-danger-ink: #ffd4cf;
+  --color-danger: #ff5c4a;
   --color-confetti-red: #e8401c;
   --color-confetti-blue: #3f8fe8;
   --color-confetti-purple: #a23fb0;
@@ -70,6 +71,7 @@
     --color-danger-bg: #fde4e1;
     --color-danger-line: #f0a39a;
     --color-danger-ink: #7a1a12;
+    --color-danger: #c8291b;
   }
 }
 

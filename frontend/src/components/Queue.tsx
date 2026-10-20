@@ -11,6 +11,9 @@ export type Moderate = (command: MusicCommand, song?: string) => void;
 const iconButtonClass =
   "flex size-10 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-ghost hover:text-ink disabled:opacity-50";
 
+const dangerIconButtonClass =
+  "flex size-10 shrink-0 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50";
+
 export default function Queue(props: { status: Status; moderate?: Moderate; busy?: boolean }) {
   const music = () => (typeof props.status === "object" ? props.status : null);
   const clear = () => {
@@ -37,7 +40,7 @@ export default function Queue(props: { status: Status; moderate?: Moderate; busy
               </button>
               <button
                 type="button"
-                class={ghostButtonClass}
+                class={`${ghostButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
                 disabled={props.busy || status().songs.length === 0}
                 onClick={clear}
               >
@@ -112,7 +115,7 @@ export default function Queue(props: { status: Status; moderate?: Moderate; busy
                               </button>
                               <button
                                 type="button"
-                                class={iconButtonClass}
+                                class={dangerIconButtonClass}
                                 disabled={props.busy}
                                 aria-label={t("Remove {song}", { song: song.title })}
                                 title={t("Remove")}
