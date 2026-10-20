@@ -18,6 +18,7 @@ import {
   Switch,
 } from "solid-js";
 import { asset } from "../asset";
+import { fetchAccount, readSession } from "../data/account";
 import Icon from "../components/Icon";
 import Queue, { type Status } from "../components/Queue";
 import { fireConfetti } from "../confetti";
@@ -946,7 +947,55 @@ function Greeting(props: { profile: Profile }) {
   );
 }
 
-function StreamerHeader(props: { id: string | null; profile: Profile | null; unknown: boolean }) {
+type DashboardLink = { href: string; own: boolean };
+
+function DashboardLink(props: { link: DashboardLink | null }) {
+  return (
+    <Show when={props.link}>
+      {(link) => (
+        <a
+          href={link().href}
+          class="inline-flex min-w-0 items-center gap-1.5 text-[15px] font-semibold text-leaf transition-colors hover:text-ink"
+        >
+          <Icon name="remote" class="size-4 shrink-0" />
+          <span class="truncate">
+            {link().own ? t("Open your dashboard") : t("Moderate on the dashboard")}
+          </span>
+        </a>
+      )}
+    </Show>
+  );
+}
+
+async function dashboardLink(profile: Profile): Promise<DashboardLink | null> {
+  const session = readSession();
+  if (!session) {
+    return null;
+  }
+  try {
+    const account = await fetchAccount(session);
+    const login = profile.login.toLowerCase();
+    if (account.login.toLowerCase() === login) {
+      return { href: asset(pages.dashboard), own: true };
+    }
+    const channel = account.moderating.find((channel) => channel.login.toLowerCase() === login);
+    return channel
+      ? {
+          href: asset(`${pages.dashboard}?streamer=twitch:${encodeURIComponent(channel.login)}`),
+          own: false,
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function StreamerHeader(props: {
+  id: string | null;
+  profile: Profile | null;
+  unknown: boolean;
+  dashboard: DashboardLink | null;
+}) {
   const banner = () => {
     const profile = props.profile;
     return props.id && profile?.image
@@ -974,6 +1023,7 @@ function StreamerHeader(props: { id: string | null; profile: Profile | null; unk
                 <>
                   <Avatar profile={profile()} class="size-28 text-5xl sm:size-32" />
                   <TwitchLink profile={profile()} />
+                  <DashboardLink link={props.dashboard} />
                   <Greeting profile={profile()} />
                 </>
               )}
@@ -994,8 +1044,9 @@ function StreamerHeader(props: { id: string | null; profile: Profile | null; unk
                 cutout
                 class="relative -mt-10 size-20 text-3xl sm:-mt-12 sm:size-24 sm:text-4xl"
               />
-              <div class="mt-3 min-w-0">
+              <div class="mt-3 flex min-w-0 flex-col items-end gap-1.5">
                 <TwitchLink profile={banner().profile} />
+                <DashboardLink link={props.dashboard} />
               </div>
             </div>
             <div class="px-4 sm:px-6">
@@ -1400,6 +1451,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   });
   const [streamerConnected, setStreamerConnected] = createSignal(false);
   const [profile, setProfile] = createSignal<Profile | null>(null);
+  const [dashboard, setDashboard] = createSignal<DashboardLink | null>(null);
   const [styled, setStyled] = createSignal(false);
   const [section, setSection] = createSignal<Section | null>(
     (["tip", "spin", "songs"] as const).find((name) => location.hash === `#${name}`) ?? null,
@@ -1688,6 +1740,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
           setProfile(found);
           loadFonts(found.font ? [found.font] : []);
           document.title = `${found.name} – Moblin`;
+          void dashboardLink(found).then(setDashboard);
         })
         .catch(() => {})
         .finally(() => setStyled(true));
@@ -1712,7 +1765,12 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       class="isolate flex min-h-svh flex-col"
     >
       <main class="flex-1">
-        <StreamerHeader id={id()} profile={profile()} unknown={status() === "unknown"} />
+        <StreamerHeader
+          id={id()}
+          profile={profile()}
+          unknown={status() === "unknown"}
+          dashboard={dashboard()}
+        />
         <Show
           when={status() !== "unknown"}
           fallback={
