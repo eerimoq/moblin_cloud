@@ -225,15 +225,19 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
             [False, None, False, False, None, False],
         )
         self.assert_equal(settings["payable"], False)
+        if self.context.config.paypal() is None and self.context.config.stripe() is None:
+            status, text = 503, "payments are unavailable"
+        else:
+            status, text = 409, "connect PayPal or Stripe first"
         for paid in [
             {"paywall": {"price": 100}},
             {"tips": {"amounts": [100]}},
             {"spin": {"options": [{"spins": 1, "price": 100}]}},
         ]:
             self.assert_backend_error(
-                409,
+                status,
                 lambda paid=paid: self.moderator.moderated_settings(self.page_id, title="Theirs", **paid),
-                "connect PayPal or Stripe first",
+                text,
             )
         settings = self.moderator.moderated_settings(
             self.page_id,
