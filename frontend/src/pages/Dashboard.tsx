@@ -2461,6 +2461,30 @@ function DeviceSettings(props: {
   );
 }
 
+function PickedAvatar(props: { picked: { name: string; avatar: string | null } }) {
+  return (
+    <span aria-hidden="true" class="pointer-events-none absolute top-1/2 left-1.5 -translate-y-1/2">
+      <Show
+        when={props.picked.avatar}
+        fallback={
+          <span class="flex size-8 items-center justify-center rounded-full bg-moss font-display text-sm font-semibold text-white">
+            {props.picked.name.slice(0, 1).toUpperCase()}
+          </span>
+        }
+      >
+        {(avatar) => (
+          <img
+            src={avatar()}
+            alt=""
+            referrerpolicy="no-referrer"
+            class="size-8 rounded-full bg-ghost object-cover"
+          />
+        )}
+      </Show>
+    </span>
+  );
+}
+
 function Avatar(props: { account: Account }) {
   return (
     <Show
@@ -2623,9 +2647,10 @@ export default function Dashboard() {
             <div class="flex min-w-0 items-center gap-3">
               <Show when={current().account.moderating.length > 0}>
                 <div class="relative min-w-0">
+                  <PickedAvatar picked={channel(current().account) ?? current().account} />
                   <select
                     aria-label={t("Streamer")}
-                    class={`${ghostButtonClass} h-11! w-full appearance-none truncate pr-10! pl-4! text-base!`}
+                    class={`${ghostButtonClass} h-11! w-full appearance-none truncate pr-10! pl-12! text-base!`}
                     value={channel(current().account)?.id ?? ""}
                     onChange={(event) => chooseChannel(event.currentTarget.value)}
                   >
