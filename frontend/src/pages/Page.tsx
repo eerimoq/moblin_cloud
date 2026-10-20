@@ -1393,6 +1393,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [result, setResult] = createSignal<Result | null>(null);
   const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
   const [subSongs, setSubSongs] = createSignal<Tiers | null>(null, { equals: sameData });
+  const [maxSongMinutes, setMaxSongMinutes] = createSignal<number | null>(null);
   const [subSpins, setSubSpins] = createSignal<Tiers | null>(null, { equals: sameData });
   const [viewer, setViewer] = createSignal<string | null>(null);
   const [songAllowance, setSongAllowance] = createSignal<Allowance | null>(null);
@@ -1479,6 +1480,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         const found = await streamerSongs(current);
         setPaywall(found.paywall);
         setSubSongs(found.subSongs);
+        setMaxSongMinutes(found.maxSongMinutes);
       } catch {}
     }
   };
@@ -1778,6 +1780,13 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                     ),
                   })}
                 </span>
+                <Show when={maxSongMinutes()}>
+                  {(minutes) => (
+                    <span class="text-[15px] text-muted">
+                      {t("Songs can be at most {minutes} minutes long.", { minutes: minutes() })}
+                    </span>
+                  )}
+                </Show>
               </label>
               <label class={`flex flex-col gap-2 ${payable() ? "" : "hidden"}`}>
                 <span class="text-[15px] font-semibold text-ink-2">

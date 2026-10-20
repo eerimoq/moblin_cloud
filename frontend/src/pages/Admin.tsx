@@ -70,6 +70,7 @@ const reasonLabels: Record<string, string> = {
   "no-spins-left": "Viewer used this month's spins",
   "tier-excluded": "Viewer's tier gets nothing on the page",
   "too-long": "Song longer than the viewer's minutes left",
+  "over-max-length": "Song longer than the page's longest song",
   "not-moderator": "Not the streamer or a moderator they turned on",
   "invalid-command": "Unknown queue command or song",
 };
@@ -220,6 +221,7 @@ const kinds: Kind[] = [
       "offline",
       "requests-off",
       "song-not-found",
+      "over-max-length",
       "moblin-timeout",
       "moblin-error",
       "provider",
@@ -252,6 +254,7 @@ const kinds: Kind[] = [
         "offline",
         "requests-off",
         "song-not-found",
+        "over-max-length",
         "moblin-timeout",
         "moblin-error",
         "crashed",

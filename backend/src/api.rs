@@ -301,6 +301,8 @@ struct SettingsResponse {
     sub_songs: Option<Tiers>,
     #[serde(rename = "subSpins")]
     sub_spins: Option<Tiers>,
+    #[serde(rename = "maxSongMinutes")]
+    max_song_minutes: Option<u32>,
     paypal: bool,
     #[serde(rename = "merchantId")]
     merchant_id: Option<String>,
@@ -340,6 +342,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         spin: settings.spin,
         sub_songs: settings.sub_songs,
         sub_spins: settings.sub_spins,
+        max_song_minutes: settings.max_song_minutes,
         paypal: api.paypal.is_some(),
         merchant_id: account.merchant_id,
         paypal_pending: account.paypal_tracking_id.is_some(),
@@ -373,6 +376,8 @@ struct SettingsRequest {
     sub_songs: Option<Tiers>,
     #[serde(default, rename = "subSpins")]
     sub_spins: Option<Tiers>,
+    #[serde(default, rename = "maxSongMinutes")]
+    max_song_minutes: Option<u32>,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -488,6 +493,7 @@ async fn update_settings(
                 spin,
                 sub_songs: request.sub_songs,
                 sub_spins: request.sub_spins,
+                max_song_minutes: request.max_song_minutes,
                 title: request.title,
                 message: request.message,
                 accent,
@@ -504,6 +510,10 @@ async fn update_settings(
                 "subscribers' songs and spins per month must be 0 to 100 per tier, with at least one above 0"
                     .to_string(),
             ),
+            SettingsError::InvalidSongLength => (
+                StatusCode::BAD_REQUEST,
+                "the longest song must be 1 to 60 minutes".to_string(),
+            ),
             SettingsError::InvalidPage => (
                 StatusCode::BAD_REQUEST,
                 "the title can be at most 60 characters, the message at most 300 and the accent and font among the supported ones".to_string(),
@@ -518,13 +528,14 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, title {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song minutes {:?}, title {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.paywall,
         settings.tips,
         settings.spin,
         settings.sub_songs,
         settings.sub_spins,
+        settings.max_song_minutes,
         settings.title,
         settings.message,
         settings.accent,
@@ -1642,6 +1653,7 @@ struct PublicPaywall {
 struct PaywallResponse {
     paywall: Option<PublicPaywall>,
     sub_songs: Option<Tiers>,
+    max_song_minutes: Option<u32>,
 }
 
 async fn handle_songs(
@@ -1653,6 +1665,7 @@ async fn handle_songs(
     let currency = settings.currency().to_string();
     Json(PaywallResponse {
         sub_songs: settings.sub_songs,
+        max_song_minutes: settings.max_song_minutes,
         paywall: settings.paywall.map(|paywall| PublicPaywall {
             price: paywall.price,
             currency,
@@ -1877,6 +1890,21 @@ async fn requested_song(
     })
 }
 
+fn check_song_length(max_minutes: Option<u32>, song: &RequestedSong) -> Result<(), Failure> {
+    if let Some(minutes) = max_minutes
+        && song
+            .duration
+            .is_some_and(|duration| duration > minutes * 60)
+    {
+        return Err(failure(
+            "over-max-length",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            &format!("The streamer only takes songs up to {minutes} minutes long."),
+        ));
+    }
+    Ok(())
+}
+
 fn song_price(price: u32, duration: Option<u32>) -> u32 {
     price.saturating_mul(duration.unwrap_or(0).div_ceil(300).max(1))
 }
@@ -1949,6 +1977,7 @@ async fn song_order(
     let song_and_user = song_and_user(request)?;
     limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
+    check_song_length(settings.max_song_minutes, &song)?;
     let order = Order {
         streamer: id.clone(),
         item: Item::Song {
@@ -2249,6 +2278,7 @@ async fn subscriber_song(
     })?;
     limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
+    check_song_length(settings.max_song_minutes, &song)?;
     let units = song_price(1, song.duration);
     if units > subscriber.left {
         return Err(SubscriberKind::Song.short(subscriber.left));
@@ -5029,7 +5059,7 @@ mod tests {
                 "merchantId": null,
                 "environment": "production",
                 "stripe": null,
-            }, "subSongs": null})
+            }, "subSongs": null, "maxSongMinutes": null})
         );
         let response = client
             .post(format!("http://{address}/pages/p/songs/orders"))
@@ -5165,6 +5195,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn songs_longer_than_the_max_are_refused() {
+        let (address, api, _) = start_paid().await;
+        let (session, key, id) = streamer(&address, &api).await;
+        connect_paypal(&api);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": {"price": 250}, "maxSongMinutes": 61}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let settings: Value = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"paywall": {"price": 250}, "maxSongMinutes": 5}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["maxSongMinutes"], 5);
+        let songs: Value = client
+            .get(format!("http://{address}/pages/{id}/songs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(songs["maxSongMinutes"], 5);
+        let mut socket = connect(&address, &key).await;
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
+        for (duration, status) in [
+            (None, StatusCode::OK),
+            (Some(300), StatusCode::OK),
+            (Some(301), StatusCode::UNPROCESSABLE_ENTITY),
+        ] {
+            let created = tokio::spawn({
+                let orders_url = orders_url.clone();
+                async move {
+                    reqwest::Client::new()
+                        .post(orders_url)
+                        .json(&json!({"song": LINK}))
+                        .send()
+                        .await
+                        .unwrap()
+                }
+            });
+            let request = receive(&mut socket).await;
+            answer(
+                &mut socket,
+                &request,
+                json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "duration": duration}}}),
+            )
+            .await;
+            let response = created.await.unwrap();
+            assert_eq!(response.status(), status);
+            if status != StatusCode::OK {
+                assert_eq!(
+                    response.text().await.unwrap(),
+                    "The streamer only takes songs up to 5 minutes long."
+                );
+            }
+        }
+        assert!(api.counters.all().iter().any(|counter| counter.name
+            == "songOrdersFailed:over-max-length"
+            && counter.total == 1));
+    }
+
+    #[tokio::test]
     async fn song_orders_are_rate_limited_per_page() {
         let (address, api, _) = start_paid().await;
         let (_, id) = paid_streamer(&address, &api).await;
@@ -5239,7 +5342,7 @@ mod tests {
                 "merchantId": "MERCHANT00001",
                 "environment": "production",
                 "stripe": null,
-            }, "subSongs": null})
+            }, "subSongs": null, "maxSongMinutes": null})
         );
         let orders_url = format!("http://{address}/pages/{id}/songs/orders");
         let response = client
@@ -6547,7 +6650,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             public,
-            json!({"paywall": null, "subSongs": {"tier1": 1, "tier2": 0, "tier3": 3}})
+            json!({"paywall": null, "subSongs": {"tier1": 1, "tier2": 0, "tier3": 3}, "maxSongMinutes": null})
         );
         let status = async |session: &str| {
             let response = client

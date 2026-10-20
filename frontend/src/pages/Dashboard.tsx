@@ -1056,6 +1056,75 @@ function SubscriberSettings(props: {
   );
 }
 
+function SongLengthSettings(props: {
+  maxSongMinutes: number | null;
+  busy: boolean;
+  onSave: (maxSongMinutes: number | null) => Promise<void>;
+}) {
+  const [enabled, setEnabled] = createSignal(props.maxSongMinutes !== null);
+  const [minutes, setMinutes] = createSignal(String(props.maxSongMinutes ?? 10));
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.busy) {
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      await props.onSave(enabled() ? Number.parseInt(minutes(), 10) || 0 : null);
+      flashSaved();
+    } catch {
+      setError(t("Enter 1 to 60 minutes."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form class={cardClass} onSubmit={submit}>
+      <h2 class="text-[23px] font-semibold">{t("Longest song")}</h2>
+      <p class="text-ink-2">
+        {t(
+          "Refuse song requests from viewers and subscribers for songs longer than this. " +
+            "Your moderators and your own test songs can be any length.",
+        )}
+      </p>
+      <label class="flex items-center gap-3 text-ink-2">
+        <input
+          type="checkbox"
+          checked={enabled()}
+          onChange={(event) => setEnabled(event.currentTarget.checked)}
+          class="size-5 accent-moss"
+        />
+        {t("Limit the length of requested songs")}
+      </label>
+      <Show when={enabled()}>
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">{t("Minutes")}</span>
+          <input
+            type="number"
+            required
+            min={1}
+            max={60}
+            inputmode="numeric"
+            value={minutes()}
+            onInput={(event) => setMinutes(event.currentTarget.value)}
+            class={`${inputClass} max-w-28`}
+          />
+        </label>
+      </Show>
+      <div class="flex flex-wrap items-center gap-4">
+        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
+        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      </div>
+    </form>
+  );
+}
+
 function ModeratorSettings(props: {
   session: string;
   moderators: ChannelModerator[];
@@ -1996,6 +2065,11 @@ function Admin(props: {
             busy={busy()}
             onSave={(subSongs) => save({ subSongs })}
           />
+          <SongLengthSettings
+            maxSongMinutes={settings().maxSongMinutes}
+            busy={busy()}
+            onSave={(maxSongMinutes) => save({ maxSongMinutes })}
+          />
           <Show when={!props.preview && active() === "songs"}>
             <MusicQueue session={props.session} page={settings().id} onSignOut={props.onSignOut} />
           </Show>
@@ -2467,6 +2541,7 @@ function Preview(props: { failed: boolean }) {
                 paywall: { price: 100 },
                 subSongs: { tier1: 1, tier2: 5, tier3: 10 },
                 subSpins: { tier1: 1, tier2: 5, tier3: 10 },
+                maxSongMinutes: null,
                 tips: { amounts: [300, 500, 1000] },
                 spin: {
                   options: [

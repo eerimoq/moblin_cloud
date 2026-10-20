@@ -22,6 +22,8 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub_spins: Option<Tiers>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_song_minutes: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -118,6 +120,12 @@ impl Settings {
             Some(tiers) => Some(tiers.normalize().ok_or(SettingsError::InvalidTiers)?),
             None => None,
         };
+        if self
+            .max_song_minutes
+            .is_some_and(|minutes| !(1..=60).contains(&minutes))
+        {
+            return Err(SettingsError::InvalidSongLength);
+        }
         let accent = match self.accent.map(|accent| accent.to_lowercase()) {
             Some(accent) if !ACCENTS.contains(&accent.as_str()) && !is_color(&accent) => {
                 return Err(SettingsError::InvalidPage);
@@ -137,6 +145,7 @@ impl Settings {
             spin,
             sub_songs,
             sub_spins,
+            max_song_minutes: self.max_song_minutes,
             title: text(self.title, 60)?,
             message: text(self.message, 300)?,
             accent,
@@ -209,6 +218,7 @@ pub enum SettingsError {
     InvalidTips,
     InvalidSpin,
     InvalidTiers,
+    InvalidSongLength,
     InvalidPage,
     Full,
     NotSaved,
@@ -506,6 +516,24 @@ mod tests {
             [None, Some(1), Some(2), Some(3)].map(|tier| sub_songs.allowance(tier)),
             [0, 1, 0, 10]
         );
+    }
+
+    #[test]
+    fn song_lengths_are_validated() {
+        let pages = Pages::new(Database::memory());
+        let settings = |minutes| Settings {
+            max_song_minutes: Some(minutes),
+            ..Settings::default()
+        };
+        assert_eq!(pages.set("a", settings(1)), Ok(settings(1)));
+        assert_eq!(pages.set("a", settings(60)), Ok(settings(60)));
+        assert_eq!(pages.get("a").max_song_minutes, Some(60));
+        for minutes in [0, 61] {
+            assert_eq!(
+                pages.set("a", settings(minutes)),
+                Err(SettingsError::InvalidSongLength)
+            );
+        }
     }
 
     #[test]

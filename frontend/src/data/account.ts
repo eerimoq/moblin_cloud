@@ -263,7 +263,10 @@ export const removeImage = (session: string) =>
   call<Settings>(session, "/account/image/remove", { method: "POST" });
 
 export type SettingsChanges = Page &
-  Pick<Settings, "currency" | "paywall" | "tips" | "spin" | "subSongs" | "subSpins">;
+  Pick<
+    Settings,
+    "currency" | "paywall" | "tips" | "spin" | "subSongs" | "subSpins" | "maxSongMinutes"
+  >;
 
 export const sendTest = (
   session: string,
@@ -282,6 +285,7 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges) 
       spin: settings.spin,
       subSongs: settings.subSongs,
       subSpins: settings.subSpins,
+      maxSongMinutes: settings.maxSongMinutes,
       title: settings.title,
       message: settings.message,
       accent: settings.accent,

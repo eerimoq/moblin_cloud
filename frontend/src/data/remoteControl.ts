@@ -72,6 +72,7 @@ export type Settings = Page & {
   spin: Spin | null;
   subSongs: Tiers | null;
   subSpins: Tiers | null;
+  maxSongMinutes: number | null;
   paypal: boolean;
   merchantId: string | null;
   paypalPending: boolean;
@@ -240,7 +241,7 @@ export const pageImageUrl = (id: string, version: string) =>
 export const streamerProfile = (id: string) => call<Profile>(`/${encodeURIComponent(id)}`);
 
 export const streamerSongs = (id: string) =>
-  call<{ paywall: PublicPaywall | null; subSongs: Tiers | null }>(
+  call<{ paywall: PublicPaywall | null; subSongs: Tiers | null; maxSongMinutes: number | null }>(
     `/${encodeURIComponent(id)}/songs`,
   );
 
