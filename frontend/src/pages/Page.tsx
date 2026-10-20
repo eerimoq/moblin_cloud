@@ -231,6 +231,11 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
           props.disabled ? "pointer-events-none opacity-40" : ""
         }`}
       />
+      <Show when={props.config.environment === "sandbox"}>
+        <Notice status>
+          {t("PayPal sandbox. This is a test payment and no real money is moved.")}
+        </Notice>
+      </Show>
       <Show when={failed()}>
         <Notice error>{t("PayPal could not be loaded. Reload the page to try again.")}</Notice>
       </Show>
@@ -402,6 +407,11 @@ function StripeCard(props: {
             </div>
           </>
         )}
+      </Show>
+      <Show when={props.config.publishableKey.startsWith("pk_test_")}>
+        <Notice status>
+          {t("Stripe test mode. This is a test payment and no real money is moved.")}
+        </Notice>
       </Show>
       <Show when={failed()}>
         <Notice error>{t("Stripe could not be loaded. Reload the page to try again.")}</Notice>
