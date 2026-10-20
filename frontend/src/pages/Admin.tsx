@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import Icon from "../components/Icon";
 import {
   Band,
@@ -137,6 +137,58 @@ type Kind = {
 
 const kinds: Kind[] = [
   {
+    kind: "tip",
+    label: "Tips",
+    orders: [
+      "feature-off",
+      "payments-unavailable",
+      "amount-too-low",
+      "invalid-message",
+      "provider",
+    ],
+    payments: ["expired", "not-approved", "pending", "payments-unavailable", "provider"],
+    tests: ["account", "too-many-tests", "invalid-message", "crashed"],
+    deliveries: ["moblin-error"],
+  },
+  {
+    kind: "spin",
+    label: "Wheel spins",
+    orders: [
+      "feature-off",
+      "no-wheel",
+      "offline",
+      "payments-unavailable",
+      "invalid-option",
+      "invalid-message",
+      "provider",
+    ],
+    payments: [
+      "expired",
+      "no-wheel",
+      "not-approved",
+      "pending",
+      "payments-unavailable",
+      "provider",
+    ],
+    subscribers: {
+      event: "subSpins",
+      reasons: [
+        "feature-off",
+        "not-signed-in",
+        "not-subscribed",
+        "tier-excluded",
+        "no-spins-left",
+        "no-wheel",
+        "offline",
+        "invalid-message",
+        "crashed",
+        "not-saved",
+      ],
+    },
+    tests: ["account", "too-many-tests", "offline", "no-wheel", "invalid-message", "crashed"],
+    deliveries: ["moblin-error"],
+  },
+  {
     kind: "song",
     label: "Songs",
     orders: [
@@ -195,65 +247,26 @@ const kinds: Kind[] = [
     ],
     deliveries: ["not-found", "moblin-error"],
   },
-  {
-    kind: "tip",
-    label: "Tips",
-    orders: [
-      "feature-off",
-      "payments-unavailable",
-      "amount-too-low",
-      "invalid-message",
-      "provider",
-    ],
-    payments: ["expired", "not-approved", "pending", "payments-unavailable", "provider"],
-    tests: ["account", "too-many-tests", "invalid-message", "crashed"],
-    deliveries: ["moblin-error"],
-  },
-  {
-    kind: "spin",
-    label: "Wheel spins",
-    orders: [
-      "feature-off",
-      "no-wheel",
-      "offline",
-      "payments-unavailable",
-      "invalid-option",
-      "invalid-message",
-      "provider",
-    ],
-    payments: [
-      "expired",
-      "no-wheel",
-      "not-approved",
-      "pending",
-      "payments-unavailable",
-      "provider",
-    ],
-    subscribers: {
-      event: "subSpins",
-      reasons: [
-        "feature-off",
-        "not-signed-in",
-        "not-subscribed",
-        "tier-excluded",
-        "no-spins-left",
-        "no-wheel",
-        "offline",
-        "invalid-message",
-        "crashed",
-        "not-saved",
-      ],
-    },
-    tests: ["account", "too-many-tests", "offline", "no-wheel", "invalid-message", "crashed"],
-    deliveries: ["moblin-error"],
-  },
 ];
 
-type Tone = "normal" | "muted" | "problem";
+type Failure = { reason: string; counts: Counts; problem: boolean };
 
-type Row = { label: string; hint?: string; values: number[]; tone?: Tone };
+type Step = {
+  label: string;
+  hint?: string;
+  counts: Counts;
+  failures: Failure[];
+  problem?: boolean;
+};
 
 const format = (value: number) => value.toLocaleString("en");
+
+const formatBytes = (bytes: number) =>
+  bytes >= 1_000_000_000
+    ? `${(bytes / 1_000_000_000).toFixed(2)} GB`
+    : bytes >= 1_000_000
+      ? `${(bytes / 1_000_000).toFixed(1)} MB`
+      : `${(bytes / 1_000).toFixed(0)} kB`;
 
 const plural = (count: number, one: string, many: string) =>
   `${format(count)} ${count === 1 ? one : many}`;
@@ -282,91 +295,204 @@ class Counters {
     return sum;
   }
 
-  failures(event: string, expected: string[]): string[] {
+  failures(event: string, expected: string[]): Failure[] {
     const prefix = `${event}Failed:`;
     const unexpected = [...this.byName.keys()]
       .filter((name) => name.startsWith(prefix))
       .map((name) => name.slice(prefix.length))
       .filter((reason) => !expected.includes(reason));
-    return [...expected, ...unexpected];
+    return [...expected, ...unexpected].map((reason) => ({
+      reason,
+      counts: this.get(`${prefix}${reason}`),
+      problem: problemReasons.includes(reason),
+    }));
+  }
+
+  step(name: string, label: string, hint: string, expected: string[]): Step {
+    return { label, hint, counts: this.get(name), failures: this.failures(name, expected) };
   }
 }
 
-function Table(props: { title: string; hint?: string; columns: string[]; rows: Row[] }) {
-  const cell = (tone: Tone | undefined, value: number, first: boolean) =>
-    `w-28 px-4 py-2.5 text-right align-top font-mono text-[15px] tabular-nums ${
-      tone === "problem" && value > 0 && first
-        ? "font-bold text-amber"
-        : tone === "muted"
-          ? "text-muted"
-          : ""
-    }`;
-
+function Cells(props: { counts: Counts; class: string; attention?: boolean }) {
   return (
-    <section class="flex flex-col gap-3">
-      <div class="flex flex-col gap-1">
-        <h2 class="font-display text-2xl font-bold">{props.title}</h2>
-        <Show when={props.hint}>
-          <p class="text-[15px] text-muted text-pretty">{props.hint}</p>
-        </Show>
-      </div>
-      <div class={`${cardClass} overflow-x-auto p-0! sm:p-0!`}>
-        <table class="w-full">
-          <thead>
-            <tr class="border-b-[1.5px] border-line text-[13px] font-semibold tracking-[0.06em] text-muted uppercase">
-              <th class="px-4 py-3" />
-              <For each={props.columns}>
-                {(column) => <th class="w-28 px-4 py-3 text-right">{column}</th>}
-              </For>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={props.rows}>
-              {(row) => (
-                <tr class="border-t border-line/50 transition-colors first:border-t-0 hover:bg-ghost-hover">
-                  <td class="px-4 py-2.5 align-top">
-                    <span
-                      class={`block text-[15px] font-semibold ${
-                        row.tone === "problem"
-                          ? "text-amber-ink"
-                          : row.tone === "muted"
-                            ? "text-muted"
-                            : "text-ink-2"
-                      }`}
-                    >
-                      {row.label}
-                    </span>
-                    <Show when={row.hint}>
-                      <span class="block text-[13px] text-muted text-pretty">{row.hint}</span>
-                    </Show>
-                  </td>
-                  <For each={row.values}>
-                    {(value, index) => (
-                      <td class={cell(row.tone, value, index() === 0)}>{format(value)}</td>
-                    )}
-                  </For>
-                </tr>
+    <For each={periods}>
+      {([period], index) => {
+        const value = () => props.counts[period];
+        return (
+          <td
+            class={`px-2 text-right align-top font-mono tabular-nums sm:px-4 ${props.class} ${
+              value() === 0
+                ? "text-muted/40"
+                : props.attention && index() === 0
+                  ? "font-bold text-amber"
+                  : ""
+            }`}
+          >
+            {format(value())}
+          </td>
+        );
+      }}
+    </For>
+  );
+}
+
+function Info(props: { text: string }) {
+  const [open, setOpen] = createSignal(false);
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="What is this?"
+        aria-expanded={open()}
+        class="ml-1.5 inline-flex size-6 items-center justify-center rounded-full align-middle text-muted transition-colors hover:bg-ghost hover:text-ink aria-expanded:bg-ghost aria-expanded:text-ink"
+        onClick={() => setOpen(!open())}
+        onBlur={() => setOpen(false)}
+      >
+        <Icon name="info" class="size-4" />
+      </button>
+      <span
+        role="tooltip"
+        class={`absolute top-full left-0 z-10 mt-1.5 w-max max-w-[min(24rem,calc(100vw-4rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-left font-body text-[14px] leading-snug font-normal text-ink-2 shadow-xl text-pretty ${
+          open() ? "block" : "hidden group-focus-within:block group-hover:block"
+        }`}
+      >
+        {props.text}
+      </span>
+    </>
+  );
+}
+
+function StepTable(props: { steps: Step[] }) {
+  return (
+    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+      <table class="w-full">
+        <thead>
+          <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+            <th class="px-4 pt-3 pb-2 sm:px-5" />
+            <For each={periods}>
+              {([, label]) => (
+                <th class="w-14 px-2 pt-3 pb-2 text-right whitespace-nowrap sm:w-24 sm:px-4">
+                  {label}
+                </th>
               )}
             </For>
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        </thead>
+        <For each={props.steps}>
+          {(step) => {
+            const seen = () =>
+              step.failures
+                .filter((failure) => failure.counts.total > 0)
+                .sort(
+                  (a, b) =>
+                    Number(b.problem) - Number(a.problem) || b.counts.total - a.counts.total,
+                );
+            const never = () => step.failures.filter((failure) => failure.counts.total === 0);
+            const failed = () => seen().reduce((sum, failure) => add(sum, failure.counts), zero);
+            return (
+              <tbody class="border-t-[1.5px] border-line">
+                <tr>
+                  <td
+                    class={`px-4 pt-3 pb-2 align-top text-[16px] font-semibold sm:px-5 ${
+                      step.problem && step.counts.total > 0 ? "text-amber-ink" : "text-ink"
+                    }`}
+                  >
+                    <span class="group relative">
+                      {step.label}
+                      <Show when={step.hint}>{(hint) => <Info text={hint()} />}</Show>
+                    </span>
+                  </td>
+                  <Cells
+                    counts={step.counts}
+                    class="pt-3 pb-2 text-[17px] font-semibold"
+                    attention={step.problem}
+                  />
+                </tr>
+                <Show when={seen().length > 0}>
+                  <tr>
+                    <td class="px-4 pt-1 pb-0.5 text-[12px] font-semibold tracking-[0.06em] text-muted uppercase sm:px-5">
+                      Failed
+                    </td>
+                    <Cells counts={failed()} class="pt-1 pb-0.5 text-[13px] text-muted" />
+                  </tr>
+                  <For each={seen()}>
+                    {(failure) => (
+                      <tr>
+                        <td class="px-4 py-0.5 text-[14px] sm:px-5">
+                          <span
+                            class={`flex items-baseline gap-2 ${
+                              failure.problem ? "text-amber-ink" : "text-ink-2"
+                            }`}
+                          >
+                            <span
+                              class={`size-1.5 shrink-0 translate-y-[-2px] rounded-full ${
+                                failure.problem ? "bg-amber" : "bg-muted/40"
+                              }`}
+                            />
+                            {reasonLabels[failure.reason] ?? failure.reason}
+                          </span>
+                        </td>
+                        <Cells
+                          counts={failure.counts}
+                          class="py-0.5 text-[14px]"
+                          attention={failure.problem}
+                        />
+                      </tr>
+                    )}
+                  </For>
+                </Show>
+                <tr>
+                  <td
+                    colspan={4}
+                    class={`px-4 pt-1 text-[13px] text-muted text-pretty sm:px-5 ${
+                      step.failures.length > 0 ? "pb-3" : "pb-1"
+                    }`}
+                  >
+                    <Show when={never().length > 0}>
+                      <span class="font-semibold">Never failed with </span>
+                      {never()
+                        .map((failure) => reasonLabels[failure.reason] ?? failure.reason)
+                        .join(" · ")}
+                    </Show>
+                  </td>
+                </tr>
+              </tbody>
+            );
+          }}
+        </For>
+      </table>
+    </div>
+  );
+}
+
+function Section(props: { id: string; title: string; hint?: string; children: JSX.Element }) {
+  return (
+    <section id={props.id} class="flex scroll-mt-24 flex-col gap-3">
+      <h2 class="font-display text-2xl font-bold">
+        <span class="group relative">
+          {props.title}
+          <Show when={props.hint}>{(hint) => <Info text={hint()} />}</Show>
+        </span>
+      </h2>
+      {props.children}
     </section>
   );
 }
 
-function Tile(props: { label: string; value: number; hint: string; attention?: boolean }) {
+function Tile(props: { label: string; value: string; hint: string; attention?: boolean }) {
   return (
     <div class={`${cardClass} gap-1! p-5!`}>
       <span
-        class={`font-display text-[36px] leading-none font-bold ${
-          props.attention && props.value > 0 ? "text-amber" : ""
+        class={`font-display text-[32px] leading-none font-bold ${
+          props.attention ? "text-amber" : ""
         }`}
       >
-        {format(props.value)}
+        {props.value}
       </span>
-      <span class="text-[15px] font-semibold text-ink-2">{props.label}</span>
-      <span class="text-[13px] text-muted text-pretty">{props.hint}</span>
+      <span class="group relative self-start text-[15px] font-semibold text-ink-2">
+        {props.label}
+        <Info text={props.hint} />
+      </span>
     </div>
   );
 }
@@ -417,45 +543,63 @@ function Status(props: { counters: Counters }) {
   );
 }
 
+type NavItem = { id: string; label: string; caption: string; attention?: boolean };
+
+function Nav(props: { items: NavItem[] }) {
+  return (
+    <nav
+      aria-label="Sections"
+      class="flex flex-wrap gap-2 lg:sticky lg:top-24 lg:flex-col lg:flex-nowrap"
+    >
+      <For each={props.items}>
+        {(item) => (
+          <a
+            href={`#${item.id}`}
+            class="flex items-baseline gap-2 rounded-2xl border-[1.5px] border-ghost-line bg-ghost px-4 py-2 text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink lg:border-transparent lg:bg-transparent lg:py-2.5 lg:hover:bg-ghost"
+          >
+            <span class="font-display text-[16px] font-semibold">{item.label}</span>
+            <span
+              class={`text-[13px] whitespace-nowrap lg:ml-auto ${
+                item.attention ? "font-semibold text-amber" : "text-muted"
+              }`}
+            >
+              {item.caption}
+            </span>
+          </a>
+        )}
+      </For>
+    </nav>
+  );
+}
+
 function Loaded(props: { stats: AdminStats }) {
   const counters = () => new Counters(props.stats.counters);
-  const values = (counts: Counts) => periods.map(([period]) => counts[period]);
-  const columns = periods.map(([, label]) => label);
 
-  const step = (name: string, label: string, hint: string, expected: string[]): Row[] => [
-    { label, hint, values: values(counters().get(name)) },
-    ...counters()
-      .failures(name, expected)
-      .map((reason) => ({
-        label: `${label} failed: ${reasonLabels[reason] ?? reason}`,
-        values: values(counters().get(`${name}Failed:${reason}`)),
-        tone: (problemReasons.includes(reason) ? "problem" : "muted") as Tone,
-      })),
-  ];
-
-  const flow = (kind: Kind): Row[] => {
+  const flow = (kind: Kind): Step[] => {
     const paid = (event: string, hint: string, expected: string[]) =>
-      step(`${kind.kind}${event}`, event, hint, expected);
+      counters().step(`${kind.kind}${event}`, event, hint, expected);
     return [
-      ...paid(
+      paid(
         "Orders",
         "Payments started at PayPal or Stripe, before the viewer approves.",
         kind.orders,
       ),
-      ...paid(
+      paid(
         "Payments",
         "Completed captures, so the streamer got the money and the request was queued. One order can fail several times before it succeeds.",
         kind.payments,
       ),
       ...(kind.subscribers
-        ? step(
-            kind.subscribers.event,
-            "Subscribers",
-            "Requests by Twitch subscribers, queued without a payment.",
-            kind.subscribers.reasons,
-          )
+        ? [
+            counters().step(
+              kind.subscribers.event,
+              "Subscribers",
+              "Requests by Twitch subscribers, queued without a payment.",
+              kind.subscribers.reasons,
+            ),
+          ]
         : []),
-      ...paid(
+      paid(
         "Deliveries",
         "Paid and subscriber requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
         kind.deliveries,
@@ -463,146 +607,182 @@ function Loaded(props: { stats: AdminStats }) {
       {
         label: "Given up",
         hint: "Dropped after 7 days without reaching any device.",
-        values: values(counters().get(`${kind.kind}Expiries`)),
-        tone: "problem",
+        counts: counters().get(`${kind.kind}Expiries`),
+        failures: [],
+        problem: true,
       },
     ];
   };
 
-  const tests = (kind: Kind): Row[] => [
-    ...step(
+  const tests = (kind: Kind): Step[] => [
+    counters().step(
       `${kind.kind}Tests`,
-      `${kind.label}: tests`,
+      "Tests",
       "Free test sends by streamers from their dashboard.",
       kind.tests,
     ),
-    ...step(
+    counters().step(
       `${kind.kind}TestDeliveries`,
-      `${kind.label}: deliveries`,
+      "Deliveries",
       "Test sends Moblin accepted.",
       kind.deliveries,
     ),
     {
-      label: `${kind.label}: given up`,
+      label: "Given up",
       hint: "Test sends dropped after 7 days without reaching any device.",
-      values: values(counters().get(`${kind.kind}TestExpiries`)),
-      tone: "muted",
+      counts: counters().get(`${kind.kind}TestExpiries`),
+      failures: [],
     },
   ];
 
+  const problemsToday = () =>
+    problems.filter((problem) => counters().sum(problem.matches).today > 0).length;
+  const today = (name: string) => counters().get(name).today;
+
+  const navItems = (): NavItem[] => [
+    {
+      id: "problems",
+      label: "Problems",
+      caption: `${format(problemsToday())} today`,
+      attention: problemsToday() > 0,
+    },
+    ...kinds.map((kind) => ({
+      id: kind.kind,
+      label: kind.label,
+      caption: `${format(today(`${kind.kind}Payments`))} paid today`,
+    })),
+    {
+      id: "tests",
+      label: "Tests",
+      caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
+    },
+    { id: "moblin", label: "Moblin", caption: `${format(today("moblinConnections"))} today` },
+    { id: "images", label: "Banner images", caption: `${format(today("imageUploads"))} today` },
+    { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
+  ];
+
+  const accounts = [
+    ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
+    [
+      "With a page",
+      "Opened the dashboard and got a page and a first Moblin device.",
+      props.stats.accounts.withPage,
+    ],
+    ["PayPal connected", "A PayPal merchant that can take payments.", props.stats.accounts.paypal],
+    ["Stripe connected", "A Stripe account that takes card payments.", props.stats.accounts.stripe],
+    [
+      "With a banner image",
+      "Pages showing an image uploaded by a premium account.",
+      props.stats.accounts.images,
+    ],
+  ] as const;
+
   return (
-    <div class="flex flex-col gap-10">
+    <div class="flex flex-col gap-8">
       <Status counters={counters()} />
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Tile
           label="Connected devices"
-          value={props.stats.moblin.connectedDevices}
+          value={format(props.stats.moblin.connectedDevices)}
           hint="Moblin devices with an open Moblin Cloud connection."
         />
         <Tile
           label="Unfinished payments"
-          value={props.stats.pending.orders}
+          value={format(props.stats.pending.orders)}
           hint="Orders started in the last 3 hours whose payment has not completed."
         />
         <Tile
           label="Waiting for a device"
-          value={props.stats.pending.deliveries}
-          hint="Songs, tips and spins not yet accepted by every device they go to. Kept for 7 days."
-          attention
+          value={format(props.stats.pending.deliveries)}
+          hint="Tips, spins and songs not yet accepted by every device they go to. Kept for 7 days."
+          attention={props.stats.pending.deliveries > 0}
         />
         <Tile
-          label="Database bytes"
-          value={props.stats.database.bytes}
-          hint="Disk usage of the SQLite database and its WAL files: streamers, accounts, pages, orders, deliveries and counters."
+          label="Database"
+          value={formatBytes(props.stats.database.bytes)}
+          hint={`${format(props.stats.database.bytes)} bytes on disk for the SQLite database and its WAL files.`}
         />
       </div>
-      <Table
-        title="Problems"
-        hint="Failures on our side or at PayPal, Stripe or Moblin, across songs, tips and wheel spins. Viewer mistakes and streamers being offline are not counted here."
-        columns={columns}
-        rows={problems.map((problem) => ({
-          label: problem.label,
-          hint: problem.hint,
-          values: values(counters().sum(problem.matches)),
-          tone: "problem" as Tone,
-        }))}
-      />
-      <For each={kinds}>
-        {(kind) => <Table title={kind.label} columns={columns} rows={flow(kind)} />}
-      </For>
-      <Table
-        title="Tests"
-        hint="Free songs, tips and wheel spins streamers send themselves from the dashboard. Not counted as problems above."
-        columns={columns}
-        rows={kinds.flatMap(tests)}
-      />
-      <Table
-        title="Moblin"
-        columns={columns}
-        rows={[
-          {
-            label: "Connections",
-            hint: "Moblin connecting to Moblin Cloud with the key of a current device.",
-            values: values(counters().get("moblinConnections")),
-          },
-          ...counters()
-            .failures("moblinConnections", ["unknown-key"])
-            .map((reason) => ({
-              label: `Connections failed: ${reasonLabels[reason] ?? reason}`,
-              values: values(counters().get(`moblinConnectionsFailed:${reason}`)),
-              tone: "muted" as Tone,
-            })),
-        ]}
-      />
-      <Table
-        title="Banner images"
-        columns={columns}
-        rows={[
-          {
-            label: "Uploads",
-            hint: "Banner images uploaded by premium accounts for their tip pages.",
-            values: values(counters().get("imageUploads")),
-          },
-          ...counters()
-            .failures("imageUploads", ["invalid-image", "not-premium", "not-saved"])
-            .map((reason) => ({
-              label: `Uploads failed: ${reasonLabels[reason] ?? reason}`,
-              values: values(counters().get(`imageUploadsFailed:${reason}`)),
-              tone: "muted" as Tone,
-            })),
-        ]}
-      />
-      <Table
-        title="Accounts"
-        columns={["Now"]}
-        rows={[
-          {
-            label: "Accounts",
-            hint: "Twitch users who have signed in to Moblin Cloud.",
-            values: [props.stats.accounts.total],
-          },
-          {
-            label: "With a page",
-            hint: "Accounts that have opened the dashboard and got a page and a first Moblin device.",
-            values: [props.stats.accounts.withPage],
-          },
-          {
-            label: "PayPal connected",
-            hint: "Accounts with a PayPal merchant that can take payments.",
-            values: [props.stats.accounts.paypal],
-          },
-          {
-            label: "Stripe connected",
-            hint: "Accounts whose Stripe account takes card payments.",
-            values: [props.stats.accounts.stripe],
-          },
-          {
-            label: "With a banner image",
-            hint: "Pages showing a banner image uploaded by a premium account.",
-            values: [props.stats.accounts.images],
-          },
-        ]}
-      />
+      <div class="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+        <Nav items={navItems()} />
+        <div class="flex min-w-0 flex-col gap-10">
+          <Section
+            id="problems"
+            title="Problems"
+            hint="Failures on our side or at PayPal, Stripe or Moblin, across tips, wheel spins and songs. Viewer mistakes and streamers being offline are not counted here."
+          >
+            <StepTable
+              steps={problems.map((problem) => ({
+                label: problem.label,
+                hint: problem.hint,
+                counts: counters().sum(problem.matches),
+                failures: [],
+                problem: true,
+              }))}
+            />
+          </Section>
+          <For each={kinds}>
+            {(kind) => (
+              <Section
+                id={kind.kind}
+                title={kind.label}
+                hint="Every step shows its count, then how often it failed and why. Amber reasons are our, PayPal's, Stripe's or Moblin's fault; grey ones are viewer mistakes or offline streamers."
+              >
+                <StepTable steps={flow(kind)} />
+              </Section>
+            )}
+          </For>
+          <Section
+            id="tests"
+            title="Tests"
+            hint="Free tips, wheel spins and songs streamers send themselves from the dashboard. Not counted as problems above."
+          >
+            <div class="flex flex-col gap-5">
+              <For each={kinds}>
+                {(kind) => (
+                  <div class="flex flex-col gap-2">
+                    <h3 class="text-[17px] font-semibold text-ink-2">{kind.label}</h3>
+                    <StepTable steps={tests(kind)} />
+                  </div>
+                )}
+              </For>
+            </div>
+          </Section>
+          <div class="flex flex-col gap-10">
+            <Section id="moblin" title="Moblin">
+              <StepTable
+                steps={[
+                  counters().step(
+                    "moblinConnections",
+                    "Connections",
+                    "Moblin connecting to Moblin Cloud with the key of a current device.",
+                    ["unknown-key"],
+                  ),
+                ]}
+              />
+            </Section>
+            <Section id="images" title="Banner images">
+              <StepTable
+                steps={[
+                  counters().step(
+                    "imageUploads",
+                    "Uploads",
+                    "Banner images uploaded by premium accounts for their tip pages.",
+                    ["invalid-image", "not-premium", "not-saved"],
+                  ),
+                ]}
+              />
+            </Section>
+          </div>
+          <Section id="accounts" title="Accounts" hint="Right now, not per day.">
+            <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              <For each={accounts}>
+                {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
+              </For>
+            </div>
+          </Section>
+        </div>
+      </div>
     </div>
   );
 }

@@ -27,6 +27,7 @@ export type IconName =
   | "copy"
   | "check"
   | "clock"
+  | "info"
   | "eye"
   | "eye-off"
   | "music"
@@ -205,6 +206,10 @@ export default function Icon(props: Props) {
         <Match when={props.name === "clock"}>
           <circle cx="12" cy="12" r="9" />
           <path d="M12 7v5l3 2" />
+        </Match>
+        <Match when={props.name === "info"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5M12 8h.01" />
         </Match>
         <Match when={props.name === "check"}>
           <path d="M5 12.5l4.5 4.5L19 7" />
