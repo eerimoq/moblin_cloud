@@ -63,6 +63,7 @@ pub struct Api {
     pub database: Arc<Database>,
     pub admins: Vec<String>,
     pub premium_accounts: Vec<String>,
+    pub started: u64,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
     pub song_finds: Mutex<HashMap<String, Vec<Instant>>>,
 }
@@ -907,11 +908,38 @@ fn new_key(api: &Api) -> Result<(String, String), (StatusCode, String)> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AdminStatsResponse {
+    server: ServerStats,
     accounts: AccountStats,
     moblin: MoblinStats,
     pending: PendingStats,
     database: DatabaseStats,
     counters: Vec<Counter>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerStats {
+    version: &'static str,
+    started: u64,
+    now: u64,
+    memory: Option<u64>,
+    integrations: Integrations,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Integrations {
+    twitch: bool,
+    app_attest: bool,
+    paypal: bool,
+    stripe: bool,
+}
+
+fn resident_memory() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|line| line.starts_with("VmRSS:"))?;
+    let kilobytes = line.split_whitespace().nth(1)?.parse::<u64>().ok()?;
+    Some(kilobytes * 1024)
 }
 
 #[derive(Serialize)]
@@ -937,6 +965,18 @@ async fn handle_admin_stats(
 ) -> Result<Json<AdminStatsResponse>, (StatusCode, String)> {
     admin(&api, &headers)?;
     Ok(Json(AdminStatsResponse {
+        server: ServerStats {
+            version: option_env!("MOBLIN_WEBSITE_VERSION").unwrap_or("dev"),
+            started: api.started,
+            now: deliveries::now(),
+            memory: resident_memory(),
+            integrations: Integrations {
+                twitch: api.live.is_some(),
+                app_attest: api.app_attest.is_some(),
+                paypal: api.paypal.is_some(),
+                stripe: api.stripe.is_some(),
+            },
+        },
         accounts: api.accounts.stats(
             &api.admins
                 .iter()
@@ -3599,6 +3639,7 @@ mod tests {
             database,
             admins: vec!["admin".to_string()],
             premium_accounts: vec!["premium".to_string()],
+            started: 0,
             tests: Mutex::default(),
             song_finds: Mutex::default(),
         });
@@ -8428,7 +8469,15 @@ mod tests {
         api.counters.bump("songOrders");
         let response = client.get(&url).bearer_auth(&admin).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let stats: Value = response.json().await.unwrap();
+        let mut stats: Value = response.json().await.unwrap();
+        let server = stats.as_object_mut().unwrap().remove("server").unwrap();
+        assert_eq!(server["version"], "dev");
+        assert_eq!(server["started"], 0);
+        assert!(server["now"].as_u64().unwrap() > 0);
+        assert_eq!(
+            server["integrations"],
+            json!({"twitch": false, "appAttest": false, "paypal": false, "stripe": false})
+        );
         assert_eq!(
             stats,
             json!({

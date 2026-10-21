@@ -59,6 +59,13 @@ export type RecentKind = "song" | "tip" | "spin";
 export type RecentList = { items: Recent[]; more: boolean };
 
 export type AdminStats = {
+  server: {
+    version: string;
+    started: number;
+    now: number;
+    memory: number | null;
+    integrations: { twitch: boolean; appAttest: boolean; paypal: boolean; stripe: boolean };
+  };
   accounts: { total: number; paypal: number; stripe: number; premium: number };
   moblin: { connectedDevices: number };
   pending: { orders: number; deliveries: number };

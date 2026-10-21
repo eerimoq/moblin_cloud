@@ -347,6 +347,7 @@ async fn main() -> Result<()> {
         database,
         admins: cli.admins,
         premium_accounts: cli.premium_accounts,
+        started: crate::deliveries::now(),
         tests: Mutex::default(),
         song_finds: Mutex::default(),
     });

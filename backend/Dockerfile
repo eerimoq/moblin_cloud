@@ -22,6 +22,8 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs \
     && rm -rf src "target/$(cat /rust-target)/release/moblin-website-backend"* \
        "target/$(cat /rust-target)/release/deps/moblin_website_backend"*
 COPY src ./src
+ARG VERSION=dev
+ENV MOBLIN_WEBSITE_VERSION=$VERSION
 RUN cargo build --release --locked --target "$(cat /rust-target)" \
     && cp "target/$(cat /rust-target)/release/moblin-website-backend" /moblin-website-backend
 

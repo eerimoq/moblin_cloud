@@ -302,6 +302,13 @@ const formatBytes = (bytes: number) =>
       ? `${(bytes / 1_000_000).toFixed(1)} MB`
       : `${(bytes / 1_000).toFixed(0)} kB`;
 
+const formatDuration = (seconds: number) => {
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  return days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+};
+
 const plural = (count: number, one: string, many: string) =>
   `${format(count)} ${count === 1 ? one : many}`;
 
@@ -727,7 +734,31 @@ function Loaded(props: { stats: AdminStats }) {
       caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
     },
     { id: "moblin", label: "Moblin", caption: `${format(today("moblinConnections"))} today` },
+    {
+      id: "server",
+      label: "Server",
+      caption: props.stats.server.version,
+      attention: integrations().some(([, , on]) => !on),
+    },
   ];
+
+  const server = () => props.stats.server;
+
+  const integrations = () =>
+    [
+      [
+        "Twitch",
+        "Twitch credentials, for profiles, the live status and sign in.",
+        server().integrations.twitch,
+      ],
+      [
+        "App Attest",
+        "Only the Moblin app may post live. Off with --allow-unattested.",
+        server().integrations.appAttest,
+      ],
+      ["PayPal", "PayPal partner credentials, for PayPal payments.", server().integrations.paypal],
+      ["Stripe", "Stripe platform keys, for card payments.", server().integrations.stripe],
+    ] as const;
 
   const accounts = [
     ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
@@ -845,6 +876,34 @@ function Loaded(props: { stats: AdminStats }) {
                 ),
               ]}
             />
+          </Section>
+          <Section id="server" title="Server" hint="The backend at api.moblin.app, right now.">
+            <div class="flex flex-col gap-4">
+              <div class="grid gap-4 sm:grid-cols-3">
+                <Tile
+                  label="Version"
+                  value={server().version}
+                  hint="The release tag the backend image was built from, dev for local builds."
+                />
+                <Tile
+                  label="Uptime"
+                  value={formatDuration(Math.max(0, server().now - server().started))}
+                  hint={`Running since ${new Date(server().started * 1000).toLocaleString("en")}, the last deploy or restart.`}
+                />
+                <Tile
+                  label="Memory"
+                  value={server().memory === null ? "–" : formatBytes(server().memory ?? 0)}
+                  hint="Resident memory of the backend process. Only known on Linux."
+                />
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <For each={integrations()}>
+                  {([label, hint, on]) => (
+                    <Tile label={label} value={on ? "On" : "Off"} hint={hint} attention={!on} />
+                  )}
+                </For>
+              </div>
+            </div>
           </Section>
         </div>
       </div>
