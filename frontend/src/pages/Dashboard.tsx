@@ -2435,7 +2435,7 @@ function GoPremium() {
     <>
       <button
         type="button"
-        class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf px-3.5 font-display text-base font-semibold whitespace-nowrap text-leaf transition-colors hover:bg-ghost-hover sm:px-4"
+        class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold whitespace-nowrap text-leaf transition-colors hover:bg-ghost-hover max-sm:w-11 max-sm:justify-center sm:px-4"
         title={t("Go premium")}
         onClick={() => dialog?.showModal()}
       >
@@ -2786,11 +2786,11 @@ export default function Dashboard() {
           }
         >
           {(current) => (
-            <div class="flex min-w-0 items-center gap-3">
+            <div class="ml-auto flex min-w-0 items-center gap-3">
               <Show when={current().account.premium} fallback={<GoPremium />}>
                 <span
                   title={t("Premium")}
-                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf px-3.5 font-display text-base font-semibold text-leaf sm:px-4"
+                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold text-leaf max-sm:w-11 max-sm:justify-center sm:px-4"
                 >
                   <Icon name="star" class="size-4" />
                   <span class="max-sm:sr-only">{t("Premium")}</span>
@@ -2801,7 +2801,7 @@ export default function Dashboard() {
                   <PickedAvatar picked={channel(current().account) ?? current().account} />
                   <select
                     aria-label={t("Streamer")}
-                    class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base!`}
+                    class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base! max-sm:w-11 max-sm:px-0! max-sm:text-transparent max-sm:[&>option]:text-ink`}
                     value={channel(current().account)?.login ?? ""}
                     onChange={(event) => chooseChannel(event.currentTarget.value)}
                   >
@@ -2812,18 +2812,24 @@ export default function Dashboard() {
                   </select>
                   <Icon
                     name="chevron-down"
-                    class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2"
+                    class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2 max-sm:hidden"
                   />
                 </div>
               </Show>
               <Show when={current().account.admin}>
-                <a href={asset(pages.admin)} class={`${ghostButtonClass} h-11! px-5! text-base!`}>
-                  {t("Admin")}
+                <a
+                  href={asset(pages.admin)}
+                  class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
+                  title={t("Admin")}
+                >
+                  <Icon name="chart" class="size-5 sm:hidden" />
+                  <span class="max-sm:sr-only">{t("Admin")}</span>
                 </a>
               </Show>
               <button
                 type="button"
-                class={`${ghostButtonClass} h-11! px-5! text-base!`}
+                class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
+                title={t("Sign out")}
                 onClick={async () => {
                   try {
                     await signOutEverywhere(current().session);
@@ -2831,7 +2837,8 @@ export default function Dashboard() {
                   signOut();
                 }}
               >
-                {t("Sign out")}
+                <Icon name="sign-out" class="size-5 sm:hidden" />
+                <span class="max-sm:sr-only">{t("Sign out")}</span>
               </button>
             </div>
           )}
@@ -2854,9 +2861,9 @@ export default function Dashboard() {
           }
         >
           {(current) => (
-            <section class="mx-auto flex max-w-[1120px] items-center gap-4 px-5 pt-10 pb-8 sm:px-8">
+            <section class="mx-auto flex max-w-[1120px] flex-col items-start gap-4 px-5 pt-10 pb-8 sm:flex-row sm:items-center sm:px-8">
               <Avatar account={current().account} />
-              <h1 class="min-w-0 text-[32px] leading-[1.1] font-bold text-balance sm:text-[40px]">
+              <h1 class="min-w-0 max-w-full text-[32px] leading-[1.1] font-bold break-words text-balance sm:text-[40px]">
                 {t("Hi, {name}", { name: current().account.name })}
               </h1>
             </section>

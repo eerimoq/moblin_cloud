@@ -970,7 +970,8 @@ export default function Admin() {
           {(current) => (
             <button
               type="button"
-              class={`${ghostButtonClass} h-11! px-5! text-base!`}
+              class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
+              title="Sign out"
               onClick={async () => {
                 try {
                   await signOutEverywhere(current().session);
@@ -978,7 +979,8 @@ export default function Admin() {
                 signOut();
               }}
             >
-              Sign out
+              <Icon name="sign-out" class="size-5 sm:hidden" />
+              <span class="max-sm:sr-only">Sign out</span>
             </button>
           )}
         </Show>
