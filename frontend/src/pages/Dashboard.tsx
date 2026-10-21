@@ -721,6 +721,19 @@ function YourPage(props: {
           "Share it with your viewers so they can send you tips, request songs and spin your wheel.",
         )}
       </p>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div class="min-w-0 flex-1">
+          <Value label={t("Address")} text={pageUrl(props.account)} href={pageUrl(props.account)} />
+        </div>
+        <a
+          href={pageUrl(props.account)}
+          target="_blank"
+          rel="noopener"
+          class={`${ghostButtonClass} shrink-0`}
+        >
+          {t("Open tip page")}
+        </a>
+      </div>
       <Show when={props.account.premium}>
         <BannerImage settings={props.page} busy={props.busy} onImage={props.onImage} />
       </Show>
@@ -850,9 +863,6 @@ function YourPage(props: {
       </Show>
       <div class="flex flex-wrap items-center gap-4">
         <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <a href={pageUrl(props.account)} target="_blank" rel="noopener" class={ghostButtonClass}>
-          {t("Open tip page")}
-        </a>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
     </form>

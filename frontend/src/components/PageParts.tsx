@@ -117,6 +117,8 @@ export function Value(props: {
           {(href) => (
             <a
               href={href()}
+              target="_blank"
+              rel="noopener"
               class="min-w-0 flex-1 font-mono text-[15px] break-all text-leaf hover:text-leaf-bright"
             >
               {props.text}
