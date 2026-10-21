@@ -381,7 +381,7 @@ mod tests {
                 "currency": "USD",
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
-                "environment": "production",
+                "environment": "sandbox",
                 "stripe": null,
             }})
         );

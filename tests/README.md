@@ -1,6 +1,6 @@
 Black box system tests of the backend. They build and start the backend, then use its API
 like the website does: a streamer signs in and manages the page in the dashboard, and viewers
-tip, spin the wheel and request songs on the page. Payments go through the PayPal sandbox and Stripe's test mode.
+tip, spin the wheel and request songs on the page. Payments go through fake PayPal and Stripe servers.
 Everything but the frontend is tested.
 
 The streamer's Moblin is the fake one in `tests/utils/fake_moblin.py` by default, which speaks
@@ -21,33 +21,22 @@ playwright install chromium
 
 # Configuration
 
-The tests run on this machine with the fake Moblin without a configuration. For PayPal, Stripe, Twitch
-or a real Moblin device, copy `tests/config.example.toml` to `tests/config.toml` and modify it
+The tests run on this machine with the fake Moblin without a configuration. For Twitch or a real
+Moblin device, copy `tests/config.example.toml` to `tests/config.toml` and modify it
 to match your test setup. `tests/config.toml` is used if it exists, otherwise
 `$XDG_CONFIG_HOME/moblin-website/tests/config.toml`.
 
-Without `[paypal]` the PayPal payment tests are skipped, without `[stripe]` the Stripe ones, without `[twitch]` the Twitch lookups, and
-without `--device` the tests needing a real Moblin.
+Without `[twitch]` the Twitch lookups are skipped, and without `--device` the tests needing a real
+Moblin.
 
-## PayPal sandbox
+## PayPal and Stripe
 
-In https://developer.paypal.com, create a sandbox REST app for a partner account and another
-business (seller) sandbox account. Once per run the tests connect the seller in the dashboard
-through PayPal's seller onboarding, in a Chromium whose profile is kept in `tests/cache/browser`.
-If automating PayPal's pages fails, run with `--interactive` and do it by hand in the shown
-browser. Viewers pay with a sandbox test card through PayPal's API, which approves orders like
-PayPal's popup does, so no buyer account or browser is needed for payments.
-
-## Stripe test mode
-
-In https://dashboard.stripe.com, enable Connect for the platform and take the test mode secret
-and publishable keys. The tests refuse live keys. The backend creates a new Stripe test
-connected account for the streamer in every run, which is set up by hand in Stripe's onboarding
-in the browser with `--interactive`, using Stripe's test values (the tests print them).
-Without `--interactive` the tests needing it are skipped, the rest of Stripe is still tested.
-Viewers pay with the test card `pm_card_visa` through Stripe's API, which confirms payments like
-Stripe's Payment Element does. The payment tests run once with PayPal and once with Stripe,
-the Stripe ones named with a `Stripe` suffix.
+Payments always go through the fake PayPal in `tests/utils/fake_paypal.py` and the fake Stripe in
+`tests/utils/fake_stripe.py`, which the backend is pointed at with `--paypal-url` and
+`--stripe-url`. Their onboarding links connect a made-up seller or account at once and return to
+the dashboard. Viewers pay with a test card through their APIs, like in PayPal's popup or Stripe's
+Payment Element. The payment tests run once with PayPal and once with Stripe, the Stripe ones
+named with a `Stripe` suffix.
 
 # Real Moblin device configuration
 

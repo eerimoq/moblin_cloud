@@ -130,6 +130,15 @@ def session_of(dashboard_url: str) -> str | None:
     return parse_qs(parts.fragment).get("session", [None])[0]
 
 
+def follow_onboarding(url: str) -> str:
+    """Opens a payment provider's onboarding link, which returns to the dashboard when done."""
+    response = requests.get(url, allow_redirects=False, timeout=30)
+    location = response.headers.get("location", "")
+    if response.status_code != 302 or not location.startswith(f"{FRONTEND_URL}/dashboard/"):
+        raise Exception(f"Onboarding at {url} answered {response.status_code} to {location!r}.")
+    return location
+
+
 class Dashboard(Client):
     """A streamer signed in at https://moblin.app/dashboard/."""
 

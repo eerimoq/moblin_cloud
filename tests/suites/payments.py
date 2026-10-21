@@ -22,7 +22,7 @@ WHEEL = [wheel_option("Push-ups"), wheel_option("Sing a song", 2), wheel_option(
 class PaymentTestCase(TestCase):
     """A viewer paying with PayPal or Stripe on the page of the signed in streamer.
 
-    With PayPal the streamer's PayPal sandbox seller is connected, with Stripe a Stripe test account.
+    With PayPal a seller of the fake PayPal is connected, with Stripe an account of the fake Stripe.
     """
 
     def __init__(self, context: Context, provider: str = "paypal"):
@@ -30,10 +30,6 @@ class PaymentTestCase(TestCase):
         self.provider = provider
 
     def setup(self):
-        if self.provider == "stripe":
-            self.skip_if_no_stripe()
-        else:
-            self.skip_if_no_paypal()
         self.dashboard = self.sign_in()
         if self.provider == "stripe":
             self.settings = self.context.page_with_stripe(self.dashboard)
@@ -69,11 +65,9 @@ class PaymentTestCase(TestCase):
     def pay(self, order_id: str):
         """Pays the order with a test card, like the viewer in PayPal's popup or Stripe's Payment Element."""
         if self.provider == "stripe":
-            assert self.context.stripe_test_mode is not None
-            self.context.stripe_test_mode.pay_with_card(order_id, self.account_id)
+            self.context.stripe.pay_with_card(order_id, self.account_id)
         else:
-            assert self.context.paypal_sandbox is not None
-            self.context.paypal_sandbox.pay_with_card(order_id, self.merchant_id)
+            self.context.paypal.pay_with_card(order_id, self.merchant_id)
 
     def capture(self, capture: Callable[[str], dict], order_id: str) -> dict:
         """Captures like the page, trying again when the payment provider is temporarily unavailable."""
@@ -96,8 +90,7 @@ class PaymentTestCase(TestCase):
                 [currency.lower(), round(float(value) * 100)],
             )
             return
-        assert self.context.paypal_sandbox is not None
-        order = self.context.paypal_sandbox.order(order_id, self.merchant_id)
+        order = self.context.paypal.order(order_id, self.merchant_id)
         self.assert_equal(order["status"], "COMPLETED")
         unit = order["purchase_units"][0]
         self.assert_equal(unit["payee"]["merchant_id"], self.merchant_id)
@@ -109,8 +102,7 @@ class PaymentTestCase(TestCase):
         if self.provider == "stripe":
             self.assert_not_equal(self.stripe_payment(order_id)["status"], "succeeded")
             return
-        assert self.context.paypal_sandbox is not None
-        order = self.context.paypal_sandbox.order(order_id, self.merchant_id)
+        order = self.context.paypal.order(order_id, self.merchant_id)
         self.assert_not_equal(order["status"], "COMPLETED")
 
     def assert_hold_released(self, order_id: str):
@@ -122,8 +114,7 @@ class PaymentTestCase(TestCase):
 
     def stripe_payment(self, payment_id: str) -> dict:
         """The payment on the streamer's Stripe account, which is where it must be."""
-        assert self.context.stripe_test_mode is not None
-        return self.context.stripe_test_mode.payment(payment_id, self.account_id)
+        return self.context.stripe.payment(payment_id, self.account_id)
 
 
 class PaymentsTipNotApproved(PaymentTestCase):

@@ -133,6 +133,9 @@ struct Cli {
     /// Use the PayPal sandbox.
     #[arg(long, env = "PAYPAL_SANDBOX")]
     paypal_sandbox: bool,
+    /// Base URL of the PayPal API to use instead of PayPal's, for a fake PayPal in tests.
+    #[arg(long, value_name = "URL", requires = "paypal_client_id")]
+    paypal_url: Option<String>,
     /// Stripe platform secret key. A test mode key takes test payments.
     #[arg(
         long,
@@ -144,6 +147,9 @@ struct Cli {
     /// Stripe platform publishable key.
     #[arg(long, env = "STRIPE_PUBLISHABLE_KEY", requires = "stripe_secret_key")]
     stripe_publishable_key: Option<String>,
+    /// Base URL of the Stripe API to use instead of Stripe's, for a fake Stripe in tests.
+    #[arg(long, value_name = "URL", requires = "stripe_secret_key")]
+    stripe_url: Option<String>,
     /// Session signing secret. Random without it.
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
@@ -307,25 +313,34 @@ async fn main() -> Result<()> {
         cli.paypal_partner_id,
     ) {
         (Some(client_id), Some(client_secret), Some(partner_id)) => {
-            let url = if cli.paypal_sandbox {
-                paypal::SANDBOX_URL
-            } else {
-                paypal::LIVE_URL
-            };
-            info!(
-                "taking PayPal payments in {} mode",
-                if cli.paypal_sandbox {
-                    "sandbox"
-                } else {
-                    "live"
+            let url = match cli.paypal_url {
+                Some(url) => {
+                    warn!("taking PayPal payments with {url} instead of PayPal");
+                    url
                 }
-            );
+                None => {
+                    info!(
+                        "taking PayPal payments in {} mode",
+                        if cli.paypal_sandbox {
+                            "sandbox"
+                        } else {
+                            "live"
+                        }
+                    );
+                    if cli.paypal_sandbox {
+                        paypal::SANDBOX_URL
+                    } else {
+                        paypal::LIVE_URL
+                    }
+                    .to_string()
+                }
+            };
             if cli.paypal_webhook_id.is_none() {
                 warn!("no PayPal webhook ID, refusing PayPal webhooks");
             }
             Some(PayPal::new(
                 http_client(),
-                url.to_string(),
+                url,
                 client_id,
                 client_secret,
                 partner_id,
@@ -340,12 +355,14 @@ async fn main() -> Result<()> {
     };
     let stripe = match (cli.stripe_secret_key, cli.stripe_publishable_key) {
         (Some(secret_key), Some(publishable_key)) => {
-            let stripe = Stripe::new(
-                http_client(),
-                stripe::URL.to_string(),
-                secret_key,
-                publishable_key,
-            );
+            let url = match cli.stripe_url {
+                Some(url) => {
+                    warn!("taking Stripe payments with {url} instead of Stripe");
+                    url
+                }
+                None => stripe::URL.to_string(),
+            };
+            let stripe = Stripe::new(http_client(), url, secret_key, publishable_key);
             info!(
                 "taking Stripe payments in {} mode",
                 if stripe.is_test() { "test" } else { "live" }

@@ -8,7 +8,7 @@ backend-port = 8090
 # MOBLIN_WEBSITE_API_URL is http://<tester-ip-address>:<remote-control-port>, and the tester
 # relays it to the backend.
 remote-control-port = 2345
-# Show the browser used for PayPal and Twitch. It is always shown with --interactive.
+# Show the browser used for Twitch. It is always shown with --interactive.
 headless-browser = true
 # Accept live posts without App Attest. Set to false to test that only Moblin can post, with
 # a Moblin debug build whose MOBLIN_WEBSITE_API_URL is http://<tester-ip-address>:<backend-port>.
@@ -30,21 +30,3 @@ capabilities = ["apple-music"]
 # "fake" signs in as made-up users with the fake Twitch in tests/utils/fake_twitch.py, "real" in the browser with a Twitch account.
 # sign-in = "fake"
 # live-channel = "eerimoq"
-
-# Optional. A PayPal sandbox REST app of a partner, plus another business sandbox account to
-# connect as the streamer, from https://developer.paypal.com/dashboard/accounts.
-# [paypal]
-# client-id = "..."
-# client-secret = "..."
-# partner-id = "..."
-# attribution-id = "..."
-# webhook-id = "..."
-# seller-email = "seller@business.example.com"
-# seller-password = "..."
-
-# Optional. A Stripe sandbox (test mode) platform with Connect enabled, from
-# https://dashboard.stripe.com/test/apikeys. Each run sets up a new test connected account in
-# Stripe's onboarding, by hand with --interactive; without it the tests needing one are skipped.
-# [stripe]
-# secret-key = "sk_test_..."
-# publishable-key = "pk_test_..."

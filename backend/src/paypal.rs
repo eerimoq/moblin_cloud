@@ -116,10 +116,10 @@ impl PayPal {
     }
 
     pub fn environment(&self) -> &'static str {
-        if self.url == SANDBOX_URL {
-            "sandbox"
-        } else {
+        if self.url == LIVE_URL {
             "production"
+        } else {
+            "sandbox"
         }
     }
 

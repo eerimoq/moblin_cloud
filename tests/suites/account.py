@@ -170,8 +170,8 @@ class AccountPageAtSignIn(AccountTestCase):
                 "merchantId": None,
             },
         )
-        self.assert_equal(settings["paypal"], self.context.config.paypal() is not None)
-        self.assert_equal(settings["paypalSandbox"], self.context.config.paypal() is not None)
+        self.assert_true(settings["paypal"])
+        self.assert_true(settings["paypalSandbox"])
         if self.context.config.twitch_sign_in() == "fake":
             self.assert_equal(self.sign_in("createpage").account(), account)
         page_id = settings["id"]
@@ -360,17 +360,15 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
     def run(self):
         dashboard = self.sign_in("paidneedspaypal")
         page_id = dashboard.page_id()
-        if self.context.config.paypal() is None and self.context.config.stripe() is None:
-            status, text = 503, "payments are unavailable"
-        else:
-            status, text = 409, "connect PayPal or Stripe first"
         for changes in [
             {"songs": {"price": 100}},
             {"tips": {"amounts": [100]}},
             {"spin": {"options": [{"spins": 1, "price": 100}]}},
         ]:
             self.assert_backend_error(
-                status, lambda changes=changes: dashboard.save_settings(**changes), text
+                409,
+                lambda changes=changes: dashboard.save_settings(**changes),
+                "connect PayPal or Stripe first",
             )
         viewer = self.website.viewer(page_id)
         self.assert_equal(viewer.paid_songs(), None)

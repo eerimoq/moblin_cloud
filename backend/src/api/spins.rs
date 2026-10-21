@@ -299,7 +299,7 @@ mod tests {
                 "currency": "USD",
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
-                "environment": "production",
+                "environment": "sandbox",
                 "stripe": null,
             }, "subSpins": null, "wheel": null, "connected": false})
         );

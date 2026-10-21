@@ -13,6 +13,8 @@ from systest import wait_until
 from .config import FRONTEND_URL
 from .config import Config
 from .fake_kick import FakeKick
+from .fake_paypal import FakePayPal
+from .fake_stripe import FakeStripe
 from .fake_twitch import FakeTwitch
 from .utils import FILES_DIR
 from .utils import REPO_DIR
@@ -40,13 +42,19 @@ class Backend:
         self._process: ManagedProcess | None = None
         self.fake_twitch: FakeTwitch | None = None
         self.fake_kick: FakeKick | None = None
+        self.fake_paypal = FakePayPal()
+        self.fake_stripe = FakeStripe()
 
     def __enter__(self):
+        self.fake_paypal.start()
+        self.fake_stripe.start()
         self.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
+        self.fake_paypal.stop()
+        self.fake_stripe.stop()
 
     def start(self):
         with socket.socket() as sock:
@@ -156,29 +164,26 @@ class Backend:
             ]
             if "live-channel" in twitch:
                 arguments += ["--twitch-live-channel", twitch["live-channel"]]
-        paypal = self.config.paypal()
-        if paypal is not None:
-            arguments += [
-                "--paypal-sandbox",
-                "--paypal-client-id",
-                paypal["client-id"],
-                "--paypal-client-secret",
-                paypal["client-secret"],
-                "--paypal-partner-id",
-                paypal["partner-id"],
-            ]
-            if "attribution-id" in paypal:
-                arguments += ["--paypal-attribution-id", paypal["attribution-id"]]
-            if "webhook-id" in paypal:
-                arguments += ["--paypal-webhook-id", paypal["webhook-id"]]
-        stripe = self.config.stripe()
-        if stripe is not None:
-            arguments += [
-                "--stripe-secret-key",
-                stripe["secret-key"],
-                "--stripe-publishable-key",
-                stripe["publishable-key"],
-            ]
+        paypal = self.fake_paypal.config
+        stripe = self.fake_stripe.config
+        arguments += [
+            "--paypal-url",
+            self.fake_paypal.url,
+            "--paypal-client-id",
+            paypal["client-id"],
+            "--paypal-client-secret",
+            paypal["client-secret"],
+            "--paypal-partner-id",
+            paypal["partner-id"],
+            "--paypal-webhook-id",
+            paypal["webhook-id"],
+            "--stripe-url",
+            self.fake_stripe.url,
+            "--stripe-secret-key",
+            stripe["secret-key"],
+            "--stripe-publishable-key",
+            stripe["publishable-key"],
+        ]
         return arguments
 
     def _wait_until_ready(self):

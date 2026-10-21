@@ -267,7 +267,7 @@ mod tests {
                 "currency": "SEK",
                 "clientId": null,
                 "merchantId": null,
-                "environment": "production",
+                "environment": "sandbox",
                 "stripe": null,
             }, "subSongs": null, "maxSongMinutes": null})
         );
@@ -483,7 +483,7 @@ mod tests {
                 "currency": "SEK",
                 "clientId": "id",
                 "merchantId": "MERCHANT00001",
-                "environment": "production",
+                "environment": "sandbox",
                 "stripe": null,
             }, "subSongs": null, "maxSongMinutes": null})
         );

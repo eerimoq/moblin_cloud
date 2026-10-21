@@ -243,19 +243,15 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
             [False, None, False, False, None, False],
         )
         self.assert_equal(settings["payable"], False)
-        if self.context.config.paypal() is None and self.context.config.stripe() is None:
-            status, text = 503, "payments are unavailable"
-        else:
-            status, text = 409, "connect PayPal or Stripe first"
         for paid in [
             {"songs": {"price": 100}},
             {"tips": {"amounts": [100]}},
             {"spin": {"options": [{"spins": 1, "price": 100}]}},
         ]:
             self.assert_backend_error(
-                status,
+                409,
                 lambda paid=paid: self.moderator.moderated_settings(self.page_id, message="Theirs", **paid),
-                text,
+                "connect PayPal or Stripe first",
             )
         settings = self.moderator.moderated_settings(
             self.page_id,
@@ -296,14 +292,13 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
 class ModeratorsChangePaidFeatures(ModeratorsTestCase):
     """Let a moderator turn the streamer's paid tips, wheel and songs on and off and set their amounts.
 
-    The streamer's PayPal sandbox seller is connected, so the money still goes to the streamer, whose
+    The streamer's PayPal seller is connected, so the money still goes to the streamer, whose
     currency only they can change.
     """
 
     login = "modpaid"
 
     def setup(self):
-        self.skip_if_no_paypal()
         super().setup()
         self.context.page_with_paypal(self.dashboard)
         self.dashboard.update_settings(currency="USD", songs=None, tips=None, spin=None)

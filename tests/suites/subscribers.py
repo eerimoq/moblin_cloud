@@ -281,7 +281,6 @@ class SubscribersAlongsidePaidSongs(SubscribersTestCase):
     """Offer paid song requests and subscribers' songs on the same page, without one getting in the other's way."""
 
     def run(self):
-        self.skip_if_no_paypal()
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
         settings = self.context.page_with_paypal(self.dashboard)
         self.dashboard.update_settings(

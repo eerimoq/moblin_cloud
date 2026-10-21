@@ -3,7 +3,6 @@ import time
 import requests
 
 from ..utils.context import Context
-from ..utils.paypal import onboard_seller
 from ..utils.test_case import TestCase
 from ..utils.website import Dashboard
 from .account import session_issued_at
@@ -17,17 +16,12 @@ def public_stripe(context: Context, settings: dict) -> dict | None:
     if settings["stripeAccountId"] is None:
         return None
     return {
-        "publishableKey": (context.config.stripe() or {})["publishable-key"],
+        "publishableKey": context.backend.fake_stripe.config["publishable-key"],
         "accountId": settings["stripeAccountId"],
     }
 
 
-class PayPalTestCase(TestCase):
-    def setup(self):
-        self.skip_if_no_paypal()
-
-
-class PayPalConnect(PayPalTestCase):
+class PayPalConnect(TestCase):
     """Connect the streamer's PayPal account through PayPal's seller onboarding in the dashboard."""
 
     def run(self):
@@ -37,10 +31,10 @@ class PayPalConnect(PayPalTestCase):
             settings = dashboard.disconnect_paypal()
             self.assert_is_none(settings["merchantId"])
         action_url = dashboard.connect_paypal()
-        self.assert_true(action_url.startswith("https://www.sandbox.paypal.com/"), action_url)
+        self.assert_true(action_url.startswith(f"{self.backend.fake_paypal.url}/"), action_url)
         self.assert_true(dashboard.account()["settings"]["paypalPending"])
         self.assert_backend_error(404, dashboard.check_paypal, "PayPal has not connected an account yet")
-        onboard_seller(self.context.browser(), self.context.config, action_url, self.context.interactive)
+        self.context.paypal.onboard_seller(action_url)
         settings = dashboard.check_paypal()
         self.assert_is_not_none(settings["merchantId"])
         self.assert_false(settings["paypalPending"])
@@ -48,7 +42,7 @@ class PayPalConnect(PayPalTestCase):
         self.assert_equal(dashboard.check_paypal()["merchantId"], settings["merchantId"])
 
 
-class PayPalConnectNeedsFreshSignIn(PayPalTestCase):
+class PayPalConnectNeedsFreshSignIn(TestCase):
     """Ask the streamer to sign in again to connect PayPal when signed in more than 10 minutes ago."""
 
     def run(self):
@@ -58,7 +52,7 @@ class PayPalConnectNeedsFreshSignIn(PayPalTestCase):
         self.assert_backend_error(403, stale.connect_paypal, "sign in again to connect PayPal")
 
 
-class PayPalPaidSettings(PayPalTestCase):
+class PayPalPaidSettings(TestCase):
     """Turn song requests, tips and the wheel on, which viewers see with what they need to pay with PayPal."""
 
     def run(self):
@@ -73,7 +67,7 @@ class PayPalPaidSettings(PayPalTestCase):
             settings["spin"]["options"], [{"spins": 1, "price": 200}, {"spins": 3, "price": 500}]
         )
         viewer = self.website.viewer(settings["id"])
-        client_id = (self.context.config.paypal() or {})["client-id"]
+        client_id = self.backend.fake_paypal.config["client-id"]
         stripe = public_stripe(self.context, settings)
         self.assert_equal(
             viewer.paid_songs(),
@@ -105,7 +99,7 @@ class PayPalPaidSettings(PayPalTestCase):
         self.assert_equal(viewer.spin()["spin"], None)
 
 
-class PayPalInvalidPaidSettings(PayPalTestCase):
+class PayPalInvalidPaidSettings(TestCase):
     """Refuse prices, tips and wheel options out of range."""
 
     def run(self):
@@ -130,7 +124,7 @@ class PayPalInvalidPaidSettings(PayPalTestCase):
         dashboard.save_settings()
 
 
-class PayPalDisconnect(PayPalTestCase):
+class PayPalDisconnect(TestCase):
     """Disconnect PayPal, which takes the paid features off the page until connected again."""
 
     def run(self):
@@ -155,33 +149,54 @@ class PayPalDisconnect(PayPalTestCase):
         self.context.page_with_paypal(dashboard)
 
 
-class PayPalWebhookWithBadSignature(PayPalTestCase):
+def post_webhook(backend_url: str, event_type: str, merchant_id: str, signature: str) -> int:
+    """Posts a webhook event like PayPal, whose signature the fake PayPal verifies when it is "good"."""
+    response = requests.post(
+        f"{backend_url}/paypal/webhooks",
+        json={"id": "WH-TEST", "event_type": event_type, "resource": {"merchant_id": merchant_id}},
+        headers={
+            "paypal-auth-algo": "SHA256withRSA",
+            "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-fca2a594-1d93a270",
+            "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
+            "paypal-transmission-sig": signature,
+            "paypal-transmission-time": "2026-01-01T00:00:00Z",
+        },
+        timeout=60,
+    )
+    return response.status_code
+
+
+class PayPalWebhookWithBadSignature(TestCase):
     """Refuse PayPal webhooks whose signature PayPal does not verify."""
 
     def run(self):
-        event: dict = {
-            "id": "WH-TEST",
-            "event_type": "MERCHANT.PARTNER-CONSENT.REVOKED",
-            "resource": {"merchant_id": "ABCDEFGHIJKLM"},
-        }
-        response = requests.post(
-            f"{self.backend.url}/paypal/webhooks",
-            json=event,
-            headers={
-                "paypal-auth-algo": "SHA256withRSA",
-                "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-360caa42-fca2a594-1d93a270",
-                "paypal-transmission-id": "69cd13f0-d67a-11e5-baa3-778b53f4ae55",
-                "paypal-transmission-sig": "bm90IGEgc2lnbmF0dXJl",
-                "paypal-transmission-time": "2026-01-01T00:00:00Z",
-            },
-            timeout=60,
+        dashboard = self.sign_in("webhookbadsignature")
+        merchant_id = self.context.page_with_paypal(dashboard)["merchantId"]
+        status = post_webhook(
+            self.backend.url, "MERCHANT.PARTNER-CONSENT.REVOKED", merchant_id, "bm90IGEgc2lnbmF0dXJl"
         )
-        if "webhook-id" in (self.context.config.paypal() or {}):
-            self.assert_equal(response.status_code, 400)
-        else:
-            self.assert_equal(response.status_code, 503)
+        self.assert_equal(status, 400)
+        self.assert_equal(dashboard.account()["settings"]["merchantId"], merchant_id)
         response = requests.post(f"{self.backend.url}/paypal/webhooks", data="not json", timeout=60)
-        self.assert_in(response.status_code, [400, 503])
+        self.assert_equal(response.status_code, 400)
+
+
+class PayPalWebhooks(TestCase):
+    """Connect PayPal when PayPal says the onboarding completed, and disconnect it when the streamer revokes the consent."""
+
+    def run(self):
+        dashboard = self.sign_in("paypalwebhooks")
+        merchant_id = self.context.paypal.onboard_seller(dashboard.connect_paypal())
+        self.assert_true(dashboard.account()["settings"]["paypalPending"])
+        self.assert_equal(
+            post_webhook(self.backend.url, "MERCHANT.ONBOARDING.COMPLETED", merchant_id, "good"), 200
+        )
+        settings = dashboard.account()["settings"]
+        self.assert_equal([settings["merchantId"], settings["paypalPending"]], [merchant_id, False])
+        self.assert_equal(
+            post_webhook(self.backend.url, "MERCHANT.PARTNER-CONSENT.REVOKED", merchant_id, "good"), 200
+        )
+        self.assert_is_none(dashboard.account()["settings"]["merchantId"])
 
 
 def tests(context: Context):
@@ -192,4 +207,5 @@ def tests(context: Context):
         PayPalInvalidPaidSettings(context),
         PayPalDisconnect(context),
         PayPalWebhookWithBadSignature(context),
+        PayPalWebhooks(context),
     ]
