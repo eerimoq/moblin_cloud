@@ -250,6 +250,27 @@
   }
 }
 
+/* The bars of the player's now playing disc. */
+@utility equalizer-bar {
+  height: 100%;
+  transform-origin: bottom;
+  animation: equalize 1s ease-in-out infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    transform: scaleY(0.6);
+  }
+}
+
+@keyframes equalize {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 /* Looping "tap" on the app icon in the support card. */
 @utility tap-hand {
   transform-origin: 33% 8%;

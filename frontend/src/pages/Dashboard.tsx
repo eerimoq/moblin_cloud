@@ -6,7 +6,7 @@ import { poll } from "../poll";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
 import { createRecent, Latest } from "../components/Latest";
-import Queue, { type Moderate, type Status } from "../components/Queue";
+import Player, { type Moderate, playerCardClass, type Status } from "../components/Player";
 import {
   AccountMenu,
   Band,
@@ -1158,13 +1158,17 @@ function MusicQueue(props: { session: string; page: string; onSignOut: () => voi
     <Show
       when={status() !== "offline"}
       fallback={
-        <div class={cardClass}>
-          <h2 class="text-[23px] font-semibold">{t("Queue")}</h2>
-          <p class="text-ink-2">{t("Moblin is offline, so the queue can't be changed now.")}</p>
+        <div class={playerCardClass}>
+          <div class="flex items-center gap-4 rounded-2xl bg-well p-4">
+            <span class="flex size-12 shrink-0 items-center justify-center rounded-full bg-ghost text-muted">
+              <Icon name="music" class="size-6" />
+            </span>
+            <p class="text-ink-2">{t("Moblin is offline, so the queue can't be changed now.")}</p>
+          </div>
         </div>
       }
     >
-      <Queue status={status()} moderate={moderate} busy={busy()} error={error()} />
+      <Player status={status()} moderate={moderate} busy={busy()} error={error()} />
     </Show>
   );
 }

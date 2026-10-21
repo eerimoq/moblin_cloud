@@ -78,6 +78,17 @@ backend-seed:
 backend-seed-forever interval="2":
 	python3 scripts/seed_backend.py --forever {{interval}}
 
+# Connects the fake Moblin to the running `just backend-run` as the admin user's Moblin, with a playlist to show in the player.
+fake-moblin-run *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	key=$(sqlite3 "backend/${DATABASE:-./database.sqlite}" "select key from devices where account = 'fake-admin' and enabled = 1 order by position limit 1")
+	if [ -z "$key" ]; then
+		echo "No Moblin device for the admin user. Sign in as admin at http://localhost:5173/dashboard/ first." >&2
+		exit 1
+	fi
+	python3 -m tests.utils.fake_moblin http://localhost:8080 --key "$key" {{args}}
+
 backend-docker-build:
 	docker build -t moblin-website-backend backend
 

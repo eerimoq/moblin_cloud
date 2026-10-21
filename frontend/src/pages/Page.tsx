@@ -18,7 +18,7 @@ import { asset } from "../asset";
 import { BackendError } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
-import Queue, { type Status } from "../components/Queue";
+import Player, { type Status } from "../components/Player";
 import { fireConfetti } from "../confetti";
 import { poll } from "../poll";
 import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/PageParts";
@@ -1895,10 +1895,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                 </div>
               )}
             </Show>
-            <div
-              class={`flex flex-col gap-6 ${shown() === "songs" && status() !== "offline" ? "" : "hidden"}`}
-            >
-              <Queue status={status()} />
+            <div class={shown() === "songs" && status() !== "offline" ? "" : "hidden"}>
+              <Player status={status()} />
             </div>
           </div>
         </Show>

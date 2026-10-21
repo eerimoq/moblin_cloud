@@ -32,16 +32,26 @@ def wheel_of(options: list[dict] | None) -> dict | None:
 
 
 class FakeMoblin:
-    def __init__(self, url: str, api_url: str):
+    def __init__(self, url: str | None, api_url: str, songs: int = 0, key: str | None = None):
         self.url = url
         self.api_url = api_url
-        self.key: str | None = None
+        self.key = key
         self.wheel: dict | None = None
         self.song_requests = True
-        self.songs: list[dict] = []
+        self.songs: list[dict] = [
+            {
+                "id": str(number),
+                "title": f"Fake song {number}",
+                "artist": f"Fake artist {number % 4 + 1}",
+                "duration": 140 + number * 37 % 200,
+                "user": ["anna", None, "pelle", "kalle_the_streamer"][number % 4],
+                "requestId": None,
+            }
+            for number in range(1, songs + 1)
+        ]
         self.playing = True
-        self.current_song_index = 0
-        self.next_song_id = 0
+        self.current_song_index = songs // 2
+        self.next_song_id = songs
         self.handled_request_ids: set[str] = set()
         self._stopped = threading.Event()
         self._lock = threading.Lock()
@@ -210,12 +220,19 @@ class FakeMoblin:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("url", help="Where the remote control streamer connects at first.")
     parser.add_argument("api_url", help="Where Moblin Cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
+    parser.add_argument("--control", help="Where the remote control streamer connects at first.")
+    parser.add_argument("--key", help="The Moblin Cloud key, instead of waiting for imported settings.")
+    parser.add_argument(
+        "--songs",
+        type=int,
+        default=20,
+        help="How many songs the playlist starts with, playing the one in the middle (default 20).",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     LOGGER.setLevel(logging.DEBUG)
-    fake = FakeMoblin(args.url, args.api_url)
+    fake = FakeMoblin(args.control, args.api_url, args.songs, args.key)
     fake.start()
     threading.Event().wait()
 
