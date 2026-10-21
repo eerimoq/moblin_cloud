@@ -237,8 +237,10 @@ class AccountDevices(AccountTestCase):
                     {
                         "id": f"DEVICE-{number}",
                         "name": f"Moblin {number}",
+                        "connected": True,
                         "music": number == 1,
                         "wheel": False,
+                        "lastSeen": None,
                     }
                     for number in range(1, 6)
                 ],
@@ -252,6 +254,15 @@ class AccountDevices(AccountTestCase):
             self.assert_backend_error(
                 400, lambda: dashboard.rename_device("DEVICE-2", " "), "the name must be 1 to 30 characters"
             )
+            second = websockets[1]
+            assert second is not None
+            second.close()
+            self.wait_until(
+                lambda: not dashboard.account()["devices"][4]["connected"], "the closed device to disconnect"
+            )
+            device = dashboard.account()["devices"][4]
+            self.assert_equal([device["id"], device["name"], device["music"]], ["DEVICE-2", "Backup", False])
+            self.assert_true(device["lastSeen"] is not None)
         finally:
             for websocket in websockets:
                 if websocket is not None:

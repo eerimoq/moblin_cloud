@@ -146,6 +146,13 @@ pub struct Moderator {
     pub name: String,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct KnownDevice {
+    pub id: String,
+    pub name: String,
+    pub last_seen: u64,
+}
+
 const ACCOUNT_OF_PAGE: &str = "(SELECT id FROM accounts WHERE page_id = ?1)";
 
 const COLUMNS: &str = "page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
@@ -428,6 +435,42 @@ impl Accounts {
             return Err(AccountError::UnknownDevice);
         }
         Ok(())
+    }
+
+    pub fn left_device(&self, page: &str, device: &str) {
+        let result = self.database.lock().execute(
+            &format!(
+                "UPDATE devices SET last_seen = ?3 WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2"
+            ),
+            params![page, device, now()],
+        );
+        if let Err(error) = result {
+            warn!("failed to save device {device} of {page}: {error:#}");
+        }
+    }
+
+    pub fn known_devices(&self, page: &str) -> Vec<KnownDevice> {
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(&format!(
+                "SELECT id, name, last_seen FROM devices WHERE account = {ACCOUNT_OF_PAGE}
+                 ORDER BY last_seen DESC, rowid DESC"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([page], |row| {
+                        Ok(KnownDevice {
+                            id: row.get(0)?,
+                            name: row.get(1)?,
+                            last_seen: row.get(2)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<_>>()
+            });
+        result.unwrap_or_else(|error| {
+            warn!("failed to read the devices of {page}: {error:#}");
+            Vec::new()
+        })
     }
 
     pub fn device_names(&self, page: &str) -> HashMap<String, String> {
@@ -1169,6 +1212,32 @@ mod tests {
         assert_eq!(names["5"], "Moblin 6");
         assert_eq!(names["20"], "Moblin 1");
         assert_eq!(names["24"], "Moblin 5");
+    }
+
+    #[test]
+    fn known_devices_are_listed_last_seen_first() {
+        let accounts = Accounts::new(Database::memory());
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        accounts.seen_device("p", "a").unwrap();
+        accounts.seen_device("p", "b").unwrap();
+        accounts.left_device("q", "a");
+        let ids = |accounts: &Accounts| {
+            accounts
+                .known_devices("p")
+                .into_iter()
+                .map(|device| device.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&accounts), ["b", "a"]);
+        accounts
+            .database
+            .lock()
+            .execute("UPDATE devices SET last_seen = 0", [])
+            .unwrap();
+        accounts.left_device("p", "a");
+        assert_eq!(ids(&accounts), ["a", "b"]);
+        assert_eq!(accounts.known_devices("p")[0].name, "Moblin 1");
+        assert_eq!(accounts.known_devices("p")[1].last_seen, 0);
     }
 
     #[test]

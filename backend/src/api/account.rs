@@ -89,11 +89,14 @@ pub(super) fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct DeviceResponse {
     id: String,
     name: String,
+    connected: bool,
     music: bool,
     wheel: bool,
+    last_seen: Option<u64>,
 }
 
 pub(super) fn device_name(names: &HashMap<String, String>, device: &str) -> String {
@@ -101,6 +104,40 @@ pub(super) fn device_name(names: &HashMap<String, String>, device: &str) -> Stri
         .get(device)
         .cloned()
         .unwrap_or_else(|| "Moblin".to_string())
+}
+
+fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
+    let known = api.accounts.known_devices(page);
+    let connected = api.remote_control.devices(page);
+    let mut devices: Vec<DeviceResponse> = connected
+        .iter()
+        .map(|device| DeviceResponse {
+            id: device.id.clone(),
+            name: known
+                .iter()
+                .find(|known| known.id == device.id)
+                .map(|known| known.name.clone())
+                .unwrap_or_else(|| "Moblin".to_string()),
+            connected: true,
+            music: device.music,
+            wheel: device.wheel,
+            last_seen: None,
+        })
+        .collect();
+    devices.extend(
+        known
+            .into_iter()
+            .filter(|known| !connected.iter().any(|device| device.id == known.id))
+            .map(|known| DeviceResponse {
+                id: known.id,
+                name: known.name,
+                connected: false,
+                music: false,
+                wheel: false,
+                last_seen: Some(known.last_seen),
+            }),
+    );
+    devices
 }
 
 pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
@@ -113,19 +150,7 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
         key: Some(page.key.clone()),
-        devices: {
-            let names = api.accounts.device_names(&page.id);
-            api.remote_control
-                .devices(&page.id)
-                .into_iter()
-                .map(|device| DeviceResponse {
-                    name: device_name(&names, &device.id),
-                    id: device.id,
-                    music: device.music,
-                    wheel: device.wheel,
-                })
-                .collect()
-        },
+        devices: devices(api, &page.id),
         settings: settings_response(api, page.id.clone(), settings).0,
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),

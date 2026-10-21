@@ -200,14 +200,17 @@ class RemoteControlDevices(RemoteControlTestCase):
 
     login = "devices"
 
+    def connected(self):
+        return [device for device in self.dashboard.account()["devices"] if device["connected"]]
+
     def run(self):
         key = self.dashboard.moblin_cloud_key()
         self.moblin.connect_to_backend(key, WHEEL)
         self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be on the page")
         self.second = FakeMoblin(None, self.backend.url, key=key, device_id="SECOND")
         self.second.start()
-        self.wait_until(lambda: len(self.dashboard.account()["devices"]) == 2, "the second device to connect")
-        devices = self.dashboard.account()["devices"]
+        self.wait_until(lambda: len(self.connected()) == 2, "the second device to connect")
+        devices = self.connected()
         self.assert_equal(
             [(device["id"], device["music"], device["wheel"]) for device in devices][1],
             ("SECOND", False, False),
@@ -215,7 +218,7 @@ class RemoteControlDevices(RemoteControlTestCase):
         self.assert_equal([devices[0]["music"], devices[0]["wheel"]], [True, True])
         self.moblin.change_song_requests(False)
         self.wait_until(
-            lambda: self.dashboard.account()["devices"][1]["music"],
+            lambda: self.connected()[1]["music"],
             "song requests to go to the second device",
         )
         self.dashboard.test_song(SONG)
@@ -228,10 +231,8 @@ class RemoteControlDevices(RemoteControlTestCase):
         self.moblin.wait_for_new_backend_request("tip", start)
         self.wait_until(lambda: len(self.second.handled_request_ids) == 1, "the second device to get the tip")
         self.second.stop()
-        self.wait_until(
-            lambda: len(self.dashboard.account()["devices"]) == 1, "the second device to disconnect"
-        )
-        self.assert_true(self.dashboard.account()["devices"][0]["music"])
+        self.wait_until(lambda: len(self.connected()) == 1, "the second device to disconnect")
+        self.assert_true(self.connected()[0]["music"])
 
     def teardown(self):
         if hasattr(self, "second"):

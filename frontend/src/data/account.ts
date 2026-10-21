@@ -9,11 +9,13 @@ import {
   type Settings,
 } from "./remoteControl";
 
-export type ConnectedDevice = {
+export type Device = {
   id: string;
   name: string;
+  connected: boolean;
   music: boolean;
   wheel: boolean;
+  lastSeen: number | null;
 };
 
 export type Account = {
@@ -22,7 +24,7 @@ export type Account = {
   twitch: Identity | null;
   kick: Identity | null;
   key: string | null;
-  devices: ConnectedDevice[];
+  devices: Device[];
   settings: Settings;
   admin: boolean;
   premium: boolean;

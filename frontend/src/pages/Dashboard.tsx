@@ -5,7 +5,7 @@ import { createFlash } from "../flash";
 import { poll } from "../poll";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
-import { createRecent, Latest } from "../components/Latest";
+import { createRecent, Latest, timeAgo } from "../components/Latest";
 import Player, { type Moderate, playerCardClass, type Status } from "../components/Player";
 import {
   AccountMenu,
@@ -47,7 +47,7 @@ import {
   stripeCountries,
   uploadImage,
   type Account,
-  type ConnectedDevice,
+  type Device,
   type Recent,
   type RecentKind,
   type SettingsChanges,
@@ -2285,7 +2285,7 @@ function MoblinSettings(props: {
       }
     }
   };
-  const startRenaming = (device: ConnectedDevice) => {
+  const startRenaming = (device: Device) => {
     setName(device.name);
     setRenaming(device.id);
   };
@@ -2296,10 +2296,16 @@ function MoblinSettings(props: {
       setRenaming(null);
     });
   };
-  const gets = (device: ConnectedDevice) =>
-    [device.music ? t("Song requests") : null, device.wheel ? t("Wheel of luck") : null, t("Tips")]
-      .filter((text) => text !== null)
-      .join(" · ");
+  const gets = (device: Device) =>
+    device.connected
+      ? [
+          device.music ? t("Song requests") : null,
+          device.wheel ? t("Wheel of luck") : null,
+          t("Tips"),
+        ]
+          .filter((text) => text !== null)
+          .join(" · ")
+      : t("Last seen {time}", { time: timeAgo(device.lastSeen ?? 0) });
 
   return (
     <div class={cardClass}>
@@ -2340,16 +2346,19 @@ function MoblinSettings(props: {
       </div>
       <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       <div class="flex flex-col gap-2">
-        <h3 class="text-[15px] font-semibold text-ink-2">{t("Connected devices")}</h3>
+        <h3 class="text-[15px] font-semibold text-ink-2">{t("Devices")}</h3>
         <Show
           when={props.account.devices.length > 0}
-          fallback={<p class="text-muted">{t("No device is connected.")}</p>}
+          fallback={<p class="text-muted">{t("No device has connected yet.")}</p>}
         >
           <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
             <For each={props.account.devices}>
               {(device) => (
                 <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-                  <span class="size-2.5 shrink-0 rounded-full bg-leaf" />
+                  <span
+                    class={`size-2.5 shrink-0 rounded-full ${device.connected ? "bg-leaf" : "bg-muted"}`}
+                    title={device.connected ? t("Connected") : t("Not connected")}
+                  />
                   <Show
                     when={renaming() === device.id}
                     fallback={
@@ -2526,7 +2535,16 @@ function Preview(props: { failed: boolean }) {
               twitch: { login: "", name: "", avatar: null },
               kick: null,
               key: "moblin-cloud-key-preview",
-              devices: [{ id: "", name: "Moblin 1", music: true, wheel: true }],
+              devices: [
+                {
+                  id: "",
+                  name: "Moblin 1",
+                  connected: true,
+                  music: true,
+                  wheel: true,
+                  lastSeen: null,
+                },
+              ],
               settings: {
                 id: "",
                 message: null,

@@ -7,7 +7,7 @@ import { language, t } from "../i18n";
 
 const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
 
-function timeAgo(at: number) {
+export function timeAgo(at: number) {
   const seconds = Math.max(0, Math.round(Date.now() / 1000 - at));
   if (seconds < 60) {
     return t("Just now");

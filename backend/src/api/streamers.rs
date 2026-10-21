@@ -142,7 +142,8 @@ pub(super) async fn handle_remote_control_streamer(
         };
         api.accounts.seen_device(&page, &device);
         api.counters.bump("moblinConnections");
-        api.remote_control.serve(connection, socket).await
+        api.remote_control.serve(connection, socket).await;
+        api.accounts.left_device(&page, &device);
     }))
 }
 
@@ -252,11 +253,11 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "b", "name": "Moblin 2", "music": true, "wheel": false},
-                {"id": "c", "name": "Moblin 3", "music": false, "wheel": false},
-                {"id": "d", "name": "Moblin 4", "music": false, "wheel": false},
-                {"id": "e", "name": "Moblin 5", "music": false, "wheel": false},
-                {"id": "a", "name": "Moblin 1", "music": false, "wheel": false},
+                {"id": "b", "name": "Moblin 2", "connected": true, "music": true, "wheel": false, "lastSeen": null},
+                {"id": "c", "name": "Moblin 3", "connected": true, "music": false, "wheel": false, "lastSeen": null},
+                {"id": "d", "name": "Moblin 4", "connected": true, "music": false, "wheel": false, "lastSeen": null},
+                {"id": "e", "name": "Moblin 5", "connected": true, "music": false, "wheel": false, "lastSeen": null},
+                {"id": "a", "name": "Moblin 1", "connected": true, "music": false, "wheel": false, "lastSeen": null},
             ])
         );
         assert_eq!(api.remote_control.connected_count(), 5);
@@ -294,8 +295,17 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let account: Value = response.json().await.unwrap();
         assert_ne!(account["key"], key);
-        assert_eq!(account["devices"], json!([]));
         assert!(!api.remote_control.is_connected(&id));
+        let devices = account["devices"].as_array().unwrap();
+        assert_eq!(devices.len(), 5);
+        assert!(devices.iter().all(|device| device["connected"] == false
+            && device["music"] == false
+            && device["lastSeen"].is_u64()));
+        assert!(
+            devices
+                .iter()
+                .any(|device| device["id"] == "b" && device["name"] == "Backup")
+        );
     }
 
     async fn send_event(socket: &mut Socket, event: Value) {
@@ -335,8 +345,8 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "main", "name": "Moblin 1", "music": false, "wheel": false},
-                {"id": "other", "name": "Moblin 2", "music": true, "wheel": true},
+                {"id": "main", "name": "Moblin 1", "connected": true, "music": false, "wheel": false, "lastSeen": null},
+                {"id": "other", "name": "Moblin 2", "connected": true, "music": true, "wheel": true, "lastSeen": null},
             ])
         );
         let spin_url = format!("http://{address}/pages/{id}/spin");
