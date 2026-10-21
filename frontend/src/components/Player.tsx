@@ -280,7 +280,7 @@ export default function Player(props: {
                       onClick={clear}
                     >
                       <Icon name="trash" class="size-5" />
-                      {t("Clear")}
+                      {t("Remove all songs")}
                     </button>
                   </Show>
                 </div>
