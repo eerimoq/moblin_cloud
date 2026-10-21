@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::time::sleep;
 
-use crate::accounts::Accounts;
+use crate::accounts::{Accounts, Page};
 use crate::counters;
 use crate::database::Database;
 use crate::pages::format_price;
@@ -237,11 +238,14 @@ impl Deliveries {
         loop {
             self.expire();
             let mut by_device: Vec<(String, Vec<Targeted>)> = Vec::new();
+            let mut pages: HashMap<String, Option<Page>> = HashMap::new();
             for delivery in self.pending() {
-                let page = accounts
-                    .of_page(&delivery.streamer)
-                    .map(|account| account.page);
-                let devices: Vec<String> = match (&delivery.item, &page) {
+                let page = pages.entry(delivery.streamer.clone()).or_insert_with(|| {
+                    accounts
+                        .of_page(&delivery.streamer)
+                        .map(|account| account.page)
+                });
+                let devices: Vec<String> = match (&delivery.item, &*page) {
                     (_, None) => Vec::new(),
                     (Item::Song { .. }, Some(page)) => page
                         .music_device()
