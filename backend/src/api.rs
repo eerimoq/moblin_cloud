@@ -753,8 +753,11 @@ async fn signed_in_redirect(
             api.auth.link_token(sign_in.identity)
         ));
     }
-    let (key, page) = api.remote_control.new_key();
-    let Some(new_id) = api.remote_control.new_account_id() else {
+    let key = api.remote_control.new_key();
+    let (Some(page), Some(new_id)) = (
+        api.remote_control.new_page_id(),
+        api.remote_control.new_account_id(),
+    ) else {
         warn!(
             "no page could be created for {} user {}",
             platform.title(),
@@ -1510,7 +1513,7 @@ async fn handle_account_key(
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let id = signed_in(&api, &headers)?.id;
-    let (key, _) = api.remote_control.new_key();
+    let key = api.remote_control.new_key();
     let account = api.accounts.replace_key(&id, key).map_err(account_error)?;
     api.remote_control.disconnect(&account.page.id);
     info!("{id} got a new Moblin Cloud key");
@@ -5823,7 +5826,8 @@ mod tests {
     }
 
     fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Account {
-        let (key, page) = api.remote_control.new_key();
+        let key = api.remote_control.new_key();
+        let page = api.remote_control.new_page_id().unwrap();
         api.accounts
             .signed_in(
                 &twitch_identity(id, name, login),
@@ -7913,8 +7917,7 @@ mod tests {
             .await
             .unwrap();
         let key = key_of(&account);
-        let page = account["settings"]["id"].as_str().unwrap();
-        assert_eq!(remote_control::id_of(&key), page);
+        assert_eq!(account["settings"]["id"].as_str().unwrap().len(), 16);
         assert_eq!(account["name"], "Erik");
         assert_eq!(account["avatar"], "https://static-cdn.jtvnw.net/erik.png");
         assert_eq!(
@@ -9612,7 +9615,7 @@ mod tests {
                 );
             }
         }
-        let (unknown_key, _) = api.remote_control.new_key();
+        let unknown_key = api.remote_control.new_key();
         assert!(
             tokio_tungstenite::connect_async(format!(
                 "ws://{address}/remote-control/streamer/{unknown_key}"

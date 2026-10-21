@@ -8,7 +8,6 @@ use base64::Engine;
 use base64::prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD};
 use log::info;
 use reqwest::Url;
-use ring::digest::{SHA256, digest};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -263,10 +262,6 @@ pub struct Streamers {
     pub connected: Notify,
 }
 
-pub fn id_of(key: &str) -> String {
-    BASE64_URL_SAFE_NO_PAD.encode(&digest(&SHA256, key.as_bytes()).as_ref()[..12])
-}
-
 pub fn song_link(text: &str) -> Option<String> {
     let url = Url::parse(text.trim()).ok()?;
     if url.scheme() != "https" || url.host_str() != Some("music.apple.com") {
@@ -320,10 +315,12 @@ impl Streamers {
         Some(bytes)
     }
 
-    pub fn new_key(&self) -> (String, String) {
-        let key = Uuid::new_v4().to_string();
-        let id = id_of(&key);
-        (key, id)
+    pub fn new_key(&self) -> String {
+        Uuid::new_v4().to_string()
+    }
+
+    pub fn new_page_id(&self) -> Option<String> {
+        Some(BASE64_URL_SAFE_NO_PAD.encode(self.random_bytes::<12>()?))
     }
 
     pub fn new_request_id(&self) -> Option<String> {
@@ -987,9 +984,9 @@ mod tests {
     }
 
     #[test]
-    fn ids_are_derived_from_keys() {
+    fn keys_and_page_ids_are_random() {
         let streamers = Streamers::new();
-        let (key, id) = streamers.new_key();
+        let key = streamers.new_key();
         assert_eq!(key.len(), 36);
         assert_eq!(
             key.split('-').map(str::len).collect::<Vec<_>>(),
@@ -1001,9 +998,10 @@ mod tests {
             key.chars()
                 .all(|c| c == '-' || c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
         );
+        assert_ne!(streamers.new_key(), key);
+        let id = streamers.new_page_id().unwrap();
         assert_eq!(id.len(), 16);
-        assert_eq!(id_of(&key), id);
-        assert_ne!(streamers.new_key().0, key);
+        assert_ne!(streamers.new_page_id().unwrap(), id);
     }
 
     #[test]
