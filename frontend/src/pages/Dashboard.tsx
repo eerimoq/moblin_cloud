@@ -175,8 +175,11 @@ function SignInAgain() {
   );
 }
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 function createSave(
   busy: () => boolean,
+  changed: () => boolean,
   run: () => Promise<void>,
   errorText: (error: unknown) => string,
 ) {
@@ -199,7 +202,7 @@ function createSave(
       setSaving(false);
     }
   };
-  return { busy, saving, saved, failure, errorText, submit };
+  return { busy, changed, saving, saved, failure, errorText, submit };
 }
 
 function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: boolean }) {
@@ -208,7 +211,7 @@ function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: 
       <SaveButton
         saving={props.save.saving()}
         saved={props.save.saved()}
-        disabled={props.save.busy()}
+        disabled={props.save.busy() || !props.save.changed()}
       />
       <Show when={props.save.failure()}>
         {(failure) => <Notice status>{props.save.errorText(failure().error)}</Notice>}
@@ -228,6 +231,7 @@ function CurrencySettings(props: {
   const [currency, setCurrency] = createSignal(props.currency);
   const save = createSave(
     () => props.busy,
+    () => currency() !== props.currency,
     () => props.onSave({ currency: currency() }),
     (error) => paymentErrorText(error, t("Pick one of the currencies.")),
   );
@@ -679,16 +683,23 @@ function YourPage(props: {
   onSave: (changes: Page) => Promise<void>;
   onImage: (image: File | null) => Promise<void>;
 }) {
-  const [message, setMessage] = createSignal(props.page.message ?? "");
-  const [accent, setAccent] = createSignal(props.page.accent ?? accents[0]);
+  const initial = (): Page => ({
+    message: props.page.message ?? "",
+    accent: props.page.accent ?? accents[0],
+    font: props.page.font ?? fonts[0],
+  });
+  const [message, setMessage] = createSignal(initial().message!);
+  const [accent, setAccent] = createSignal(initial().accent!);
   const [color, setColor] = createSignal(
     isColor(props.page.accent) ? props.page.accent! : "#22b33a",
   );
-  const [font, setFont] = createSignal(props.page.font ?? fonts[0]);
+  const [font, setFont] = createSignal(initial().font!);
+  const current = (): Page => ({ message: message(), accent: accent(), font: font() });
   onMount(() => loadFonts(fonts));
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ message: message(), accent: accent(), font: font() }),
+    () => !same(current(), initial()),
+    () => props.onSave(current()),
     () => t("Something went wrong. Try again."),
   );
 
@@ -844,13 +855,21 @@ function SongSettings(props: {
   busy: boolean;
   onSave: (changes: { songs: Feature<Songs> }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(isOn(props.songs));
-  const [price, setPrice] = createSignal(
-    props.songs ? (props.songs.price / 100).toFixed(2) : "1.00",
-  );
+  const initial = () => ({
+    enabled: isOn(props.songs),
+    price: props.songs ? (props.songs.price / 100).toFixed(2) : "1.00",
+  });
+  const [enabled, setEnabled] = createSignal(initial().enabled);
+  const [price, setPrice] = createSignal(initial().price);
+  const songs = (form: ReturnType<typeof initial>): Feature<Songs> => ({
+    enabled: form.enabled,
+    price: hundredths(form.price),
+  });
+  const current = () => songs({ enabled: enabled(), price: price() });
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ songs: { enabled: enabled(), price: hundredths(price()) } }),
+    () => !same(current(), songs(initial())),
+    () => props.onSave({ songs: current() }),
     (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
   );
 
@@ -900,18 +919,23 @@ function SubscriberSettings(props: {
   onSave: (tiers: Feature<Tiers>) => Promise<void>;
 }) {
   const song = props.kind === "song";
-  const [enabled, setEnabled] = createSignal(isOn(props.tiers));
-  const [amounts, setAmounts] = createSignal(
-    tierNumbers.map((tier) =>
+  const initial = () => ({
+    enabled: isOn(props.tiers),
+    amounts: tierNumbers.map((tier) =>
       String(props.tiers ? tierCount(props.tiers, tier) : [1, 5, 10][tier - 1]),
     ),
-  );
+  });
+  const [enabled, setEnabled] = createSignal(initial().enabled);
+  const [amounts, setAmounts] = createSignal(initial().amounts);
+  const tiers = (form: ReturnType<typeof initial>): Feature<Tiers> => {
+    const [tier1, tier2, tier3] = form.amounts.map((count) => Number.parseInt(count, 10) || 0);
+    return { enabled: form.enabled, tier1, tier2, tier3 };
+  };
+  const current = () => tiers({ enabled: enabled(), amounts: amounts() });
   const save = createSave(
     () => props.busy,
-    () => {
-      const [tier1, tier2, tier3] = amounts().map((count) => Number.parseInt(count, 10) || 0);
-      return props.onSave({ enabled: enabled(), tier1, tier2, tier3 });
-    },
+    () => !same(current(), tiers(initial())),
+    () => props.onSave(current()),
     (error) =>
       paymentErrorText(
         error,
@@ -989,11 +1013,21 @@ function SongLengthSettings(props: {
   busy: boolean;
   onSave: (maxSongLength: Feature<{ minutes: number }>) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(isOn(props.maxSongLength));
-  const [minutes, setMinutes] = createSignal(String(props.maxSongLength?.minutes ?? 7));
+  const initial = () => ({
+    enabled: isOn(props.maxSongLength),
+    minutes: String(props.maxSongLength?.minutes ?? 7),
+  });
+  const [enabled, setEnabled] = createSignal(initial().enabled);
+  const [minutes, setMinutes] = createSignal(initial().minutes);
+  const maxSongLength = (form: ReturnType<typeof initial>) => ({
+    enabled: form.enabled,
+    minutes: Number.parseInt(form.minutes, 10) || 0,
+  });
+  const current = () => maxSongLength({ enabled: enabled(), minutes: minutes() });
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ enabled: enabled(), minutes: Number.parseInt(minutes(), 10) || 0 }),
+    () => !same(current(), maxSongLength(initial())),
+    () => props.onSave(current()),
     () => t("Enter 1 to 60 minutes."),
   );
 
@@ -1201,13 +1235,21 @@ function TipSettings(props: {
   busy: boolean;
   onSave: (changes: { tips: Feature<Tips> }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(isOn(props.tips));
-  const [amounts, setAmounts] = createSignal(
-    (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
-  );
+  const initial = () => ({
+    enabled: isOn(props.tips),
+    amounts: (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
+  });
+  const [enabled, setEnabled] = createSignal(initial().enabled);
+  const [amounts, setAmounts] = createSignal(initial().amounts);
+  const tips = (form: ReturnType<typeof initial>): Feature<Tips> => ({
+    enabled: form.enabled,
+    amounts: amountsOf(form.amounts),
+  });
+  const current = () => tips({ enabled: enabled(), amounts: amounts() });
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ tips: { enabled: enabled(), amounts: amountsOf(amounts()) } }),
+    () => !same(current(), tips(initial())),
+    () => props.onSave({ tips: current() }),
     (error) => paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")),
   );
 
@@ -1284,33 +1326,35 @@ function SpinSettings(props: {
   busy: boolean;
   onSave: (changes: { spin: Feature<Spin> }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(isOn(props.spin));
-  const [options, setOptions] = createSignal(
-    (
+  const initial = () => ({
+    enabled: isOn(props.spin),
+    options: (
       props.spin?.options ?? [
         { spins: 1, price: 500 },
         { spins: 2, price: 800 },
         { spins: 5, price: 1500 },
       ]
     ).map((option) => ({ spins: String(option.spins), price: (option.price / 100).toFixed(2) })),
-  );
+  });
+  const [enabled, setEnabled] = createSignal(initial().enabled);
+  const [options, setOptions] = createSignal(initial().options);
 
   const changeOption = (index: number, change: Partial<{ spins: string; price: string }>) =>
     setOptions(options().map((old, at) => (at === index ? { ...old, ...change } : old)));
+  const spin = (form: ReturnType<typeof initial>): Feature<Spin> => ({
+    enabled: form.enabled,
+    options: form.options
+      .filter((option) => option.spins.trim() && option.price.trim())
+      .map((option) => ({
+        spins: Number.parseInt(option.spins),
+        price: hundredths(option.price),
+      })),
+  });
+  const current = () => spin({ enabled: enabled(), options: options() });
   const save = createSave(
     () => props.busy,
-    () =>
-      props.onSave({
-        spin: {
-          enabled: enabled(),
-          options: options()
-            .filter((option) => option.spins.trim() && option.price.trim())
-            .map((option) => ({
-              spins: Number.parseInt(option.spins),
-              price: hundredths(option.price),
-            })),
-        },
-      }),
+    () => !same(current(), spin(initial())),
+    () => props.onSave({ spin: current() }),
     (error) => paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")),
   );
 
