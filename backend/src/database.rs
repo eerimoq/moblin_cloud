@@ -16,6 +16,24 @@ impl Database {
                 .with_context(|| format!("failed to open {}", path.display()))?,
             None => Connection::open_in_memory()?,
         };
+        for (old, new) in [
+            ("channel_moderators", "twitch_moderators"),
+            ("enabled_moderators", "enabled_twitch_moderators"),
+        ] {
+            let only_old: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1
+                     AND NOT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?2)",
+                    [old, new],
+                    |row| row.get(0),
+                )
+                .context("failed to read the database tables")?;
+            if only_old > 0 {
+                connection
+                    .execute_batch(&format!("ALTER TABLE {old} RENAME TO {new}"))
+                    .with_context(|| format!("failed to rename {old} to {new}"))?;
+            }
+        }
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
@@ -45,15 +63,16 @@ impl Database {
                      enabled INTEGER NOT NULL DEFAULT 1
                  );
                  CREATE INDEX IF NOT EXISTS devices_account ON devices (account);
-                 CREATE TABLE IF NOT EXISTS channel_moderators (
+                 CREATE TABLE IF NOT EXISTS twitch_moderators (
                      broadcaster TEXT NOT NULL,
                      moderator TEXT NOT NULL,
                      login TEXT NOT NULL,
                      name TEXT NOT NULL,
                      PRIMARY KEY (broadcaster, moderator)
                  );
-                 CREATE INDEX IF NOT EXISTS channel_moderators_moderator ON channel_moderators (moderator);
-                 CREATE TABLE IF NOT EXISTS enabled_moderators (
+                 DROP INDEX IF EXISTS channel_moderators_moderator;
+                 CREATE INDEX IF NOT EXISTS twitch_moderators_moderator ON twitch_moderators (moderator);
+                 CREATE TABLE IF NOT EXISTS enabled_twitch_moderators (
                      broadcaster TEXT NOT NULL,
                      moderator TEXT NOT NULL,
                      PRIMARY KEY (broadcaster, moderator)
@@ -194,6 +213,67 @@ pub fn remove(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moderator_tables_are_renamed_on_start() {
+        let path = temporary_path("moderator-tables");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE channel_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
+                 CREATE INDEX channel_moderators_moderator ON channel_moderators (moderator);
+                 CREATE TABLE enabled_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
+                 INSERT INTO channel_moderators VALUES ('1', '2', 'mod', 'Mod');
+                 INSERT INTO enabled_moderators VALUES ('1', '2');",
+            )
+            .unwrap();
+        drop(connection);
+        for _ in 0..2 {
+            let database = Database::open(Some(&path)).unwrap();
+            let connection = database.lock();
+            let login: String = connection
+                .query_row(
+                    "SELECT login FROM twitch_moderators WHERE broadcaster = '1' AND moderator = '2'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(login, "mod");
+            let enabled: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM enabled_twitch_moderators",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(enabled, 1);
+            let old: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE name IN ('channel_moderators', 'enabled_moderators', 'channel_moderators_moderator')",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(old, 0);
+        }
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE channel_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
+                 CREATE TABLE enabled_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));",
+            )
+            .unwrap();
+        let database = Database::open(Some(&path)).unwrap();
+        let rows: u32 = database
+            .lock()
+            .query_row("SELECT count(*) FROM twitch_moderators", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 1);
+        drop(database);
+        remove(&path);
+    }
 
     #[test]
     fn size_is_the_files_on_disk() {

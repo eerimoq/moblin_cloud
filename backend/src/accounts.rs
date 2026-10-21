@@ -171,7 +171,7 @@ pub enum AccountError {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct ChannelModerator {
+pub struct TwitchModerator {
     pub id: String,
     pub login: String,
     pub name: String,
@@ -614,12 +614,12 @@ impl Accounts {
         })
     }
 
-    pub fn set_channel_moderators(&self, broadcaster: &str, moderators: &[ChannelModerator]) {
+    pub fn set_twitch_moderators(&self, broadcaster: &str, moderators: &[TwitchModerator]) {
         let result = (|| {
             let mut database = self.database.lock();
             let transaction = database.transaction()?;
             transaction.execute(
-                "DELETE FROM channel_moderators WHERE broadcaster = ?1",
+                "DELETE FROM twitch_moderators WHERE broadcaster = ?1",
                 [broadcaster],
             )?;
             for moderator in moderators
@@ -627,13 +627,13 @@ impl Accounts {
                 .filter(|moderator| moderator.id != broadcaster)
             {
                 transaction.execute(
-                    "INSERT OR IGNORE INTO channel_moderators (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT OR IGNORE INTO twitch_moderators (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)",
                     [broadcaster, &moderator.id, &moderator.login, &moderator.name],
                 )?;
             }
             transaction.execute(
-                "DELETE FROM enabled_moderators WHERE broadcaster = ?1 AND moderator NOT IN (
-                     SELECT moderator FROM channel_moderators WHERE broadcaster = ?1
+                "DELETE FROM enabled_twitch_moderators WHERE broadcaster = ?1 AND moderator NOT IN (
+                     SELECT moderator FROM twitch_moderators WHERE broadcaster = ?1
                  )",
                 [broadcaster],
             )?;
@@ -644,22 +644,22 @@ impl Accounts {
         }
     }
 
-    pub fn channel_moderators(&self, broadcaster: &str) -> Vec<ChannelModerator> {
+    pub fn twitch_moderators(&self, broadcaster: &str) -> Vec<TwitchModerator> {
         let database = self.database.lock();
         let result = database
             .prepare_cached(
                 "SELECT moderator, login, name, EXISTS (
-                     SELECT 1 FROM enabled_moderators
-                     WHERE enabled_moderators.broadcaster = ?1
-                     AND enabled_moderators.moderator = channel_moderators.moderator
+                     SELECT 1 FROM enabled_twitch_moderators
+                     WHERE enabled_twitch_moderators.broadcaster = ?1
+                     AND enabled_twitch_moderators.moderator = twitch_moderators.moderator
                  )
-                 FROM channel_moderators WHERE broadcaster = ?1
+                 FROM twitch_moderators WHERE broadcaster = ?1
                  ORDER BY name COLLATE NOCASE",
             )
             .and_then(|mut statement| {
                 statement
                     .query_map([broadcaster], |row| {
-                        Ok(ChannelModerator {
+                        Ok(TwitchModerator {
                             id: row.get(0)?,
                             login: row.get(1)?,
                             name: row.get(2)?,
@@ -674,14 +674,14 @@ impl Accounts {
         })
     }
 
-    pub fn enable_moderator(
+    pub fn enable_twitch_moderator(
         &self,
         broadcaster: &str,
         moderator: &str,
         enabled: bool,
     ) -> Result<(), AccountError> {
         if !self
-            .channel_moderators(broadcaster)
+            .twitch_moderators(broadcaster)
             .iter()
             .any(|known| known.id == moderator)
         {
@@ -690,12 +690,12 @@ impl Accounts {
         let database = self.database.lock();
         if enabled {
             database.execute(
-                "INSERT OR IGNORE INTO enabled_moderators (broadcaster, moderator) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO enabled_twitch_moderators (broadcaster, moderator) VALUES (?1, ?2)",
                 [broadcaster, moderator],
             )
         } else {
             database.execute(
-                "DELETE FROM enabled_moderators WHERE broadcaster = ?1 AND moderator = ?2",
+                "DELETE FROM enabled_twitch_moderators WHERE broadcaster = ?1 AND moderator = ?2",
                 [broadcaster, moderator],
             )
         }
@@ -703,11 +703,11 @@ impl Accounts {
         Ok(())
     }
 
-    pub fn moderates(&self, moderator: &str, broadcaster: &str) -> bool {
+    pub fn twitch_moderates(&self, moderator: &str, broadcaster: &str) -> bool {
         self.database
             .lock()
             .query_row(
-                "SELECT 1 FROM channel_moderators JOIN enabled_moderators USING (moderator, broadcaster)
+                "SELECT 1 FROM twitch_moderators JOIN enabled_twitch_moderators USING (moderator, broadcaster)
                  WHERE moderator = ?1 AND broadcaster = ?2",
                 [moderator, broadcaster],
                 |_| Ok(()),
@@ -720,13 +720,13 @@ impl Accounts {
             .is_some()
     }
 
-    pub fn moderated(&self, moderator: &str) -> Vec<Account> {
+    pub fn twitch_moderated(&self, moderator: &str) -> Vec<Account> {
         let broadcasters: Vec<String> = {
             let database = self.database.lock();
             let result = database
                 .prepare_cached(
-                    "SELECT identities.account FROM channel_moderators
-                     JOIN enabled_moderators USING (moderator, broadcaster)
+                    "SELECT identities.account FROM twitch_moderators
+                     JOIN enabled_twitch_moderators USING (moderator, broadcaster)
                      JOIN identities ON identities.platform = 'twitch' AND identities.user_id = broadcaster
                      WHERE moderator = ?1 ORDER BY identities.name COLLATE NOCASE",
                 )
@@ -887,11 +887,11 @@ impl Accounts {
         if let Some(twitch) = account.twitch_id() {
             statements.extend([
                 (
-                    "DELETE FROM channel_moderators WHERE broadcaster = ?1 OR moderator = ?1",
+                    "DELETE FROM twitch_moderators WHERE broadcaster = ?1 OR moderator = ?1",
                     twitch,
                 ),
                 (
-                    "DELETE FROM enabled_moderators WHERE broadcaster = ?1 OR moderator = ?1",
+                    "DELETE FROM enabled_twitch_moderators WHERE broadcaster = ?1 OR moderator = ?1",
                     twitch,
                 ),
             ]);
@@ -1164,18 +1164,18 @@ mod tests {
         }
         let names = |id| {
             accounts
-                .moderated(id)
+                .twitch_moderated(id)
                 .into_iter()
                 .map(|account| account.name)
                 .collect::<Vec<_>>()
         };
-        let moderator = |id: &str, name: &str, enabled| ChannelModerator {
+        let moderator = |id: &str, name: &str, enabled| TwitchModerator {
             id: id.to_string(),
             login: name.to_lowercase(),
             name: name.to_string(),
             enabled,
         };
-        accounts.set_channel_moderators(
+        accounts.set_twitch_moderators(
             "2",
             &[
                 moderator("4", "Zed", false),
@@ -1184,43 +1184,43 @@ mod tests {
             ],
         );
         assert_eq!(
-            accounts.channel_moderators("2"),
+            accounts.twitch_moderators("2"),
             [moderator("1", "Erik", false), moderator("4", "Zed", false)]
         );
         assert!(names("1").is_empty());
-        assert!(!accounts.moderates("1", "2"));
+        assert!(!accounts.twitch_moderates("1", "2"));
         assert_eq!(
-            accounts.enable_moderator("2", "5", true),
+            accounts.enable_twitch_moderator("2", "5", true),
             Err(AccountError::UnknownModerator)
         );
-        accounts.enable_moderator("2", "1", true).unwrap();
-        accounts.set_channel_moderators("3", &[moderator("1", "Erik", false)]);
-        accounts.enable_moderator("3", "1", true).unwrap();
-        accounts.enable_moderator("2", "4", true).unwrap();
+        accounts.enable_twitch_moderator("2", "1", true).unwrap();
+        accounts.set_twitch_moderators("3", &[moderator("1", "Erik", false)]);
+        accounts.enable_twitch_moderator("3", "1", true).unwrap();
+        accounts.enable_twitch_moderator("2", "4", true).unwrap();
         assert_eq!(names("1"), ["Alice", "Bob"]);
-        assert!(accounts.moderates("1", "2"));
-        assert!(accounts.moderates("4", "2"));
-        assert!(!accounts.moderates("4", "3"));
+        assert!(accounts.twitch_moderates("1", "2"));
+        assert!(accounts.twitch_moderates("4", "2"));
+        assert!(!accounts.twitch_moderates("4", "3"));
         assert_eq!(
-            accounts.channel_moderators("2"),
+            accounts.twitch_moderators("2"),
             [moderator("1", "Erik", true), moderator("4", "Zed", true)]
         );
-        accounts.enable_moderator("3", "1", false).unwrap();
+        accounts.enable_twitch_moderator("3", "1", false).unwrap();
         assert_eq!(names("1"), ["Bob"]);
-        accounts.set_channel_moderators("2", &[moderator("4", "Zed", false)]);
+        accounts.set_twitch_moderators("2", &[moderator("4", "Zed", false)]);
         assert!(names("1").is_empty());
-        assert!(!accounts.moderates("1", "2"));
+        assert!(!accounts.twitch_moderates("1", "2"));
         assert_eq!(
-            accounts.channel_moderators("2"),
+            accounts.twitch_moderators("2"),
             [moderator("4", "Zed", true)]
         );
-        accounts.set_channel_moderators(
+        accounts.set_twitch_moderators(
             "2",
             &[moderator("1", "Erik", false), moderator("4", "Zed", false)],
         );
-        assert!(!accounts.moderates("1", "2"));
+        assert!(!accounts.twitch_moderates("1", "2"));
         assert_eq!(
-            accounts.channel_moderators("2"),
+            accounts.twitch_moderators("2"),
             [moderator("1", "Erik", false), moderator("4", "Zed", true)]
         );
     }
@@ -1235,28 +1235,28 @@ mod tests {
             )
             .unwrap();
         sign_in(&accounts, "1", "Mod", "mod", page("q", "l")).unwrap();
-        accounts.set_channel_moderators(
+        accounts.set_twitch_moderators(
             "42",
-            &[ChannelModerator {
+            &[TwitchModerator {
                 id: "1".to_string(),
                 login: "mod".to_string(),
                 name: "Mod".to_string(),
                 enabled: false,
             }],
         );
-        accounts.enable_moderator("42", "1", true).unwrap();
-        assert_eq!(accounts.moderated("1")[0].page.id, "p");
-        assert!(accounts.moderates("1", "42"));
+        accounts.enable_twitch_moderator("42", "1", true).unwrap();
+        assert_eq!(accounts.twitch_moderated("1")[0].page.id, "p");
+        assert!(accounts.twitch_moderates("1", "42"));
         accounts
             .link("s", &kick("9", "Streamer", "streamer"))
             .unwrap();
         accounts.unlink("s", Platform::Twitch).unwrap();
-        assert!(accounts.moderated("1").is_empty());
+        assert!(accounts.twitch_moderated("1").is_empty());
         assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
         accounts
             .link("s", &twitch("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.moderated("1")[0].page.id, "p");
+        assert_eq!(accounts.twitch_moderated("1")[0].page.id, "p");
     }
 
     #[test]

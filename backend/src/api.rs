@@ -20,8 +20,8 @@ use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{
-    Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, KickModerator, Page,
-    Platform,
+    Account, AccountError, AccountStats, Accounts, Device, KickModerator, Page, Platform,
+    TwitchModerator,
 };
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
@@ -153,8 +153,8 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_account_kick_moderator_remove),
         )
         .route(
-            "/account/moderators/{moderator}",
-            post(handle_account_moderator),
+            "/account/moderators/twitch/{moderator}",
+            post(handle_account_twitch_moderator),
         )
         .route("/account/pages/{id}/music", post(handle_moderator_music))
         .route("/account/pages/{id}/songs", post(handle_moderator_song))
@@ -754,10 +754,10 @@ async fn signed_in_redirect(
     };
     let identity = &sign_in.identity;
     if platform == Platform::Twitch {
-        match api.auth.channel_moderators(&sign_in).await {
+        match api.auth.twitch_moderators(&sign_in).await {
             Ok(moderators) => api
                 .accounts
-                .set_channel_moderators(&identity.user_id, &moderators),
+                .set_twitch_moderators(&identity.user_id, &moderators),
             Err(error) => warn!(
                 "looking up the moderators of Twitch user {} failed: {error:#}",
                 identity.user_id
@@ -862,7 +862,7 @@ async fn viewer_redirect(
         let tier = match platform {
             Platform::Twitch => api
                 .auth
-                .subscription_tier(&sign_in, &streamer.user_id)
+                .twitch_subscription_tier(&sign_in, &streamer.user_id)
                 .await
                 .map_err(ViewerSignInError::Failed)?,
             Platform::Kick => api
@@ -954,7 +954,7 @@ struct AccountResponse {
     admin: bool,
     premium: bool,
     moderating: Vec<ModeratingResponse>,
-    moderators: Vec<ChannelModerator>,
+    twitch_moderators: Vec<TwitchModerator>,
     kick_moderators: Vec<KickModerator>,
 }
 
@@ -985,7 +985,7 @@ struct ModeratingResponse {
 fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse> {
     let twitch = account
         .twitch_id()
-        .map(|twitch| api.accounts.moderated(twitch))
+        .map(|twitch| api.accounts.twitch_moderated(twitch))
         .unwrap_or_default()
         .into_iter()
         .map(|streamer| (Platform::Twitch, streamer));
@@ -1112,9 +1112,9 @@ fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
         settings: settings_response(api, page.id.clone(), settings).0,
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),
-        moderators: twitch
+        twitch_moderators: twitch
             .as_deref()
-            .map(|twitch| api.accounts.channel_moderators(twitch))
+            .map(|twitch| api.accounts.twitch_moderators(twitch))
             .unwrap_or_default(),
         kick_moderators: account
             .kick_id()
@@ -1200,20 +1200,20 @@ async fn handle_account_kick_moderator_remove(
 }
 
 #[derive(Deserialize)]
-struct ModeratorRequest {
+struct TwitchModeratorRequest {
     enabled: bool,
 }
 
-async fn handle_account_moderator(
+async fn handle_account_twitch_moderator(
     State(api): State<Arc<Api>>,
     Path(moderator): Path<String>,
     headers: HeaderMap,
-    Json(request): Json<ModeratorRequest>,
+    Json(request): Json<TwitchModeratorRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     let twitch = account.twitch_id().ok_or_else(twitch_needed)?;
     api.accounts
-        .enable_moderator(twitch, &moderator, request.enabled)
+        .enable_twitch_moderator(twitch, &moderator, request.enabled)
         .map_err(account_error)?;
     info!(
         "{id} turned moderator {moderator} {}",
@@ -1804,7 +1804,7 @@ async fn handle_moderator_account(
         settings: without_payments(settings_response(&api, id.clone(), settings)).0,
         admin: false,
         premium: streamer_is_premium(&api, &id),
-        moderators: Vec::new(),
+        twitch_moderators: Vec::new(),
         kick_moderators: Vec::new(),
         moderating: Vec::new(),
     }))
@@ -2957,7 +2957,7 @@ fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failu
         || signed_in.account.twitch_id().is_some_and(|moderator| {
             streamer()
                 .and_then(|streamer| streamer.twitch_id().map(str::to_string))
-                .is_some_and(|broadcaster| api.accounts.moderates(moderator, &broadcaster))
+                .is_some_and(|broadcaster| api.accounts.twitch_moderates(moderator, &broadcaster))
         })
         || signed_in.account.kick_id().is_some_and(|moderator| {
             streamer()
@@ -5993,8 +5993,8 @@ mod tests {
         }
     }
 
-    fn channel_moderator(id: &str, login: &str, name: &str) -> ChannelModerator {
-        ChannelModerator {
+    fn twitch_moderator(id: &str, login: &str, name: &str) -> TwitchModerator {
+        TwitchModerator {
             id: id.to_string(),
             login: login.to_string(),
             name: name.to_string(),
@@ -7986,15 +7986,15 @@ mod tests {
             .unwrap()
             .to_string();
         assert_eq!(
-            api.accounts.channel_moderators("42"),
+            api.accounts.twitch_moderators("42"),
             [
-                ChannelModerator {
+                TwitchModerator {
                     id: "8".to_string(),
                     login: "eight".to_string(),
                     name: "eight".to_string(),
                     enabled: false,
                 },
-                ChannelModerator {
+                TwitchModerator {
                     id: "7".to_string(),
                     login: "seven".to_string(),
                     name: "Seven".to_string(),
@@ -8004,10 +8004,12 @@ mod tests {
         );
         create_account(&api, "1", "One", "one");
         api.accounts
-            .set_channel_moderators("1", &[channel_moderator("42", "fortytwo", "42")]);
-        api.accounts.enable_moderator("1", "42", true).unwrap();
-        assert!(api.accounts.moderates("42", "1"));
-        assert!(!api.accounts.moderates("42", "9"));
+            .set_twitch_moderators("1", &[twitch_moderator("42", "fortytwo", "42")]);
+        api.accounts
+            .enable_twitch_moderator("1", "42", true)
+            .unwrap();
+        assert!(api.accounts.twitch_moderates("42", "1"));
+        assert!(!api.accounts.twitch_moderates("42", "9"));
         let response = client
             .get(format!("http://{address}/auth/twitch/login"))
             .send()
@@ -8041,8 +8043,8 @@ mod tests {
             again.starts_with("https://moblin.app/dashboard/#session="),
             "{again}"
         );
-        assert_eq!(api.accounts.channel_moderators("42").len(), 2);
-        assert!(api.accounts.moderates("42", "1"));
+        assert_eq!(api.accounts.twitch_moderators("42").len(), 2);
+        assert!(api.accounts.twitch_moderates("42", "1"));
         assert_eq!(
             location(
                 &client
@@ -8812,7 +8814,7 @@ mod tests {
         assert_eq!(streamer["kick"]["login"], "kickerik");
         assert_eq!(streamer["twitch"], Value::Null);
         assert_eq!(streamer["kickModerators"], json!([]));
-        assert_eq!(streamer["moderators"], json!([]));
+        assert_eq!(streamer["twitchModerators"], json!([]));
         let response = client
             .get(format!(
                 "http://{address}/account/pages/{id}/recent?kind=song"
@@ -8890,7 +8892,7 @@ mod tests {
             account["kick"],
             json!({"login": "kickerik", "name": "KickErik", "avatar": "https://files.kick.com/erik.png"})
         );
-        assert_eq!(account["moderators"], json!([]));
+        assert_eq!(account["twitchModerators"], json!([]));
         assert_eq!(account["moderating"], json!([]));
         let id = account["settings"]["id"].as_str().unwrap().to_string();
         let session_account = api.auth.session_of(&session).unwrap().account;
@@ -8936,7 +8938,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let response = client
-            .post(format!("http://{address}/account/moderators/7"))
+            .post(format!("http://{address}/account/moderators/twitch/7"))
             .bearer_auth(&session)
             .json(&json!({"enabled": true}))
             .send()
@@ -9129,8 +9131,8 @@ mod tests {
                      ('42', 'Old Erik', 'erik', NULL, 'oldpage', 3);
                  INSERT INTO devices (key, account, id, name, position) VALUES ('k', '42', 'oldpage', 'Moblin', 0);
                  INSERT INTO pages (id, settings) VALUES ('oldpage', '{\"message\":\"Old\"}');
-                 INSERT INTO channel_moderators (broadcaster, moderator, login, name) VALUES ('7', '42', 'erik', 'Erik');
-                 INSERT INTO enabled_moderators (broadcaster, moderator) VALUES ('7', '42');
+                 INSERT INTO twitch_moderators (broadcaster, moderator, login, name) VALUES ('7', '42', 'erik', 'Erik');
+                 INSERT INTO enabled_twitch_moderators (broadcaster, moderator) VALUES ('7', '42');
                  DELETE FROM identities;",
             )
             .unwrap();
@@ -9291,11 +9293,15 @@ mod tests {
         let (session, key, id) = streamer(&address, &api).await;
         let moderator = create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
-            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
-        api.accounts.enable_moderator("1", "21", true).unwrap();
+            .set_twitch_moderators("1", &[twitch_moderator("21", "mod21", "Mod 21")]);
         api.accounts
-            .set_channel_moderators("21", &[channel_moderator("1", "erik", "Erik")]);
-        api.accounts.enable_moderator("21", "1", true).unwrap();
+            .enable_twitch_moderator("1", "21", true)
+            .unwrap();
+        api.accounts
+            .set_twitch_moderators("21", &[twitch_moderator("1", "erik", "Erik")]);
+        api.accounts
+            .enable_twitch_moderator("21", "1", true)
+            .unwrap();
         let client = reqwest::Client::new();
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -9335,15 +9341,15 @@ mod tests {
                 .is_none()
         );
         assert!(api.accounts.device_of_key(&key).is_none());
-        assert!(api.accounts.channel_moderators("21").is_empty());
-        assert!(api.accounts.moderated("21").is_empty());
+        assert!(api.accounts.twitch_moderators("21").is_empty());
+        assert!(api.accounts.twitch_moderated("21").is_empty());
         assert_eq!(api.accounts.get("21").unwrap(), moderator);
         for (table, column, value) in [
             ("pages", "id", id.as_str()),
-            ("channel_moderators", "broadcaster", "1"),
-            ("channel_moderators", "moderator", "1"),
-            ("enabled_moderators", "broadcaster", "1"),
-            ("enabled_moderators", "moderator", "1"),
+            ("twitch_moderators", "broadcaster", "1"),
+            ("twitch_moderators", "moderator", "1"),
+            ("enabled_twitch_moderators", "broadcaster", "1"),
+            ("enabled_twitch_moderators", "moderator", "1"),
         ] {
             let count: u64 = api
                 .database
@@ -9941,9 +9947,9 @@ mod tests {
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
-            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
+            .set_twitch_moderators("1", &[twitch_moderator("21", "mod21", "Mod 21")]);
         api.accounts
-            .set_channel_moderators("9", &[channel_moderator("22", "viewer22", "Viewer 22")]);
+            .set_twitch_moderators("9", &[twitch_moderator("22", "viewer22", "Viewer 22")]);
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
         let moderating = async |session: &str| {
             client
@@ -9968,7 +9974,9 @@ mod tests {
         };
         let toggle = async |moderator: &str, enabled: bool| {
             client
-                .post(format!("http://{address}/account/moderators/{moderator}"))
+                .post(format!(
+                    "http://{address}/account/moderators/twitch/{moderator}"
+                ))
                 .bearer_auth(&session)
                 .json(&json!({"enabled": enabled}))
                 .send()
@@ -9979,7 +9987,7 @@ mod tests {
             let response = toggle("21", enabled).await;
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(
-                response.json::<Value>().await.unwrap()["moderators"],
+                response.json::<Value>().await.unwrap()["twitchModerators"],
                 json!([{"id": "21", "login": "mod21", "name": "Mod 21", "enabled": enabled}])
             );
         };
@@ -10154,7 +10162,7 @@ mod tests {
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
-            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
+            .set_twitch_moderators("1", &[twitch_moderator("21", "mod21", "Mod 21")]);
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
         let get = async |session: &str, path: &str| {
             client
@@ -10195,7 +10203,9 @@ mod tests {
                 status
             );
         }
-        api.accounts.enable_moderator("1", "21", true).unwrap();
+        api.accounts
+            .enable_twitch_moderator("1", "21", true)
+            .unwrap();
         let own: Value = client
             .get(format!("http://{address}/account"))
             .bearer_auth(&session)
@@ -10214,7 +10224,7 @@ mod tests {
         assert_eq!(account["admin"], false);
         assert_eq!(account["premium"], false);
         assert_eq!(account["moderating"], json!([]));
-        assert_eq!(account["moderators"], json!([]));
+        assert_eq!(account["twitchModerators"], json!([]));
         let settings = &account["settings"];
         assert_eq!(settings["id"], id);
         assert_eq!(settings["currency"], "SEK");
@@ -10361,7 +10371,7 @@ mod tests {
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
-            .set_channel_moderators("1", &[channel_moderator("21", "mod21", "Mod 21")]);
+            .set_twitch_moderators("1", &[twitch_moderator("21", "mod21", "Mod 21")]);
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
         let send = |session: String, body: Value| {
             let (address, id) = (address.clone(), id.clone());
@@ -10377,7 +10387,9 @@ mod tests {
         };
         let response = send(mod1.clone(), json!({"song": LINK})).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        api.accounts.enable_moderator("1", "21", true).unwrap();
+        api.accounts
+            .enable_twitch_moderator("1", "21", true)
+            .unwrap();
         let response = send(viewer1.clone(), json!({"song": LINK})).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let response = send(mod1.clone(), json!({"song": "nope"})).await.unwrap();

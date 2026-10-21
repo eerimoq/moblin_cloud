@@ -29,11 +29,11 @@ export type Account = {
   admin: boolean;
   premium: boolean;
   moderating: Moderating[];
-  moderators: ChannelModerator[];
+  twitchModerators: TwitchModerator[];
   kickModerators: KickModerator[];
 };
 
-export type ChannelModerator = {
+export type TwitchModerator = {
   id: string;
   login: string;
   name: string;
@@ -225,8 +225,12 @@ export const fetchRecent = (
 export const resendRecent = (session: string, id: string, page?: string) =>
   call<object>(`${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, session, post());
 
-export const enableModerator = (session: string, moderator: string, enabled: boolean) =>
-  call<Account>(`/account/moderators/${encodeURIComponent(moderator)}`, session, post({ enabled }));
+export const enableTwitchModerator = (session: string, moderator: string, enabled: boolean) =>
+  call<Account>(
+    `/account/moderators/twitch/${encodeURIComponent(moderator)}`,
+    session,
+    post({ enabled }),
+  );
 
 export const addKickModerator = (session: string, username: string) =>
   call<Account>("/account/moderators/kick", session, post({ username }));

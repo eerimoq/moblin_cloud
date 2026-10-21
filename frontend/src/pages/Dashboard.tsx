@@ -28,8 +28,8 @@ import {
   addKickModerator,
   createAccountSession,
   addModeratorSong,
-  enableModerator,
-  type ChannelModerator,
+  enableTwitchModerator,
+  type TwitchModerator,
   type KickModerator,
   removeKickModerator,
   moderateMusic,
@@ -1122,7 +1122,7 @@ function ModeratorSettings(props: {
   session: string;
   twitch: boolean;
   kick: boolean;
-  moderators: ChannelModerator[];
+  twitchModerators: TwitchModerator[];
   kickModerators: KickModerator[];
   onAccount: (account: Account) => void;
   onSignOut: () => void;
@@ -1172,15 +1172,15 @@ function ModeratorSettings(props: {
     }
   };
 
-  const change = async (moderator: ChannelModerator, enabled: boolean) => {
+  const change = async (moderator: TwitchModerator, enabled: boolean) => {
     setError(null);
     setPending((pending) => ({ ...pending, [moderator.id]: enabled }));
     try {
-      const account = await enableModerator(props.session, moderator.id, enabled);
+      const account = await enableTwitchModerator(props.session, moderator.id, enabled);
       const shown = { ...pending(), [moderator.id]: enabled };
       props.onAccount({
         ...account,
-        moderators: account.moderators.map((known) =>
+        twitchModerators: account.twitchModerators.map((known) =>
           known.id in shown ? { ...known, enabled: shown[known.id] } : known,
         ),
       });
@@ -1274,7 +1274,7 @@ function ModeratorSettings(props: {
         </p>
       </Show>
       <Show
-        when={props.moderators.length > 0}
+        when={props.twitchModerators.length > 0}
         fallback={
           <Show when={props.twitch}>
             <p class="text-ink-2">
@@ -1284,7 +1284,7 @@ function ModeratorSettings(props: {
         }
       >
         <ul class="flex flex-col gap-3">
-          <For each={props.moderators}>
+          <For each={props.twitchModerators}>
             {(moderator) => (
               <li>
                 <label class="flex items-center gap-3">
@@ -1967,7 +1967,7 @@ function Admin(props: {
       shown: () => !moderating() && (account().twitch !== null || account().kick !== null),
       status: () =>
         onOff(
-          account().moderators.some((moderator) => moderator.enabled) ||
+          account().twitchModerators.some((moderator) => moderator.enabled) ||
             account().kickModerators.length > 0,
         ),
     },
@@ -2252,7 +2252,7 @@ function Admin(props: {
               session={props.session}
               twitch={account().twitch !== null}
               kick={account().kick !== null}
-              moderators={account().moderators}
+              twitchModerators={account().twitchModerators}
               kickModerators={account().kickModerators}
               onAccount={setAccount}
               onSignOut={props.onSignOut}
@@ -2958,7 +2958,7 @@ function Preview(props: { failed: boolean }) {
               admin: false,
               premium: false,
               moderating: [],
-              moderators: [],
+              twitchModerators: [],
               kickModerators: [],
             }}
             onSignOut={() => {}}

@@ -11,7 +11,7 @@ use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::accounts::{ChannelModerator, Identity, KickModerator, Platform};
+use crate::accounts::{Identity, KickModerator, Platform, TwitchModerator};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
@@ -481,7 +481,7 @@ impl Auth {
         })
     }
 
-    pub async fn subscription_tier(
+    pub async fn twitch_subscription_tier(
         &self,
         sign_in: &SignIn,
         broadcaster: &str,
@@ -611,7 +611,7 @@ impl Auth {
             }))
     }
 
-    pub async fn channel_moderators(&self, sign_in: &SignIn) -> Result<Vec<ChannelModerator>> {
+    pub async fn twitch_moderators(&self, sign_in: &SignIn) -> Result<Vec<TwitchModerator>> {
         let app = self.twitch.as_ref().context("Twitch not configured")?;
         let token = sign_in.token.as_deref().context("no access token")?;
         #[derive(Deserialize)]
@@ -654,7 +654,7 @@ impl Auth {
                 .json()
                 .await
                 .context("unexpected answer to the moderators request")?;
-            moderators.extend(page.data.into_iter().map(|moderator| ChannelModerator {
+            moderators.extend(page.data.into_iter().map(|moderator| TwitchModerator {
                 name: if moderator.user_name.is_empty() {
                     moderator.user_login.clone()
                 } else {
