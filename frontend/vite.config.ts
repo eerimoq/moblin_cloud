@@ -22,7 +22,10 @@ export default defineConfig({
             res.end();
             return;
           }
-          if (req.url && new RegExp(`^${base}twitch/[^/?.]+/?(\\?.*)?$`).test(req.url)) {
+          if (
+            req.url &&
+            new RegExp(`^${base}(dashboard/)?twitch/[^/?.]+/?(\\?.*)?$`).test(req.url)
+          ) {
             req.url = `${base}404.html`;
           }
           next();

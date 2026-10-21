@@ -1010,7 +1010,7 @@ function dashboardLink(profile: Profile, account: Account | null): DashboardLink
   const channel = account.moderating.find((channel) => channel.login.toLowerCase() === login);
   return channel
     ? {
-        href: asset(`${pages.dashboard}?streamer=twitch:${encodeURIComponent(channel.login)}`),
+        href: asset(`${pages.dashboard}twitch/${encodeURIComponent(channel.login)}`),
         own: false,
       }
     : null;

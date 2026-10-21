@@ -2107,9 +2107,11 @@ function Moderated(props: { session: string; channel: Moderating; onSignOut: () 
 const moderatedChannelKey = "moderatedChannel";
 
 function readModeratedChannel() {
-  const fromUrl = new URLSearchParams(location.search).get("streamer");
-  if (fromUrl !== null) {
-    return fromUrl.startsWith("twitch:") ? fromUrl.slice(7) : "";
+  const fromUrl = location.pathname
+    .slice(import.meta.env.BASE_URL.length)
+    .match(/^dashboard\/twitch\/([^/]+)\/?$/)?.[1];
+  if (fromUrl !== undefined) {
+    return decodeURIComponent(fromUrl);
   }
   try {
     return sessionStorage.getItem(moderatedChannelKey) ?? "";
@@ -2628,16 +2630,8 @@ export default function Dashboard() {
   const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
   const chooseChannel = (login: string) => {
     setChosenChannel(login);
-    const search = new URLSearchParams(location.search);
-    search.delete("streamer");
-    const query = [search.toString(), login ? `streamer=twitch:${login}` : ""]
-      .filter(Boolean)
-      .join("&");
-    history.replaceState(
-      null,
-      "",
-      `${location.pathname}${query ? `?${query}` : ""}${location.hash}`,
-    );
+    const path = login ? `${pages.dashboard}twitch/${encodeURIComponent(login)}` : pages.dashboard;
+    history.replaceState(null, "", `${asset(path)}${location.search}${location.hash}`);
     try {
       sessionStorage.setItem(moderatedChannelKey, login);
     } catch {}
