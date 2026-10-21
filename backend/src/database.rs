@@ -139,6 +139,7 @@ impl Database {
                      ELSE 'spin'
                  END WHERE kind IS NULL;
                  CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);
+                 CREATE INDEX IF NOT EXISTS deliveries_streamer ON deliveries (streamer, test);
                  CREATE INDEX IF NOT EXISTS deliveries_open ON deliveries (requested_at) WHERE NOT finished AND failure IS NOT 'not-found';",
             )
             .context("failed to index the orders and deliveries")?;
