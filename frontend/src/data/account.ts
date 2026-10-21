@@ -52,6 +52,8 @@ export type Moderating = {
   name: string;
   login: string;
   avatar: string | null;
+  twitch: Identity | null;
+  kick: Identity | null;
 };
 
 export type Recent = {

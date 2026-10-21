@@ -2998,8 +2998,14 @@ export default function Dashboard() {
       sessionStorage.setItem(moderatedChannelKey, key);
     } catch {}
   };
-  const channel = (account: Account) =>
-    account.moderating.find((channel) => channelKey(channel) === chosenChannel()) ?? null;
+  const channel = (account: Account) => {
+    const [platform, login] = chosenChannel().split("/", 2) as [Platform, string | undefined];
+    return (
+      account.moderating.find((channel) => channel[platform]?.login === login) ??
+      account.moderating.find((channel) => channelKey(channel) === chosenChannel()) ??
+      null
+    );
+  };
 
   return (
     <>

@@ -980,6 +980,8 @@ struct ModeratingResponse {
     name: String,
     login: String,
     avatar: Option<String>,
+    twitch: Option<PublicIdentity>,
+    kick: Option<PublicIdentity>,
 }
 
 fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse> {
@@ -1009,6 +1011,8 @@ fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse> {
             name: channel.name.clone(),
             login: channel.login.clone(),
             avatar: channel.avatar.clone(),
+            twitch: public_identity(&streamer, Platform::Twitch),
+            kick: public_identity(&streamer, Platform::Kick),
         });
     }
     moderating
@@ -8802,6 +8806,12 @@ mod tests {
                 "name": "KickErik",
                 "login": "kickerik",
                 "avatar": "https://files.kick.com/erik.png",
+                "twitch": null,
+                "kick": {
+                    "login": "kickerik",
+                    "name": "KickErik",
+                    "avatar": "https://files.kick.com/erik.png",
+                },
             }])
         );
         assert_eq!(
@@ -9998,7 +10008,15 @@ mod tests {
         settings(true).await;
         assert_eq!(
             moderating(&mod1).await,
-            json!([{"id": id, "platform": "twitch", "name": "Erik", "login": "erik", "avatar": null}])
+            json!([{
+                "id": id,
+                "platform": "twitch",
+                "name": "Erik",
+                "login": "erik",
+                "avatar": null,
+                "twitch": {"login": "erik", "name": "Erik", "avatar": null},
+                "kick": null,
+            }])
         );
         assert_eq!(moderating(&viewer1).await, json!([]));
         let response = command(&viewer1, json!({"command": "clear"})).await;

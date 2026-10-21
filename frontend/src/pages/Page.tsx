@@ -1056,7 +1056,11 @@ async function signedInAccount(): Promise<Account | null> {
   }
 }
 
-function dashboardLink(id: string, account: Account | null): DashboardLink | null {
+function dashboardLink(
+  id: string,
+  platform: Platform | null,
+  account: Account | null,
+): DashboardLink | null {
   if (!account) {
     return null;
   }
@@ -1064,12 +1068,14 @@ function dashboardLink(id: string, account: Account | null): DashboardLink | nul
     return { href: asset(pages.dashboard), own: true };
   }
   const channel = account.moderating.find((channel) => channel.id === id);
-  return channel
-    ? {
-        href: asset(`${pages.dashboard}twitch/${encodeURIComponent(channel.login)}`),
-        own: false,
-      }
-    : null;
+  if (!channel) {
+    return null;
+  }
+  const address = identityOf(channel, platform) ?? channel;
+  return {
+    href: asset(`${pages.dashboard}${address.platform}/${encodeURIComponent(address.login)}`),
+    own: false,
+  };
 }
 
 function StreamerHeader(props: {
@@ -1786,7 +1792,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       Promise.all([streamerProfile(current), signedInAccount()])
         .then(([found, account]) => {
           batch(() => {
-            setDashboard(dashboardLink(current, account));
+            setDashboard(dashboardLink(current, props.platform, account));
             setProfile(found);
           });
           loadFonts(found.font ? [found.font] : []);

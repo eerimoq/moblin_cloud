@@ -98,9 +98,12 @@ class ModeratorsTurnedOn(ModeratorsTestCase):
             [
                 {
                     "id": self.page_id,
+                    "platform": "twitch",
                     "name": streamer["twitch"]["name"],
                     "login": streamer["twitch"]["login"],
                     "avatar": streamer["twitch"]["avatar"],
+                    "twitch": streamer["twitch"],
+                    "kick": streamer["kick"],
                 }
             ],
         )
