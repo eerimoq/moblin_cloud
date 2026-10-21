@@ -1070,8 +1070,8 @@ fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
     let settings = api.pages.get(&page.id);
     let twitch = account.twitch_id().map(str::to_string);
     Json(AccountResponse {
-        name: account.name.clone(),
-        avatar: account.avatar.clone(),
+        name: account.name().to_string(),
+        avatar: account.avatar().map(str::to_string),
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
         devices: page
@@ -1779,8 +1779,8 @@ async fn handle_moderator_account(
     Ok(Json(AccountResponse {
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
-        name: account.name,
-        avatar: account.avatar,
+        name: account.name().to_string(),
+        avatar: account.avatar().map(str::to_string),
         devices: Vec::new(),
         music_device: None,
         wheel_device: None,
@@ -2014,7 +2014,7 @@ async fn handle_account_stripe_connect(
                 })
                 .unwrap_or(("account", id.as_str()));
             let stripe_account_id = stripe
-                .create_account(user, &account.name, &country)
+                .create_account(user, account.name(), &country)
                 .await
                 .map_err(|error| {
                     warn!("creating a Stripe account in {country} for {id} failed: {error:#}");
@@ -3019,7 +3019,7 @@ async fn moderator_music(
     };
     info!(
         "{user} ({}) sent {command:?} to remote control streamer {id}",
-        account.name
+        account.name()
     );
     let device = music_device(api, id);
     let status = api
@@ -3053,7 +3053,7 @@ async fn moderator_song(
     let message = viewer_message(request.message)?;
     let song_and_user = song_and_user(SongRequest {
         song: request.song,
-        user: Some(account.name),
+        user: Some(account.name().to_string()),
         message: None,
         provider: None,
     })?;
@@ -3823,7 +3823,7 @@ async fn account_test_song(
     let message = viewer_message(request.message)?;
     let request = SongRequest {
         song: request.song.unwrap_or_default(),
-        user: Some(account.name),
+        user: Some(account.name().to_string()),
         message: None,
         provider: None,
     };
@@ -3867,7 +3867,7 @@ async fn account_test_tip(
         id,
         request_id,
         deliveries::Item::Tip {
-            user: account.name,
+            user: account.name().to_string(),
             message: viewer_message(request.message)?.unwrap_or_default(),
             amount,
             currency: settings.currency().to_string(),
@@ -3925,7 +3925,7 @@ async fn account_test_spin(
         id,
         request_id,
         deliveries::Item::Spin {
-            user: account.name,
+            user: account.name().to_string(),
             message: viewer_message(request.message)?.unwrap_or_default(),
             spins,
         },
@@ -9207,8 +9207,8 @@ mod tests {
         database
             .lock()
             .execute_batch(
-                "INSERT INTO accounts (id, name, avatar, page_id, sessions) VALUES
-                     ('0123456789abcdef0123456789abcdef', 'Old Erik', NULL, 'oldpage', 3);
+                "INSERT INTO accounts (id, page_id, sessions) VALUES
+                     ('0123456789abcdef0123456789abcdef', 'oldpage', 3);
                  INSERT INTO identities (platform, user_id, account, login, name) VALUES
                      ('twitch', '42', '0123456789abcdef0123456789abcdef', 'erik', 'Old Erik');
                  INSERT INTO devices (key, account, id, name, position) VALUES ('k', '0123456789abcdef0123456789abcdef', 'oldpage', 'Moblin', 0);

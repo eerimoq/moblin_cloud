@@ -22,8 +22,6 @@ impl Database {
                  PRAGMA synchronous = NORMAL;
                  CREATE TABLE IF NOT EXISTS accounts (
                      id TEXT PRIMARY KEY,
-                     name TEXT NOT NULL,
-                     avatar TEXT,
                      page_id TEXT,
                      music_device TEXT,
                      wheel_device TEXT,
@@ -124,17 +122,19 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
             )
             .context("failed to create the database tables")?;
-        let old_login: u32 = connection
-            .query_row(
-                "SELECT count(*) FROM pragma_table_info('accounts') WHERE name = 'login'",
-                [],
-                |row| row.get(0),
-            )
-            .context("failed to read the accounts columns")?;
-        if old_login > 0 {
-            connection
-                .execute_batch("ALTER TABLE accounts DROP COLUMN login")
-                .context("failed to drop the accounts login column")?;
+        for column in ["login", "name", "avatar"] {
+            let old: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info('accounts') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .context("failed to read the accounts columns")?;
+            if old > 0 {
+                connection
+                    .execute_batch(&format!("ALTER TABLE accounts DROP COLUMN {column}"))
+                    .with_context(|| format!("failed to drop the accounts {column} column"))?;
+            }
         }
         connection.set_prepared_statement_cache_capacity(64);
         Ok(Arc::new(Self {
@@ -186,8 +186,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn old_accounts_login_column_is_dropped_on_start() {
-        let path = temporary_path("accounts-login");
+    fn old_accounts_profile_columns_are_dropped_on_start() {
+        let path = temporary_path("accounts-profile");
         let connection = Connection::open(&path).unwrap();
         connection
             .execute_batch(
@@ -214,18 +214,18 @@ mod tests {
             let connection = database.lock();
             let columns: u32 = connection
                 .query_row(
-                    "SELECT count(*) FROM pragma_table_info('accounts') WHERE name = 'login'",
+                    "SELECT count(*) FROM pragma_table_info('accounts') WHERE name IN ('login', 'name', 'avatar')",
                     [],
                     |row| row.get(0),
                 )
                 .unwrap();
             assert_eq!(columns, 0);
-            let name: String = connection
-                .query_row("SELECT name FROM accounts WHERE id = 'a'", [], |row| {
+            let page: String = connection
+                .query_row("SELECT page_id FROM accounts WHERE id = 'a'", [], |row| {
                     row.get(0)
                 })
                 .unwrap();
-            assert_eq!(name, "Erik");
+            assert_eq!(page, "p");
         }
         remove(&path);
     }
