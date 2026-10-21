@@ -28,7 +28,7 @@ export const formatDuration = (duration: number) => {
   return `${Math.floor(duration / 3600)}:${minutes}:${seconds}`;
 };
 
-export type Paywall = {
+export type Songs = {
   price: number;
 };
 
@@ -70,7 +70,7 @@ export type Settings = Page & {
   id: string;
   connected: boolean;
   currency: string;
-  paywall: Feature<Paywall> | null;
+  songs: Feature<Songs> | null;
   tips: Feature<Tips> | null;
   spin: Feature<Spin> | null;
   subSongs: Feature<Tiers> | null;
@@ -152,7 +152,7 @@ export type PublicPayment = {
   stripe?: StripeConfig | null;
 };
 
-export type PublicPaywall = Price & PublicPayment;
+export type PublicSongs = Price & PublicPayment;
 
 export type PublicTips = PublicPayment & {
   amounts: number[];
@@ -239,7 +239,7 @@ export const pageImageUrl = (id: string, version: string) =>
 export const streamerProfile = (id: string) => call<Profile>(pagePath(id));
 
 export const streamerSongs = (id: string) =>
-  call<{ paywall: PublicPaywall | null; subSongs: Tiers | null; maxSongMinutes: number | null }>(
+  call<{ songs: PublicSongs | null; subSongs: Tiers | null; maxSongMinutes: number | null }>(
     pagePath(id, "/songs"),
   );
 

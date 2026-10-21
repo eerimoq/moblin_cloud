@@ -277,10 +277,10 @@ class SubscribersAlongsidePaidSongs(SubscribersTestCase):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
         settings = self.context.page_with_paypal(self.dashboard)
         self.dashboard.update_settings(
-            currency="USD", paywall={"price": 150}, sub_songs={"tier1": 1, "tier2": 1, "tier3": 1}
+            currency="USD", songs={"price": 150}, sub_songs={"tier1": 1, "tier2": 1, "tier3": 1}
         )
         answer = self.viewer.get(f"/pages/{self.page_id}/songs")
-        self.assert_equal(answer["paywall"]["merchantId"], settings["merchantId"])
+        self.assert_equal(answer["songs"]["merchantId"], settings["merchantId"])
         self.assert_equal(answer["subSongs"], {"tier1": 1, "tier2": 1, "tier3": 1})
         self.connect_moblin()
         self.moblin.clear_music()
@@ -294,7 +294,7 @@ class SubscribersAlongsidePaidSongs(SubscribersTestCase):
 
     def teardown(self):
         if hasattr(self, "dashboard"):
-            self.dashboard.update_settings(paywall=None)
+            self.dashboard.update_settings(songs=None)
         super().teardown()
         if self.context.moblin is not None and self.moblin.has_capability(Capability.APPLE_MUSIC):
             self.moblin.clear_music()

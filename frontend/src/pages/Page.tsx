@@ -53,7 +53,7 @@ import {
   type Profile,
   type Provider,
   type PublicPayment,
-  type PublicPaywall,
+  type PublicSongs,
   type PublicSpin,
   type PublicTips,
   type StripeConfig,
@@ -1429,7 +1429,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [message, setMessage] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(null);
-  const [paywall, setPaywall] = createSignal<PublicPaywall | null>(null);
+  const [songPrice, setSongPrice] = createSignal<PublicSongs | null>(null);
   const [subSongs, setSubSongs] = createSignal<Tiers | null>(null, { equals: sameData });
   const [maxSongMinutes, setMaxSongMinutes] = createSignal<number | null>(null);
   const [subSpins, setSubSpins] = createSignal<Tiers | null>(null, { equals: sameData });
@@ -1501,7 +1501,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     const payment = current && paymentOf(current);
     return current && payment ? { ...current, payment } : null;
   };
-  const payable = createMemo(() => withPayment(paywall()), null, { equals: sameData });
+  const payable = createMemo(() => withPayment(songPrice()), null, { equals: sameData });
   const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
   const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
   const spinnable = () => wheel() !== null || subSpins() !== null;
@@ -1509,12 +1509,12 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
 
   const celebrate = (text: string, title = t("Thanks for the tip!")) => setCheer({ title, text });
 
-  const refreshPaywall = async () => {
+  const refreshSongPrice = async () => {
     const current = id();
     if (current) {
       try {
         const found = await streamerSongs(current);
-        setPaywall(found.paywall);
+        setSongPrice(found.songs);
         setSubSongs(found.subSongs);
         setMaxSongMinutes(found.maxSongMinutes);
       } catch {}
@@ -1615,7 +1615,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       setStatus("offline");
     }
     if (error instanceof BackendError && [400, 402].includes(error.status)) {
-      void refreshPaywall();
+      void refreshSongPrice();
     }
     if (error instanceof BackendError && error.status === 409) {
       void refresh();
@@ -1704,7 +1704,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         .catch(() => {})
         .finally(() => setStyled(true));
     }
-    void refreshPaywall().then(refresh);
+    void refreshSongPrice().then(refresh);
     void refreshTips();
     void refreshSpin();
     onCleanup(

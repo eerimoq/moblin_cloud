@@ -285,7 +285,7 @@ export const removeImage = (session: string, page?: string) =>
 export type SettingsChanges = Page &
   Pick<
     Settings,
-    "currency" | "paywall" | "tips" | "spin" | "subSongs" | "subSpins" | "maxSongLength"
+    "currency" | "songs" | "tips" | "spin" | "subSongs" | "subSpins" | "maxSongLength"
   >;
 
 export const sendTest = (
@@ -301,7 +301,7 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges, 
     session,
     post({
       currency: settings.currency,
-      paywall: settings.paywall,
+      songs: settings.songs,
       tips: settings.tips,
       spin: settings.spin,
       subSongs: settings.subSongs,

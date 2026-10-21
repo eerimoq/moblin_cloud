@@ -157,14 +157,11 @@ class AccountPageAtSignIn(AccountTestCase):
         self.assert_regex(account["devices"][0]["key"], RE_MOBLIN_CLOUD_KEY)
         settings = account["settings"]
         self.assert_equal(
-            {
-                key: settings[key]
-                for key in ["connected", "currency", "paywall", "tips", "spin", "merchantId"]
-            },
+            {key: settings[key] for key in ["connected", "currency", "songs", "tips", "spin", "merchantId"]},
             {
                 "connected": False,
                 "currency": "USD",
-                "paywall": None,
+                "songs": None,
                 "tips": None,
                 "spin": None,
                 "merchantId": None,
@@ -192,7 +189,7 @@ class AccountUnknownPage(TestCase):
         self.assert_backend_error(404, lambda: self.website.id_of_twitch_login("nobody_has_this_login"))
         viewer = self.website.viewer("AAAAAAAAAAAAAAAA")
         self.assert_backend_error(404, viewer.profile)
-        self.assert_equal(viewer.paywall(), None)
+        self.assert_equal(viewer.paid_songs(), None)
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin(), {"spin": None, "subSpins": None, "wheel": None, "connected": False})
         self.assert_backend_error(
@@ -360,7 +357,7 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
         else:
             status, text = 409, "connect PayPal or Stripe first"
         for changes in [
-            {"paywall": {"price": 100}},
+            {"songs": {"price": 100}},
             {"tips": {"amounts": [100]}},
             {"spin": {"options": [{"spins": 1, "price": 100}]}},
         ]:
@@ -368,7 +365,7 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
                 status, lambda changes=changes: dashboard.save_settings(**changes), text
             )
         viewer = self.website.viewer(page_id)
-        self.assert_equal(viewer.paywall(), None)
+        self.assert_equal(viewer.paid_songs(), None)
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin()["spin"], None)
 

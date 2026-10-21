@@ -313,7 +313,7 @@ class PaymentsSpinWhenWheelIsGone(PaymentTestCase):
 class SongRequestTestCase(PaymentTestCase):
     def setup(self):
         super().setup()
-        self.dashboard.save_settings(paywall={"price": 150})
+        self.dashboard.save_settings(songs={"price": 150})
 
 
 class PaymentsInvalidSongRequest(SongRequestTestCase):
@@ -365,9 +365,9 @@ class PaymentsSongRequestPaid(SongRequestTestCase):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
         self.connect_moblin()
         self.moblin.clear_music()
-        paywall = self.viewer.paywall()
-        assert paywall is not None
-        self.assert_equal(paywall["price"], 150)
+        paid_songs = self.viewer.paid_songs()
+        assert paid_songs is not None
+        self.assert_equal(paid_songs["price"], 150)
         order_id = self.order_song(SONG, "Viewer")
         self.assert_equal(self.moblin.backend_requests("find")[-1].body, {"title": SONG_LINK})
         self.pay(order_id)

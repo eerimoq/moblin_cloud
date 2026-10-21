@@ -230,7 +230,7 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
         else:
             status, text = 409, "connect PayPal or Stripe first"
         for paid in [
-            {"paywall": {"price": 100}},
+            {"songs": {"price": 100}},
             {"tips": {"amounts": [100]}},
             {"spin": {"options": [{"spins": 1, "price": 100}]}},
         ]:
@@ -288,7 +288,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         self.skip_if_no_paypal()
         super().setup()
         self.context.page_with_paypal(self.dashboard)
-        self.dashboard.update_settings(currency="USD", paywall=None, tips=None, spin=None)
+        self.dashboard.update_settings(currency="USD", songs=None, tips=None, spin=None)
 
     def run(self):
         self.dashboard.enable_moderator(self.moderator_id, True)
@@ -296,16 +296,16 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         self.assert_equal(
             [settings["payable"], settings["merchantId"], settings["paypal"]], [True, None, False]
         )
-        self.assert_equal([settings["paywall"], settings["tips"], settings["spin"]], [None, None, None])
+        self.assert_equal([settings["songs"], settings["tips"], settings["spin"]], [None, None, None])
         settings = self.moderator.moderated_settings(
             self.page_id,
             currency="EUR",
-            paywall={"price": 150},
+            songs={"price": 150},
             tips={"amounts": [200, 700]},
             spin={"options": [{"spins": 1, "price": 300}, {"spins": 3, "price": 500}]},
         )
         self.assert_equal(settings["currency"], "USD", "currency unchanged by a moderator")
-        self.assert_equal(settings["paywall"], {"enabled": True, "price": 150})
+        self.assert_equal(settings["songs"], {"enabled": True, "price": 150})
         self.assert_equal(settings["tips"], {"enabled": True, "amounts": [200, 700]})
         self.assert_equal(
             settings["spin"],
@@ -313,17 +313,17 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         )
         self.assert_equal([settings["payable"], settings["merchantId"]], [True, None])
         own = self.dashboard.account()["settings"]
-        for field in ["currency", "paywall", "tips", "spin"]:
+        for field in ["currency", "songs", "tips", "spin"]:
             self.assert_equal(own[field], settings[field], f"{field} saved by a moderator")
-        paywall = self.viewer.paywall()
-        assert paywall is not None
+        paid_songs = self.viewer.paid_songs()
+        assert paid_songs is not None
         tips = self.viewer.tips()
         assert tips is not None
-        self.assert_equal(paywall["price"], 150)
+        self.assert_equal(paid_songs["price"], 150)
         self.assert_equal(tips["amounts"], [200, 700])
-        self.assert_equal(paywall["merchantId"], own["merchantId"])
+        self.assert_equal(paid_songs["merchantId"], own["merchantId"])
         off = {
-            "paywall": {**settings["paywall"], "enabled": False},
+            "songs": {**settings["songs"], "enabled": False},
             "tips": {"enabled": True, "amounts": [500]},
             "spin": {**settings["spin"], "enabled": False},
         }
@@ -333,7 +333,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         )
         own = self.dashboard.account()["settings"]
         self.assert_equal({field: own[field] for field in off}, off)
-        self.assert_equal(self.viewer.paywall(), None)
+        self.assert_equal(self.viewer.paid_songs(), None)
         tips = self.viewer.tips()
         assert tips is not None
         self.assert_equal(tips["amounts"], [500])
@@ -346,7 +346,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
     def teardown(self):
         super().teardown()
         if hasattr(self, "dashboard"):
-            self.dashboard.update_settings(currency="USD", paywall=None, tips=None, spin=None)
+            self.dashboard.update_settings(currency="USD", songs=None, tips=None, spin=None)
 
 
 class ModeratorsAddSongsForFree(ModeratorsTestCase):

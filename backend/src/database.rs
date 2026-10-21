@@ -169,6 +169,14 @@ impl Database {
                  ) WHERE settings ->> '$.max_song_minutes' IS NOT NULL;",
             )
             .context("failed to move the longest song settings")?;
+        connection
+            .execute_batch(
+                "UPDATE pages SET settings = json_remove(
+                     json_set(settings, '$.songs', settings -> '$.paywall'),
+                     '$.paywall'
+                 ) WHERE settings -> '$.paywall' IS NOT NULL;",
+            )
+            .context("failed to rename the paywall settings")?;
         connection.set_prepared_statement_cache_capacity(64);
         Ok(Arc::new(Self {
             connection: Mutex::new(connection),

@@ -154,7 +154,7 @@ class Dashboard(Client):
     def save_settings(
         self,
         currency: str | None = None,
-        paywall: dict | None = None,
+        songs: dict | None = None,
         tips: dict | None = None,
         spin: dict | None = None,
         message: str | None = None,
@@ -168,7 +168,7 @@ class Dashboard(Client):
             "/account/settings",
             {
                 "currency": currency,
-                "paywall": paywall,
+                "songs": songs,
                 "tips": tips,
                 "spin": spin,
                 "message": message,
@@ -185,7 +185,7 @@ class Dashboard(Client):
         settings = self.account()["settings"]
         fields = [
             "currency",
-            "paywall",
+            "songs",
             "tips",
             "spin",
             "message",
@@ -257,7 +257,7 @@ class Dashboard(Client):
             field: settings[field]
             for field in [
                 "currency",
-                "paywall",
+                "songs",
                 "tips",
                 "spin",
                 "message",
@@ -315,8 +315,8 @@ class Viewer(Client):
     def profile(self) -> dict:
         return self.get(self._path())
 
-    def paywall(self) -> dict | None:
-        return self.get(self._path("/songs"))["paywall"]
+    def paid_songs(self) -> dict | None:
+        return self.get(self._path("/songs"))["songs"]
 
     def queue(self) -> dict:
         return self.get(self._path("/songs/queue"))

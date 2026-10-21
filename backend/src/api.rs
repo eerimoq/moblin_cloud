@@ -31,7 +31,7 @@ use crate::deliveries::{self, Deliveries};
 use crate::images;
 use crate::live::Live;
 use crate::pages::{
-    CURRENCIES, FONTS, Feature, Pages, Paywall, Settings, SettingsError, SongLength, Spin,
+    CURRENCIES, FONTS, Feature, Pages, Settings, SettingsError, SongLength, Songs, Spin,
     SpinOption, Tiers, Tips, format_price, is_color,
 };
 use crate::payments::{
@@ -329,7 +329,7 @@ struct SettingsResponse {
     id: String,
     connected: bool,
     currency: String,
-    paywall: Option<Feature<Paywall>>,
+    songs: Option<Feature<Songs>>,
     tips: Option<Feature<Tips>>,
     spin: Option<Feature<Spin>>,
     #[serde(rename = "subSongs")]
@@ -371,7 +371,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
     Json(SettingsResponse {
         connected: any_connected(api, &account),
         currency: settings.currency().to_string(),
-        paywall: settings.paywall,
+        songs: settings.songs,
         tips: settings.tips,
         spin: settings.spin,
         sub_songs: settings.sub_songs,
@@ -411,7 +411,7 @@ fn without_payments(mut response: Json<SettingsResponse>) -> Json<SettingsRespon
 struct SettingsRequest {
     #[serde(default)]
     currency: Option<String>,
-    paywall: Option<Feature<Paywall>>,
+    songs: Option<Feature<Songs>>,
     #[serde(default)]
     tips: Option<Feature<Tips>>,
     #[serde(default)]
@@ -494,15 +494,15 @@ async fn update_settings(
         return Err(invalid_currency());
     }
     let paid = currency != current.currency();
-    let paywall = match request.paywall {
-        Some(paywall) => {
-            let paywall = paywall
-                .normalize(Paywall::normalize)
-                .ok_or_else(invalid_paywall)?;
-            if paywall.enabled && (paid || current.paywall.as_ref() != Some(&paywall)) {
+    let songs = match request.songs {
+        Some(songs) => {
+            let songs = songs
+                .normalize(Songs::normalize)
+                .ok_or_else(invalid_songs)?;
+            if songs.enabled && (paid || current.songs.as_ref() != Some(&songs)) {
                 check_payable(api, &id)?;
             }
-            Some(paywall)
+            Some(songs)
         }
         None => None,
     };
@@ -532,7 +532,7 @@ async fn update_settings(
             &id,
             Settings {
                 currency: Some(currency),
-                paywall,
+                songs,
                 tips,
                 spin,
                 sub_songs: request.sub_songs,
@@ -545,7 +545,7 @@ async fn update_settings(
         )
         .map_err(|error| match error {
             SettingsError::InvalidCurrency => invalid_currency(),
-            SettingsError::InvalidPaywall => invalid_paywall(),
+            SettingsError::InvalidSongs => invalid_songs(),
             SettingsError::InvalidTips => invalid_tips(),
             SettingsError::InvalidSpin => invalid_spin(),
             SettingsError::InvalidTiers => (
@@ -571,9 +571,9 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song length {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {id} set currency {}, songs {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song length {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
-        settings.paywall,
+        settings.songs,
         settings.tips,
         settings.spin,
         settings.sub_songs,
@@ -1779,10 +1779,10 @@ fn invalid_tips() -> (StatusCode, String) {
     )
 }
 
-fn invalid_paywall() -> (StatusCode, String) {
+fn invalid_songs() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
-        "the paywall needs a price of 0.50 to 100000".to_string(),
+        "song requests need a price of 0.50 to 100000".to_string(),
     )
 }
 
@@ -1869,7 +1869,7 @@ fn public_stripe(api: &Api, id: &str) -> Option<PublicStripe> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PublicPaywall {
+struct PublicSongs {
     price: u32,
     currency: String,
     client_id: Option<String>,
@@ -1880,24 +1880,21 @@ struct PublicPaywall {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PaywallResponse {
-    paywall: Option<PublicPaywall>,
+struct SongsResponse {
+    songs: Option<PublicSongs>,
     sub_songs: Option<Tiers>,
     max_song_minutes: Option<u32>,
 }
 
-async fn handle_songs(
-    State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
-) -> Json<PaywallResponse> {
+async fn handle_songs(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Json<SongsResponse> {
     let merchant_id = merchant_of(&api, &id);
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    Json(PaywallResponse {
+    Json(SongsResponse {
         sub_songs: settings.sub_songs().cloned(),
         max_song_minutes: settings.max_song_minutes(),
-        paywall: settings.paywall().map(|paywall| PublicPaywall {
-            price: paywall.price,
+        songs: settings.songs().map(|songs| PublicSongs {
+            price: songs.price,
             currency,
             client_id: client_id(&api, &merchant_id),
             merchant_id,
@@ -2198,7 +2195,7 @@ async fn song_order(
     let message = viewer_message(request.message.take())?;
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let paywall = settings.paywall().cloned().ok_or(failure(
+    let songs = settings.songs().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes song requests. Reload the page.",
@@ -2217,7 +2214,7 @@ async fn song_order(
         },
         user: song.user,
         payee,
-        price: song_price(paywall.price, song.duration),
+        price: song_price(songs.price, song.duration),
         currency,
     };
     Ok(Json(start_order(api, order).await?))
@@ -4359,7 +4356,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
+            .json(&json!({"currency": "SEK", "songs": {"price": 250}}))
             .send()
             .await
             .unwrap();
@@ -5176,7 +5173,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "usd", "paywall": null, "spin": {
+            .json(&json!({"currency": "usd", "songs": null, "spin": {
                 "options": [{"spins": 2, "price": 800}],
             }}))
             .send()
@@ -5512,14 +5509,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paywalls_without_paypal_cant_be_paid() {
+    async fn songs_without_paypal_cant_be_paid() {
         let pages = Pages::new(Database::memory());
         pages
             .set(
                 "p",
                 Settings {
                     currency: Some("SEK".to_string()),
-                    paywall: Some(Feature::on(Paywall { price: 250 })),
+                    songs: Some(Feature::on(Songs { price: 250 })),
                     ..Settings::default()
                 },
             )
@@ -5538,7 +5535,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             public,
-            json!({"paywall": {
+            json!({"songs": {
                 "price": 250,
                 "currency": "SEK",
                 "clientId": null,
@@ -5597,7 +5594,7 @@ mod tests {
         let response = reqwest::Client::new()
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
+            .json(&json!({"currency": "SEK", "songs": {"price": 250}}))
             .send()
             .await
             .unwrap();
@@ -5719,7 +5716,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250}, "maxSongLength": {"minutes": 61}}))
+            .json(&json!({"songs": {"price": 250}, "maxSongLength": {"minutes": 61}}))
             .send()
             .await
             .unwrap();
@@ -5727,7 +5724,7 @@ mod tests {
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250}, "maxSongLength": {"minutes": 5}}))
+            .json(&json!({"songs": {"price": 250}, "maxSongLength": {"minutes": 5}}))
             .send()
             .await
             .unwrap()
@@ -5824,7 +5821,7 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"currency": "SEK", "paywall": {"price": 250}}))
+            .json(&json!({"currency": "SEK", "songs": {"price": 250}}))
             .send()
             .await
             .unwrap();
@@ -5833,14 +5830,14 @@ mod tests {
         let settings: Value = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"currency": "sek", "paywall": {"price": 250}}))
+            .json(&json!({"currency": "sek", "songs": {"price": 250}}))
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(settings["paywall"], json!({"enabled": true, "price": 250}));
+        assert_eq!(settings["songs"], json!({"enabled": true, "price": 250}));
         assert_eq!(settings["currency"], "SEK");
         assert_eq!(settings["paypal"], true);
         assert_eq!(settings["merchantId"], "MERCHANT00001");
@@ -5854,7 +5851,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             public,
-            json!({"paywall": {
+            json!({"songs": {
                 "price": 250,
                 "currency": "SEK",
                 "clientId": "id",
@@ -6023,7 +6020,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "EUR", "paywall": {"price": 250}}))
+            .json(&json!({"currency": "EUR", "songs": {"price": 250}}))
             .send()
             .await
             .unwrap();
@@ -6137,7 +6134,7 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"currency": "jpy", "paywall": null, "spin": {
+            .json(&json!({"currency": "jpy", "songs": null, "spin": {
                 "options": [{"spins": 1, "price": 500}],
             }}))
             .send()
@@ -6147,7 +6144,7 @@ mod tests {
         let settings: Value = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"currency": "usd", "paywall": null, "spin": {
+            .json(&json!({"currency": "usd", "songs": null, "spin": {
                 "options": [{"spins": 2, "price": 800}, {"spins": 1, "price": 500}],
             }}))
             .send()
@@ -6316,7 +6313,7 @@ mod tests {
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "usd", "paywall": null, "tips": {
+            .json(&json!({"currency": "usd", "songs": null, "tips": {
                 "amounts": [1000, 200, 500],
             }}))
             .send()
@@ -6717,7 +6714,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn songs_need_a_paywall() {
+    async fn songs_need_a_price() {
         let (address, api) = start_api(None).await;
         let (_, key, id) = streamer(&address, &api).await;
         let _socket = connect(&address, &key).await;
@@ -7200,7 +7197,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             public,
-            json!({"paywall": null, "subSongs": {"tier1": 1, "tier2": 0, "tier3": 3}, "maxSongMinutes": null})
+            json!({"songs": null, "subSongs": {"tier1": 1, "tier2": 0, "tier3": 3}, "maxSongMinutes": null})
         );
         let status = async |session: &str| {
             let response = client
@@ -7696,7 +7693,7 @@ mod tests {
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "maxSongLength": {"minutes": 7}}))
+            .json(&json!({"songs": null, "maxSongLength": {"minutes": 7}}))
             .send()
             .await
             .unwrap()
@@ -7708,7 +7705,7 @@ mod tests {
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({
-                "paywall": null,
+                "songs": null,
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
             }))
@@ -7724,7 +7721,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "accent": "teal"}))
+            .json(&json!({"songs": null, "accent": "teal"}))
             .send()
             .await
             .unwrap();
@@ -7973,11 +7970,11 @@ mod tests {
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
         let settings_url = format!("http://{address}/account/settings");
-        let paywall = json!({"currency": "SEK", "paywall": {"price": 250}});
+        let songs = json!({"currency": "SEK", "songs": {"price": 250}});
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&paywall)
+            .json(&songs)
             .send()
             .await
             .unwrap();
@@ -8064,7 +8061,7 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&old)
-            .json(&paywall)
+            .json(&songs)
             .send()
             .await
             .unwrap();
@@ -8077,8 +8074,8 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(public["paywall"]["merchantId"], "SELLER0000001");
-        assert_eq!(public["paywall"]["clientId"], "id");
+        assert_eq!(public["songs"]["merchantId"], "SELLER0000001");
+        assert_eq!(public["songs"]["clientId"], "id");
         let settings: Value = check().await.unwrap().json().await.unwrap();
         assert_eq!(settings["merchantId"], "SELLER0000001");
         let settings: Value = client
@@ -8100,13 +8097,13 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(public["paywall"]["merchantId"], Value::Null);
-        assert_eq!(public["paywall"]["clientId"], Value::Null);
+        assert_eq!(public["songs"]["merchantId"], Value::Null);
+        assert_eq!(public["songs"]["clientId"], Value::Null);
         for (currency, status) in [("SEK", StatusCode::OK), ("EUR", StatusCode::CONFLICT)] {
             let response = client
                 .post(&settings_url)
                 .bearer_auth(&session)
-                .json(&json!({"currency": currency, "paywall": {"price": 250}}))
+                .json(&json!({"currency": currency, "songs": {"price": 250}}))
                 .send()
                 .await
                 .unwrap();
@@ -8240,7 +8237,7 @@ mod tests {
             ] {
                 let mut request = client
                     .request(method.parse().unwrap(), format!("http://{address}{path}"))
-                    .json(&json!({"paywall": null, "name": "Moblin", "music": "d", "wheel": "d", "enabled": false}));
+                    .json(&json!({"songs": null, "name": "Moblin", "music": "d", "wheel": "d", "enabled": false}));
                 if let Some(token) = token {
                     request = request.bearer_auth(token);
                 }
@@ -8385,14 +8382,14 @@ mod tests {
             client
                 .post(format!("http://{address}/account/settings"))
                 .bearer_auth(session)
-                .json(&json!({"paywall": null, "accent": accent}))
+                .json(&json!({"songs": null, "accent": accent}))
                 .send()
         };
         let save_font = |session: String, font: &'static str| {
             client
                 .post(format!("http://{address}/account/settings"))
                 .bearer_auth(session)
-                .json(&json!({"paywall": null, "font": font}))
+                .json(&json!({"songs": null, "font": font}))
                 .send()
         };
         let (session, _, _) = streamer(&address, &api).await;
@@ -8714,7 +8711,7 @@ mod tests {
                 &id,
                 Settings {
                     currency: Some("SEK".to_string()),
-                    paywall: Some(Feature::on(Paywall { price: 250 })),
+                    songs: Some(Feature::on(Songs { price: 250 })),
                     tips: Some(Feature::on(Tips { amounts: vec![500] })),
                     ..Settings::default()
                 },
@@ -8786,7 +8783,7 @@ mod tests {
         let settings = &account["settings"];
         assert_eq!(settings["id"], id);
         assert_eq!(settings["currency"], "SEK");
-        assert_eq!(settings["paywall"], json!({"enabled": true, "price": 250}));
+        assert_eq!(settings["songs"], json!({"enabled": true, "price": 250}));
         assert_eq!(settings["tips"], json!({"enabled": true, "amounts": [500]}));
         assert_eq!(settings["paypal"], false);
         assert_eq!(settings["merchantId"], Value::Null);
@@ -8801,7 +8798,7 @@ mod tests {
             "/settings",
             json!({
                 "currency": "USD",
-                "paywall": null,
+                "songs": null,
                 "tips": {"amounts": [300, 700]},
                 "spin": {"options": [{"spins": 1, "price": 100}]},
                 "message": " Hi ",
@@ -8822,7 +8819,7 @@ mod tests {
             json!({"enabled": true, "tier1": 1, "tier2": 2, "tier3": 3})
         );
         assert_eq!(settings["currency"], "SEK");
-        assert_eq!(settings["paywall"], Value::Null);
+        assert_eq!(settings["songs"], Value::Null);
         assert_eq!(
             settings["tips"],
             json!({"enabled": true, "amounts": [300, 700]})
@@ -8837,7 +8834,7 @@ mod tests {
         let saved = api.pages.get(&id);
         assert_eq!(saved.message.as_deref(), Some("Hi"));
         assert_eq!(saved.currency(), "SEK");
-        assert_eq!(saved.paywall, None);
+        assert_eq!(saved.songs, None);
         assert_eq!(
             saved.tips(),
             Some(&Tips {
@@ -8853,32 +8850,32 @@ mod tests {
                 }]
             })
         );
-        let response = post(&mod1, "/settings", json!({"paywall": {"price": 100}})).await;
+        let response = post(&mod1, "/settings", json!({"songs": {"price": 100}})).await;
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(api.pages.get(&id).paywall(), Some(&Paywall { price: 100 }));
+        assert_eq!(api.pages.get(&id).songs(), Some(&Songs { price: 100 }));
         api.accounts.forget_paypal("1").unwrap();
         let account: Value = get(&mod1, "").await.json().await.unwrap();
         assert_eq!(account["settings"]["payable"], false);
-        let response = post(&mod1, "/settings", json!({"paywall": {"price": 150}})).await;
+        let response = post(&mod1, "/settings", json!({"songs": {"price": 150}})).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_eq!(
             response.text().await.unwrap(),
             "connect PayPal or Stripe first"
         );
-        assert_eq!(api.pages.get(&id).paywall(), Some(&Paywall { price: 100 }));
-        let response = post(&mod1, "/settings", json!({"paywall": {"price": 100}})).await;
+        assert_eq!(api.pages.get(&id).songs(), Some(&Songs { price: 100 }));
+        let response = post(&mod1, "/settings", json!({"songs": {"price": 100}})).await;
         assert_eq!(response.status(), StatusCode::OK);
-        let off = json!({"paywall": {"enabled": false, "price": 150}});
+        let off = json!({"songs": {"enabled": false, "price": 150}});
         let response = post(&mod1, "/settings", off.clone()).await;
         assert_eq!(response.status(), StatusCode::OK);
         let settings: Value = response.json().await.unwrap();
-        assert_eq!(settings["paywall"], off["paywall"]);
-        assert_eq!(api.pages.get(&id).paywall(), None);
-        let response = post(&mod1, "/settings", json!({"paywall": {"price": 150}})).await;
+        assert_eq!(settings["songs"], off["songs"]);
+        assert_eq!(api.pages.get(&id).songs(), None);
+        let response = post(&mod1, "/settings", json!({"songs": {"price": 150}})).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let response = post(&mod1, "/settings", json!({"message": "Hi"})).await;
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(api.pages.get(&id).paywall, None);
+        assert_eq!(api.pages.get(&id).songs, None);
         connect_paypal(&api);
         let response = post(&mod1, "/settings", json!({"font": "Poppins"})).await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -8955,7 +8952,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "maxSongLength": {"minutes": 1}}))
+            .json(&json!({"songs": null, "maxSongLength": {"minutes": 1}}))
             .send()
             .await
             .unwrap();

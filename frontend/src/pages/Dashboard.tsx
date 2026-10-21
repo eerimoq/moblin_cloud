@@ -73,7 +73,7 @@ import {
   tierNumbers,
   type Feature,
   type Page,
-  type Paywall,
+  type Songs,
   type Settings,
   type Spin,
   type Tiers,
@@ -839,18 +839,18 @@ function YourPage(props: {
 }
 
 function SongSettings(props: {
-  paywall: Feature<Paywall> | null;
+  songs: Feature<Songs> | null;
   currency: string;
   busy: boolean;
-  onSave: (changes: { paywall: Feature<Paywall> }) => Promise<void>;
+  onSave: (changes: { songs: Feature<Songs> }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(isOn(props.paywall));
+  const [enabled, setEnabled] = createSignal(isOn(props.songs));
   const [price, setPrice] = createSignal(
-    props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
+    props.songs ? (props.songs.price / 100).toFixed(2) : "1.00",
   );
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ paywall: { enabled: enabled(), price: hundredths(price()) } }),
+    () => props.onSave({ songs: { enabled: enabled(), price: hundredths(price()) } }),
     (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
   );
 
@@ -1663,7 +1663,7 @@ function Admin(props: {
       label: t("Song requests"),
       icon: "music",
       shown: () => true,
-      status: () => onOff(isOn(settings().paywall) || isOn(settings().subSongs)),
+      status: () => onOff(isOn(settings().songs) || isOn(settings().subSongs)),
     },
     {
       id: "moderators",
@@ -1822,7 +1822,7 @@ function Admin(props: {
         </div>
         <div hidden={active() !== "songs"} class="flex flex-col gap-6">
           <Show
-            when={paid(isOn(settings().paywall))}
+            when={paid(isOn(settings().songs))}
             fallback={
               <NeedsPayments
                 title={t("Song requests")}
@@ -1833,7 +1833,7 @@ function Admin(props: {
             }
           >
             <SongSettings
-              paywall={settings().paywall}
+              songs={settings().songs}
               currency={settings().currency}
               busy={busy()}
               onSave={save}
@@ -2565,7 +2565,7 @@ function Preview(props: { failed: boolean }) {
                 image: null,
                 connected: true,
                 currency: "USD",
-                paywall: { enabled: true, price: 100 },
+                songs: { enabled: true, price: 100 },
                 subSongs: { enabled: true, tier1: 1, tier2: 5, tier3: 10 },
                 subSpins: { enabled: true, tier1: 1, tier2: 5, tier3: 10 },
                 maxSongLength: { enabled: true, minutes: 7 },

@@ -12,7 +12,7 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub paywall: Option<Feature<Paywall>>,
+    pub songs: Option<Feature<Songs>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tips: Option<Feature<Tips>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,7 +68,7 @@ fn active<T>(feature: &Option<Feature<T>>) -> Option<&T> {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Paywall {
+pub struct Songs {
     pub price: u32,
 }
 
@@ -132,8 +132,8 @@ impl Settings {
         self.currency.as_deref().unwrap_or(DEFAULT_CURRENCY)
     }
 
-    pub fn paywall(&self) -> Option<&Paywall> {
-        active(&self.paywall)
+    pub fn songs(&self) -> Option<&Songs> {
+        active(&self.songs)
     }
 
     pub fn tips(&self) -> Option<&Tips> {
@@ -163,11 +163,11 @@ impl Settings {
             }
             currency => currency.filter(|currency| currency != DEFAULT_CURRENCY),
         };
-        let paywall = match self.paywall {
-            Some(paywall) => Some(
-                paywall
-                    .normalize(Paywall::normalize)
-                    .ok_or(SettingsError::InvalidPaywall)?,
+        let songs = match self.songs {
+            Some(songs) => Some(
+                songs
+                    .normalize(Songs::normalize)
+                    .ok_or(SettingsError::InvalidSongs)?,
             ),
             None => None,
         };
@@ -223,7 +223,7 @@ impl Settings {
         };
         Ok(Self {
             currency,
-            paywall,
+            songs,
             tips,
             spin,
             sub_songs,
@@ -244,7 +244,7 @@ fn valid_price(price: u32) -> bool {
     (50..=10_000_000).contains(&price)
 }
 
-impl Paywall {
+impl Songs {
     pub fn normalize(self) -> Option<Self> {
         valid_price(self.price).then_some(self)
     }
@@ -299,7 +299,7 @@ impl Tiers {
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
     InvalidCurrency,
-    InvalidPaywall,
+    InvalidSongs,
     InvalidTips,
     InvalidSpin,
     InvalidTiers,
@@ -435,10 +435,10 @@ mod tests {
     fn settings_are_saved() {
         let path = database::temporary_path("pages");
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
-        let paywall = Paywall { price: 250 };
+        let songs = Songs { price: 250 };
         let settings = Settings {
             currency: Some("SEK".to_string()),
-            paywall: Some(Feature::on(paywall.clone())),
+            songs: Some(Feature::on(songs.clone())),
             message: Some("Hi".to_string()),
             ..Settings::default()
         };
@@ -446,7 +446,7 @@ mod tests {
         pages.set("b", settings).unwrap();
         pages.set("b", Settings::default()).unwrap();
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
-        assert_eq!(pages.get("a").paywall(), Some(&paywall));
+        assert_eq!(pages.get("a").songs(), Some(&songs));
         assert_eq!(pages.get("a").currency(), "SEK");
         assert_eq!(pages.get("a").message.as_deref(), Some("Hi"));
         assert_eq!(pages.get("b"), Settings::default());
@@ -463,9 +463,9 @@ mod tests {
     fn turned_off_features_keep_their_values() {
         let pages = Pages::new(Database::memory());
         let off = |minutes| Settings {
-            paywall: Some(Feature {
+            songs: Some(Feature {
                 enabled: false,
-                value: Paywall { price: 250 },
+                value: Songs { price: 250 },
             }),
             max_song_length: Some(Feature {
                 enabled: false,
@@ -476,7 +476,7 @@ mod tests {
         assert_eq!(pages.set("a", off(7)), Ok(off(7)));
         let settings = pages.get("a");
         assert_eq!(settings, off(7));
-        assert_eq!(settings.paywall(), None);
+        assert_eq!(settings.songs(), None);
         assert_eq!(settings.max_song_minutes(), None);
         assert_eq!(
             pages.set("a", off(61)),
@@ -495,9 +495,17 @@ mod tests {
                 [],
             )
             .unwrap();
-        let pages = Pages::new(Database::open(Some(&path)).unwrap());
+        let database = Database::open(Some(&path)).unwrap();
+        let saved: String = database
+            .lock()
+            .query_row("SELECT settings FROM pages WHERE id = 'a'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(!saved.contains("paywall"));
+        let pages = Pages::new(database);
         let settings = pages.get("a");
-        assert_eq!(settings.paywall(), Some(&Paywall { price: 250 }));
+        assert_eq!(settings.songs(), Some(&Songs { price: 250 }));
         assert_eq!(settings.max_song_minutes(), Some(7));
         database::remove(&path);
     }
@@ -522,17 +530,17 @@ mod tests {
     }
 
     #[test]
-    fn paywalls_are_validated() {
+    fn song_prices_are_validated() {
         let pages = Pages::new(Database::memory());
         let settings = |price| Settings {
-            paywall: Some(Feature::on(Paywall { price })),
+            songs: Some(Feature::on(Songs { price })),
             ..Settings::default()
         };
         assert_eq!(pages.set("a", settings(250)), Ok(settings(250)));
         for price in [49, 10_000_001] {
             assert_eq!(
                 pages.set("a", settings(price)),
-                Err(SettingsError::InvalidPaywall)
+                Err(SettingsError::InvalidSongs)
             );
         }
         assert!(pages.set("a", Settings::default()).is_ok());
