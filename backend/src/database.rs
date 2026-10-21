@@ -19,7 +19,7 @@ impl Database {
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
-                 PRAGMA synchronous = FULL;
+                 PRAGMA synchronous = NORMAL;
                  DROP TABLE IF EXISTS moderators;
                  DROP TABLE IF EXISTS moderated_channels;
                  CREATE TABLE IF NOT EXISTS accounts (
