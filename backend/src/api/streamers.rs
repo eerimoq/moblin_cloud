@@ -379,6 +379,17 @@ mod tests {
         let request = receive(&mut main).await;
         answer(&mut main, &request, music(json!([]))).await;
         assert_eq!(status.await.unwrap()["songRequests"], false);
+        let account: Value = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let devices = account["devices"].as_array().unwrap();
+        assert!(devices.iter().all(|device| device["music"] == false));
         api.deliveries.add_test(
             id.clone(),
             "TIP1".to_string(),

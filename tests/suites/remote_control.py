@@ -232,7 +232,7 @@ class RemoteControlDevices(RemoteControlTestCase):
         self.wait_until(lambda: len(self.second.handled_request_ids) == 1, "the second device to get the tip")
         self.second.stop()
         self.wait_until(lambda: len(self.connected()) == 1, "the second device to disconnect")
-        self.assert_true(self.connected()[0]["music"])
+        self.assert_equal(self.connected()[0]["music"], False)
 
     def teardown(self):
         if hasattr(self, "second"):

@@ -356,7 +356,10 @@ impl Streamers {
 
     pub fn devices(&self, page: &str) -> Vec<Device> {
         let sessions = self.sessions.lock().unwrap();
-        let music = sessions.music(page).map(|session| session.number);
+        let music = sessions
+            .music(page)
+            .filter(|session| session.song_requests)
+            .map(|session| session.number);
         let wheel = sessions
             .wheel(page)
             .filter(|session| session.wheel.is_some())
