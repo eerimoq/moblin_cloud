@@ -485,32 +485,6 @@ mod tests {
     }
 
     #[test]
-    fn old_settings_are_turned_on() {
-        let path = database::temporary_path("old-pages");
-        Database::open(Some(&path))
-            .unwrap()
-            .lock()
-            .execute(
-                "INSERT INTO pages (id, settings) VALUES ('a', '{\"paywall\":{\"price\":250},\"max_song_minutes\":7}')",
-                [],
-            )
-            .unwrap();
-        let database = Database::open(Some(&path)).unwrap();
-        let saved: String = database
-            .lock()
-            .query_row("SELECT settings FROM pages WHERE id = 'a'", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert!(!saved.contains("paywall"));
-        let pages = Pages::new(database);
-        let settings = pages.get("a");
-        assert_eq!(settings.songs(), Some(&Songs { price: 250 }));
-        assert_eq!(settings.max_song_minutes(), Some(7));
-        database::remove(&path);
-    }
-
-    #[test]
     fn images_are_saved() {
         let path = database::temporary_path("page-images");
         let pages = Pages::new(Database::open(Some(&path)).unwrap());

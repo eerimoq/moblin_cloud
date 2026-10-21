@@ -20,8 +20,6 @@ impl Database {
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
                  PRAGMA synchronous = NORMAL;
-                 DROP TABLE IF EXISTS moderators;
-                 DROP TABLE IF EXISTS moderated_channels;
                  CREATE TABLE IF NOT EXISTS accounts (
                      id TEXT PRIMARY KEY,
                      name TEXT NOT NULL,
@@ -107,76 +105,12 @@ impl Database {
                      day TEXT NOT NULL,
                      value INTEGER NOT NULL,
                      PRIMARY KEY (name, day)
-                 );",
-            )
-            .context("failed to create the database tables")?;
-        for (table, column, definition) in [
-            ("accounts", "stripe_account_id", "TEXT"),
-            ("accounts", "stripe_ready", "INTEGER NOT NULL DEFAULT 0"),
-            ("accounts", "music_device", "TEXT"),
-            ("accounts", "wheel_device", "TEXT"),
-            ("devices", "enabled", "INTEGER NOT NULL DEFAULT 1"),
-            ("deliveries", "delivered", "TEXT NOT NULL DEFAULT '[]'"),
-            ("deliveries", "failure", "TEXT"),
-            ("deliveries", "finished", "INTEGER NOT NULL DEFAULT 0"),
-            ("deliveries", "test", "TEXT"),
-            ("deliveries", "resends", "INTEGER NOT NULL DEFAULT 0"),
-            ("orders", "kind", "TEXT"),
-        ] {
-            if !has_column(&connection, table, column)? {
-                connection
-                    .execute_batch(&format!(
-                        "ALTER TABLE {table} ADD COLUMN {column} {definition}"
-                    ))
-                    .with_context(|| format!("failed to add {column} to the {table} table"))?;
-            }
-        }
-        connection
-            .execute_batch(
-                "UPDATE orders SET kind = CASE
-                     WHEN json_extract(details, '$.item.Song') IS NOT NULL THEN 'song'
-                     WHEN json_extract(details, '$.item.Tip') IS NOT NULL THEN 'tip'
-                     ELSE 'spin'
-                 END WHERE kind IS NULL;
+                 );
                  CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);
                  CREATE INDEX IF NOT EXISTS deliveries_streamer ON deliveries (streamer, test);
                  CREATE INDEX IF NOT EXISTS deliveries_open ON deliveries (requested_at) WHERE NOT finished AND failure IS NOT 'not-found';",
             )
-            .context("failed to index the orders and deliveries")?;
-        if has_column(&connection, "accounts", "page_devices")? {
-            connection
-                .execute_batch(
-                    "INSERT OR IGNORE INTO devices (key, account, id, name, position)
-                     SELECT value ->> 'key', accounts.id, value ->> 'id', value ->> 'name', json_each.key
-                     FROM accounts, json_each(accounts.page_devices);
-                     ALTER TABLE accounts DROP COLUMN page_devices;",
-                )
-                .context("failed to move the Moblin devices to their own table")?;
-        }
-        if has_column(&connection, "accounts", "page_key")? {
-            connection
-                .execute_batch(
-                    "DROP INDEX IF EXISTS accounts_page_key;
-                     ALTER TABLE accounts DROP COLUMN page_key;",
-                )
-                .context("failed to remove the old Moblin Cloud keys")?;
-        }
-        connection
-            .execute_batch(
-                "UPDATE pages SET settings = json_remove(
-                     json_set(settings, '$.max_song_length', json_object('enabled', json('true'), 'minutes', settings ->> '$.max_song_minutes')),
-                     '$.max_song_minutes'
-                 ) WHERE settings ->> '$.max_song_minutes' IS NOT NULL;",
-            )
-            .context("failed to move the longest song settings")?;
-        connection
-            .execute_batch(
-                "UPDATE pages SET settings = json_remove(
-                     json_set(settings, '$.songs', settings -> '$.paywall'),
-                     '$.paywall'
-                 ) WHERE settings -> '$.paywall' IS NOT NULL;",
-            )
-            .context("failed to rename the paywall settings")?;
+            .context("failed to create the database tables")?;
         connection.set_prepared_statement_cache_capacity(64);
         Ok(Arc::new(Self {
             connection: Mutex::new(connection),
@@ -203,16 +137,6 @@ impl Database {
             .map(|metadata| metadata.len())
             .sum()
     }
-}
-
-fn has_column(connection: &Connection, table: &str, column: &str) -> Result<bool> {
-    connection
-        .query_row(
-            "SELECT count(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2",
-            [table, column],
-            |row| row.get(0),
-        )
-        .with_context(|| format!("failed to read the {table} table"))
 }
 
 #[cfg(test)]
@@ -252,23 +176,6 @@ mod tests {
             .sum();
         assert!(expected > std::fs::metadata(&path).unwrap().len());
         assert_eq!(database.size(), expected);
-        drop(database);
-        remove(&path);
-    }
-
-    #[test]
-    fn the_moderated_channels_tables_are_dropped() {
-        let path = temporary_path("moderators");
-        Connection::open(&path)
-            .unwrap()
-            .execute_batch(
-                "CREATE TABLE moderators (moderator TEXT NOT NULL, broadcaster TEXT NOT NULL);
-                 CREATE TABLE moderated_channels (moderator TEXT NOT NULL, broadcaster TEXT NOT NULL);",
-            )
-            .unwrap();
-        let database = Database::open(Some(&path)).unwrap();
-        assert!(!has_column(&database.lock(), "moderators", "broadcaster").unwrap());
-        assert!(!has_column(&database.lock(), "moderated_channels", "broadcaster").unwrap());
         drop(database);
         remove(&path);
     }

@@ -428,61 +428,6 @@ impl Orders {
 mod tests {
     use super::*;
 
-    #[test]
-    fn kinds_of_older_orders_are_filled_in() {
-        let path = crate::database::temporary_path("orders-kind");
-        let connection = Connection::open(&path).unwrap();
-        connection
-            .execute_batch(
-                "CREATE TABLE orders (id TEXT PRIMARY KEY, streamer TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, details TEXT NOT NULL)",
-            )
-            .unwrap();
-        let items = [
-            (
-                "SONG",
-                Item::Song {
-                    link: "l".to_string(),
-                    name: "n".to_string(),
-                    message: None,
-                },
-            ),
-            ("TIP", Item::Tip { message: None }),
-            (
-                "SPIN",
-                Item::Spin {
-                    spins: 1,
-                    message: None,
-                },
-            ),
-        ];
-        for (id, item) in &items {
-            connection
-                .execute(
-                    "INSERT INTO orders VALUES (?1, 'p', 'captured', 1, 1, ?2)",
-                    params![
-                        id,
-                        serde_json::to_string(&Order {
-                            item: item.clone(),
-                            ..order()
-                        })
-                        .unwrap()
-                    ],
-                )
-                .unwrap();
-        }
-        drop(connection);
-        let orders = Orders::new(Database::open(Some(&path)).unwrap());
-        for (id, item) in &items {
-            let listed: Vec<String> = orders
-                .recent("p", item.kind(), None, 10)
-                .into_iter()
-                .map(|(id, _, _)| id)
-                .collect();
-            assert_eq!(listed, vec![id.to_string()]);
-        }
-        crate::database::remove(&path);
-    }
-
     fn order() -> Order {
         Order {
             streamer: "p".to_string(),

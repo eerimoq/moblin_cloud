@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{info, warn};
+use log::warn;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
@@ -215,42 +215,6 @@ impl Accounts {
                 warn!("failed to read devices: {error:#}");
                 None
             })
-    }
-
-    pub fn give_missing_pages(&self, mut new_page: impl FnMut() -> Option<Page>) {
-        let mut database = self.database.lock();
-        let ids: Vec<String> = match database
-            .prepare_cached("SELECT id FROM accounts WHERE page_id IS NULL")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| row.get(0))?
-                    .collect::<rusqlite::Result<_>>()
-            }) {
-            Ok(ids) => ids,
-            Err(error) => {
-                warn!("failed to read accounts: {error:#}");
-                return;
-            }
-        };
-        for id in ids {
-            let Some(page) = new_page() else {
-                warn!("no page could be created for account {id}");
-                return;
-            };
-            let saved = database.transaction().and_then(|transaction| {
-                transaction.execute(
-                    "UPDATE accounts SET page_id = ?2 WHERE id = ?1",
-                    params![id, page.id],
-                )?;
-                save_devices(&transaction, &id, &page.devices)?;
-                transaction.commit()
-            });
-            if let Err(error) = saved {
-                warn!("failed to save accounts: {error:#}");
-            } else {
-                info!("{id} got a page");
-            }
-        }
     }
 
     pub fn add_device(&self, id: &str, device: Device) -> Result<Account, AccountError> {
@@ -820,29 +784,6 @@ mod tests {
     }
 
     #[test]
-    fn accounts_without_a_page_get_one() {
-        let accounts = Accounts::new(Database::memory());
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
-        accounts
-            .database
-            .lock()
-            .execute_batch(
-                "INSERT INTO accounts (id, name, login, sessions) VALUES ('2', 'Old', 'old', 0), ('3', 'Older', 'older', 0)",
-            )
-            .unwrap();
-        assert_eq!(accounts.get("2"), None);
-        let mut pages = vec![page("b", "l"), page("a", "m")];
-        accounts.give_missing_pages(|| pages.pop());
-        assert_eq!(accounts.get("1").unwrap().page, page("p", "k"));
-        assert_eq!(accounts.get("2").unwrap().page, page("a", "m"));
-        assert_eq!(accounts.get("3").unwrap().page, page("b", "l"));
-        assert_eq!(accounts.device_of_key("l").as_deref(), Some("b"));
-        accounts.give_missing_pages(|| panic!("no page is missing"));
-    }
-
-    #[test]
     fn pages_find_their_account() {
         let accounts = Accounts::new(Database::memory());
         accounts
@@ -1065,88 +1006,6 @@ mod tests {
         let account = accounts.forget_stripe("1").unwrap();
         assert_eq!(account.stripe_account_id, None);
         assert!(!account.stripe_ready);
-    }
-
-    #[test]
-    fn old_databases_get_the_stripe_columns_and_devices() {
-        let path = database::temporary_path("old-accounts");
-        Connection::open(&path)
-            .unwrap()
-            .execute_batch(
-                "CREATE TABLE accounts (
-                     id TEXT PRIMARY KEY,
-                     name TEXT NOT NULL,
-                     login TEXT NOT NULL,
-                     avatar TEXT,
-                     page_id TEXT,
-                     page_key TEXT,
-                     sessions INTEGER NOT NULL,
-                     merchant_id TEXT,
-                     paypal_tracking_id TEXT
-                 );
-                 INSERT INTO accounts VALUES ('1', 'Erik', 'erik', NULL, 'p', 'k', 0, 'M', NULL);",
-            )
-            .unwrap();
-        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
-        let account = accounts.get("1").unwrap();
-        assert_eq!(account.merchant_id.as_deref(), Some("M"));
-        assert_eq!(account.stripe_account_id, None);
-        assert_eq!(account.page.id, "p");
-        assert!(account.page.devices.is_empty());
-        assert_eq!(accounts.device_of_key("k"), None);
-        accounts.start_stripe("1", "acct_1".to_string()).unwrap();
-        accounts.stripe_ready("1", "acct_1", true).unwrap();
-        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
-        assert!(accounts.get("1").unwrap().stripe_ready);
-        database::remove(&path);
-    }
-
-    #[test]
-    fn old_databases_get_their_devices_moved() {
-        let path = database::temporary_path("old-devices");
-        Connection::open(&path)
-            .unwrap()
-            .execute_batch(
-                "CREATE TABLE accounts (
-                     id TEXT PRIMARY KEY,
-                     name TEXT NOT NULL,
-                     login TEXT NOT NULL,
-                     avatar TEXT,
-                     page_id TEXT,
-                     page_devices TEXT,
-                     music_device TEXT,
-                     wheel_device TEXT,
-                     sessions INTEGER NOT NULL,
-                     merchant_id TEXT,
-                     paypal_tracking_id TEXT,
-                     stripe_account_id TEXT,
-                     stripe_ready INTEGER NOT NULL DEFAULT 0
-                 );
-                 INSERT INTO accounts (id, name, login, page_id, page_devices, wheel_device, sessions) VALUES
-                     ('1', 'Erik', 'erik', 'p', '[{\"id\":\"p\",\"name\":\"Moblin\",\"key\":\"k\"},{\"id\":\"b\",\"name\":\"Tablet\",\"key\":\"l\"}]', 'b', 0),
-                     ('2', 'Old', 'old', NULL, NULL, NULL, 0);",
-            )
-            .unwrap();
-        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
-        let page = accounts.get("1").unwrap().page;
-        assert_eq!(
-            page.devices,
-            [
-                device("p", "k"),
-                Device {
-                    id: "b".to_string(),
-                    name: "Tablet".to_string(),
-                    key: "l".to_string(),
-                    enabled: true,
-                }
-            ]
-        );
-        assert_eq!(page.wheel_device().unwrap().id, "b");
-        assert_eq!(accounts.device_of_key("l").as_deref(), Some("b"));
-        assert_eq!(accounts.get("2"), None);
-        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
-        assert_eq!(accounts.device_of_key("k").as_deref(), Some("p"));
-        database::remove(&path);
     }
 
     #[test]
