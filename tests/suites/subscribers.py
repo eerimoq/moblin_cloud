@@ -232,7 +232,8 @@ class SubscribersKeptOnRestart(SubscribersTestCase):
         self.moblin.wait_for_new_backend_request("spinWheelOfLuck", start)
         self.backend.restart()
         self.assert_equal(
-            self.dashboard.account()["settings"]["subSpins"], {"tier1": 2, "tier2": 2, "tier3": 2}
+            self.dashboard.account()["settings"]["subSpins"],
+            {"enabled": True, "tier1": 2, "tier2": 2, "tier3": 2},
         )
         self.assert_equal(subscriber.spins(), {"name": "restartfan1", "tier": 1, "allowance": 2, "left": 1})
         self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "Moblin to reconnect with its wheel")

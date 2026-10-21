@@ -65,11 +65,13 @@ import {
   fonts,
   hundredths,
   isColor,
+  isOn,
   loadFonts,
   musicStatus,
   pageImageUrl,
   tierCount,
   tierNumbers,
+  type Feature,
   type Page,
   type Paywall,
   type Settings,
@@ -837,18 +839,18 @@ function YourPage(props: {
 }
 
 function SongSettings(props: {
-  paywall: Paywall | null;
+  paywall: Feature<Paywall> | null;
   currency: string;
   busy: boolean;
-  onSave: (changes: { paywall: Paywall | null }) => Promise<void>;
+  onSave: (changes: { paywall: Feature<Paywall> }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(props.paywall !== null);
+  const [enabled, setEnabled] = createSignal(isOn(props.paywall));
   const [price, setPrice] = createSignal(
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
   );
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ paywall: enabled() ? { price: hundredths(price()) } : null }),
+    () => props.onSave({ paywall: { enabled: enabled(), price: hundredths(price()) } }),
     (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
   );
 
@@ -899,13 +901,13 @@ function SongSettings(props: {
 
 function SubscriberSettings(props: {
   kind: "song" | "spin";
-  tiers: Tiers | null;
+  tiers: Feature<Tiers> | null;
   busy: boolean;
-  onSave: (tiers: Tiers | null) => Promise<void>;
+  onSave: (tiers: Feature<Tiers>) => Promise<void>;
 }) {
   const song = props.kind === "song";
   const unit = song ? 5 : 1;
-  const [enabled, setEnabled] = createSignal(props.tiers !== null);
+  const [enabled, setEnabled] = createSignal(isOn(props.tiers));
   const [amounts, setAmounts] = createSignal(
     tierNumbers.map((tier) =>
       String((props.tiers ? tierCount(props.tiers, tier) : [1, 5, 10][tier - 1]) * unit),
@@ -917,7 +919,7 @@ function SubscriberSettings(props: {
       const [tier1, tier2, tier3] = amounts().map((count) =>
         Math.round((Number.parseInt(count, 10) || 0) / unit),
       );
-      return props.onSave(enabled() ? { tier1, tier2, tier3 } : null);
+      return props.onSave({ enabled: enabled(), tier1, tier2, tier3 });
     },
     (error) =>
       paymentErrorText(
@@ -996,15 +998,15 @@ function SubscriberSettings(props: {
 }
 
 function SongLengthSettings(props: {
-  maxSongMinutes: number | null;
+  maxSongLength: Feature<{ minutes: number }> | null;
   busy: boolean;
-  onSave: (maxSongMinutes: number | null) => Promise<void>;
+  onSave: (maxSongLength: Feature<{ minutes: number }>) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(props.maxSongMinutes !== null);
-  const [minutes, setMinutes] = createSignal(String(props.maxSongMinutes ?? 10));
+  const [enabled, setEnabled] = createSignal(isOn(props.maxSongLength));
+  const [minutes, setMinutes] = createSignal(String(props.maxSongLength?.minutes ?? 7));
   const save = createSave(
     () => props.busy,
-    () => props.onSave(enabled() ? Number.parseInt(minutes(), 10) || 0 : null),
+    () => props.onSave({ enabled: enabled(), minutes: Number.parseInt(minutes(), 10) || 0 }),
     () => t("Enter 1 to 60 minutes."),
   );
 
@@ -1203,18 +1205,18 @@ function MoneyInput(props: {
 const amountsOf = (amounts: string[]) => amounts.filter((amount) => amount.trim()).map(hundredths);
 
 function TipSettings(props: {
-  tips: Tips | null;
+  tips: Feature<Tips> | null;
   currency: string;
   busy: boolean;
-  onSave: (changes: { tips: Tips | null }) => Promise<void>;
+  onSave: (changes: { tips: Feature<Tips> }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(props.tips !== null);
+  const [enabled, setEnabled] = createSignal(isOn(props.tips));
   const [amounts, setAmounts] = createSignal(
     (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
   );
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ tips: enabled() ? { amounts: amountsOf(amounts()) } : null }),
+    () => props.onSave({ tips: { enabled: enabled(), amounts: amountsOf(amounts()) } }),
     (error) => paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")),
   );
 
@@ -1286,12 +1288,12 @@ function TipSettings(props: {
 }
 
 function SpinSettings(props: {
-  spin: Spin | null;
+  spin: Feature<Spin> | null;
   currency: string;
   busy: boolean;
-  onSave: (changes: { spin: Spin | null }) => Promise<void>;
+  onSave: (changes: { spin: Feature<Spin> }) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = createSignal(props.spin !== null);
+  const [enabled, setEnabled] = createSignal(isOn(props.spin));
   const [options, setOptions] = createSignal(
     (
       props.spin?.options ?? [
@@ -1308,16 +1310,15 @@ function SpinSettings(props: {
     () => props.busy,
     () =>
       props.onSave({
-        spin: enabled()
-          ? {
-              options: options()
-                .filter((option) => option.spins.trim() && option.price.trim())
-                .map((option) => ({
-                  spins: Number.parseInt(option.spins),
-                  price: hundredths(option.price),
-                })),
-            }
-          : null,
+        spin: {
+          enabled: enabled(),
+          options: options()
+            .filter((option) => option.spins.trim() && option.price.trim())
+            .map((option) => ({
+              spins: Number.parseInt(option.spins),
+              price: hundredths(option.price),
+            })),
+        },
       }),
     (error) => paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")),
   );
@@ -1647,22 +1648,22 @@ function Admin(props: {
       id: "tips",
       label: t("Tips"),
       icon: "heart",
-      shown: () => moderating() || payments() || settings().tips !== null,
-      status: () => onOff(settings().tips !== null),
+      shown: () => moderating() || payments() || isOn(settings().tips),
+      status: () => onOff(isOn(settings().tips)),
     },
     {
       id: "wheel",
       label: t("Wheel of luck"),
       icon: "wheel",
       shown: () => true,
-      status: () => onOff(settings().spin !== null || settings().subSpins !== null),
+      status: () => onOff(isOn(settings().spin) || isOn(settings().subSpins)),
     },
     {
       id: "songs",
       label: t("Song requests"),
       icon: "music",
       shown: () => true,
-      status: () => onOff(settings().paywall !== null || settings().subSongs !== null),
+      status: () => onOff(isOn(settings().paywall) || isOn(settings().subSongs)),
     },
     {
       id: "moderators",
@@ -1749,7 +1750,7 @@ function Admin(props: {
         </div>
         <div hidden={active() !== "tips"} class="flex flex-col gap-6">
           <Show
-            when={paid(settings().tips !== null)}
+            when={paid(isOn(settings().tips))}
             fallback={
               <NeedsPayments
                 title={t("Tips")}
@@ -1782,7 +1783,7 @@ function Admin(props: {
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
           <Show
-            when={paid(settings().spin !== null)}
+            when={paid(isOn(settings().spin))}
             fallback={
               <NeedsPayments
                 title={t("Wheel of luck")}
@@ -1821,7 +1822,7 @@ function Admin(props: {
         </div>
         <div hidden={active() !== "songs"} class="flex flex-col gap-6">
           <Show
-            when={paid(settings().paywall !== null)}
+            when={paid(isOn(settings().paywall))}
             fallback={
               <NeedsPayments
                 title={t("Song requests")}
@@ -1845,9 +1846,9 @@ function Admin(props: {
             onSave={(subSongs) => save({ subSongs })}
           />
           <SongLengthSettings
-            maxSongMinutes={settings().maxSongMinutes}
+            maxSongLength={settings().maxSongLength}
             busy={busy()}
-            onSave={(maxSongMinutes) => save({ maxSongMinutes })}
+            onSave={(maxSongLength) => save({ maxSongLength })}
           />
           <Show when={!props.preview && active() === "songs"}>
             <MusicQueue session={props.session} page={settings().id} onSignOut={props.onSignOut} />
@@ -2564,12 +2565,13 @@ function Preview(props: { failed: boolean }) {
                 image: null,
                 connected: true,
                 currency: "USD",
-                paywall: { price: 100 },
-                subSongs: { tier1: 1, tier2: 5, tier3: 10 },
-                subSpins: { tier1: 1, tier2: 5, tier3: 10 },
-                maxSongMinutes: null,
-                tips: { amounts: [300, 500, 1000] },
+                paywall: { enabled: true, price: 100 },
+                subSongs: { enabled: true, tier1: 1, tier2: 5, tier3: 10 },
+                subSpins: { enabled: true, tier1: 1, tier2: 5, tier3: 10 },
+                maxSongLength: { enabled: true, minutes: 7 },
+                tips: { enabled: true, amounts: [300, 500, 1000] },
                 spin: {
+                  enabled: true,
                   options: [
                     { spins: 1, price: 200 },
                     { spins: 5, price: 800 },

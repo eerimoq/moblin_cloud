@@ -12,23 +12,59 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub paywall: Option<Paywall>,
+    pub paywall: Option<Feature<Paywall>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tips: Option<Tips>,
+    pub tips: Option<Feature<Tips>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spin: Option<Spin>,
+    pub spin: Option<Feature<Spin>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sub_songs: Option<Tiers>,
+    pub sub_songs: Option<Feature<Tiers>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sub_spins: Option<Tiers>,
+    pub sub_spins: Option<Feature<Tiers>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_song_minutes: Option<u32>,
+    pub max_song_length: Option<Feature<SongLength>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Feature<T> {
+    #[serde(default = "enabled")]
+    pub enabled: bool,
+    #[serde(flatten)]
+    pub value: T,
+}
+
+fn enabled() -> bool {
+    true
+}
+
+impl<T> Feature<T> {
+    #[cfg(test)]
+    pub fn on(value: T) -> Self {
+        Self {
+            enabled: true,
+            value,
+        }
+    }
+
+    pub fn normalize(self, normalize: impl FnOnce(T) -> Option<T>) -> Option<Self> {
+        Some(Self {
+            enabled: self.enabled,
+            value: normalize(self.value)?,
+        })
+    }
+}
+
+fn active<T>(feature: &Option<Feature<T>>) -> Option<&T> {
+    feature
+        .as_ref()
+        .filter(|feature| feature.enabled)
+        .map(|feature| &feature.value)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -50,6 +86,11 @@ pub struct Spin {
 pub struct SpinOption {
     pub spins: u32,
     pub price: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SongLength {
+    pub minutes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -91,6 +132,30 @@ impl Settings {
         self.currency.as_deref().unwrap_or(DEFAULT_CURRENCY)
     }
 
+    pub fn paywall(&self) -> Option<&Paywall> {
+        active(&self.paywall)
+    }
+
+    pub fn tips(&self) -> Option<&Tips> {
+        active(&self.tips)
+    }
+
+    pub fn spin(&self) -> Option<&Spin> {
+        active(&self.spin)
+    }
+
+    pub fn sub_songs(&self) -> Option<&Tiers> {
+        active(&self.sub_songs)
+    }
+
+    pub fn sub_spins(&self) -> Option<&Tiers> {
+        active(&self.sub_spins)
+    }
+
+    pub fn max_song_minutes(&self) -> Option<u32> {
+        active(&self.max_song_length).map(|length| length.minutes)
+    }
+
     pub fn normalize(self) -> Result<Self, SettingsError> {
         let currency = match self.currency.map(|currency| currency.trim().to_uppercase()) {
             Some(currency) if !CURRENCIES.contains(&currency.as_str()) => {
@@ -99,31 +164,51 @@ impl Settings {
             currency => currency.filter(|currency| currency != DEFAULT_CURRENCY),
         };
         let paywall = match self.paywall {
-            Some(paywall) => Some(paywall.normalize().ok_or(SettingsError::InvalidPaywall)?),
+            Some(paywall) => Some(
+                paywall
+                    .normalize(Paywall::normalize)
+                    .ok_or(SettingsError::InvalidPaywall)?,
+            ),
             None => None,
         };
         let tips = match self.tips {
-            Some(tips) => Some(tips.normalize().ok_or(SettingsError::InvalidTips)?),
+            Some(tips) => Some(
+                tips.normalize(Tips::normalize)
+                    .ok_or(SettingsError::InvalidTips)?,
+            ),
             None => None,
         };
         let spin = match self.spin {
-            Some(spin) => Some(spin.normalize().ok_or(SettingsError::InvalidSpin)?),
+            Some(spin) => Some(
+                spin.normalize(Spin::normalize)
+                    .ok_or(SettingsError::InvalidSpin)?,
+            ),
             None => None,
         };
         let sub_songs = match self.sub_songs {
-            Some(tiers) => Some(tiers.normalize().ok_or(SettingsError::InvalidTiers)?),
+            Some(tiers) => Some(
+                tiers
+                    .normalize(Tiers::normalize)
+                    .ok_or(SettingsError::InvalidTiers)?,
+            ),
             None => None,
         };
         let sub_spins = match self.sub_spins {
-            Some(tiers) => Some(tiers.normalize().ok_or(SettingsError::InvalidTiers)?),
+            Some(tiers) => Some(
+                tiers
+                    .normalize(Tiers::normalize)
+                    .ok_or(SettingsError::InvalidTiers)?,
+            ),
             None => None,
         };
-        if self
-            .max_song_minutes
-            .is_some_and(|minutes| !(1..=60).contains(&minutes))
-        {
-            return Err(SettingsError::InvalidSongLength);
-        }
+        let max_song_length = match self.max_song_length {
+            Some(length) => Some(
+                length
+                    .normalize(SongLength::normalize)
+                    .ok_or(SettingsError::InvalidSongLength)?,
+            ),
+            None => None,
+        };
         let accent = match self.accent.map(|accent| accent.to_lowercase()) {
             Some(accent) if !ACCENTS.contains(&accent.as_str()) && !is_color(&accent) => {
                 return Err(SettingsError::InvalidPage);
@@ -143,7 +228,7 @@ impl Settings {
             spin,
             sub_songs,
             sub_spins,
-            max_song_minutes: self.max_song_minutes,
+            max_song_length,
             message: text(self.message, 300)?,
             accent,
             font,
@@ -185,6 +270,12 @@ impl Spin {
                 .iter()
                 .all(|option| (1..=10).contains(&option.spins) && valid_price(option.price));
         valid.then_some(Self { options })
+    }
+}
+
+impl SongLength {
+    pub fn normalize(self) -> Option<Self> {
+        (1..=60).contains(&self.minutes).then_some(self)
     }
 }
 
@@ -347,7 +438,7 @@ mod tests {
         let paywall = Paywall { price: 250 };
         let settings = Settings {
             currency: Some("SEK".to_string()),
-            paywall: Some(paywall.clone()),
+            paywall: Some(Feature::on(paywall.clone())),
             message: Some("Hi".to_string()),
             ..Settings::default()
         };
@@ -355,7 +446,7 @@ mod tests {
         pages.set("b", settings).unwrap();
         pages.set("b", Settings::default()).unwrap();
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
-        assert_eq!(pages.get("a").paywall, Some(paywall));
+        assert_eq!(pages.get("a").paywall(), Some(&paywall));
         assert_eq!(pages.get("a").currency(), "SEK");
         assert_eq!(pages.get("a").message.as_deref(), Some("Hi"));
         assert_eq!(pages.get("b"), Settings::default());
@@ -365,6 +456,49 @@ mod tests {
             .query_row("SELECT count(*) FROM pages", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
+        database::remove(&path);
+    }
+
+    #[test]
+    fn turned_off_features_keep_their_values() {
+        let pages = Pages::new(Database::memory());
+        let off = |minutes| Settings {
+            paywall: Some(Feature {
+                enabled: false,
+                value: Paywall { price: 250 },
+            }),
+            max_song_length: Some(Feature {
+                enabled: false,
+                value: SongLength { minutes },
+            }),
+            ..Settings::default()
+        };
+        assert_eq!(pages.set("a", off(7)), Ok(off(7)));
+        let settings = pages.get("a");
+        assert_eq!(settings, off(7));
+        assert_eq!(settings.paywall(), None);
+        assert_eq!(settings.max_song_minutes(), None);
+        assert_eq!(
+            pages.set("a", off(61)),
+            Err(SettingsError::InvalidSongLength)
+        );
+    }
+
+    #[test]
+    fn old_settings_are_turned_on() {
+        let path = database::temporary_path("old-pages");
+        Database::open(Some(&path))
+            .unwrap()
+            .lock()
+            .execute(
+                "INSERT INTO pages (id, settings) VALUES ('a', '{\"paywall\":{\"price\":250},\"max_song_minutes\":7}')",
+                [],
+            )
+            .unwrap();
+        let pages = Pages::new(Database::open(Some(&path)).unwrap());
+        let settings = pages.get("a");
+        assert_eq!(settings.paywall(), Some(&Paywall { price: 250 }));
+        assert_eq!(settings.max_song_minutes(), Some(7));
         database::remove(&path);
     }
 
@@ -391,7 +525,7 @@ mod tests {
     fn paywalls_are_validated() {
         let pages = Pages::new(Database::memory());
         let settings = |price| Settings {
-            paywall: Some(Paywall { price }),
+            paywall: Some(Feature::on(Paywall { price })),
             ..Settings::default()
         };
         assert_eq!(pages.set("a", settings(250)), Ok(settings(250)));
@@ -426,16 +560,16 @@ mod tests {
     fn tips_are_validated() {
         let pages = Pages::new(Database::memory());
         let tips = |amounts: &[u32]| Settings {
-            tips: Some(Tips {
+            tips: Some(Feature::on(Tips {
                 amounts: amounts.to_vec(),
-            }),
+            })),
             ..Settings::default()
         };
         assert_eq!(
             pages.set("a", tips(&[1000, 200, 500, 200])).unwrap(),
             tips(&[200, 500, 1000])
         );
-        assert_eq!(pages.get("a").tips.unwrap().amounts, [200, 500, 1000]);
+        assert_eq!(pages.get("a").tips().unwrap().amounts, [200, 500, 1000]);
         for amounts in [
             &[][..],
             &[100, 200, 300, 400, 500, 600],
@@ -453,7 +587,7 @@ mod tests {
     fn spins_are_validated() {
         let pages = Pages::new(Database::memory());
         let spin = |options: &[(u32, u32)]| Settings {
-            spin: Some(Spin {
+            spin: Some(Feature::on(Spin {
                 options: options
                     .iter()
                     .map(|(spins, price)| SpinOption {
@@ -461,7 +595,7 @@ mod tests {
                         price: *price,
                     })
                     .collect(),
-            }),
+            })),
             ..Settings::default()
         };
         assert_eq!(
@@ -490,11 +624,11 @@ mod tests {
     fn sub_songs_are_validated() {
         let pages = Pages::new(Database::memory());
         let sub_songs = |tier1, tier2, tier3| Settings {
-            sub_songs: Some(Tiers {
+            sub_songs: Some(Feature::on(Tiers {
                 tier1,
                 tier2,
                 tier3,
-            }),
+            })),
             ..Settings::default()
         };
         assert_eq!(pages.set("a", sub_songs(1, 5, 10)), Ok(sub_songs(1, 5, 10)));
@@ -508,7 +642,7 @@ mod tests {
                 Err(SettingsError::InvalidTiers)
             );
         }
-        let sub_songs = sub_songs(1, 0, 10).sub_songs.unwrap();
+        let sub_songs = sub_songs(1, 0, 10).sub_songs.unwrap().value;
         assert_eq!(
             [None, Some(1), Some(2), Some(3)].map(|tier| sub_songs.allowance(tier)),
             [0, 1, 0, 10]
@@ -519,12 +653,12 @@ mod tests {
     fn song_lengths_are_validated() {
         let pages = Pages::new(Database::memory());
         let settings = |minutes| Settings {
-            max_song_minutes: Some(minutes),
+            max_song_length: Some(Feature::on(SongLength { minutes })),
             ..Settings::default()
         };
         assert_eq!(pages.set("a", settings(1)), Ok(settings(1)));
         assert_eq!(pages.set("a", settings(60)), Ok(settings(60)));
-        assert_eq!(pages.get("a").max_song_minutes, Some(60));
+        assert_eq!(pages.get("a").max_song_minutes(), Some(60));
         for minutes in [0, 61] {
             assert_eq!(
                 pages.set("a", settings(minutes)),

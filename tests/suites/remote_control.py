@@ -110,7 +110,7 @@ class RemoteControlTestDeliveries(RemoteControlTestCase):
         account = self.dashboard.account()
         name = account["name"]
         tips = account["settings"]["tips"]
-        amount = tips["amounts"][0] if tips is not None else 500
+        amount = tips["amounts"][0] if tips is not None and tips["enabled"] else 500
         start = self.moblin.backend_requests_position()
         self.assert_equal(self.dashboard.test_tip("Testing tips"), {})
         tip = self.moblin.wait_for_new_backend_request("tip", start)
@@ -124,7 +124,7 @@ class RemoteControlTestDeliveries(RemoteControlTestCase):
             },
         )
         spin = account["settings"]["spin"]
-        spins = spin["options"][0]["spins"] if spin is not None else 1
+        spins = spin["options"][0]["spins"] if spin is not None and spin["enabled"] else 1
         start = self.moblin.backend_requests_position()
         self.assert_equal(self.dashboard.test_spin(), {})
         request = self.moblin.wait_for_new_backend_request("spinWheelOfLuck", start)

@@ -690,6 +690,14 @@ impl Accounts {
         if old.as_ref().map(|old| &old.page.devices) != Some(&account.page.devices) {
             save_devices(&transaction, id, &account.page.devices).map_err(not_saved)?;
         }
+        if old.is_none() {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{\"max_song_length\":{\"enabled\":true,\"minutes\":7}}')",
+                    [&account.page.id],
+                )
+                .map_err(not_saved)?;
+        }
         transaction.commit().map_err(not_saved)?;
         Ok(account)
     }

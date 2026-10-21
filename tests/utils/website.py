@@ -162,7 +162,7 @@ class Dashboard(Client):
         font: str | None = None,
         sub_songs: dict | None = None,
         sub_spins: dict | None = None,
-        max_song_minutes: int | None = None,
+        max_song_length: dict | None = None,
     ) -> dict:
         return self.post(
             "/account/settings",
@@ -176,7 +176,7 @@ class Dashboard(Client):
                 "font": font,
                 "subSongs": sub_songs,
                 "subSpins": sub_spins,
-                "maxSongMinutes": max_song_minutes,
+                "maxSongLength": max_song_length,
             },
         )
 
@@ -193,9 +193,9 @@ class Dashboard(Client):
             "font",
             "subSongs",
             "subSpins",
-            "maxSongMinutes",
+            "maxSongLength",
         ]
-        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongMinutes": "max_song_minutes"}
+        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongLength": "max_song_length"}
         current = {names.get(field, field): settings[field] for field in fields}
         return self.save_settings(**{**current, **changes})
 
@@ -252,7 +252,7 @@ class Dashboard(Client):
     def moderated_settings(self, page_id: str, **changes) -> dict:
         """Saves the moderated page's settings with some changed, like the moderator's dashboard does."""
         settings = self.moderated_account(page_id)["settings"]
-        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongMinutes": "max_song_minutes"}
+        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongLength": "max_song_length"}
         body = {
             field: settings[field]
             for field in [
@@ -265,7 +265,7 @@ class Dashboard(Client):
                 "font",
                 "subSongs",
                 "subSpins",
-                "maxSongMinutes",
+                "maxSongLength",
             ]
         }
         for field in body:

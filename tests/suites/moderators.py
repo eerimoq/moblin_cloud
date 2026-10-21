@@ -246,7 +246,7 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
             sub_spins={"tier1": 1, "tier2": 2, "tier3": 3},
         )
         self.assert_equal(settings["message"], "Theirs")
-        self.assert_equal(settings["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
+        self.assert_equal(settings["subSpins"], {"enabled": True, "tier1": 1, "tier2": 2, "tier3": 3})
         self.assert_equal(settings["merchantId"], None)
         self.assert_equal(
             settings["currency"], own["settings"]["currency"], "currency unchanged by a moderator"
@@ -254,7 +254,7 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
         own = self.dashboard.account()
         self.assert_equal(own["settings"]["message"], "Theirs")
         self.assert_equal(own["settings"]["message"], "Theirs")
-        self.assert_equal(own["settings"]["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
+        self.assert_equal(own["settings"]["subSpins"], {"enabled": True, "tier1": 1, "tier2": 2, "tier3": 3})
         self.assert_backend_error(
             409, lambda: self.moderator.moderated_test_spin(self.page_id), "Connect Moblin first."
         )
@@ -305,10 +305,11 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
             spin={"options": [{"spins": 1, "price": 300}, {"spins": 3, "price": 500}]},
         )
         self.assert_equal(settings["currency"], "USD", "currency unchanged by a moderator")
-        self.assert_equal(settings["paywall"], {"price": 150})
-        self.assert_equal(settings["tips"], {"amounts": [200, 700]})
+        self.assert_equal(settings["paywall"], {"enabled": True, "price": 150})
+        self.assert_equal(settings["tips"], {"enabled": True, "amounts": [200, 700]})
         self.assert_equal(
-            settings["spin"], {"options": [{"spins": 1, "price": 300}, {"spins": 3, "price": 500}]}
+            settings["spin"],
+            {"enabled": True, "options": [{"spins": 1, "price": 300}, {"spins": 3, "price": 500}]},
         )
         self.assert_equal([settings["payable"], settings["merchantId"]], [True, None])
         own = self.dashboard.account()["settings"]
@@ -321,14 +322,17 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         self.assert_equal(paywall["price"], 150)
         self.assert_equal(tips["amounts"], [200, 700])
         self.assert_equal(paywall["merchantId"], own["merchantId"])
-        settings = self.moderator.moderated_settings(
-            self.page_id, paywall=None, tips={"amounts": [500]}, spin=None
-        )
+        off = {
+            "paywall": {**settings["paywall"], "enabled": False},
+            "tips": {"enabled": True, "amounts": [500]},
+            "spin": {**settings["spin"], "enabled": False},
+        }
+        settings = self.moderator.moderated_settings(self.page_id, **off)
         self.assert_equal(
-            [settings["paywall"], settings["tips"], settings["spin"]], [None, {"amounts": [500]}, None]
+            {field: settings[field] for field in off}, off, "turned off features keep their values"
         )
         own = self.dashboard.account()["settings"]
-        self.assert_equal([own["paywall"], own["tips"], own["spin"]], [None, {"amounts": [500]}, None])
+        self.assert_equal({field: own[field] for field in off}, off)
         self.assert_equal(self.viewer.paywall(), None)
         tips = self.viewer.tips()
         assert tips is not None
@@ -337,7 +341,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         self.assert_backend_error(
             403, lambda: self.moderator.moderated_settings(self.page_id, tips=None), NOT_MODERATOR
         )
-        self.assert_equal(self.dashboard.account()["settings"]["tips"], {"amounts": [500]})
+        self.assert_equal(self.dashboard.account()["settings"]["tips"], {"enabled": True, "amounts": [500]})
 
     def teardown(self):
         super().teardown()
@@ -353,7 +357,7 @@ class ModeratorsAddSongsForFree(ModeratorsTestCase):
     def run(self):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
         self.dashboard.enable_moderator(self.moderator_id, True)
-        self.dashboard.update_settings(max_song_minutes=1)
+        self.dashboard.update_settings(max_song_length={"minutes": 1})
         self.assert_equal(self.viewer.get(f"/pages/{self.page_id}/songs")["maxSongMinutes"], 1)
         self.connect_moblin()
         self.moblin.clear_music()
@@ -404,7 +408,7 @@ class ModeratorsAddSongsForFree(ModeratorsTestCase):
     def teardown(self):
         super().teardown()
         if hasattr(self, "dashboard"):
-            self.dashboard.update_settings(max_song_minutes=None)
+            self.dashboard.update_settings(max_song_length=None)
         if self.context.moblin is not None and self.moblin.has_capability(Capability.APPLE_MUSIC):
             self.moblin.clear_music()
 

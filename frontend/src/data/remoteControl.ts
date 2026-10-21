@@ -51,6 +51,10 @@ export type Tiers = {
   tier3: number;
 };
 
+export type Feature<T> = T & { enabled: boolean };
+
+export const isOn = <T>(feature: Feature<T> | null) => feature?.enabled === true;
+
 export const tierNumbers = [1, 2, 3] as const;
 
 export const tierCount = (tiers: Tiers, tier: number) =>
@@ -66,12 +70,12 @@ export type Settings = Page & {
   id: string;
   connected: boolean;
   currency: string;
-  paywall: Paywall | null;
-  tips: Tips | null;
-  spin: Spin | null;
-  subSongs: Tiers | null;
-  subSpins: Tiers | null;
-  maxSongMinutes: number | null;
+  paywall: Feature<Paywall> | null;
+  tips: Feature<Tips> | null;
+  spin: Feature<Spin> | null;
+  subSongs: Feature<Tiers> | null;
+  subSpins: Feature<Tiers> | null;
+  maxSongLength: Feature<{ minutes: number }> | null;
   paypal: boolean;
   merchantId: string | null;
   paypalPending: boolean;

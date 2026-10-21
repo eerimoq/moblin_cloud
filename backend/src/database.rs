@@ -161,6 +161,14 @@ impl Database {
                 )
                 .context("failed to remove the old Moblin Cloud keys")?;
         }
+        connection
+            .execute_batch(
+                "UPDATE pages SET settings = json_remove(
+                     json_set(settings, '$.max_song_length', json_object('enabled', json('true'), 'minutes', settings ->> '$.max_song_minutes')),
+                     '$.max_song_minutes'
+                 ) WHERE settings ->> '$.max_song_minutes' IS NOT NULL;",
+            )
+            .context("failed to move the longest song settings")?;
         connection.set_prepared_statement_cache_capacity(64);
         Ok(Arc::new(Self {
             connection: Mutex::new(connection),

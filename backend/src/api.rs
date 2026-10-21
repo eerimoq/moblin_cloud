@@ -31,8 +31,8 @@ use crate::deliveries::{self, Deliveries};
 use crate::images;
 use crate::live::Live;
 use crate::pages::{
-    CURRENCIES, FONTS, Pages, Paywall, Settings, SettingsError, Spin, SpinOption, Tiers, Tips,
-    format_price, is_color,
+    CURRENCIES, FONTS, Feature, Pages, Paywall, Settings, SettingsError, SongLength, Spin,
+    SpinOption, Tiers, Tips, format_price, is_color,
 };
 use crate::payments::{
     CaptureError, Item, Order, Orders, Payee, PaymentStatus, Stage, insert_captured,
@@ -329,15 +329,15 @@ struct SettingsResponse {
     id: String,
     connected: bool,
     currency: String,
-    paywall: Option<Paywall>,
-    tips: Option<Tips>,
-    spin: Option<Spin>,
+    paywall: Option<Feature<Paywall>>,
+    tips: Option<Feature<Tips>>,
+    spin: Option<Feature<Spin>>,
     #[serde(rename = "subSongs")]
-    sub_songs: Option<Tiers>,
+    sub_songs: Option<Feature<Tiers>>,
     #[serde(rename = "subSpins")]
-    sub_spins: Option<Tiers>,
-    #[serde(rename = "maxSongMinutes")]
-    max_song_minutes: Option<u32>,
+    sub_spins: Option<Feature<Tiers>>,
+    #[serde(rename = "maxSongLength")]
+    max_song_length: Option<Feature<SongLength>>,
     paypal: bool,
     #[serde(rename = "merchantId")]
     merchant_id: Option<String>,
@@ -376,7 +376,7 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         spin: settings.spin,
         sub_songs: settings.sub_songs,
         sub_spins: settings.sub_spins,
-        max_song_minutes: settings.max_song_minutes,
+        max_song_length: settings.max_song_length,
         paypal: api.paypal.is_some(),
         merchant_id: account.merchant_id,
         paypal_pending: account.paypal_tracking_id.is_some(),
@@ -411,17 +411,17 @@ fn without_payments(mut response: Json<SettingsResponse>) -> Json<SettingsRespon
 struct SettingsRequest {
     #[serde(default)]
     currency: Option<String>,
-    paywall: Option<Paywall>,
+    paywall: Option<Feature<Paywall>>,
     #[serde(default)]
-    tips: Option<Tips>,
+    tips: Option<Feature<Tips>>,
     #[serde(default)]
-    spin: Option<Spin>,
+    spin: Option<Feature<Spin>>,
     #[serde(default, rename = "subSongs")]
-    sub_songs: Option<Tiers>,
+    sub_songs: Option<Feature<Tiers>>,
     #[serde(default, rename = "subSpins")]
-    sub_spins: Option<Tiers>,
-    #[serde(default, rename = "maxSongMinutes")]
-    max_song_minutes: Option<u32>,
+    sub_spins: Option<Feature<Tiers>>,
+    #[serde(default, rename = "maxSongLength")]
+    max_song_length: Option<Feature<SongLength>>,
     #[serde(default)]
     message: Option<String>,
     #[serde(default)]
@@ -496,8 +496,10 @@ async fn update_settings(
     let paid = currency != current.currency();
     let paywall = match request.paywall {
         Some(paywall) => {
-            let paywall = paywall.normalize().ok_or_else(invalid_paywall)?;
-            if paid || current.paywall.as_ref() != Some(&paywall) {
+            let paywall = paywall
+                .normalize(Paywall::normalize)
+                .ok_or_else(invalid_paywall)?;
+            if paywall.enabled && (paid || current.paywall.as_ref() != Some(&paywall)) {
                 check_payable(api, &id)?;
             }
             Some(paywall)
@@ -506,8 +508,8 @@ async fn update_settings(
     };
     let tips = match request.tips {
         Some(tips) => {
-            let tips = tips.normalize().ok_or_else(invalid_tips)?;
-            if paid || current.tips.as_ref() != Some(&tips) {
+            let tips = tips.normalize(Tips::normalize).ok_or_else(invalid_tips)?;
+            if tips.enabled && (paid || current.tips.as_ref() != Some(&tips)) {
                 check_payable(api, &id)?;
             }
             Some(tips)
@@ -516,8 +518,8 @@ async fn update_settings(
     };
     let spin = match request.spin {
         Some(spin) => {
-            let spin = spin.normalize().ok_or_else(invalid_spin)?;
-            if paid || current.spin.as_ref() != Some(&spin) {
+            let spin = spin.normalize(Spin::normalize).ok_or_else(invalid_spin)?;
+            if spin.enabled && (paid || current.spin.as_ref() != Some(&spin)) {
                 check_payable(api, &id)?;
             }
             Some(spin)
@@ -535,7 +537,7 @@ async fn update_settings(
                 spin,
                 sub_songs: request.sub_songs,
                 sub_spins: request.sub_spins,
-                max_song_minutes: request.max_song_minutes,
+                max_song_length: request.max_song_length,
                 message: request.message,
                 accent,
                 font,
@@ -569,14 +571,14 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song minutes {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song length {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.paywall,
         settings.tips,
         settings.spin,
         settings.sub_songs,
         settings.sub_spins,
-        settings.max_song_minutes,
+        settings.max_song_length,
         settings.message,
         settings.accent,
         settings.font
@@ -1892,9 +1894,9 @@ async fn handle_songs(
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     Json(PaywallResponse {
-        sub_songs: settings.sub_songs,
-        max_song_minutes: settings.max_song_minutes,
-        paywall: settings.paywall.map(|paywall| PublicPaywall {
+        sub_songs: settings.sub_songs().cloned(),
+        max_song_minutes: settings.max_song_minutes(),
+        paywall: settings.paywall().map(|paywall| PublicPaywall {
             price: paywall.price,
             currency,
             client_id: client_id(&api, &merchant_id),
@@ -1928,8 +1930,8 @@ async fn handle_tips(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
     let stripe = public_stripe(&api, &id);
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(TipsResponse {
-        tips: settings.tips.filter(|_| payable).map(|tips| PublicTips {
-            amounts: tips.amounts,
+        tips: settings.tips().filter(|_| payable).map(|tips| PublicTips {
+            amounts: tips.amounts.clone(),
             currency,
             client_id: client_id(&api, &merchant_id),
             merchant_id,
@@ -1966,9 +1968,9 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
     let stripe = public_stripe(&api, &id);
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(SpinResponse {
-        sub_spins: settings.sub_spins.clone(),
-        spin: settings.spin.filter(|_| payable).map(|spin| PublicSpin {
-            options: spin.options,
+        sub_spins: settings.sub_spins().cloned(),
+        spin: settings.spin().filter(|_| payable).map(|spin| PublicSpin {
+            options: spin.options.clone(),
             currency,
             client_id: client_id(&api, &merchant_id),
             merchant_id,
@@ -2196,7 +2198,7 @@ async fn song_order(
     let message = viewer_message(request.message.take())?;
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let paywall = settings.paywall.ok_or(failure(
+    let paywall = settings.paywall().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes song requests. Reload the page.",
@@ -2205,7 +2207,7 @@ async fn song_order(
     let song_and_user = song_and_user(request)?;
     limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
-    check_song_length(settings.max_song_minutes, &song)?;
+    check_song_length(settings.max_song_minutes(), &song)?;
     let order = Order {
         streamer: id.clone(),
         item: Item::Song {
@@ -2284,7 +2286,7 @@ async fn handle_subscriber_song_allowance(
         &headers,
         &id,
         SubscriberKind::Song,
-        api.pages.get(&id).sub_songs,
+        api.pages.get(&id).sub_songs().cloned(),
     )
 }
 
@@ -2298,7 +2300,7 @@ async fn handle_subscriber_spin_allowance(
         &headers,
         &id,
         SubscriberKind::Spin,
-        api.pages.get(&id).sub_spins,
+        api.pages.get(&id).sub_spins().cloned(),
     )
 }
 
@@ -2495,7 +2497,7 @@ async fn subscriber_song(
         headers,
         &id,
         SubscriberKind::Song,
-        settings.sub_songs.as_ref(),
+        settings.sub_songs(),
     )?;
     let message = viewer_message(request.message)?;
     let song_and_user = song_and_user(SongRequest {
@@ -2506,7 +2508,7 @@ async fn subscriber_song(
     })?;
     limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
-    check_song_length(settings.max_song_minutes, &song)?;
+    check_song_length(settings.max_song_minutes(), &song)?;
     let units = song_price(1, song.duration);
     if units > subscriber.left {
         return Err(SubscriberKind::Song.short(subscriber.left));
@@ -2539,7 +2541,7 @@ fn subscriber_spin(
         headers,
         &id,
         SubscriberKind::Spin,
-        settings.sub_spins.as_ref(),
+        settings.sub_spins(),
     )?;
     wheel_available(api, &id)?;
     let order = Order {
@@ -3225,7 +3227,7 @@ async fn tip_order(
 ) -> Result<Json<OrderResponse>, Failure> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let tips = settings.tips.ok_or(failure(
+    let tips = settings.tips().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
@@ -3294,7 +3296,7 @@ async fn spin_order(
 ) -> Result<Json<OrderResponse>, Failure> {
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let spin = settings.spin.ok_or(failure(
+    let spin = settings.spin().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
@@ -3465,8 +3467,7 @@ async fn account_test_tip(
     let (id, account, request_id) = test_page(api, headers, page)?;
     let settings = api.pages.get(&id);
     let amount = settings
-        .tips
-        .as_ref()
+        .tips()
         .and_then(|tips| tips.amounts.first().copied())
         .unwrap_or(500);
     info!("queued a test tip in request {request_id} for remote control streamer {id}");
@@ -3524,7 +3525,7 @@ async fn account_test_spin(
     let spins = api
         .pages
         .get(&id)
-        .spin
+        .spin()
         .and_then(|spin| spin.options.first().map(|option| option.spins))
         .unwrap_or(1);
     info!("queued a test spin in request {request_id} for remote control streamer {id}");
@@ -5518,7 +5519,7 @@ mod tests {
                 "p",
                 Settings {
                     currency: Some("SEK".to_string()),
-                    paywall: Some(Paywall { price: 250 }),
+                    paywall: Some(Feature::on(Paywall { price: 250 })),
                     ..Settings::default()
                 },
             )
@@ -5718,7 +5719,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250}, "maxSongMinutes": 61}))
+            .json(&json!({"paywall": {"price": 250}, "maxSongLength": {"minutes": 61}}))
             .send()
             .await
             .unwrap();
@@ -5726,14 +5727,17 @@ mod tests {
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": {"price": 250}, "maxSongMinutes": 5}))
+            .json(&json!({"paywall": {"price": 250}, "maxSongLength": {"minutes": 5}}))
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(settings["maxSongMinutes"], 5);
+        assert_eq!(
+            settings["maxSongLength"],
+            json!({"enabled": true, "minutes": 5})
+        );
         let songs: Value = client
             .get(format!("http://{address}/pages/{id}/songs"))
             .send()
@@ -5836,7 +5840,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(settings["paywall"], json!({"price": 250}));
+        assert_eq!(settings["paywall"], json!({"enabled": true, "price": 250}));
         assert_eq!(settings["currency"], "SEK");
         assert_eq!(settings["paypal"], true);
         assert_eq!(settings["merchantId"], "MERCHANT00001");
@@ -6154,7 +6158,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             settings["spin"],
-            json!({"options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}]})
+            json!({"enabled": true, "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}]})
         );
         let public: Value = client
             .get(&spin_url)
@@ -6321,7 +6325,10 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(settings["tips"], json!({"amounts": [200, 500, 1000]}));
+        assert_eq!(
+            settings["tips"],
+            json!({"enabled": true, "amounts": [200, 500, 1000]})
+        );
         let public: Value = client
             .get(&tips_url)
             .send()
@@ -7111,7 +7118,7 @@ mod tests {
             .bearer_auth(&session)
             .json(&json!({
                 "subSongs": {"tier1": 0, "tier2": 0, "tier3": 3},
-                "maxSongMinutes": 5,
+                "maxSongLength": {"minutes": 5},
             }))
             .send()
             .await
@@ -7181,7 +7188,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["subSongs"],
-            json!({"tier1": 1, "tier2": 0, "tier3": 3})
+            json!({"enabled": true, "tier1": 1, "tier2": 0, "tier3": 3})
         );
         let public: Value = client
             .get(format!("http://{address}/pages/{id}/songs"))
@@ -7682,10 +7689,14 @@ mod tests {
         assert_eq!(account["wheelDevice"], page);
         assert_eq!(account["admin"], false);
         assert_eq!(account["premium"], false);
+        assert_eq!(
+            account["settings"]["maxSongLength"],
+            json!({"enabled": true, "minutes": 7})
+        );
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": null}))
+            .json(&json!({"paywall": null, "maxSongLength": {"minutes": 7}}))
             .send()
             .await
             .unwrap()
@@ -8703,8 +8714,8 @@ mod tests {
                 &id,
                 Settings {
                     currency: Some("SEK".to_string()),
-                    paywall: Some(Paywall { price: 250 }),
-                    tips: Some(Tips { amounts: vec![500] }),
+                    paywall: Some(Feature::on(Paywall { price: 250 })),
+                    tips: Some(Feature::on(Tips { amounts: vec![500] })),
                     ..Settings::default()
                 },
             )
@@ -8775,8 +8786,8 @@ mod tests {
         let settings = &account["settings"];
         assert_eq!(settings["id"], id);
         assert_eq!(settings["currency"], "SEK");
-        assert_eq!(settings["paywall"], json!({"price": 250}));
-        assert_eq!(settings["tips"], json!({"amounts": [500]}));
+        assert_eq!(settings["paywall"], json!({"enabled": true, "price": 250}));
+        assert_eq!(settings["tips"], json!({"enabled": true, "amounts": [500]}));
         assert_eq!(settings["paypal"], false);
         assert_eq!(settings["merchantId"], Value::Null);
         assert_eq!(settings["paypalPending"], false);
@@ -8794,7 +8805,7 @@ mod tests {
                 "tips": {"amounts": [300, 700]},
                 "spin": {"options": [{"spins": 1, "price": 100}]},
                 "message": " Hi ",
-                "maxSongMinutes": 7,
+                "maxSongLength": {"minutes": 7},
                 "subSongs": {"tier1": 1, "tier2": 2, "tier3": 3},
             }),
         )
@@ -8802,17 +8813,23 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let settings: Value = response.json().await.unwrap();
         assert_eq!(settings["message"], "Hi");
-        assert_eq!(settings["maxSongMinutes"], 7);
+        assert_eq!(
+            settings["maxSongLength"],
+            json!({"enabled": true, "minutes": 7})
+        );
         assert_eq!(
             settings["subSongs"],
-            json!({"tier1": 1, "tier2": 2, "tier3": 3})
+            json!({"enabled": true, "tier1": 1, "tier2": 2, "tier3": 3})
         );
         assert_eq!(settings["currency"], "SEK");
         assert_eq!(settings["paywall"], Value::Null);
-        assert_eq!(settings["tips"], json!({"amounts": [300, 700]}));
+        assert_eq!(
+            settings["tips"],
+            json!({"enabled": true, "amounts": [300, 700]})
+        );
         assert_eq!(
             settings["spin"],
-            json!({"options": [{"spins": 1, "price": 100}]})
+            json!({"enabled": true, "options": [{"spins": 1, "price": 100}]})
         );
         assert_eq!(settings["merchantId"], Value::Null);
         assert_eq!(settings["paypal"], false);
@@ -8822,14 +8839,14 @@ mod tests {
         assert_eq!(saved.currency(), "SEK");
         assert_eq!(saved.paywall, None);
         assert_eq!(
-            saved.tips,
-            Some(Tips {
+            saved.tips(),
+            Some(&Tips {
                 amounts: vec![300, 700]
             })
         );
         assert_eq!(
-            saved.spin,
-            Some(Spin {
+            saved.spin(),
+            Some(&Spin {
                 options: vec![SpinOption {
                     spins: 1,
                     price: 100
@@ -8838,7 +8855,7 @@ mod tests {
         );
         let response = post(&mod1, "/settings", json!({"paywall": {"price": 100}})).await;
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(api.pages.get(&id).paywall, Some(Paywall { price: 100 }));
+        assert_eq!(api.pages.get(&id).paywall(), Some(&Paywall { price: 100 }));
         api.accounts.forget_paypal("1").unwrap();
         let account: Value = get(&mod1, "").await.json().await.unwrap();
         assert_eq!(account["settings"]["payable"], false);
@@ -8848,9 +8865,17 @@ mod tests {
             response.text().await.unwrap(),
             "connect PayPal or Stripe first"
         );
-        assert_eq!(api.pages.get(&id).paywall, Some(Paywall { price: 100 }));
+        assert_eq!(api.pages.get(&id).paywall(), Some(&Paywall { price: 100 }));
         let response = post(&mod1, "/settings", json!({"paywall": {"price": 100}})).await;
         assert_eq!(response.status(), StatusCode::OK);
+        let off = json!({"paywall": {"enabled": false, "price": 150}});
+        let response = post(&mod1, "/settings", off.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let settings: Value = response.json().await.unwrap();
+        assert_eq!(settings["paywall"], off["paywall"]);
+        assert_eq!(api.pages.get(&id).paywall(), None);
+        let response = post(&mod1, "/settings", json!({"paywall": {"price": 150}})).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
         let response = post(&mod1, "/settings", json!({"message": "Hi"})).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(api.pages.get(&id).paywall, None);
@@ -8930,7 +8955,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"paywall": null, "maxSongMinutes": 1}))
+            .json(&json!({"paywall": null, "maxSongLength": {"minutes": 1}}))
             .send()
             .await
             .unwrap();

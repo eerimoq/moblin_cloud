@@ -67,8 +67,8 @@ class PayPalPaidSettings(PayPalTestCase):
         merchant_id = settings["merchantId"]
         settings = dashboard.save_settings(currency="eur", paywall={"price": 150}, tips=TIPS, spin=SPIN)
         self.assert_equal(settings["currency"], "EUR")
-        self.assert_equal(settings["paywall"], {"price": 150})
-        self.assert_equal(settings["tips"], {"amounts": [100, 500, 1000]})
+        self.assert_equal(settings["paywall"], {"enabled": True, "price": 150})
+        self.assert_equal(settings["tips"], {"enabled": True, "amounts": [100, 500, 1000]})
         self.assert_equal(
             settings["spin"]["options"], [{"spins": 1, "price": 200}, {"spins": 3, "price": 500}]
         )
