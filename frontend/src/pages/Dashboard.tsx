@@ -1728,7 +1728,7 @@ function Admin(props: {
               onClick={() => select(section.id)}
               class="flex flex-col items-start gap-1.5 rounded-2xl border-[1.5px] px-4 py-3 text-left transition-colors lg:flex-row lg:items-center lg:gap-3 lg:whitespace-nowrap"
               classList={{
-                "border-line bg-card text-ink": active() === section.id,
+                "border-moss bg-card text-ink lg:border-line": active() === section.id,
                 "border-ghost-line bg-ghost text-ink-2 hover:bg-ghost-hover hover:text-ink lg:border-transparent lg:bg-transparent lg:hover:bg-ghost":
                   active() !== section.id,
               }}
