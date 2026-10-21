@@ -13,9 +13,11 @@ MISSING_SONG = "https://music.apple.com/us/song/does-not-exist/99999999999"
 class RemoteControlTestCase(TestCase):
     """The streamer's Moblin connected to the backend with the Moblin Cloud key from the dashboard."""
 
+    login = "streamer"
+
     def setup(self):
         self.skip_if_no_moblin()
-        self.dashboard = self.sign_in()
+        self.dashboard = self.sign_in(self.login)
         self.viewer = self.website.viewer(self.dashboard.page_id())
 
     @property
@@ -194,6 +196,8 @@ class RemoteControlSongRequestsOff(RemoteControlTestCase):
 
 class RemoteControlChosenDevices(RemoteControlTestCase):
     """Send songs and spins to the devices picked in the dashboard, tips to any connected device, and nothing to a device turned off."""
+
+    login = "devices"
 
     def run(self):
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)

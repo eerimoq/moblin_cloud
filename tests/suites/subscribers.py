@@ -104,7 +104,7 @@ class SubscribersRequestSongs(SubscribersTestCase):
         self.assert_equal(tier1.request_song(SONG, " For the drive "), {"left": 0})
         add = self.moblin.wait_for_new_backend_request("add", start)
         self.assert_equal(
-            [add.body["message"], add.body["user"], add.body.get("message")],
+            [add.body["title"], add.body["user"], add.body.get("message")],
             [SONG_LINK, "songfan1", "For the drive"],
         )
         self.wait_until(

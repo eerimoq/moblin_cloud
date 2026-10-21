@@ -371,7 +371,7 @@ class ModeratorsAddSongsForFree(ModeratorsTestCase):
         self.moderator.add_free_song(self.page_id, SONG, " For the drive ")
         add = self.moblin.wait_for_new_backend_request("add", start)
         self.assert_equal(
-            [add.body["message"], add.body["user"], add.body.get("message")],
+            [add.body["title"], add.body["user"], add.body.get("message")],
             [SONG_LINK, self.moderator_login, "For the drive"],
         )
         self.wait_for_queue([self.moderator_login])
