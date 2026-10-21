@@ -3,7 +3,6 @@ import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
 import { poll } from "../poll";
-import BrandIcon from "../components/BrandIcon";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
 import { createRecent, Latest } from "../components/Latest";
@@ -39,17 +38,13 @@ import {
   disconnectStripe,
   fetchAccount,
   fetchRecent,
-  linkUrl,
-  type LinkResult,
   newMoblinKey,
   renameDevice,
   removeImage,
   saveAccountSettings,
   resendRecent,
   sendTest,
-  deleteAccount,
   stripeCountries,
-  unlinkAccount,
   uploadImage,
   type Account,
   type ConnectedDevice,
@@ -62,7 +57,6 @@ import { links, pages } from "../data/links";
 import {
   accentAttributes,
   accents,
-  channelText,
   currencies,
   fonts,
   hundredths,
@@ -1260,98 +1254,6 @@ const moderationErrorText = (error: unknown) =>
     ? error.message
     : t("Something went wrong. Try again.");
 
-const linkResultText = (result: LinkResult) =>
-  result.linked ? t("Linked.") : (result.error ?? t("Linking did not work. Try again."));
-
-function LinkedAccounts(props: {
-  session: string;
-  account: Account;
-  result: LinkResult | null;
-  preview?: boolean;
-  onAccount: (account: Account) => void;
-  onSignOut: () => void;
-}) {
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const linked = () => platforms.filter((platform) => props.account[platform] !== null);
-  const unlink = async (platform: Platform) => {
-    if (props.preview) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      props.onAccount(await unlinkAccount(props.session, platform));
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      setError(moderationErrorText(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Linked accounts")}</h2>
-      <p class="text-ink-2">
-        {t(
-          "Sign in with any linked account to get this dashboard. Your tip page gets an address for each of them.",
-        )}
-      </p>
-      <Show when={props.result}>
-        {(result) => (
-          <Notice status={result().linked} error={!result().linked}>
-            {linkResultText(result())}
-          </Notice>
-        )}
-      </Show>
-      <Show when={error()}>{(error) => <Notice error>{error()}</Notice>}</Show>
-      <ul class="flex flex-col gap-3">
-        <For each={platforms}>
-          {(platform) => (
-            <li class="flex items-center gap-3 rounded-2xl border-[1.5px] border-line bg-well px-4 py-3">
-              <BrandIcon name={platform} class="size-9" />
-              <div class="min-w-0 flex-1">
-                <div class="font-semibold">{platformNames[platform]}</div>
-                <div class="truncate text-[15px] text-muted">
-                  <Show when={props.account[platform]} fallback={t("Not linked")}>
-                    {(identity) => channelText(platform, identity().login)}
-                  </Show>
-                </div>
-              </div>
-              <Show
-                when={props.account[platform]}
-                fallback={
-                  <a href={props.preview ? undefined : linkUrl(platform)} class={smallButtonClass}>
-                    {t("Link")}
-                  </a>
-                }
-              >
-                <button
-                  type="button"
-                  class={smallButtonClass}
-                  disabled={busy() || linked().length < 2}
-                  title={linked().length < 2 ? t("Link another account first.") : undefined}
-                  onClick={() => void unlink(platform)}
-                >
-                  {t("Unlink")}
-                </button>
-              </Show>
-            </li>
-          )}
-        </For>
-      </ul>
-      <p class="text-[15px] text-muted">
-        {t(
-          "Songs and spins for subscribers and moderators need a linked Twitch or Kick account. An account that already has its own page can't be linked. Delete that page first.",
-        )}
-      </p>
-    </section>
-  );
-}
-
 function MusicQueue(props: { session: string; page: string; onSignOut: () => void }) {
   const [status, setStatus] = createSignal<Status>("loading");
   const [busy, setBusy] = createSignal(false);
@@ -1778,7 +1680,6 @@ function Admin(props: {
   session: string;
   account: Account;
   page?: string;
-  linkResult?: LinkResult | null;
   onSignOut: () => void;
   preview?: boolean;
 }) {
@@ -1917,13 +1818,6 @@ function Admin(props: {
       icon: "smartphone",
       shown: () => !moderating(),
       status: () => connectedOrNot(settings().connected),
-    },
-    {
-      id: "linked",
-      label: t("Linked accounts"),
-      icon: "user",
-      shown: () => !moderating(),
-      status: () => null,
     },
   ];
   const visible = () => sections.filter((section) => section.shown());
@@ -2189,18 +2083,6 @@ function Admin(props: {
             />
           </div>
         </Show>
-        <Show when={!moderating()}>
-          <div hidden={active() !== "linked"}>
-            <LinkedAccounts
-              session={props.session}
-              account={account()}
-              result={props.linkResult ?? null}
-              preview={props.preview}
-              onAccount={setAccount}
-              onSignOut={props.onSignOut}
-            />
-          </div>
-        </Show>
         <div hidden={active() !== "moblin"}>
           <MoblinSettings
             account={account()}
@@ -2233,111 +2115,6 @@ function Modal(props: { ref: (dialog: HTMLDialogElement) => void; children: JSX.
     >
       {props.children}
     </dialog>
-  );
-}
-
-function AccountDialog(props: {
-  ref: (dialog: HTMLDialogElement) => void;
-  session: string;
-  onSignOut: () => void;
-  onSignOutEverywhere: () => Promise<void>;
-}) {
-  let dialog: HTMLDialogElement | undefined;
-
-  return (
-    <Modal
-      ref={(element) => {
-        dialog = element;
-        props.ref(element);
-      }}
-    >
-      <div class="flex flex-col gap-5">
-        <h2 class="font-display text-2xl font-bold">{t("Account")}</h2>
-        <SignOutEverywhere onSignOutEverywhere={props.onSignOutEverywhere} />
-        <DeleteAccount session={props.session} onSignOut={props.onSignOut} />
-        <div>
-          <button type="button" class={ghostButtonClass} onClick={() => dialog?.close()}>
-            {t("Close")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function SignOutEverywhere(props: { onSignOutEverywhere: () => Promise<void> }) {
-  const [working, setWorking] = createSignal(false);
-  return (
-    <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Sign out everywhere")}</h2>
-      <p class="text-ink-2">{t("Signs you out in every browser, including this one.")}</p>
-      <div>
-        <button
-          type="button"
-          class={ghostButtonClass}
-          disabled={working()}
-          onClick={async () => {
-            setWorking(true);
-            await props.onSignOutEverywhere();
-          }}
-        >
-          {t("Sign out everywhere")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function DeleteAccount(props: { session: string; onSignOut: () => void }) {
-  const [working, setWorking] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const remove = async () => {
-    if (
-      !confirm(
-        t(
-          "Your account is deleted with its tip page, Moblin devices, settings and history. This can't be undone.",
-        ),
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    setWorking(true);
-    try {
-      await deleteAccount(props.session);
-      props.onSignOut();
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-        return;
-      }
-      setError(t("Deleting did not work. Try again."));
-    } finally {
-      setWorking(false);
-    }
-  };
-  return (
-    <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Delete account")}</h2>
-      <p class="text-ink-2">
-        {t(
-          "Deletes your account with its tip page, Moblin devices, settings and history. Your PayPal " +
-            "and Stripe accounts stay as they are, and viewers keep what they paid for. Signing in " +
-            "again starts over with a new account.",
-        )}
-      </p>
-      <div class="flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          class={`${ghostButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
-          disabled={working()}
-          onClick={remove}
-        >
-          {t("Delete account")}
-        </button>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </div>
-    </div>
   );
 }
 
@@ -2808,8 +2585,7 @@ function Preview(props: { failed: boolean }) {
 }
 
 export default function Dashboard() {
-  const { session, loading, signInFailed, linkResult, signOut, signOutAll } =
-    createAccountSession();
+  const { session, loading, signInFailed, signOut } = createAccountSession();
 
   const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
   const chooseChannel = (key: string) => {
@@ -2846,79 +2622,64 @@ export default function Dashboard() {
             </Show>
           }
         >
-          {(current) => {
-            let accountDialog: HTMLDialogElement | undefined;
-            return (
-              <div class="ml-auto flex min-w-0 items-center gap-3">
-                <Show when={current().account.premium} fallback={<GoPremium />}>
-                  <span
-                    title={t("Premium")}
-                    class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold text-leaf max-sm:w-11 max-sm:justify-center sm:px-4"
+          {(current) => (
+            <div class="ml-auto flex min-w-0 items-center gap-3">
+              <Show when={current().account.premium} fallback={<GoPremium />}>
+                <span
+                  title={t("Premium")}
+                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold text-leaf max-sm:w-11 max-sm:justify-center sm:px-4"
+                >
+                  <Icon name="star" class="size-4" />
+                  <span class="max-sm:sr-only">{t("Premium")}</span>
+                </span>
+              </Show>
+              <Show when={current().account.moderating.length > 0}>
+                <div class="relative min-w-0">
+                  <PickedAvatar picked={channel(current().account) ?? current().account} />
+                  <select
+                    aria-label={t("Streamer")}
+                    class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base! max-sm:w-11 max-sm:px-0! max-sm:text-transparent max-sm:[&>option]:text-ink`}
+                    value={(() => {
+                      const picked = channel(current().account);
+                      return picked ? channelKey(picked) : "";
+                    })()}
+                    onChange={(event) => chooseChannel(event.currentTarget.value)}
                   >
-                    <Icon name="star" class="size-4" />
-                    <span class="max-sm:sr-only">{t("Premium")}</span>
-                  </span>
-                </Show>
-                <Show when={current().account.moderating.length > 0}>
-                  <div class="relative min-w-0">
-                    <PickedAvatar picked={channel(current().account) ?? current().account} />
-                    <select
-                      aria-label={t("Streamer")}
-                      class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base! max-sm:w-11 max-sm:px-0! max-sm:text-transparent max-sm:[&>option]:text-ink`}
-                      value={(() => {
-                        const picked = channel(current().account);
-                        return picked ? channelKey(picked) : "";
-                      })()}
-                      onChange={(event) => chooseChannel(event.currentTarget.value)}
-                    >
-                      <option value="">{t("You")}</option>
-                      <For each={current().account.moderating}>
-                        {(channel) => (
-                          <option value={channelKey(channel)}>
-                            {channel.platform === "kick"
-                              ? t("{name} on Kick", { name: channel.name })
-                              : channel.name}
-                          </option>
-                        )}
-                      </For>
-                    </select>
-                    <Icon
-                      name="chevron-down"
-                      class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2 max-sm:hidden"
-                    />
-                  </div>
-                </Show>
-                <Show when={current().account.admin}>
-                  <a
-                    href={asset(pages.admin)}
-                    class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
-                    title={t("Admin")}
-                  >
-                    <Icon name="chart" class="size-5 sm:hidden" />
-                    <span class="max-sm:sr-only">{t("Admin")}</span>
-                  </a>
-                </Show>
-                <AccountMenu
-                  name={current().account.name}
-                  avatar={current().account.avatar}
-                  items={[
-                    {
-                      label: t("Account"),
-                      icon: "user",
-                      onClick: () => accountDialog?.showModal(),
-                    },
-                  ]}
-                  onSignOut={signOut}
-                />
-                <AccountDialog
-                  ref={(dialog) => (accountDialog = dialog)}
-                  session={current().session}
-                  onSignOut={signOut}
-                  onSignOutEverywhere={signOutAll}
-                />
-              </div>
-            );
-          }}
+                    <option value="">{t("You")}</option>
+                    <For each={current().account.moderating}>
+                      {(channel) => (
+                        <option value={channelKey(channel)}>
+                          {channel.platform === "kick"
+                            ? t("{name} on Kick", { name: channel.name })
+                            : channel.name}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                  <Icon
+                    name="chevron-down"
+                    class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2 max-sm:hidden"
+                  />
+                </div>
+              </Show>
+              <Show when={current().account.admin}>
+                <a
+                  href={asset(pages.admin)}
+                  class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
+                  title={t("Admin")}
+                >
+                  <Icon name="chart" class="size-5 sm:hidden" />
+                  <span class="max-sm:sr-only">{t("Admin")}</span>
+                </a>
+              </Show>
+              <AccountMenu
+                name={current().account.name}
+                avatar={current().account.avatar}
+                items={[{ label: t("Account"), icon: "user", href: asset(pages.account) }]}
+                onSignOut={signOut}
+              />
+            </div>
+          )}
         </Show>
       </CloudHeader>
       <main>
@@ -2943,7 +2704,6 @@ export default function Dashboard() {
                     <Admin
                       session={current.session}
                       account={current.account}
-                      linkResult={linkResult()}
                       onSignOut={signOut}
                     />
                   }

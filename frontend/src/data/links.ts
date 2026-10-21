@@ -48,6 +48,7 @@ export const pages = {
   docs: "/docs/",
   cards: "/cards/",
   dashboard: "/dashboard/",
+  account: "/account/",
   admin: "/admin/",
   terms: "/terms/",
 } as const;

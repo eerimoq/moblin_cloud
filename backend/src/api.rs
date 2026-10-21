@@ -691,11 +691,13 @@ async fn signed_in_redirect(
     browser_state: Option<&str>,
 ) -> Redirect {
     let dashboard = format!("{}/dashboard/", api.auth.frontend_url);
+    let account = format!("{}/account/", api.auth.frontend_url);
     let failed = |link: bool| {
-        Redirect::to(&format!(
-            "{dashboard}#{}",
-            if link { "linkFailed" } else { "signInFailed" }
-        ))
+        Redirect::to(&if link {
+            format!("{account}#linkFailed")
+        } else {
+            format!("{dashboard}#signInFailed")
+        })
     };
     let Some(state) = query.state else {
         return failed(false);
@@ -749,7 +751,7 @@ async fn signed_in_redirect(
             identity.login
         );
         return Redirect::to(&format!(
-            "{dashboard}#link={}",
+            "{account}#link={}",
             api.auth.link_token(sign_in.identity)
         ));
     }
@@ -8296,10 +8298,10 @@ mod tests {
             .to_string()
     }
 
-    fn link_of(dashboard: &str) -> String {
-        dashboard
-            .strip_prefix("https://moblin.app/dashboard/#link=")
-            .unwrap_or_else(|| panic!("{dashboard}"))
+    fn link_of(account: &str) -> String {
+        account
+            .strip_prefix("https://moblin.app/account/#link=")
+            .unwrap_or_else(|| panic!("{account}"))
             .to_string()
     }
 
@@ -8949,7 +8951,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
             flow.link("kick", "unknown").await,
-            "https://moblin.app/dashboard/#linkFailed"
+            "https://moblin.app/account/#linkFailed"
         );
         let token = link_of(&flow.link("kick", "kick-a").await);
         assert_eq!(api.auth.link_of(&token).unwrap().user_id, "123".to_string());

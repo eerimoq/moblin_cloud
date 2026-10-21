@@ -110,7 +110,7 @@ const menuItemClass =
 export function AccountMenu(props: {
   name: string;
   avatar: string | null;
-  items?: { label: string; icon: IconName; onClick: () => void }[];
+  items?: ({ label: string; icon: IconName } & ({ onClick: () => void } | { href: string }))[];
   onSignOut: () => void | Promise<void>;
 }) {
   const [open, setOpen] = createSignal(false);
@@ -175,20 +175,27 @@ export function AccountMenu(props: {
             {props.name}
           </p>
           <For each={props.items ?? []}>
-            {(item) => (
-              <button
-                type="button"
-                role="menuitem"
-                class={menuItemClass}
-                onClick={() => {
-                  setOpen(false);
-                  item.onClick();
-                }}
-              >
-                <Icon name={item.icon} class="size-5 text-ink-2" />
-                {item.label}
-              </button>
-            )}
+            {(item) =>
+              "href" in item ? (
+                <a href={item.href} role="menuitem" class={menuItemClass}>
+                  <Icon name={item.icon} class="size-5 text-ink-2" />
+                  {item.label}
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  class={menuItemClass}
+                  onClick={() => {
+                    setOpen(false);
+                    item.onClick();
+                  }}
+                >
+                  <Icon name={item.icon} class="size-5 text-ink-2" />
+                  {item.label}
+                </button>
+              )
+            }
           </For>
           <button
             type="button"
