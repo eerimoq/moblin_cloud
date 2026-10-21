@@ -1963,6 +1963,7 @@ function AccountDialog(props: {
   ref: (dialog: HTMLDialogElement) => void;
   session: string;
   onSignOut: () => void;
+  onSignOutEverywhere: () => Promise<void>;
 }) {
   let dialog: HTMLDialogElement | undefined;
 
@@ -1975,6 +1976,7 @@ function AccountDialog(props: {
     >
       <div class="flex flex-col gap-5">
         <h2 class="font-display text-2xl font-bold">{t("Account")}</h2>
+        <SignOutEverywhere onSignOutEverywhere={props.onSignOutEverywhere} />
         <DeleteAccount session={props.session} onSignOut={props.onSignOut} />
         <div>
           <button type="button" class={ghostButtonClass} onClick={() => dialog?.close()}>
@@ -1983,6 +1985,29 @@ function AccountDialog(props: {
         </div>
       </div>
     </Modal>
+  );
+}
+
+function SignOutEverywhere(props: { onSignOutEverywhere: () => Promise<void> }) {
+  const [working, setWorking] = createSignal(false);
+  return (
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">{t("Sign out everywhere")}</h2>
+      <p class="text-ink-2">{t("Signs you out in every browser, including this one.")}</p>
+      <div>
+        <button
+          type="button"
+          class={ghostButtonClass}
+          disabled={working()}
+          onClick={async () => {
+            setWorking(true);
+            await props.onSignOutEverywhere();
+          }}
+        >
+          {t("Sign out everywhere")}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -2684,12 +2709,13 @@ export default function Dashboard() {
                       onClick: () => accountDialog?.showModal(),
                     },
                   ]}
-                  onSignOut={signOutAll}
+                  onSignOut={signOut}
                 />
                 <AccountDialog
                   ref={(dialog) => (accountDialog = dialog)}
                   session={current().session}
                   onSignOut={signOut}
+                  onSignOutEverywhere={signOutAll}
                 />
               </div>
             );

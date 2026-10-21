@@ -893,7 +893,7 @@ function Stats(props: { session: string; onSignOut: () => void }) {
 }
 
 export default function Admin() {
-  const { session, loading, signInFailed, signOut, signOutAll } = createAccountSession();
+  const { session, loading, signInFailed, signOut } = createAccountSession();
 
   return (
     <>
@@ -910,7 +910,7 @@ export default function Admin() {
             <AccountMenu
               name={current().account.name}
               avatar={current().account.avatar}
-              onSignOut={signOutAll}
+              onSignOut={signOut}
             />
           )}
         </Show>
