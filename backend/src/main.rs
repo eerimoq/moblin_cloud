@@ -36,7 +36,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use crate::accounts::Accounts;
 use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
-use crate::auth::{Auth, OAuthApp};
+use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::challenges::Challenges;
 use crate::counters::Counters;
 use crate::database::Database;
@@ -83,6 +83,17 @@ struct Cli {
         requires = "twitch_client_id"
     )]
     twitch_client_secret: Option<String>,
+    /// Kick application client ID, for streamers signing in with Kick.
+    #[arg(long, env = "KICK_CLIENT_ID", requires = "kick_client_secret")]
+    kick_client_id: Option<String>,
+    /// Kick application client secret.
+    #[arg(
+        long,
+        env = "KICK_CLIENT_SECRET",
+        hide_env_values = true,
+        requires = "kick_client_id"
+    )]
+    kick_client_secret: Option<String>,
     /// Twitch channel whose live status the website shows.
     #[arg(long, env = "TWITCH_LIVE_CHANNEL", default_value = "eerimoq")]
     twitch_live_channel: String,
@@ -206,7 +217,14 @@ async fn main() -> Result<()> {
         cli.frontend_url,
         twitch_app,
         cli.session_secret.as_deref(),
-    )?;
+    )?
+    .with_kick(match (cli.kick_client_id, cli.kick_client_secret) {
+        (Some(client_id), Some(client_secret)) => Some(KickApp::new(client_id, client_secret)),
+        _ => {
+            warn!("no Kick client ID and secret, not signing in with Kick");
+            None
+        }
+    });
     if cli.database.is_none() {
         warn!(
             "no database, forgetting streamers, accounts, page settings and undelivered requests on restart"

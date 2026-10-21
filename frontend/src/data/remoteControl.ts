@@ -229,6 +229,7 @@ export const musicStatus = (id: string) => call<MusicStatus>(pagePath(id, "/song
 export type Profile = Page & {
   name: string;
   login: string;
+  platform?: "twitch" | "kick";
   avatar: string | null;
   image: string | null;
 };
@@ -329,3 +330,6 @@ export const orderSpin = (
 
 export const idOfTwitchLogin = async (login: string) =>
   (await call<{ id: string }>(`/twitch/${encodeURIComponent(login)}`)).id;
+
+export const idOfKickLogin = async (login: string) =>
+  (await call<{ id: string }>(`/kick/${encodeURIComponent(login)}`)).id;

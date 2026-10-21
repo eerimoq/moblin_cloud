@@ -20,10 +20,10 @@ use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{
-    Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, Page,
+    self, Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, Page,
 };
 use crate::app_attest::AppAttest;
-use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
+use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, User, Viewer};
 use crate::challenges::Challenges;
 use crate::counters::{self, Counter, Counters};
 use crate::database::Database;
@@ -83,8 +83,11 @@ pub fn router(api: Arc<Api>) -> Router {
             get(handle_remote_control_streamer),
         )
         .route("/pages/twitch/{login}", get(handle_twitch_page))
+        .route("/pages/kick/{login}", get(handle_kick_page))
         .route("/auth/twitch/login", get(handle_login))
         .route("/auth/twitch/callback", get(handle_callback))
+        .route("/auth/kick/login", get(handle_kick_login))
+        .route("/auth/kick/callback", get(handle_kick_callback))
         .route("/account", get(handle_account))
         .route("/account/devices", post(handle_account_devices))
         .route(
@@ -596,7 +599,10 @@ async fn handle_login(
     Query(query): Query<LoginQuery>,
 ) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
     if let Some(page) = &query.page
-        && api.accounts.streamer_of_page(page).is_none()
+        && api
+            .accounts
+            .streamer_of_page(page)
+            .is_none_or(|(streamer, _)| accounts::is_kick(&streamer))
     {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -677,9 +683,24 @@ async fn signed_in_redirect(
         }
     };
     let user = &sign_in.user;
+    let Some(account) = save_sign_in(api, user) else {
+        return Redirect::to(&format!("{dashboard}#signInFailed"));
+    };
+    match api.auth.channel_moderators(&sign_in).await {
+        Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
+        Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
+    }
+    info!("Twitch user {} ({}) signed in", user.id, user.login);
+    Redirect::to(&format!(
+        "{dashboard}#session={}",
+        api.auth.session(&user.id, account.sessions)
+    ))
+}
+
+fn save_sign_in(api: &Api, user: &User) -> Option<Account> {
     let Some((key, page)) = api.remote_control.new_key() else {
         warn!("no page could be created for {}", user.id);
-        return Redirect::to(&format!("{dashboard}#signInFailed"));
+        return None;
     };
     let device = Device {
         id: page.clone(),
@@ -687,24 +708,70 @@ async fn signed_in_redirect(
         key,
         enabled: true,
     };
-    let account = match api.accounts.signed_in(
-        &user.id,
-        &user.name,
-        &user.login,
-        user.avatar.as_deref(),
-        Page::new(page, device),
-    ) {
-        Ok(account) => account,
+    api.accounts
+        .signed_in(
+            &user.id,
+            &user.name,
+            &user.login,
+            user.avatar.as_deref(),
+            Page::new(page, device),
+        )
+        .inspect_err(|error| warn!("saving account {} failed: {error:?}", user.id))
+        .ok()
+}
+
+async fn handle_kick_login(
+    State(api): State<Arc<Api>>,
+) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
+    let (url, state) = api
+        .auth
+        .kick_login_url()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok((
+        [(SET_COOKIE, api.auth.state_cookie(&state))],
+        Redirect::to(&url),
+    ))
+}
+
+async fn handle_kick_callback(
+    State(api): State<Arc<Api>>,
+    Query(query): Query<CallbackQuery>,
+    headers: HeaderMap,
+) -> ([(HeaderName, String); 1], Redirect) {
+    (
+        [(SET_COOKIE, api.auth.cleared_state_cookie())],
+        kick_signed_in_redirect(&api, query, cookie(&headers, STATE_COOKIE)).await,
+    )
+}
+
+async fn kick_signed_in_redirect(
+    api: &Api,
+    query: CallbackQuery,
+    browser_state: Option<&str>,
+) -> Redirect {
+    let dashboard = format!("{}/dashboard/", api.auth.frontend_url);
+    let user = async {
+        let state = query.state.context("no state")?;
+        let verifier = api.auth.consume_kick_state(&state, browser_state)?;
+        let code = query.code.with_context(|| {
+            format!(
+                "Kick answered {}",
+                query.error.as_deref().unwrap_or("no code")
+            )
+        })?;
+        api.auth.kick_callback(&code, &verifier).await
+    };
+    let user = match user.await {
+        Ok(user) => user,
         Err(error) => {
-            warn!("saving account {} failed: {error:?}", user.id);
+            warn!("signing in with Kick failed: {error:#}");
             return Redirect::to(&format!("{dashboard}#signInFailed"));
         }
     };
-    match api.auth.channel_moderators(&sign_in).await {
-        Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
-        Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
-    }
-    info!("Twitch user {} ({}) signed in", user.id, user.login);
+    let Some(account) = save_sign_in(api, &user) else {
+        return Redirect::to(&format!("{dashboard}#signInFailed"));
+    };
+    info!("Kick user {} ({}) signed in", user.id, user.login);
     Redirect::to(&format!(
         "{dashboard}#session={}",
         api.auth.session(&user.id, account.sessions)
@@ -747,6 +814,7 @@ async fn viewer_redirect(api: &Api, page: &str, sign_in: Result<SignIn>) -> Redi
 struct AccountResponse {
     name: String,
     login: String,
+    platform: &'static str,
     avatar: Option<String>,
     devices: Vec<DeviceResponse>,
     music_device: Option<String>,
@@ -826,6 +894,7 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
     Json(AccountResponse {
         name: account.name,
         login: account.login,
+        platform: accounts::platform(id),
         avatar: account.avatar,
         devices: page
             .devices
@@ -932,6 +1001,7 @@ struct ServerStats {
 #[serde(rename_all = "camelCase")]
 struct Integrations {
     twitch: bool,
+    kick: bool,
     app_attest: bool,
     paypal: bool,
     stripe: bool,
@@ -974,6 +1044,7 @@ async fn handle_admin_stats(
             memory: resident_memory(),
             integrations: Integrations {
                 twitch: api.live.is_some(),
+                kick: api.auth.kick_configured(),
                 app_attest: api.app_attest.is_some(),
                 paypal: api.paypal.is_some(),
                 stripe: api.stripe.is_some(),
@@ -1430,6 +1501,7 @@ async fn handle_moderator_account(
     Ok(Json(AccountResponse {
         name: account.name,
         login: account.login,
+        platform: streamer_platform(&api, &id),
         avatar: account.avatar,
         devices: Vec::new(),
         music_device: None,
@@ -1795,6 +1867,7 @@ struct NameResponse {
 struct ProfileResponse {
     name: String,
     login: String,
+    platform: &'static str,
     avatar: Option<String>,
     message: Option<String>,
     accent: Option<String>,
@@ -1811,6 +1884,7 @@ async fn handle_page(
     Ok(Json(ProfileResponse {
         name: account.name,
         login: account.login,
+        platform: streamer_platform(&api, &id),
         avatar: account.avatar,
         message: settings.message,
         accent: settings.accent,
@@ -1844,6 +1918,23 @@ async fn handle_twitch_page(
         .page_of_login(&login)
         .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(NameResponse { id }))
+}
+
+async fn handle_kick_page(
+    State(api): State<Arc<Api>>,
+    Path(login): Path<String>,
+) -> Result<Json<NameResponse>, StatusCode> {
+    let id = api
+        .accounts
+        .page_of_kick_login(&login)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(NameResponse { id }))
+}
+
+fn streamer_platform(api: &Api, page: &str) -> &'static str {
+    api.accounts
+        .streamer_of_page(page)
+        .map_or("twitch", |(streamer, _)| accounts::platform(&streamer))
 }
 
 fn client_id(api: &Api, merchant_id: &Option<String>) -> Option<String> {
@@ -3574,7 +3665,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
 
     use super::*;
-    use crate::auth::OAuthApp;
+    use crate::auth::{KickApp, OAuthApp};
 
     async fn start() -> String {
         start_with(None).await
@@ -3592,6 +3683,16 @@ mod tests {
         paypal: Option<PayPal>,
         stripe: Option<Stripe>,
         twitch: Option<OAuthApp>,
+        pages: Option<Pages>,
+    ) -> (String, Arc<Api>) {
+        start_api_with_kick(paypal, stripe, twitch, None, pages).await
+    }
+
+    async fn start_api_with_kick(
+        paypal: Option<PayPal>,
+        stripe: Option<Stripe>,
+        twitch: Option<OAuthApp>,
+        kick: Option<KickApp>,
         pages: Option<Pages>,
     ) -> (String, Arc<Api>) {
         let database = Database::memory();
@@ -3615,7 +3716,8 @@ mod tests {
                 twitch,
                 Some("secret"),
             )
-            .unwrap(),
+            .unwrap()
+            .with_kick(kick),
             accounts: Accounts::new(database.clone()),
             counters: Counters::new(database.clone()),
             database,
@@ -6914,6 +7016,189 @@ mod tests {
         }
     }
 
+    async fn start_kick() -> String {
+        let router = Router::new()
+            .route(
+                "/token",
+                post(|body: String| async move {
+                    assert!(body.contains("code=c"), "{body}");
+                    assert!(body.contains("code_verifier="), "{body}");
+                    assert!(body.contains("grant_type=authorization_code"), "{body}");
+                    Json(json!({"access_token": "k", "token_type": "Bearer"}))
+                }),
+            )
+            .route(
+                "/users",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers[AUTHORIZATION], "Bearer k");
+                    Json(json!({"message": "OK", "data": [{
+                        "user_id": 99,
+                        "name": "KickErik",
+                        "email": "erik@example.com",
+                        "profile_picture": "https://files.kick.com/erik.png",
+                    }]}))
+                }),
+            )
+            .route(
+                "/channels",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers[AUTHORIZATION], "Bearer k");
+                    Json(json!({"message": "OK", "data": [
+                        {"broadcaster_user_id": 98, "slug": "someone-else"},
+                        {"broadcaster_user_id": 99, "slug": "Kick-Erik"},
+                    ]}))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        format!("http://{address}")
+    }
+
+    fn kick_app(kick: &str) -> KickApp {
+        KickApp {
+            client_id: "kid".to_string(),
+            client_secret: "ksecret".to_string(),
+            authorize_url: format!("{kick}/authorize"),
+            token_url: format!("{kick}/token"),
+            users_url: format!("{kick}/users"),
+            channels_url: format!("{kick}/channels"),
+        }
+    }
+
+    #[tokio::test]
+    async fn streamers_sign_in_with_kick() {
+        let kick = start_kick().await;
+        let twitch = start_twitch().await;
+        let (address, api) = start_api_with_kick(
+            None,
+            None,
+            Some(twitch_app(&twitch)),
+            Some(kick_app(&kick)),
+            None,
+        )
+        .await;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let unconfigured = start().await;
+        let response = client
+            .get(format!("http://{unconfigured}/auth/kick/login"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let login = async || {
+            let response = client
+                .get(format!("http://{address}/auth/kick/login"))
+                .send()
+                .await
+                .unwrap();
+            let login = location(&response);
+            assert!(login.starts_with(&format!("{kick}/authorize?")), "{login}");
+            let query: HashMap<_, _> = reqwest::Url::parse(&login)
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect();
+            assert_eq!(query["code_challenge_method"], "S256");
+            assert_eq!(query["redirect_uri"], "http://localhost/auth/kick/callback");
+            query["state"].clone()
+        };
+        let callback = async |path: &str, state: &str, cookie: &str| {
+            location(
+                &client
+                    .get(format!("http://{address}/auth/{path}&state={state}"))
+                    .header("cookie", format!("moblin_sign_in_state={cookie}"))
+                    .send()
+                    .await
+                    .unwrap(),
+            )
+        };
+        let failed = "https://moblin.app/dashboard/#signInFailed";
+        let state = login().await;
+        assert_eq!(
+            callback("twitch/callback?code=c", &state, &state).await,
+            failed
+        );
+        let state = login().await;
+        assert_eq!(
+            callback("kick/callback?code=c", &state, "other").await,
+            failed
+        );
+        let state = login().await;
+        assert_eq!(
+            callback("kick/callback?error=access_denied", &state, &state).await,
+            failed
+        );
+        let state = login().await;
+        let page = callback("kick/callback?code=c", &state, &state).await;
+        let session = page
+            .strip_prefix("https://moblin.app/dashboard/#session=")
+            .unwrap()
+            .to_string();
+        assert_eq!(api.auth.session_of(&session).unwrap().account, "kick-99");
+        assert!(api.accounts.channel_moderators("kick-99").is_empty());
+        let account: Value = client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["name"], "KickErik");
+        assert_eq!(account["login"], "kick-erik");
+        assert_eq!(account["platform"], "kick");
+        assert_eq!(account["avatar"], "https://files.kick.com/erik.png");
+        let id = account["settings"]["id"].as_str().unwrap().to_string();
+        let found: Value = client
+            .get(format!("http://{address}/pages/kick/Kick-Erik"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(found["id"], id.as_str());
+        let response = client
+            .get(format!("http://{address}/pages/twitch/kick-erik"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let profile: Value = client
+            .get(format!("http://{address}/pages/{id}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(profile["platform"], "kick");
+        assert_eq!(profile["login"], "kick-erik");
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login?page={id}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let twitch_page = create_account(&api, "1", "One", "kick-erik").page.id;
+        let profile: Value = client
+            .get(format!("http://{address}/pages/{twitch_page}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(profile["platform"], "twitch");
+        assert_eq!(api.accounts.page_of_kick_login("kick-erik"), Some(id));
+        assert_eq!(api.accounts.page_of_login("kick-erik"), Some(twitch_page));
+    }
+
     #[tokio::test]
     async fn viewers_sign_in_with_their_subscription_tier() {
         let twitch = start_twitch().await;
@@ -7729,6 +8014,7 @@ mod tests {
             json!({
                 "name": "Erik",
                 "login": "erik",
+                "platform": "twitch",
                 "avatar": "https://static-cdn.jtvnw.net/erik.png",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
@@ -8463,7 +8749,7 @@ mod tests {
         assert!(server["now"].as_u64().unwrap() > 0);
         assert_eq!(
             server["integrations"],
-            json!({"twitch": false, "appAttest": false, "paypal": false, "stripe": false})
+            json!({"twitch": false, "kick": false, "appAttest": false, "paypal": false, "stripe": false})
         );
         assert_eq!(
             stats,

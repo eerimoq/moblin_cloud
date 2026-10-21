@@ -106,6 +106,21 @@ const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', na
 
 const SAME_LOGIN: &str = "login != '' AND login = lower(trim(?1))";
 
+const KICK_PREFIX: &str = "kick-";
+
+pub fn is_kick(id: &str) -> bool {
+    id.starts_with(KICK_PREFIX)
+}
+
+pub fn platform(id: &str) -> &'static str {
+    if is_kick(id) { "kick" } else { "twitch" }
+}
+
+fn same_login(kick: bool) -> String {
+    let not = if kick { "" } else { "NOT " };
+    format!("{SAME_LOGIN} AND id {not}LIKE '{KICK_PREFIX}%'")
+}
+
 fn account(row: &Row) -> rusqlite::Result<Account> {
     let devices: String = row.get(11)?;
     let devices = serde_json::from_str(&devices).map_err(|error| {
@@ -173,7 +188,10 @@ impl Accounts {
             Ok(())
         })?;
         if let Err(error) = self.database.lock().execute(
-            &format!("UPDATE accounts SET login = '' WHERE id != ?2 AND {SAME_LOGIN}"),
+            &format!(
+                "UPDATE accounts SET login = '' WHERE id != ?2 AND {}",
+                same_login(is_kick(id))
+            ),
             params![login, id],
         ) {
             warn!("failed to save accounts: {error:#}");
@@ -182,7 +200,11 @@ impl Accounts {
     }
 
     pub fn page_of_login(&self, login: &str) -> Option<String> {
-        Some(self.find(SAME_LOGIN, login)?.page.id)
+        Some(self.find(&same_login(false), login)?.page.id)
+    }
+
+    pub fn page_of_kick_login(&self, login: &str) -> Option<String> {
+        Some(self.find(&same_login(true), login)?.page.id)
     }
 
     pub fn of_page(&self, page: &str) -> Option<Account> {
@@ -1023,6 +1045,28 @@ mod tests {
             .unwrap();
         assert_eq!(accounts.page_of_login("erik").as_deref(), Some("c"));
         assert_eq!(accounts.get("1").unwrap().login, "");
+    }
+
+    #[test]
+    fn kick_and_twitch_logins_are_separate() {
+        let accounts = Accounts::new(Database::memory());
+        accounts
+            .signed_in("1", "Erik", "erik", None, page("a", "k"))
+            .unwrap();
+        accounts
+            .signed_in("kick-1", "Erik", "erik", None, page("b", "l"))
+            .unwrap();
+        assert_eq!(accounts.page_of_login("erik").as_deref(), Some("a"));
+        assert_eq!(accounts.page_of_kick_login("Erik").as_deref(), Some("b"));
+        assert_eq!(accounts.get("1").unwrap().login, "erik");
+        accounts
+            .signed_in("kick-2", "Erik", "erik", None, page("c", "m"))
+            .unwrap();
+        assert_eq!(accounts.page_of_kick_login("erik").as_deref(), Some("c"));
+        assert_eq!(accounts.get("kick-1").unwrap().login, "");
+        assert_eq!(accounts.page_of_login("erik").as_deref(), Some("a"));
+        assert_eq!(platform("kick-2"), "kick");
+        assert_eq!(platform("1"), "twitch");
     }
 
     #[test]

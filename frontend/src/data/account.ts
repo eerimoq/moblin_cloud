@@ -10,9 +10,12 @@ export type Device = {
   connected: boolean;
 };
 
+export type Platform = "twitch" | "kick";
+
 export type Account = {
   name: string;
   login: string;
+  platform?: Platform;
   avatar: string | null;
   devices: Device[];
   musicDevice: string | null;
@@ -104,6 +107,8 @@ export function takeSignInResult(): { session: string | null; failed: boolean } 
 }
 
 export const signInUrl = `${backendUrl}/auth/twitch/login`;
+
+export const kickSignInUrl = `${backendUrl}/auth/kick/login`;
 
 export function createAccountSession() {
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);

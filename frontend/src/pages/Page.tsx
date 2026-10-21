@@ -29,6 +29,7 @@ import {
   formatPrice,
   fetchAllowance,
   hundredths,
+  idOfKickLogin,
   idOfTwitchLogin,
   loadFonts,
   musicStatus,
@@ -936,15 +937,22 @@ function Avatar(props: { profile: Profile; class: string; cutout?: boolean }) {
 }
 
 function TwitchLink(props: { profile: Profile }) {
+  const kick = () => props.profile.platform === "kick";
+  const host = () => (kick() ? "kick.com" : "twitch.tv");
   return (
     <a
-      href={`https://www.twitch.tv/${encodeURIComponent(props.profile.login)}`}
+      href={`https://${kick() ? "kick.com" : "www.twitch.tv"}/${encodeURIComponent(props.profile.login)}`}
       target="_blank"
       rel="noopener"
       class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
     >
-      <Icon name="twitch" class="size-5 shrink-0 text-twitch" />
-      <span class="truncate">twitch.tv/{props.profile.login}</span>
+      <Icon
+        name={kick() ? "kick" : "twitch"}
+        class={`size-5 shrink-0 ${kick() ? "text-kick" : "text-twitch"}`}
+      />
+      <span class="truncate">
+        {host()}/{props.profile.login}
+      </span>
     </a>
   );
 }
@@ -994,8 +1002,14 @@ function dashboardLink(profile: Profile, account: Account | null): DashboardLink
     return null;
   }
   const login = profile.login.toLowerCase();
-  if (account.login.toLowerCase() === login) {
+  if (
+    (account.platform ?? "twitch") === (profile.platform ?? "twitch") &&
+    account.login.toLowerCase() === login
+  ) {
     return { href: asset(pages.dashboard), own: true };
+  }
+  if (profile.platform === "kick") {
+    return null;
   }
   const channel = account.moderating.find((channel) => channel.login.toLowerCase() === login);
   return channel
@@ -1418,7 +1432,7 @@ function WaysToTip(props: {
   );
 }
 
-function Viewer(props: { id: string | null; twitch: string | null }) {
+function Viewer(props: { id: string | null; twitch: string | null; kick: string | null }) {
   const [id, setId] = createSignal(props.id);
   const [status, setStatus] = createSignal<Status>("loading");
   const [song, setSong] = createSignal("");
@@ -1673,6 +1687,12 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       } catch {
         setStatus("unknown");
       }
+    } else if (props.kick) {
+      try {
+        setId(await idOfKickLogin(props.kick));
+      } catch {
+        setStatus("unknown");
+      }
     }
     const current = id();
     if (current) {
@@ -1913,9 +1933,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   );
 }
 
-export default function Page(props: { twitch?: string }) {
+export default function Page(props: { twitch?: string; kick?: string }) {
   const id = new URLSearchParams(location.search).get("streamer");
-  const twitch = props.twitch ?? null;
 
-  return <Viewer id={id} twitch={twitch} />;
+  return <Viewer id={id} twitch={props.twitch ?? null} kick={props.kick ?? null} />;
 }

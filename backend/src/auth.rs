@@ -6,8 +6,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use reqwest::{Client, Url};
-use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
+use ring::{digest, hmac};
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::ChannelModerator;
@@ -52,6 +52,45 @@ impl OAuthApp {
             moderators_url: format!("{api_url}/helix/moderation/moderators"),
         }
     }
+}
+
+pub struct KickApp {
+    pub client_id: String,
+    pub client_secret: String,
+    pub authorize_url: String,
+    pub token_url: String,
+    pub users_url: String,
+    pub channels_url: String,
+}
+
+impl KickApp {
+    pub fn new(client_id: String, client_secret: String) -> Self {
+        Self::at(
+            "https://id.kick.com",
+            "https://api.kick.com",
+            client_id,
+            client_secret,
+        )
+    }
+
+    pub fn at(id_url: &str, api_url: &str, client_id: String, client_secret: String) -> Self {
+        let id_url = id_url.trim_end_matches('/');
+        let api_url = api_url.trim_end_matches('/');
+        Self {
+            client_id,
+            client_secret,
+            authorize_url: format!("{id_url}/oauth/authorize"),
+            token_url: format!("{id_url}/oauth/token"),
+            users_url: format!("{api_url}/public/v1/users"),
+            channels_url: format!("{api_url}/public/v1/channels"),
+        }
+    }
+}
+
+struct Pending {
+    created: Instant,
+    page: Option<String>,
+    verifier: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -100,9 +139,10 @@ pub struct Auth {
     public_url: String,
     pub frontend_url: String,
     twitch: Option<OAuthApp>,
+    kick: Option<KickApp>,
     key: hmac::Key,
     random: SystemRandom,
-    pending: Mutex<HashMap<String, (Instant, Option<String>)>>,
+    pending: Mutex<HashMap<String, Pending>>,
 }
 
 impl Auth {
@@ -124,19 +164,33 @@ impl Auth {
             public_url: public_url.trim_end_matches('/').to_string(),
             frontend_url: frontend_url.trim_end_matches('/').to_string(),
             twitch,
+            kick: None,
             key,
             random,
             pending: Mutex::new(HashMap::new()),
         })
     }
 
+    pub fn with_kick(mut self, kick: Option<KickApp>) -> Self {
+        self.kick = kick;
+        self
+    }
+
+    pub fn kick_configured(&self) -> bool {
+        self.kick.is_some()
+    }
+
     fn redirect_uri(&self) -> String {
         format!("{}/auth/twitch/callback", self.public_url)
     }
 
+    fn kick_redirect_uri(&self) -> String {
+        format!("{}/auth/kick/callback", self.public_url)
+    }
+
     pub fn login_url(&self, page: Option<&str>) -> Option<(String, String)> {
         let app = self.twitch.as_ref()?;
-        let state = self.new_state(page)?;
+        let state = self.new_state(page, None)?;
         let scope = if page.is_some() {
             "user:read:subscriptions"
         } else {
@@ -156,6 +210,28 @@ impl Auth {
         .map(|url| (url.into(), state))
     }
 
+    pub fn kick_login_url(&self) -> Option<(String, String)> {
+        let app = self.kick.as_ref()?;
+        let verifier = self.random_string()?;
+        let challenge =
+            BASE64_URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, verifier.as_bytes()));
+        let state = self.new_state(None, Some(verifier))?;
+        Url::parse_with_params(
+            &app.authorize_url,
+            [
+                ("client_id", app.client_id.as_str()),
+                ("redirect_uri", self.kick_redirect_uri().as_str()),
+                ("response_type", "code"),
+                ("scope", "user:read channel:read"),
+                ("state", state.as_str()),
+                ("code_challenge", challenge.as_str()),
+                ("code_challenge_method", "S256"),
+            ],
+        )
+        .ok()
+        .map(|url| (url.into(), state))
+    }
+
     pub fn state_cookie(&self, state: &str) -> String {
         let secure = if self.public_url.starts_with("https://") {
             "; Secure"
@@ -169,21 +245,52 @@ impl Auth {
         self.state_cookie("").replace("Max-Age=600", "Max-Age=0")
     }
 
-    fn new_state(&self, page: Option<&str>) -> Option<String> {
+    fn random_string(&self) -> Option<String> {
         let mut bytes = [0; 32];
         self.random.fill(&mut bytes).ok()?;
-        let state = BASE64_URL_SAFE_NO_PAD.encode(bytes);
-        {
-            let mut pending = self.pending.lock().unwrap();
+        Some(BASE64_URL_SAFE_NO_PAD.encode(bytes))
+    }
+
+    fn new_state(&self, page: Option<&str>, verifier: Option<String>) -> Option<String> {
+        let state = self.random_string()?;
+        let mut pending = self.pending.lock().unwrap();
+        if pending.len() >= MAX_PENDING {
+            pending.retain(|_, pending| pending.created.elapsed() < STATE_LIFETIME);
             if pending.len() >= MAX_PENDING {
-                pending.retain(|_, (created, _)| created.elapsed() < STATE_LIFETIME);
-                if pending.len() >= MAX_PENDING {
-                    return None;
-                }
+                return None;
             }
-            pending.insert(state.clone(), (Instant::now(), page.map(str::to_string)));
         }
+        pending.insert(
+            state.clone(),
+            Pending {
+                created: Instant::now(),
+                page: page.map(str::to_string),
+                verifier,
+            },
+        );
         Some(state)
+    }
+
+    fn consume(&self, state: &str, browser_state: Option<&str>) -> Result<Pending, StateError> {
+        let Some(pending) = self.pending.lock().unwrap().remove(state) else {
+            return Err(StateError {
+                page: None,
+                error: anyhow!("unknown state"),
+            });
+        };
+        if pending.created.elapsed() >= STATE_LIFETIME {
+            return Err(StateError {
+                page: pending.page,
+                error: anyhow!("expired state"),
+            });
+        }
+        if browser_state != Some(state) {
+            return Err(StateError {
+                page: pending.page,
+                error: anyhow!("the state is from another browser"),
+            });
+        }
+        Ok(pending)
     }
 
     pub fn consume_state(
@@ -191,25 +298,108 @@ impl Auth {
         state: &str,
         browser_state: Option<&str>,
     ) -> Result<Option<String>, StateError> {
-        let Some((created, page)) = self.pending.lock().unwrap().remove(state) else {
+        let pending = self.consume(state, browser_state)?;
+        if pending.verifier.is_some() {
             return Err(StateError {
                 page: None,
-                error: anyhow!("unknown state"),
-            });
-        };
-        if created.elapsed() >= STATE_LIFETIME {
-            return Err(StateError {
-                page,
-                error: anyhow!("expired state"),
+                error: anyhow!("the state is from a Kick sign in"),
             });
         }
-        if browser_state != Some(state) {
-            return Err(StateError {
-                page,
-                error: anyhow!("the state is from another browser"),
-            });
+        Ok(pending.page)
+    }
+
+    pub fn consume_kick_state(&self, state: &str, browser_state: Option<&str>) -> Result<String> {
+        self.consume(state, browser_state)
+            .map_err(|error| error.error)?
+            .verifier
+            .context("the state is from a Twitch sign in")
+    }
+
+    pub async fn kick_callback(&self, code: &str, verifier: &str) -> Result<User> {
+        let app = self.kick.as_ref().context("Kick not configured")?;
+        #[derive(Deserialize)]
+        struct Token {
+            access_token: String,
         }
-        Ok(page)
+        let token: Token = self
+            .client
+            .post(&app.token_url)
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("client_id", app.client_id.as_str()),
+                ("client_secret", app.client_secret.as_str()),
+                ("redirect_uri", self.kick_redirect_uri().as_str()),
+                ("code", code),
+                ("code_verifier", verifier),
+            ])
+            .send()
+            .await
+            .context("failed to exchange the code")?
+            .error_for_status()
+            .context("the code was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the code exchange")?;
+        #[derive(Deserialize)]
+        struct Data<T> {
+            data: Vec<T>,
+        }
+        #[derive(Deserialize)]
+        struct KickUser {
+            user_id: u64,
+            name: String,
+            profile_picture: Option<String>,
+        }
+        #[derive(Deserialize)]
+        struct KickChannel {
+            broadcaster_user_id: u64,
+            slug: String,
+        }
+        let users: Data<KickUser> = self
+            .client
+            .get(&app.users_url)
+            .bearer_auth(&token.access_token)
+            .send()
+            .await
+            .context("failed to get the user")?
+            .error_for_status()
+            .context("the user was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the user request")?;
+        let user = users.data.into_iter().next().context("no user")?;
+        let channels: Data<KickChannel> = self
+            .client
+            .get(&app.channels_url)
+            .bearer_auth(&token.access_token)
+            .send()
+            .await
+            .context("failed to get the channel")?
+            .error_for_status()
+            .context("the channel was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the channel request")?;
+        let channel = channels
+            .data
+            .into_iter()
+            .find(|channel| channel.broadcaster_user_id == user.user_id)
+            .context("no channel")?;
+        if channel.slug.is_empty() {
+            bail!("no channel slug");
+        }
+        Ok(User {
+            id: format!("kick-{}", user.user_id),
+            name: if user.name.is_empty() {
+                channel.slug.clone()
+            } else {
+                user.name
+            },
+            login: channel.slug.to_lowercase(),
+            avatar: user
+                .profile_picture
+                .filter(|url| url.starts_with("https://")),
+        })
     }
 
     pub async fn callback(&self, code: &str) -> Result<SignIn> {
@@ -517,7 +707,11 @@ mod tests {
         assert!(auth.consume_state(&query["state"], state).is_err());
         auth.pending.lock().unwrap().insert(
             "old".to_string(),
-            (Instant::now() - STATE_LIFETIME * 2, None),
+            Pending {
+                created: Instant::now() - STATE_LIFETIME * 2,
+                page: None,
+                verifier: None,
+            },
         );
         assert!(auth.consume_state("old", Some("old")).is_err());
         let (url, state) = auth.login_url(Some("page")).unwrap();
@@ -536,6 +730,55 @@ mod tests {
             auth.consume_state(&state, Some(&state)).unwrap().as_deref(),
             Some("page")
         );
+    }
+
+    #[test]
+    fn kick_sign_in_uses_pkce() {
+        assert_eq!(new_auth("secret").kick_login_url(), None);
+        let auth = new_auth("secret")
+            .with_kick(Some(KickApp::new("kid".to_string(), "ksecret".to_string())));
+        let (url, state) = auth.kick_login_url().unwrap();
+        let url = Url::parse(&url).unwrap();
+        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(url.host_str(), Some("id.kick.com"));
+        assert_eq!(url.path(), "/oauth/authorize");
+        assert_eq!(query["client_id"], "kid");
+        assert_eq!(
+            query["redirect_uri"],
+            "https://api.example.com/auth/kick/callback"
+        );
+        assert_eq!(query["scope"], "user:read channel:read");
+        assert_eq!(query["code_challenge_method"], "S256");
+        assert_eq!(query["state"], state);
+        let verifier = auth
+            .pending
+            .lock()
+            .unwrap()
+            .get(&state)
+            .unwrap()
+            .verifier
+            .clone()
+            .unwrap();
+        assert_eq!(
+            query["code_challenge"],
+            BASE64_URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, verifier.as_bytes()))
+        );
+        assert!(auth.consume_kick_state(&state, Some("other")).is_err());
+        let (_, state) = auth.kick_login_url().unwrap();
+        assert!(auth.consume_state(&state, Some(&state)).is_err());
+        let (_, state) = auth.kick_login_url().unwrap();
+        let other = auth.consume_kick_state(&state, Some(&state)).unwrap();
+        assert_eq!(other.len(), 43);
+        assert_ne!(other, verifier);
+        assert!(auth.consume_kick_state(&state, Some(&state)).is_err());
+    }
+
+    #[test]
+    fn twitch_states_are_not_kick_states() {
+        let auth = new_auth("secret")
+            .with_kick(Some(KickApp::new("kid".to_string(), "ksecret".to_string())));
+        let (_, state) = auth.login_url(None).unwrap();
+        assert!(auth.consume_kick_state(&state, Some(&state)).is_err());
     }
 
     #[test]

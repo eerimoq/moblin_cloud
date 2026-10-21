@@ -1,4 +1,14 @@
-import { createMemo, createSignal, For, Index, onCleanup, onMount, Show, type JSX } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  onCleanup,
+  onMount,
+  Show,
+  type JSX,
+} from "solid-js";
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
@@ -46,6 +56,8 @@ import {
   saveAccountSettings,
   resendRecent,
   sendTest,
+  kickSignInUrl,
+  type Platform,
   signInUrl,
   deleteAccount,
   stripeCountries,
@@ -100,7 +112,12 @@ const fontNames: Record<string, string> = {
 };
 
 const pageUrl = (account: Account) =>
-  new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
+  new URL(
+    asset(`/${account.platform ?? "twitch"}/${encodeURIComponent(account.login)}`),
+    location.origin,
+  ).href;
+
+const [signedInPlatform, setSignedInPlatform] = createSignal<Platform>("twitch");
 
 const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
 
@@ -169,7 +186,7 @@ const forbidden = (error: unknown) => error instanceof BackendError && error.sta
 
 function SignInAgain() {
   return (
-    <a href={signInUrl} class={ghostButtonClass}>
+    <a href={signedInPlatform() === "kick" ? kickSignInUrl : signInUrl} class={ghostButtonClass}>
       {t("Sign in again")}
     </a>
   );
@@ -1544,6 +1561,12 @@ function Admin(props: {
   const [settings, setSettings] = createSignal(props.account.settings);
   const [busy, setBusy] = createSignal(false);
   const moderating = () => props.page !== undefined;
+  const kick = () => account().platform === "kick";
+  createEffect(() => {
+    if (!moderating()) {
+      setSignedInPlatform(account().platform ?? "twitch");
+    }
+  });
   const { recent, loadRecent, loadMore } = createRecent(
     (kind, limit, before) => fetchRecent(props.session, props.page, kind, limit, before),
     (error) => {
@@ -1660,7 +1683,7 @@ function Admin(props: {
       id: "moderators",
       label: t("Moderators"),
       icon: "shield",
-      shown: () => !moderating(),
+      shown: () => !moderating() && !kick(),
       status: () => onOff(account().moderators.some((moderator) => moderator.enabled)),
     },
     {
@@ -1826,12 +1849,14 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
-          <SubscriberSettings
-            kind="spin"
-            tiers={settings().subSpins}
-            busy={busy()}
-            onSave={(subSpins) => save({ subSpins })}
-          />
+          <Show when={!kick()}>
+            <SubscriberSettings
+              kind="spin"
+              tiers={settings().subSpins}
+              busy={busy()}
+              onSave={(subSpins) => save({ subSpins })}
+            />
+          </Show>
           <TestSend
             kind="spin"
             session={props.session}
@@ -1865,12 +1890,14 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
-          <SubscriberSettings
-            kind="song"
-            tiers={settings().subSongs}
-            busy={busy()}
-            onSave={(subSongs) => save({ subSongs })}
-          />
+          <Show when={!kick()}>
+            <SubscriberSettings
+              kind="song"
+              tiers={settings().subSongs}
+              busy={busy()}
+              onSave={(subSongs) => save({ subSongs })}
+            />
+          </Show>
           <SongLengthSettings
             maxSongLength={settings().maxSongLength}
             busy={busy()}
@@ -1923,7 +1950,7 @@ function Admin(props: {
             </Show>
           </div>
         </Show>
-        <Show when={!moderating()}>
+        <Show when={!moderating() && !kick()}>
           <div hidden={active() !== "moderators"}>
             <ModeratorSettings
               session={props.session}
@@ -2571,6 +2598,7 @@ function Preview(props: { failed: boolean }) {
             account={{
               name: "",
               login: "",
+              platform: "twitch",
               avatar: null,
               devices: [
                 {
@@ -2623,15 +2651,24 @@ function Preview(props: { failed: boolean }) {
         </div>
         <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 px-6 pb-10 text-center">
           <p class="text-lg font-semibold text-balance">
-            {t("Sign in with Twitch to create or manage your tip page.")}
+            {t("Sign in with Twitch or Kick to create or manage your tip page.")}
           </p>
-          <a
-            href={signInUrl}
-            class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-twitch px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
-          >
-            <Icon name="twitch" class="size-5" />
-            {t("Sign in with Twitch")}
-          </a>
+          <div class="flex flex-wrap justify-center gap-3">
+            <a
+              href={signInUrl}
+              class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-twitch px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
+            >
+              <Icon name="twitch" class="size-5" />
+              {t("Sign in with Twitch")}
+            </a>
+            <a
+              href={kickSignInUrl}
+              class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-kick px-6 font-display text-lg font-semibold whitespace-nowrap text-black transition-colors hover:bg-kick-bright"
+            >
+              <Icon name="kick" class="size-5" />
+              {t("Sign in with Kick")}
+            </a>
+          </div>
         </div>
       </div>
     </div>
