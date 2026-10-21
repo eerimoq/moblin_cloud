@@ -220,7 +220,7 @@ impl Accounts {
     pub fn give_missing_pages(&self, mut new_page: impl FnMut() -> Option<Page>) {
         let mut database = self.database.lock();
         let ids: Vec<String> = match database
-            .prepare("SELECT id FROM accounts WHERE page_id IS NULL")
+            .prepare_cached("SELECT id FROM accounts WHERE page_id IS NULL")
             .and_then(|mut statement| {
                 statement
                     .query_map([], |row| row.get(0))?
@@ -370,7 +370,9 @@ impl Accounts {
     pub fn disconnect_paypal(&self, merchant_id: &str) -> Vec<String> {
         let database = self.database.lock();
         database
-            .prepare("UPDATE accounts SET merchant_id = NULL WHERE merchant_id = ?1 RETURNING id")
+            .prepare_cached(
+                "UPDATE accounts SET merchant_id = NULL WHERE merchant_id = ?1 RETURNING id",
+            )
             .and_then(|mut statement| {
                 statement
                     .query_map([merchant_id], |row| row.get(0))?
@@ -455,7 +457,7 @@ impl Accounts {
     pub fn channel_moderators(&self, broadcaster: &str) -> Vec<ChannelModerator> {
         let database = self.database.lock();
         let result = database
-            .prepare(
+            .prepare_cached(
                 "SELECT moderator, login, name, EXISTS (
                      SELECT 1 FROM enabled_moderators
                      WHERE enabled_moderators.broadcaster = ?1
@@ -532,7 +534,7 @@ impl Accounts {
         let broadcasters: Vec<String> = {
             let database = self.database.lock();
             let result = database
-                .prepare(
+                .prepare_cached(
                     "SELECT broadcaster FROM channel_moderators
                      JOIN enabled_moderators USING (moderator, broadcaster)
                      JOIN accounts ON accounts.id = broadcaster
@@ -623,12 +625,10 @@ impl Accounts {
     fn find(&self, condition: &str, value: &str) -> Option<Account> {
         self.database
             .lock()
-            .query_row(
-                &format!("SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE {condition} LIMIT 1"),
-                [value],
-                account,
-            )
-            .optional()
+            .prepare_cached(&format!(
+                "SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE {condition} LIMIT 1"
+            ))
+            .and_then(|mut statement| statement.query_row([value], account).optional())
             .unwrap_or_else(|error| {
                 warn!("failed to read accounts: {error:#}");
                 None

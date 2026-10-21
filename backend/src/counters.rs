@@ -40,7 +40,7 @@ impl Counters {
     pub fn all(&self) -> Vec<Counter> {
         let database = self.database.lock();
         let counters = database
-            .prepare(
+            .prepare_cached(
                 "SELECT name,
                         coalesce(sum(value) FILTER (WHERE day = date('now')), 0),
                         coalesce(sum(value) FILTER (WHERE day >= date('now', '-6 days')), 0),

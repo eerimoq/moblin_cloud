@@ -177,7 +177,7 @@ impl Orders {
     pub fn expire(&self) -> Vec<(String, Order)> {
         let database = self.database.lock();
         let rows = database
-            .prepare(
+            .prepare_cached(
                 "DELETE FROM orders WHERE state = 'created' AND created_at < ?1 RETURNING id, details",
             )
             .and_then(|mut statement| {
@@ -305,7 +305,7 @@ impl Orders {
     pub fn unsettled(&self, min_age: Duration) -> Vec<Unsettled> {
         let database = self.database.lock();
         let rows = database
-            .prepare(
+            .prepare_cached(
                 "SELECT id, details FROM orders WHERE state = 'capturing' AND updated_at <= ?1 ORDER BY updated_at",
             )
             .and_then(|mut statement| {
@@ -342,7 +342,7 @@ impl Orders {
         let rows = self
             .database
             .lock()
-            .prepare(
+            .prepare_cached(
                 "SELECT id, updated_at, details FROM orders
                  WHERE streamer = ?1 AND kind = ?2 AND state = 'captured'
                    AND (?3 IS NULL OR (updated_at, rowid) < (SELECT updated_at, rowid FROM orders WHERE id = ?3 AND streamer = ?1))
@@ -399,7 +399,7 @@ impl Orders {
         let database = self.database.lock();
         let cutoff = now().saturating_sub(30 * 24 * 60 * 60);
         let given_up = database
-            .prepare("DELETE FROM orders WHERE state != 'captured' AND created_at < ?1 RETURNING id, state")
+            .prepare_cached("DELETE FROM orders WHERE state != 'captured' AND created_at < ?1 RETURNING id, state")
             .and_then(|mut statement| {
                 statement
                     .query_map([cutoff], |row| {

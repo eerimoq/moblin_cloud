@@ -349,7 +349,7 @@ pub fn insert(
 }
 
 fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery> {
-    let deliveries = database.prepare(sql).and_then(|mut statement| {
+    let deliveries = database.prepare_cached(sql).and_then(|mut statement| {
         statement
             .query_map(params, |row| {
                 Ok((
@@ -614,7 +614,7 @@ mod tests {
         let expiries: Vec<(String, u64)> = deliveries
             .database
             .lock()
-            .prepare("SELECT name, value FROM counters ORDER BY name")
+            .prepare_cached("SELECT name, value FROM counters ORDER BY name")
             .unwrap()
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
@@ -687,7 +687,7 @@ mod tests {
         let counters: Vec<(String, u64)> = deliveries
             .database
             .lock()
-            .prepare("SELECT name, value FROM counters ORDER BY name")
+            .prepare_cached("SELECT name, value FROM counters ORDER BY name")
             .unwrap()
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()

@@ -218,7 +218,7 @@ impl Store {
         let rows = self
             .database
             .lock()
-            .prepare("SELECT channels FROM streamers ORDER BY position")
+            .prepare_cached("SELECT channels FROM streamers ORDER BY position")
             .and_then(|mut statement| {
                 statement
                     .query_map([], |row| row.get::<_, String>(0))?

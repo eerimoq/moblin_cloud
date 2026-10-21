@@ -161,6 +161,7 @@ impl Database {
                 )
                 .context("failed to remove the old Moblin Cloud keys")?;
         }
+        connection.set_prepared_statement_cache_capacity(64);
         Ok(Arc::new(Self {
             connection: Mutex::new(connection),
             path: path.map(Path::to_path_buf),
