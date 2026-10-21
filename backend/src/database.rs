@@ -23,7 +23,6 @@ impl Database {
                  CREATE TABLE IF NOT EXISTS accounts (
                      id TEXT PRIMARY KEY,
                      name TEXT NOT NULL,
-                     login TEXT NOT NULL,
                      avatar TEXT,
                      page_id TEXT,
                      music_device TEXT,
@@ -125,6 +124,18 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
             )
             .context("failed to create the database tables")?;
+        let old_login: u32 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('accounts') WHERE name = 'login'",
+                [],
+                |row| row.get(0),
+            )
+            .context("failed to read the accounts columns")?;
+        if old_login > 0 {
+            connection
+                .execute_batch("ALTER TABLE accounts DROP COLUMN login")
+                .context("failed to drop the accounts login column")?;
+        }
         connection.set_prepared_statement_cache_capacity(64);
         Ok(Arc::new(Self {
             connection: Mutex::new(connection),
@@ -173,6 +184,51 @@ pub fn remove(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_accounts_login_column_is_dropped_on_start() {
+        let path = temporary_path("accounts-login");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE accounts (
+                     id TEXT PRIMARY KEY,
+                     name TEXT NOT NULL,
+                     login TEXT NOT NULL,
+                     avatar TEXT,
+                     page_id TEXT,
+                     music_device TEXT,
+                     wheel_device TEXT,
+                     sessions INTEGER NOT NULL,
+                     merchant_id TEXT,
+                     paypal_tracking_id TEXT,
+                     stripe_account_id TEXT,
+                     stripe_ready INTEGER NOT NULL DEFAULT 0
+                 );
+                 INSERT INTO accounts (id, name, login, page_id, sessions) VALUES ('a', 'Erik', 'erik', 'p', 0);",
+            )
+            .unwrap();
+        drop(connection);
+        for _ in 0..2 {
+            let database = Database::open(Some(&path)).unwrap();
+            let connection = database.lock();
+            let columns: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info('accounts') WHERE name = 'login'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(columns, 0);
+            let name: String = connection
+                .query_row("SELECT name FROM accounts WHERE id = 'a'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(name, "Erik");
+        }
+        remove(&path);
+    }
 
     #[test]
     fn size_is_the_files_on_disk() {

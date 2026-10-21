@@ -58,7 +58,6 @@ impl Identity {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Account {
     pub name: String,
-    pub login: String,
     pub avatar: Option<String>,
     pub identities: Vec<Identity>,
     pub page: Page,
@@ -184,37 +183,36 @@ pub struct Moderator {
     pub name: String,
 }
 
-const COLUMNS: &str = "name, login, avatar, page_id, music_device, wheel_device, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
+const COLUMNS: &str = "name, avatar, page_id, music_device, wheel_device, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
 
 const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', name, 'key', key, 'enabled', json(iif(enabled, 'true', 'false'))) ORDER BY position) FROM devices WHERE account = accounts.id)";
 
 const IDENTITIES: &str = "(SELECT json_group_array(json_object('platform', platform, 'user_id', user_id, 'login', login, 'name', name, 'avatar', avatar) ORDER BY platform = 'twitch' DESC, platform) FROM identities WHERE account = accounts.id)";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
-    let devices: String = row.get(11)?;
+    let devices: String = row.get(10)?;
     let devices = serde_json::from_str(&devices).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, error.into())
+        rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, error.into())
     })?;
-    let identities: String = row.get(12)?;
+    let identities: String = row.get(11)?;
     let identities = serde_json::from_str(&identities).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(12, rusqlite::types::Type::Text, error.into())
+        rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, error.into())
     })?;
     Ok(Account {
         name: row.get(0)?,
-        login: row.get(1)?,
-        avatar: row.get(2)?,
+        avatar: row.get(1)?,
         identities,
         page: Page {
-            id: row.get(3)?,
+            id: row.get(2)?,
             devices,
-            music_device: row.get(4)?,
-            wheel_device: row.get(5)?,
+            music_device: row.get(3)?,
+            wheel_device: row.get(4)?,
         },
-        sessions: row.get(6)?,
-        merchant_id: row.get(7)?,
-        paypal_tracking_id: row.get(8)?,
-        stripe_account_id: row.get(9)?,
-        stripe_ready: row.get(10)?,
+        sessions: row.get(5)?,
+        merchant_id: row.get(6)?,
+        paypal_tracking_id: row.get(7)?,
+        stripe_account_id: row.get(8)?,
+        stripe_ready: row.get(9)?,
     })
 }
 
@@ -268,8 +266,8 @@ fn save_identity(connection: &Connection, id: &str, identity: &Identity) -> rusq
 
 fn sync_profile(connection: &Connection, id: &str) -> rusqlite::Result<()> {
     connection.execute(
-        "UPDATE accounts SET name = identity.name, login = identity.login, avatar = identity.avatar
-         FROM (SELECT name, login, avatar FROM identities WHERE account = ?1 ORDER BY platform = 'twitch' DESC, platform LIMIT 1) AS identity
+        "UPDATE accounts SET name = identity.name, avatar = identity.avatar
+         FROM (SELECT name, avatar FROM identities WHERE account = ?1 ORDER BY platform = 'twitch' DESC, platform LIMIT 1) AS identity
          WHERE accounts.id = ?1",
         [id],
     )?;
@@ -326,11 +324,10 @@ impl Accounts {
                 }
                 transaction
                     .execute(
-                        &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, NULL, NULL, NULL, 0)"),
+                        &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, NULL, NULL, NULL, 0)"),
                         params![
                             id,
                             identity.name,
-                            identity.login,
                             identity.avatar,
                             page.id,
                             page.music_device,
@@ -838,11 +835,10 @@ impl Accounts {
         }
         transaction
             .execute(
-                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"),
+                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"),
                 params![
                     id,
                     account.name,
-                    account.login,
                     account.avatar,
                     account.page.id,
                     account.page.music_device,
@@ -922,7 +918,6 @@ mod tests {
             sign_in(&accounts, "1", "Erik", "erik", page("p", "k")),
             Ok(Account {
                 name: "Erik".to_string(),
-                login: "erik".to_string(),
                 identities: vec![twitch("1", "Erik", "erik")],
                 page: page("p", "k"),
                 ..Account::default()
@@ -1217,7 +1212,6 @@ mod tests {
             .unwrap();
         assert_eq!(accounts.of_page("q"), None);
         let account = accounts.of_page("p").unwrap();
-        assert_eq!(account.login, "erik");
         assert_eq!(account.avatar.as_deref(), Some("https://example.com/a.png"));
         assert_eq!(
             account.twitch().unwrap().avatar.as_deref(),
@@ -1439,7 +1433,6 @@ mod tests {
             accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
             Some("c")
         );
-        assert_eq!(accounts.get("1").unwrap().login, "");
         assert_eq!(accounts.get("1").unwrap().twitch().unwrap().login, "");
         accounts
             .signed_in(
@@ -1495,7 +1488,6 @@ mod tests {
             accounts.get(id),
             Some(Account {
                 name: "erik".to_string(),
-                login: "erik".to_string(),
                 avatar: None,
                 identities: vec![twitch("3", "erik", "erik")],
                 page: page("p", "k"),

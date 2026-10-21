@@ -9207,8 +9207,8 @@ mod tests {
         database
             .lock()
             .execute_batch(
-                "INSERT INTO accounts (id, name, login, avatar, page_id, sessions) VALUES
-                     ('0123456789abcdef0123456789abcdef', 'Old Erik', 'erik', NULL, 'oldpage', 3);
+                "INSERT INTO accounts (id, name, avatar, page_id, sessions) VALUES
+                     ('0123456789abcdef0123456789abcdef', 'Old Erik', NULL, 'oldpage', 3);
                  INSERT INTO identities (platform, user_id, account, login, name) VALUES
                      ('twitch', '42', '0123456789abcdef0123456789abcdef', 'erik', 'Old Erik');
                  INSERT INTO devices (key, account, id, name, position) VALUES ('k', '0123456789abcdef0123456789abcdef', 'oldpage', 'Moblin', 0);
