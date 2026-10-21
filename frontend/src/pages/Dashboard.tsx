@@ -1879,13 +1879,6 @@ function Admin(props: {
       shown: () => !moderating(),
       status: () => connectedOrNot(settings().connected),
     },
-    {
-      id: "account",
-      label: t("Account"),
-      icon: "user",
-      shown: () => !moderating(),
-      status: () => null,
-    },
   ];
   const visible = () => sections.filter((section) => section.shown());
   const search = new URLSearchParams(location.search);
@@ -2122,26 +2115,49 @@ function Admin(props: {
             }
           />
         </div>
-        <Show when={!moderating()}>
-          <div hidden={active() !== "account"}>
-            <DeleteAccount
-              session={props.session}
-              preview={props.preview}
-              onSignOut={props.onSignOut}
-            />
-          </div>
-        </Show>
       </div>
     </div>
   );
 }
 
-function DeleteAccount(props: { session: string; preview?: boolean; onSignOut: () => void }) {
+function AccountDialog(props: {
+  ref: (dialog: HTMLDialogElement) => void;
+  session: string;
+  onSignOut: () => void;
+}) {
+  let dialog: HTMLDialogElement | undefined;
+
+  return (
+    <dialog
+      ref={(element) => {
+        dialog = element;
+        props.ref(element);
+      }}
+      class="m-auto w-[calc(100%-2rem)] max-w-md rounded-3xl border-[1.5px] border-line bg-card p-6 text-ink backdrop:bg-black/60 sm:p-8"
+      onClick={(event) => {
+        if (event.target === dialog) {
+          dialog?.close();
+        }
+      }}
+    >
+      <div class="flex flex-col gap-5">
+        <h2 class="font-display text-2xl font-bold">{t("Account")}</h2>
+        <DeleteAccount session={props.session} onSignOut={props.onSignOut} />
+        <div>
+          <button type="button" class={ghostButtonClass} onClick={() => dialog?.close()}>
+            {t("Close")}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+function DeleteAccount(props: { session: string; onSignOut: () => void }) {
   const [working, setWorking] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const remove = async () => {
     if (
-      props.preview ||
       !confirm(
         t(
           "Your account is deleted with its tip page, Moblin devices, settings and history. This can't be undone.",
@@ -2830,59 +2846,74 @@ export default function Dashboard() {
             </Show>
           }
         >
-          {(current) => (
-            <div class="ml-auto flex min-w-0 items-center gap-3">
-              <Show when={current().account.premium} fallback={<GoPremium />}>
-                <span
-                  title={t("Premium")}
-                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold text-leaf max-sm:w-11 max-sm:justify-center sm:px-4"
-                >
-                  <Icon name="star" class="size-4" />
-                  <span class="max-sm:sr-only">{t("Premium")}</span>
-                </span>
-              </Show>
-              <Show when={current().account.moderating.length > 0}>
-                <div class="relative min-w-0">
-                  <PickedAvatar picked={channel(current().account) ?? current().account} />
-                  <select
-                    aria-label={t("Streamer")}
-                    class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base! max-sm:w-11 max-sm:px-0! max-sm:text-transparent max-sm:[&>option]:text-ink`}
-                    value={channel(current().account)?.login ?? ""}
-                    onChange={(event) => chooseChannel(event.currentTarget.value)}
+          {(current) => {
+            let accountDialog: HTMLDialogElement | undefined;
+            return (
+              <div class="ml-auto flex min-w-0 items-center gap-3">
+                <Show when={current().account.premium} fallback={<GoPremium />}>
+                  <span
+                    title={t("Premium")}
+                    class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold text-leaf max-sm:w-11 max-sm:justify-center sm:px-4"
                   >
-                    <option value="">{t("You")}</option>
-                    <For each={current().account.moderating}>
-                      {(channel) => <option value={channel.login}>{channel.name}</option>}
-                    </For>
-                  </select>
-                  <Icon
-                    name="chevron-down"
-                    class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2 max-sm:hidden"
-                  />
-                </div>
-              </Show>
-              <Show when={current().account.admin}>
-                <a
-                  href={asset(pages.admin)}
-                  class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
-                  title={t("Admin")}
-                >
-                  <Icon name="chart" class="size-5 sm:hidden" />
-                  <span class="max-sm:sr-only">{t("Admin")}</span>
-                </a>
-              </Show>
-              <AccountMenu
-                name={current().account.name}
-                avatar={current().account.avatar}
-                onSignOut={async () => {
-                  try {
-                    await signOutEverywhere(current().session);
-                  } catch {}
-                  signOut();
-                }}
-              />
-            </div>
-          )}
+                    <Icon name="star" class="size-4" />
+                    <span class="max-sm:sr-only">{t("Premium")}</span>
+                  </span>
+                </Show>
+                <Show when={current().account.moderating.length > 0}>
+                  <div class="relative min-w-0">
+                    <PickedAvatar picked={channel(current().account) ?? current().account} />
+                    <select
+                      aria-label={t("Streamer")}
+                      class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base! max-sm:w-11 max-sm:px-0! max-sm:text-transparent max-sm:[&>option]:text-ink`}
+                      value={channel(current().account)?.login ?? ""}
+                      onChange={(event) => chooseChannel(event.currentTarget.value)}
+                    >
+                      <option value="">{t("You")}</option>
+                      <For each={current().account.moderating}>
+                        {(channel) => <option value={channel.login}>{channel.name}</option>}
+                      </For>
+                    </select>
+                    <Icon
+                      name="chevron-down"
+                      class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2 max-sm:hidden"
+                    />
+                  </div>
+                </Show>
+                <Show when={current().account.admin}>
+                  <a
+                    href={asset(pages.admin)}
+                    class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
+                    title={t("Admin")}
+                  >
+                    <Icon name="chart" class="size-5 sm:hidden" />
+                    <span class="max-sm:sr-only">{t("Admin")}</span>
+                  </a>
+                </Show>
+                <AccountMenu
+                  name={current().account.name}
+                  avatar={current().account.avatar}
+                  items={[
+                    {
+                      label: t("Account"),
+                      icon: "user",
+                      onClick: () => accountDialog?.showModal(),
+                    },
+                  ]}
+                  onSignOut={async () => {
+                    try {
+                      await signOutEverywhere(current().session);
+                    } catch {}
+                    signOut();
+                  }}
+                />
+                <AccountDialog
+                  ref={(dialog) => (accountDialog = dialog)}
+                  session={current().session}
+                  onSignOut={signOut}
+                />
+              </div>
+            );
+          }}
         </Show>
       </CloudHeader>
       <main>

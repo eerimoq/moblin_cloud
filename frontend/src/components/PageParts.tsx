@@ -1,8 +1,8 @@
-import { createEffect, createSignal, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { asset } from "../asset";
 import { pages } from "../data/links";
 import CopyButton from "./CopyButton";
-import Icon from "./Icon";
+import Icon, { type IconName } from "./Icon";
 import { t } from "../i18n";
 
 export const inputClass =
@@ -77,9 +77,13 @@ export function CloudHeader(props: { children?: JSX.Element }) {
   );
 }
 
+const menuItemClass =
+  "flex w-full items-center gap-3 px-4 py-2.5 text-left text-[17px] text-ink transition-colors hover:bg-ghost";
+
 export function AccountMenu(props: {
   name: string;
   avatar: string | null;
+  items?: { label: string; icon: IconName; onClick: () => void }[];
   onSignOut: () => void | Promise<void>;
 }) {
   const [open, setOpen] = createSignal(false);
@@ -143,10 +147,26 @@ export function AccountMenu(props: {
           <p class="truncate border-b border-line px-4 pt-1.5 pb-3 font-display text-base font-semibold">
             {props.name}
           </p>
+          <For each={props.items ?? []}>
+            {(item) => (
+              <button
+                type="button"
+                role="menuitem"
+                class={menuItemClass}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick();
+                }}
+              >
+                <Icon name={item.icon} class="size-5 text-ink-2" />
+                {item.label}
+              </button>
+            )}
+          </For>
           <button
             type="button"
             role="menuitem"
-            class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[17px] text-ink transition-colors hover:bg-ghost"
+            class={menuItemClass}
             onClick={() => {
               setOpen(false);
               void props.onSignOut();
