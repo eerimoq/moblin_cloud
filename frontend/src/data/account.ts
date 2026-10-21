@@ -9,12 +9,11 @@ import {
   type Settings,
 } from "./remoteControl";
 
-export type Device = {
+export type ConnectedDevice = {
   id: string;
   name: string;
-  key: string;
-  enabled: boolean;
-  connected: boolean;
+  music: boolean;
+  wheel: boolean;
 };
 
 export type Account = {
@@ -22,9 +21,8 @@ export type Account = {
   avatar: string | null;
   twitch: Identity | null;
   kick: Identity | null;
-  devices: Device[];
-  musicDevice: string | null;
-  wheelDevice: string | null;
+  key: string | null;
+  devices: ConnectedDevice[];
   settings: Settings;
   admin: boolean;
   premium: boolean;
@@ -251,24 +249,10 @@ export const signOutEverywhere = (session: string) =>
 
 export const deleteAccount = (session: string) => call<void>("/account/delete", session, post());
 
-export const addDevice = (session: string, name: string) =>
-  call<Account>("/account/devices", session, post({ name }));
+export const newMoblinKey = (session: string) => call<Account>("/account/key", session, post());
 
-export const chooseDevices = (session: string, music: string, wheel: string) =>
-  call<Account>("/account/devices/choose", session, post({ music, wheel }));
-
-export const newDeviceKey = (session: string, device: string) =>
-  call<Account>(`/account/devices/${encodeURIComponent(device)}/key`, session, post());
-
-export const removeDevice = (session: string, device: string) =>
-  call<Account>(`/account/devices/${encodeURIComponent(device)}/remove`, session, post());
-
-export const enableDevice = (session: string, device: string, enabled: boolean) =>
-  call<Account>(
-    `/account/devices/${encodeURIComponent(device)}/enabled`,
-    session,
-    post({ enabled }),
-  );
+export const renameDevice = (session: string, device: string, name: string) =>
+  call<Account>(`/account/devices/${encodeURIComponent(device)}/name`, session, post({ name }));
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>("/account/paypal/connect", session, post())).url;

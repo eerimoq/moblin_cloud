@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::warn;
@@ -5,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
+use crate::deliveries::now;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -105,54 +107,7 @@ impl Account {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Page {
     pub id: String,
-    pub devices: Vec<Device>,
-    pub music_device: Option<String>,
-    pub wheel_device: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Device {
-    pub id: String,
-    pub name: String,
     pub key: String,
-    pub enabled: bool,
-}
-
-impl Page {
-    pub fn new(id: String, device: Device) -> Self {
-        Self {
-            id,
-            devices: vec![device],
-            music_device: None,
-            wheel_device: None,
-        }
-    }
-
-    pub fn music_device(&self) -> Option<&Device> {
-        self.device_or_first(&self.music_device)
-    }
-
-    pub fn wheel_device(&self) -> Option<&Device> {
-        self.device_or_first(&self.wheel_device)
-    }
-
-    pub fn enabled_devices(&self) -> impl Iterator<Item = &Device> {
-        self.devices.iter().filter(|device| device.enabled)
-    }
-
-    fn device_or_first(&self, id: &Option<String>) -> Option<&Device> {
-        self.devices
-            .iter()
-            .find(|device| Some(&device.id) == id.as_ref())
-            .or(self.enabled_devices().next())
-    }
-
-    fn device_mut(&mut self, id: &str) -> Result<&mut Device, AccountError> {
-        self.devices
-            .iter_mut()
-            .find(|device| device.id == id)
-            .ok_or(AccountError::UnknownDevice)
-    }
 }
 
 #[derive(Debug, Default, PartialEq, Serialize)]
@@ -168,10 +123,8 @@ pub struct AccountStats {
 pub enum AccountError {
     Unknown,
     Full,
-    TooManyDevices,
-    UnknownDevice,
-    DeviceOff,
     UnknownModerator,
+    UnknownDevice,
     TooManyModerators,
     IdentityTaken(Platform),
     UnknownIdentity,
@@ -193,56 +146,39 @@ pub struct Moderator {
     pub name: String,
 }
 
-const COLUMNS: &str = "page_id, music_device, wheel_device, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
+const ACCOUNT_OF_PAGE: &str = "(SELECT id FROM accounts WHERE page_id = ?1)";
 
-const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', name, 'key', key, 'enabled', json(iif(enabled, 'true', 'false'))) ORDER BY position) FROM devices WHERE account = accounts.id)";
+const COLUMNS: &str = "page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
 
 const IDENTITIES: &str = "(SELECT json_group_array(json_object('platform', platform, 'user_id', user_id, 'login', login, 'name', name, 'avatar', avatar) ORDER BY platform = 'twitch' DESC, platform) FROM identities WHERE account = accounts.id)";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
-    let devices: String = row.get(8)?;
-    let devices = serde_json::from_str(&devices).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, error.into())
-    })?;
-    let identities: String = row.get(9)?;
+    let identities: String = row.get(7)?;
     let identities = serde_json::from_str(&identities).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, error.into())
+        rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, error.into())
     })?;
     Ok(Account {
         identities,
         page: Page {
             id: row.get(0)?,
-            devices,
-            music_device: row.get(1)?,
-            wheel_device: row.get(2)?,
+            key: row.get(1)?,
         },
-        sessions: row.get(3)?,
-        merchant_id: row.get(4)?,
-        paypal_tracking_id: row.get(5)?,
-        stripe_account_id: row.get(6)?,
-        stripe_ready: row.get(7)?,
+        sessions: row.get(2)?,
+        merchant_id: row.get(3)?,
+        paypal_tracking_id: row.get(4)?,
+        stripe_account_id: row.get(5)?,
+        stripe_ready: row.get(6)?,
     })
 }
 
 fn read(connection: &Connection, id: &str) -> rusqlite::Result<Option<Account>> {
     connection
         .query_row(
-            &format!("SELECT {COLUMNS}, {DEVICES}, {IDENTITIES} FROM accounts WHERE id = ?1"),
+            &format!("SELECT {COLUMNS}, {IDENTITIES} FROM accounts WHERE id = ?1"),
             [id],
             account,
         )
         .optional()
-}
-
-fn save_devices(connection: &Connection, id: &str, devices: &[Device]) -> rusqlite::Result<()> {
-    connection.execute("DELETE FROM devices WHERE account = ?1", [id])?;
-    for (position, device) in devices.iter().enumerate() {
-        connection.execute(
-            "INSERT INTO devices (key, account, id, name, position, enabled) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![device.key, id, device.id, device.name, position, device.enabled],
-        )?;
-    }
-    Ok(())
 }
 
 fn save_identity(connection: &Connection, id: &str, identity: &Identity) -> rusqlite::Result<()> {
@@ -314,16 +250,10 @@ impl Accounts {
                 }
                 transaction
                     .execute(
-                        &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, 0, NULL, NULL, NULL, 0)"),
-                        params![
-                            id,
-                            page.id,
-                            page.music_device,
-                            page.wheel_device,
-                        ],
+                        &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, 0, NULL, NULL, NULL, 0)"),
+                        params![id, page.id, page.key],
                     )
                     .map_err(not_saved)?;
-                save_devices(&transaction, &id, &page.devices).map_err(not_saved)?;
                 transaction
                     .execute(
                         "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{\"max_song_length\":{\"enabled\":true,\"minutes\":7}}')",
@@ -413,93 +343,107 @@ impl Accounts {
         self.find("page_id = ?1", page)
     }
 
-    pub fn device_of_key(&self, key: &str) -> Option<String> {
+    pub fn page_of_key(&self, key: &str) -> Option<String> {
         self.database
             .lock()
-            .query_row("SELECT id FROM devices WHERE key = ?1", [key], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT page_id FROM accounts WHERE moblin_key = ?1",
+                [key],
+                |row| row.get(0),
+            )
             .optional()
             .unwrap_or_else(|error| {
-                warn!("failed to read devices: {error:#}");
+                warn!("failed to read accounts: {error:#}");
                 None
             })
     }
 
-    pub fn add_device(&self, id: &str, device: Device) -> Result<Account, AccountError> {
+    pub fn replace_key(&self, id: &str, key: String) -> Result<Account, AccountError> {
         self.change(id, |account| {
-            let page = &mut account.page;
-            if page.devices.len() >= 5 {
-                return Err(AccountError::TooManyDevices);
-            }
-            page.devices.push(device);
+            account.page.key = key;
             Ok(())
         })
     }
 
-    pub fn remove_device(&self, id: &str, device: &str) -> Result<Account, AccountError> {
-        self.change(id, |account| {
-            let page = &mut account.page;
-            page.device_mut(device)?;
-            page.devices.retain(|other| other.id != device);
-            for chosen in [&mut page.music_device, &mut page.wheel_device] {
-                if chosen.as_deref() == Some(device) {
-                    *chosen = None;
+    pub fn seen_device(&self, page: &str, device: &str) -> Option<String> {
+        let mut database = self.database.lock();
+        let result = database.transaction().and_then(|transaction| {
+            let now = now();
+            transaction.execute(
+                &format!("DELETE FROM devices WHERE account = {ACCOUNT_OF_PAGE} AND id != ?2 AND last_seen < ?3"),
+                params![page, device, now.saturating_sub(30 * 24 * 60 * 60)],
+            )?;
+            let known = transaction
+                .query_row(
+                    &format!("UPDATE devices SET last_seen = ?3 WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2 RETURNING name"),
+                    params![page, device, now],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let name = match known {
+                Some(name) => name,
+                None => {
+                    transaction.execute(
+                        &format!(
+                            "DELETE FROM devices WHERE account = {ACCOUNT_OF_PAGE} AND rowid NOT IN
+                             (SELECT rowid FROM devices WHERE account = {ACCOUNT_OF_PAGE} ORDER BY last_seen DESC, rowid DESC LIMIT 19)"
+                        ),
+                        [page],
+                    )?;
+                    let names = transaction
+                        .prepare(&format!("SELECT name FROM devices WHERE account = {ACCOUNT_OF_PAGE}"))?
+                        .query_map([page], |row| row.get(0))?
+                        .collect::<rusqlite::Result<Vec<String>>>()?;
+                    let name = (1..)
+                        .map(|number| format!("Moblin {number}"))
+                        .find(|name| !names.contains(name))
+                        .unwrap();
+                    transaction.execute(
+                        &format!("INSERT INTO devices (account, id, name, last_seen) VALUES ({ACCOUNT_OF_PAGE}, ?2, ?3, ?4)"),
+                        params![page, device, name, now],
+                    )?;
+                    name
                 }
-            }
-            Ok(())
-        })
+            };
+            transaction.commit()?;
+            Ok(name)
+        });
+        result
+            .inspect_err(|error| warn!("failed to save device {device} of {page}: {error:#}"))
+            .ok()
     }
 
-    pub fn replace_key(
-        &self,
-        id: &str,
-        device: &str,
-        key: String,
-    ) -> Result<Account, AccountError> {
-        self.change(id, |account| {
-            let page = &mut account.page;
-            page.device_mut(device)?.key = key;
-            Ok(())
-        })
+    pub fn rename_device(&self, page: &str, device: &str, name: &str) -> Result<(), AccountError> {
+        let renamed = self
+            .database
+            .lock()
+            .execute(
+                &format!(
+                    "UPDATE devices SET name = ?3 WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2"
+                ),
+                params![page, device, name],
+            )
+            .map_err(not_saved)?;
+        if renamed == 0 {
+            return Err(AccountError::UnknownDevice);
+        }
+        Ok(())
     }
 
-    pub fn enable_device(
-        &self,
-        id: &str,
-        device: &str,
-        enabled: bool,
-    ) -> Result<Account, AccountError> {
-        self.change(id, |account| {
-            let page = &mut account.page;
-            page.device_mut(device)?.enabled = enabled;
-            if !enabled {
-                for chosen in [&mut page.music_device, &mut page.wheel_device] {
-                    if chosen.as_deref() == Some(device) {
-                        *chosen = None;
-                    }
-                }
-            }
-            Ok(())
-        })
-    }
-
-    pub fn choose_devices(
-        &self,
-        id: &str,
-        music: String,
-        wheel: String,
-    ) -> Result<Account, AccountError> {
-        self.change(id, |account| {
-            let page = &mut account.page;
-            for device in [&music, &wheel] {
-                if !page.device_mut(device)?.enabled {
-                    return Err(AccountError::DeviceOff);
-                }
-            }
-            page.music_device = Some(music);
-            page.wheel_device = Some(wheel);
-            Ok(())
+    pub fn device_names(&self, page: &str) -> HashMap<String, String> {
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(&format!(
+                "SELECT id, name FROM devices WHERE account = {ACCOUNT_OF_PAGE}"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([page], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect::<rusqlite::Result<_>>()
+            });
+        result.unwrap_or_else(|error| {
+            warn!("failed to read the devices of {page}: {error:#}");
+            HashMap::new()
         })
     }
 
@@ -739,8 +683,8 @@ impl Accounts {
         let page = account.page.id.as_str();
         let statements = [
             ("DELETE FROM accounts WHERE id = ?1", id),
-            ("DELETE FROM devices WHERE account = ?1", id),
             ("DELETE FROM identities WHERE account = ?1", id),
+            ("DELETE FROM devices WHERE account = ?1", id),
             ("DELETE FROM pages WHERE id = ?1", page),
             ("DELETE FROM page_images WHERE id = ?1", page),
             ("DELETE FROM orders WHERE streamer = ?1", page),
@@ -796,7 +740,7 @@ impl Accounts {
         self.database
             .lock()
             .prepare_cached(&format!(
-                "SELECT {COLUMNS}, {DEVICES}, {IDENTITIES} FROM accounts WHERE {condition} LIMIT 1"
+                "SELECT {COLUMNS}, {IDENTITIES} FROM accounts WHERE {condition} LIMIT 1"
             ))
             .and_then(|mut statement| statement.query_row([value], account).optional())
             .unwrap_or_else(|error| {
@@ -822,12 +766,11 @@ impl Accounts {
         }
         transaction
             .execute(
-                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
+                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
                 params![
                     id,
                     account.page.id,
-                    account.page.music_device,
-                    account.page.wheel_device,
+                    account.page.key,
                     account.sessions,
                     account.merchant_id,
                     account.paypal_tracking_id,
@@ -836,9 +779,6 @@ impl Accounts {
                 ],
             )
             .map_err(not_saved)?;
-        if old.page.devices != account.page.devices {
-            save_devices(&transaction, id, &account.page.devices).map_err(not_saved)?;
-        }
         transaction.commit().map_err(not_saved)?;
         Ok(account)
     }
@@ -853,17 +793,11 @@ mod tests {
     use super::*;
     use crate::database;
 
-    fn device(id: &str, key: &str) -> Device {
-        Device {
-            id: id.to_string(),
-            name: "Moblin".to_string(),
-            key: key.to_string(),
-            enabled: true,
-        }
-    }
-
     fn page(id: &str, key: &str) -> Page {
-        Page::new(id.to_string(), device(id, key))
+        Page {
+            id: id.to_string(),
+            key: key.to_string(),
+        }
     }
 
     fn twitch(id: &str, name: &str, login: &str) -> Identity {
@@ -1209,104 +1143,70 @@ mod tests {
     fn keys_are_replaced() {
         let accounts = Accounts::new(Database::memory());
         sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
-        assert_eq!(accounts.device_of_key("k").as_deref(), Some("p"));
+        assert_eq!(accounts.page_of_key("k").as_deref(), Some("p"));
         assert_eq!(
-            accounts.replace_key("1", "d", "n".to_string()),
-            Err(AccountError::UnknownDevice)
+            accounts.replace_key("2", "n".to_string()),
+            Err(AccountError::Unknown)
         );
         assert_eq!(
-            accounts
-                .replace_key("1", "p", "n".to_string())
-                .unwrap()
-                .page,
+            accounts.replace_key("1", "n".to_string()).unwrap().page,
             page("p", "n")
         );
-        assert_eq!(accounts.device_of_key("k"), None);
-        assert_eq!(accounts.device_of_key("n").as_deref(), Some("p"));
+        assert_eq!(accounts.page_of_key("k"), None);
+        assert_eq!(accounts.page_of_key("n").as_deref(), Some("p"));
     }
 
     #[test]
-    fn devices_are_added_chosen_and_removed() {
+    fn at_most_20_devices_are_kept_per_account() {
         let accounts = Accounts::new(Database::memory());
-        assert_eq!(
-            accounts.add_device("1", device("a", "ka")),
-            Err(AccountError::Unknown)
-        );
         sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
-        for name in ["a", "b", "c", "d"] {
-            accounts
-                .add_device("1", device(name, &format!("k{name}")))
-                .unwrap();
+        for device in 0..25 {
+            accounts.seen_device("p", &device.to_string()).unwrap();
         }
+        let names = accounts.device_names("p");
+        assert_eq!(names.len(), 20);
+        assert!((0..5).all(|device| !names.contains_key(&device.to_string())));
+        assert_eq!(names["5"], "Moblin 6");
+        assert_eq!(names["20"], "Moblin 1");
+        assert_eq!(names["24"], "Moblin 5");
+    }
+
+    #[test]
+    fn devices_get_a_name_when_first_seen() {
+        let accounts = Accounts::new(Database::memory());
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "2", "Other", "other", page("q", "l")).unwrap();
+        assert_eq!(accounts.seen_device("r", "a"), None);
+        let seen = |page: &str, device: &str| accounts.seen_device(page, device).unwrap();
+        assert_eq!(seen("p", "a"), "Moblin 1");
+        assert_eq!(seen("p", "b"), "Moblin 2");
+        assert_eq!(seen("q", "a"), "Moblin 1");
+        assert_eq!(seen("p", "a"), "Moblin 1");
+        accounts
+            .database
+            .lock()
+            .execute(
+                "UPDATE devices SET last_seen = 0 WHERE account = '1' AND id = 'a'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(seen("p", "c"), "Moblin 1");
+        assert_eq!(seen("p", "a"), "Moblin 3");
         assert_eq!(
-            accounts.add_device("1", device("e", "ke")),
-            Err(AccountError::TooManyDevices)
-        );
-        assert_eq!(accounts.device_of_key("kc").as_deref(), Some("c"));
-        let page = accounts.get("1").unwrap().page;
-        assert_eq!(page.music_device().unwrap().id, "p");
-        assert_eq!(page.wheel_device().unwrap().id, "p");
-        assert_eq!(
-            accounts.choose_devices("1", "a".to_string(), "x".to_string()),
+            accounts.rename_device("p", "d", "Backup"),
             Err(AccountError::UnknownDevice)
         );
-        let page = accounts
-            .choose_devices("1", "a".to_string(), "b".to_string())
-            .unwrap()
-            .page;
-        assert_eq!(page.music_device().unwrap().id, "a");
-        assert_eq!(page.wheel_device().unwrap().id, "b");
+        accounts.rename_device("p", "b", "Backup").unwrap();
+        accounts.rename_device("q", "a", "Other").unwrap();
+        assert_eq!(seen("p", "d"), "Moblin 2");
         assert_eq!(
-            accounts.enable_device("1", "x", false),
-            Err(AccountError::UnknownDevice)
-        );
-        let page = accounts.enable_device("1", "a", false).unwrap().page;
-        assert!(!page.devices[1].enabled);
-        assert_eq!(page.music_device, None);
-        assert_eq!(page.music_device().unwrap().id, "p");
-        assert_eq!(page.wheel_device().unwrap().id, "b");
-        assert_eq!(
-            accounts.choose_devices("1", "a".to_string(), "b".to_string()),
-            Err(AccountError::DeviceOff)
-        );
-        let page = accounts.enable_device("1", "p", false).unwrap().page;
-        assert_eq!(page.music_device().unwrap().id, "b");
-        assert_eq!(
-            page.enabled_devices()
-                .map(|device| device.id.as_str())
-                .collect::<Vec<_>>(),
-            ["b", "c", "d"]
-        );
-        let page = accounts.enable_device("1", "a", true).unwrap().page;
-        assert_eq!(page.music_device().unwrap().id, "a");
-        let accounts = Accounts::new(accounts.database.clone());
-        let page = accounts.get("1").unwrap().page;
-        assert!(!page.devices[0].enabled);
-        assert!(page.devices[1].enabled);
-        accounts.enable_device("1", "p", true).unwrap();
-        let page = accounts
-            .choose_devices("1", "a".to_string(), "b".to_string())
-            .unwrap()
-            .page;
-        assert_eq!(page.music_device().unwrap().id, "a");
-        let page = accounts.remove_device("1", "a").unwrap().page;
-        assert_eq!(page.music_device, None);
-        assert_eq!(page.music_device().unwrap().id, "p");
-        assert_eq!(page.wheel_device().unwrap().id, "b");
-        assert_eq!(accounts.device_of_key("ka"), None);
-        assert_eq!(
-            accounts.remove_device("1", "a"),
-            Err(AccountError::UnknownDevice)
-        );
-        for name in ["p", "b", "c", "d"] {
-            accounts.remove_device("1", name).unwrap();
-        }
-        let page = accounts.get("1").unwrap().page;
-        assert!(page.devices.is_empty());
-        assert_eq!(page.music_device(), None);
-        assert_eq!(
-            accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
-            Some("p")
+            accounts.device_names("p"),
+            HashMap::from([
+                ("a".to_string(), "Moblin 3".to_string()),
+                ("b".to_string(), "Backup".to_string()),
+                ("c".to_string(), "Moblin 1".to_string()),
+                ("d".to_string(), "Moblin 2".to_string())
+            ])
         );
     }
 

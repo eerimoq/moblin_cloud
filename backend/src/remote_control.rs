@@ -14,8 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, sleep_until, timeout, timeout_at};
-
-const KEY_LENGTH: usize = 32;
+use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,7 +54,10 @@ enum MessageToStreamer {
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum MessageToAssistant {
-    Identify {},
+    #[serde(rename_all = "camelCase")]
+    Identify {
+        streamer_id: Option<String>,
+    },
     Response {
         id: u64,
         result: Outcome,
@@ -201,6 +203,7 @@ pub enum RequestError {
 }
 
 struct Session {
+    device: String,
     number: u64,
     sender: mpsc::UnboundedSender<MessageToStreamer>,
     next_request_id: u64,
@@ -213,7 +216,45 @@ struct Session {
 #[derive(Default)]
 struct Sessions {
     next_number: u64,
-    by_id: HashMap<String, Session>,
+    by_page: HashMap<String, Vec<Session>>,
+}
+
+impl Sessions {
+    fn get_mut(&mut self, page: &str, device: &str, number: Option<u64>) -> Option<&mut Session> {
+        self.by_page.get_mut(page)?.iter_mut().find(|session| {
+            session.device == device && number.is_none_or(|number| session.number == number)
+        })
+    }
+
+    fn music(&self, page: &str) -> Option<&Session> {
+        let sessions = self.by_page.get(page)?;
+        sessions
+            .iter()
+            .find(|session| session.song_requests)
+            .or(sessions.first())
+    }
+
+    fn wheel(&self, page: &str) -> Option<&Session> {
+        let sessions = self.by_page.get(page)?;
+        sessions
+            .iter()
+            .find(|session| session.wheel.is_some())
+            .or(sessions.first())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Device {
+    pub id: String,
+    pub music: bool,
+    pub wheel: bool,
+}
+
+pub struct Connection {
+    page: String,
+    device: String,
+    number: u64,
+    receiver: mpsc::UnboundedReceiver<MessageToStreamer>,
 }
 
 pub struct Streamers {
@@ -222,12 +263,8 @@ pub struct Streamers {
     pub connected: Notify,
 }
 
-pub fn id_of(key: &str) -> Option<String> {
-    let decoded = BASE64_URL_SAFE_NO_PAD.decode(key).ok()?;
-    if decoded.len() != KEY_LENGTH {
-        return None;
-    }
-    Some(BASE64_URL_SAFE_NO_PAD.encode(&digest(&SHA256, key.as_bytes()).as_ref()[..12]))
+pub fn id_of(key: &str) -> String {
+    BASE64_URL_SAFE_NO_PAD.encode(&digest(&SHA256, key.as_bytes()).as_ref()[..12])
 }
 
 pub fn song_link(text: &str) -> Option<String> {
@@ -259,6 +296,15 @@ async fn send(socket: &mut WebSocket, message: &MessageToStreamer) -> Result<()>
     Ok(())
 }
 
+pub async fn refuse(mut socket: WebSocket) {
+    let refused = MessageToStreamer::Identified {
+        result: Outcome::Error {},
+    };
+    if send(&mut socket, &refused).await.is_ok() {
+        let _ = socket.send(Message::Close(None)).await;
+    }
+}
+
 impl Streamers {
     pub fn new() -> Self {
         Self {
@@ -274,10 +320,10 @@ impl Streamers {
         Some(bytes)
     }
 
-    pub fn new_key(&self) -> Option<(String, String)> {
-        let key = BASE64_URL_SAFE_NO_PAD.encode(self.random_bytes::<KEY_LENGTH>()?);
-        let id = id_of(&key)?;
-        Some((key, id))
+    pub fn new_key(&self) -> (String, String) {
+        let key = Uuid::new_v4().to_string();
+        let id = id_of(&key);
+        (key, id)
     }
 
     pub fn new_request_id(&self) -> Option<String> {
@@ -293,64 +339,55 @@ impl Streamers {
         )
     }
 
-    pub fn disconnect(&self, id: &str) {
-        self.sessions.lock().unwrap().by_id.remove(id);
+    pub fn disconnect(&self, page: &str) {
+        self.sessions.lock().unwrap().by_page.remove(page);
     }
 
-    pub fn is_connected(&self, id: &str) -> bool {
-        self.sessions.lock().unwrap().by_id.contains_key(id)
+    pub fn is_connected(&self, page: &str) -> bool {
+        self.sessions.lock().unwrap().by_page.contains_key(page)
     }
 
     pub fn connected_count(&self) -> usize {
-        self.sessions.lock().unwrap().by_id.len()
+        self.sessions
+            .lock()
+            .unwrap()
+            .by_page
+            .values()
+            .map(Vec::len)
+            .sum()
     }
 
-    pub async fn serve(&self, id: String, mut socket: WebSocket) {
-        if let Err(error) = self.handshake(&mut socket).await {
-            info!("remote control streamer {id} failed to identify: {error:#}");
-            return;
-        }
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        let Some(number) = self.add(&id, sender) else {
-            info!("remote control streamer {id} rejected, too many streamers");
-            return;
-        };
-        info!("remote control streamer {id} connected");
-        self.connected.notify_one();
-        let mut deadline = Instant::now() + Duration::from_secs(60);
-        loop {
-            tokio::select! {
-                message = receiver.recv() => {
-                    let Some(message) = message else {
-                        break;
-                    };
-                    if send(&mut socket, &message).await.is_err() {
-                        break;
-                    }
-                }
-                message = socket.recv() => {
-                    let Some(Ok(message)) = message else {
-                        break;
-                    };
-                    deadline = Instant::now() + Duration::from_secs(60);
-                    match message {
-                        Message::Text(text) => {
-                            if self.handle(&id, number, text.as_str(), &mut socket).await.is_err() {
-                                break;
-                            }
-                        }
-                        Message::Close(_) => break,
-                        _ => {}
-                    }
-                }
-                _ = sleep_until(deadline) => break,
-            }
-        }
-        self.remove(&id, number);
-        info!("remote control streamer {id} disconnected");
+    pub fn devices(&self, page: &str) -> Vec<Device> {
+        let sessions = self.sessions.lock().unwrap();
+        let music = sessions.music(page).map(|session| session.number);
+        let wheel = sessions
+            .wheel(page)
+            .filter(|session| session.wheel.is_some())
+            .map(|session| session.number);
+        sessions
+            .by_page
+            .get(page)
+            .into_iter()
+            .flatten()
+            .map(|session| Device {
+                id: session.device.clone(),
+                music: music == Some(session.number),
+                wheel: wheel == Some(session.number),
+            })
+            .collect()
     }
 
-    async fn handshake(&self, socket: &mut WebSocket) -> Result<()> {
+    pub fn music_device(&self, page: &str) -> Option<String> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.music(page).map(|session| session.device.clone())
+    }
+
+    pub fn wheel_device(&self, page: &str) -> Option<String> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.wheel(page).map(|session| session.device.clone())
+    }
+
+    pub async fn identify(&self, socket: &mut WebSocket) -> Result<Option<String>> {
         let challenge = self.random_bytes::<64>().context("no randomness")?;
         let salt = self.random_bytes::<64>().context("no randomness")?;
         let hello = MessageToStreamer::Hello {
@@ -368,23 +405,101 @@ impl Streamers {
                 .context("no identify")?
                 .context("closed")??;
             if let Message::Text(text) = message
-                && let Ok(MessageToAssistant::Identify {}) = serde_json::from_str(text.as_str())
+                && let Ok(MessageToAssistant::Identify { streamer_id }) =
+                    serde_json::from_str(text.as_str())
             {
-                break;
+                return Ok(streamer_id.filter(|id| (1..=100).contains(&id.len())));
             }
         }
-        send(
-            socket,
-            &MessageToStreamer::Identified {
-                result: Outcome::Ok {},
-            },
-        )
-        .await
+    }
+
+    pub fn connect(&self, page: &str, device: &str) -> Option<Connection> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let total: usize = sessions.by_page.values().map(Vec::len).sum();
+        let others = sessions
+            .by_page
+            .get(page)
+            .into_iter()
+            .flatten()
+            .filter(|session| session.device != device)
+            .count();
+        if others >= 5 || total >= 5000 {
+            return None;
+        }
+        sessions.next_number += 1;
+        let number = sessions.next_number;
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
+        page_sessions.retain(|session| session.device != device);
+        page_sessions.push(Session {
+            device: device.to_string(),
+            number,
+            sender,
+            next_request_id: 0,
+            pending: HashMap::new(),
+            status: None,
+            wheel: None,
+            song_requests: true,
+        });
+        Some(Connection {
+            page: page.to_string(),
+            device: device.to_string(),
+            number,
+            receiver,
+        })
+    }
+
+    pub async fn serve(&self, connection: Connection, mut socket: WebSocket) {
+        let Connection {
+            page,
+            device,
+            number,
+            mut receiver,
+        } = connection;
+        let identified = MessageToStreamer::Identified {
+            result: Outcome::Ok {},
+        };
+        if send(&mut socket, &identified).await.is_ok() {
+            info!("remote control streamer {page} device {device} connected");
+            self.connected.notify_one();
+            let mut deadline = Instant::now() + Duration::from_secs(60);
+            loop {
+                tokio::select! {
+                    message = receiver.recv() => {
+                        let Some(message) = message else {
+                            break;
+                        };
+                        if send(&mut socket, &message).await.is_err() {
+                            break;
+                        }
+                    }
+                    message = socket.recv() => {
+                        let Some(Ok(message)) = message else {
+                            break;
+                        };
+                        deadline = Instant::now() + Duration::from_secs(60);
+                        match message {
+                            Message::Text(text) => {
+                                if self.handle(&page, &device, number, text.as_str(), &mut socket).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Message::Close(_) => break,
+                            _ => {}
+                        }
+                    }
+                    _ = sleep_until(deadline) => break,
+                }
+            }
+        }
+        self.remove(&page, &device, number);
+        info!("remote control streamer {page} device {device} disconnected");
     }
 
     async fn handle(
         &self,
-        id: &str,
+        page: &str,
+        device: &str,
         number: u64,
         text: &str,
         socket: &mut WebSocket,
@@ -397,8 +512,7 @@ impl Streamers {
                 data,
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.by_id.get_mut(id)
-                    && session.number == number
+                if let Some(session) = sessions.get_mut(page, device, Some(number))
                     && let Some(pending) = session.pending.remove(&request_id)
                 {
                     let _ = pending.send((result, data));
@@ -408,9 +522,7 @@ impl Streamers {
                 data: Event::WheelOfLuck { wheel },
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.by_id.get_mut(id)
-                    && session.number == number
-                {
+                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
                 }
             }
@@ -418,9 +530,7 @@ impl Streamers {
                 data: Event::SongRequests { enabled },
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.by_id.get_mut(id)
-                    && session.number == number
-                {
+                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
                     session.song_requests = enabled;
                 }
             }
@@ -429,89 +539,71 @@ impl Streamers {
         Ok(())
     }
 
-    fn add(&self, id: &str, sender: mpsc::UnboundedSender<MessageToStreamer>) -> Option<u64> {
+    fn remove(&self, page: &str, device: &str, number: u64) {
         let mut sessions = self.sessions.lock().unwrap();
-        if sessions.by_id.len() >= 5000 && !sessions.by_id.contains_key(id) {
-            return None;
-        }
-        sessions.next_number += 1;
-        let number = sessions.next_number;
-        sessions.by_id.insert(
-            id.to_string(),
-            Session {
-                number,
-                sender,
-                next_request_id: 0,
-                pending: HashMap::new(),
-                status: None,
-                wheel: None,
-                song_requests: true,
-            },
-        );
-        Some(number)
-    }
-
-    fn remove(&self, id: &str, number: u64) {
-        let mut sessions = self.sessions.lock().unwrap();
-        if sessions
-            .by_id
-            .get(id)
-            .is_some_and(|session| session.number == number)
-        {
-            sessions.by_id.remove(id);
+        if let Some(page_sessions) = sessions.by_page.get_mut(page) {
+            page_sessions.retain(|session| session.device != device || session.number != number);
+            if page_sessions.is_empty() {
+                sessions.by_page.remove(page);
+            }
         }
     }
 
-    pub fn wheel(&self, id: &str) -> Option<Wheel> {
+    pub fn wheel(&self, page: &str) -> Option<Wheel> {
         self.sessions
             .lock()
             .unwrap()
-            .by_id
-            .get(id)
+            .wheel(page)
             .and_then(|session| session.wheel.clone())
     }
 
-    pub fn takes_song_requests(&self, id: &str) -> bool {
+    pub fn takes_song_requests(&self, page: &str) -> bool {
         self.sessions
             .lock()
             .unwrap()
-            .by_id
-            .get(id)
+            .music(page)
             .is_some_and(|session| session.song_requests)
     }
 
     pub async fn music(
         &self,
-        id: &str,
+        (page, device): (&str, &str),
         command: MusicCommand,
     ) -> Result<MusicStatus, RequestError> {
         if matches!(command, MusicCommand::Status {}) {
             let sessions = self.sessions.lock().unwrap();
-            if let Some(session) = sessions.by_id.get(id)
+            if let Some(session) = sessions
+                .by_page
+                .get(page)
+                .into_iter()
+                .flatten()
+                .find(|session| session.device == device)
                 && let Some((fetched, status)) = &session.status
                 && fetched.elapsed() < Duration::from_secs(10)
             {
                 return Ok(status.clone());
             }
         }
-        self.music_uncached(id, command).await
+        self.music_uncached((page, device), command).await
     }
 
     pub async fn music_uncached(
         &self,
-        id: &str,
+        (page, device): (&str, &str),
         command: MusicCommand,
     ) -> Result<MusicStatus, RequestError> {
         let (number, data) = self
-            .request(id, Request::Music { command }, Duration::from_secs(20))
+            .request(
+                (page, device),
+                Request::Music { command },
+                Duration::from_secs(20),
+            )
             .await?;
         let Some(ResponseData::Music { status }) = parse(data) else {
             return Err(RequestError::Failed);
         };
         let mut sessions = self.sessions.lock().unwrap();
-        if let Some(session) = sessions.by_id.get_mut(id)
-            && session.number == number
-        {
+        if let Some(session) = sessions.get_mut(page, device, Some(number)) {
             let mut cached = status.clone();
             cached.song_not_found = None;
             session.status = Some((Instant::now(), cached));
@@ -519,10 +611,14 @@ impl Streamers {
         Ok(status)
     }
 
-    pub async fn find(&self, id: &str, title: String) -> Result<Option<FoundSong>, RequestError> {
+    pub async fn find(
+        &self,
+        (page, device): (&str, &str),
+        title: String,
+    ) -> Result<Option<FoundSong>, RequestError> {
         let (_, data) = self
             .request(
-                id,
+                (page, device),
                 Request::Music {
                     command: MusicCommand::Find { title },
                 },
@@ -537,14 +633,14 @@ impl Streamers {
 
     pub async fn spin_wheel(
         &self,
-        id: &str,
+        (page, device): (&str, &str),
         name: String,
         message: String,
         count: u32,
         request_id: String,
     ) -> Result<(), RequestError> {
         self.request(
-            id,
+            (page, device),
             Request::SpinWheelOfLuck {
                 name,
                 message,
@@ -559,7 +655,7 @@ impl Streamers {
 
     pub async fn tip(
         &self,
-        id: &str,
+        (page, device): (&str, &str),
         name: String,
         message: String,
         amount: String,
@@ -567,7 +663,7 @@ impl Streamers {
         request_id: String,
     ) -> Result<(), RequestError> {
         self.request(
-            id,
+            (page, device),
             Request::Tip {
                 name,
                 message,
@@ -583,13 +679,15 @@ impl Streamers {
 
     async fn request(
         &self,
-        id: &str,
+        (page, device): (&str, &str),
         data: Request,
         wait: Duration,
     ) -> Result<(u64, Option<Value>), RequestError> {
         let (number, request_id, receiver) = {
             let mut sessions = self.sessions.lock().unwrap();
-            let session = sessions.by_id.get_mut(id).ok_or(RequestError::Offline)?;
+            let session = sessions
+                .get_mut(page, device, None)
+                .ok_or(RequestError::Offline)?;
             session.next_request_id += 1;
             let request_id = session.next_request_id;
             let (sender, receiver) = oneshot::channel();
@@ -608,9 +706,7 @@ impl Streamers {
             Ok(Err(_)) => return Err(RequestError::Offline),
             Err(_) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.by_id.get_mut(id)
-                    && session.number == number
-                {
+                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
                     session.pending.remove(&request_id);
                 }
                 return Err(RequestError::Timeout);
@@ -738,7 +834,13 @@ mod tests {
         assert_eq!(decode(r#"{"ping":{}}"#), MessageToAssistant::Ping {});
         assert_eq!(
             decode(r#"{"identify":{"streamerId":"ABC","authentication":"x"}}"#),
-            MessageToAssistant::Identify {}
+            MessageToAssistant::Identify {
+                streamer_id: Some("ABC".to_string())
+            }
+        );
+        assert_eq!(
+            decode(r#"{"identify":{"authentication":"x"}}"#),
+            MessageToAssistant::Identify { streamer_id: None }
         );
         assert_eq!(
             decode(r#"{"response":{"id":1,"result":{"ok":{}}}}"#),
@@ -887,14 +989,21 @@ mod tests {
     #[test]
     fn ids_are_derived_from_keys() {
         let streamers = Streamers::new();
-        let (key, id) = streamers.new_key().unwrap();
-        assert_eq!(key.len(), 43);
+        let (key, id) = streamers.new_key();
+        assert_eq!(key.len(), 36);
+        assert_eq!(
+            key.split('-').map(str::len).collect::<Vec<_>>(),
+            [8, 4, 4, 4, 12]
+        );
+        assert_eq!(&key[14..15], "4");
+        assert!("89ab".contains(&key[19..20]));
+        assert!(
+            key.chars()
+                .all(|c| c == '-' || c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
         assert_eq!(id.len(), 16);
-        assert_eq!(id_of(&key), Some(id.clone()));
-        assert!(!key.contains(&id));
-        assert_ne!(streamers.new_key().unwrap().0, key);
-        assert_eq!(id_of("short"), None);
-        assert_eq!(id_of(&format!("{key}A")), None);
+        assert_eq!(id_of(&key), id);
+        assert_ne!(streamers.new_key().0, key);
     }
 
     #[test]

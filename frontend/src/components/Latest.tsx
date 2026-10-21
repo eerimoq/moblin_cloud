@@ -139,6 +139,9 @@ export function Latest(props: {
                             {t("Not added by Moblin")}
                           </span>
                         </Show>
+                        <Show when={item.status === "waiting" && !item.devices?.length}>
+                          <span class="text-muted">{t("Waiting for Moblin")}</span>
+                        </Show>
                       </div>
                       <button
                         type="button"

@@ -84,9 +84,9 @@ backend-seed-forever interval="2":
 fake-moblin-run *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	key=$(sqlite3 "backend/${DATABASE:-./database.sqlite}" "select key from devices where account = 'fake-admin' and enabled = 1 order by position limit 1")
+	key=$(sqlite3 "backend/${DATABASE:-./database.sqlite}" "select moblin_key from accounts join identities on identities.account = accounts.id where platform = 'twitch' and user_id = 'fake-admin'")
 	if [ -z "$key" ]; then
-		echo "No Moblin device for the admin user. Sign in as admin at http://localhost:5173/dashboard/ first." >&2
+		echo "No Moblin Cloud key for the admin user. Sign in as admin at http://localhost:5173/dashboard/ first." >&2
 		exit 1
 	fi
 	python3 -m tests.utils.fake_moblin http://localhost:8080 --key "$key" {{args}}

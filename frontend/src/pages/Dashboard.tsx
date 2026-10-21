@@ -24,7 +24,6 @@ import {
   Value,
 } from "../components/PageParts";
 import {
-  addDevice,
   addModerator,
   createAccountSession,
   addModeratorSong,
@@ -33,19 +32,17 @@ import {
   moderateMusic,
   type Moderating,
   checkPayPal,
-  chooseDevices,
   checkStripe,
   connectPayPal,
   connectStripe,
   disconnectPayPal,
   disconnectStripe,
-  enableDevice,
   fetchAccount,
   fetchRecent,
   linkUrl,
   type LinkResult,
-  newDeviceKey,
-  removeDevice,
+  newMoblinKey,
+  renameDevice,
   removeImage,
   saveAccountSettings,
   resendRecent,
@@ -55,7 +52,7 @@ import {
   unlinkAccount,
   uploadImage,
   type Account,
-  type Device,
+  type ConnectedDevice,
   type Recent,
   type RecentKind,
   type SettingsChanges,
@@ -1836,8 +1833,6 @@ function Admin(props: {
       setSettings,
     );
 
-  const changeDevices = (change: () => Promise<Account>) => busyWith(change, setAccount);
-
   onMount(() => {
     if (props.preview) {
       return;
@@ -2210,14 +2205,9 @@ function Admin(props: {
           <MoblinSettings
             account={account()}
             busy={busy()}
-            onAdd={(name) => changeDevices(() => addDevice(props.session, name))}
-            onChoose={(music, wheel) =>
-              changeDevices(() => chooseDevices(props.session, music, wheel))
-            }
-            onNewKey={(device) => changeDevices(() => newDeviceKey(props.session, device))}
-            onRemove={(device) => changeDevices(() => removeDevice(props.session, device))}
-            onEnable={(device, enabled) =>
-              changeDevices(() => enableDevice(props.session, device, enabled))
+            onNewKey={() => busyWith(() => newMoblinKey(props.session), setAccount)}
+            onRename={(device, name) =>
+              busyWith(() => renameDevice(props.session, device, name), setAccount)
             }
           />
         </div>
@@ -2478,18 +2468,36 @@ function QrCode(props: { text: string; label: string }) {
 function MoblinSettings(props: {
   account: Account;
   busy: boolean;
-  onAdd: (name: string) => Promise<void>;
-  onChoose: (music: string, wheel: string) => Promise<void>;
-  onNewKey: (device: string) => Promise<void>;
-  onRemove: (device: string) => Promise<void>;
-  onEnable: (device: string, enabled: boolean) => Promise<void>;
+  onNewKey: () => Promise<void>;
+  onRename: (device: string, name: string) => Promise<void>;
 }) {
-  const [name, setName] = createSignal("");
+  let qrDialog: HTMLDialogElement | undefined;
   const [error, setError] = createSignal<string | null>(null);
-  const [opened, setOpened] = createSignal<string | null>(null);
-  const devices = () => props.account.devices;
-  const full = () => devices().length >= 5;
-
+  const [renaming, setRenaming] = createSignal<string | null>(null);
+  const [name, setName] = createSignal("");
+  const [copied, flashCopied] = createFlash(1500);
+  const key = () => props.account.key ?? "";
+  const deepLink = () => {
+    const settings = { moblinCloud: { enabled: true, key: key() } };
+    return `moblin://?${encodeURIComponent(JSON.stringify(settings))}`;
+  };
+  const copyDeepLink = async () => {
+    if (await copyText(deepLink())) {
+      flashCopied();
+    }
+  };
+  const newKey = async () => {
+    if (
+      !confirm(
+        t(
+          "Every device disconnects and the current Moblin Cloud key stops working. Paste the new one in Moblin on each device to reconnect.",
+        ),
+      )
+    ) {
+      return;
+    }
+    await run(props.onNewKey);
+  };
   const run = async (action: () => Promise<void>) => {
     setError(null);
     try {
@@ -2500,114 +2508,140 @@ function MoblinSettings(props: {
       }
     }
   };
-
-  const add = (event: SubmitEvent) => {
+  const startRenaming = (device: ConnectedDevice) => {
+    setName(device.name);
+    setRenaming(device.id);
+  };
+  const rename = (event: SubmitEvent, device: string) => {
     event.preventDefault();
     void run(async () => {
-      const before = devices().map((device) => device.id);
-      await props.onAdd(name().trim());
-      setName("");
-      setOpened(devices().find((device) => !before.includes(device.id))?.id ?? null);
+      await props.onRename(device, name().trim());
+      setRenaming(null);
     });
   };
-
-  const choose = (music: string, wheel: string) => void run(() => props.onChoose(music, wheel));
+  const gets = (device: ConnectedDevice) =>
+    [device.music ? t("Song requests") : null, device.wheel ? t("Wheel of luck") : null, t("Tips")]
+      .filter((text) => text !== null)
+      .join(" · ");
 
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Moblin</h2>
       <p class="text-ink-2">
         {t(
-          "Connect up to 5 devices running Moblin. Each device has its own Moblin Cloud key. In Moblin, go to Settings → Moblin Cloud, paste the key and turn on Enabled.",
+          "Use the same key on up to 5 devices running Moblin. In Moblin, go to Settings → Moblin Cloud, paste the key and turn on Enabled.",
         )}
       </p>
-      <Show when={devices().length > 0}>
-        <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
-          <For each={devices().map((device) => device.id)}>
-            {(id) => (
-              <Show when={devices().find((device) => device.id === id)}>
-                {(device) => (
-                  <DeviceSettings
-                    device={device()}
-                    busy={props.busy}
-                    open={opened() === id}
-                    onToggle={() => setOpened(opened() === id ? null : id)}
-                    onNewKey={() => run(() => props.onNewKey(id))}
-                    onRemove={() => run(() => props.onRemove(id))}
-                    onEnable={(enabled) => run(() => props.onEnable(id, enabled))}
-                  />
-                )}
-              </Show>
-            )}
-          </For>
-        </ul>
-      </Show>
-      <form class="flex flex-wrap items-center gap-4" onSubmit={add}>
-        <input
-          type="text"
-          maxLength={30}
-          required
-          aria-label={t("Device name")}
-          placeholder={t("Device name")}
-          value={name()}
-          onInput={(event) => setName(event.currentTarget.value)}
-          disabled={full()}
-          class={`${inputClass} max-w-64`}
-        />
-        <button
-          type="submit"
-          class={ghostButtonClass}
-          disabled={props.busy || full() || name().trim() === ""}
-        >
-          {t("Add device")}
+      <div class="flex flex-col gap-2">
+        <Value label={t("Moblin Cloud key")} text={key()} secret />
+        <p class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[15px] text-muted">
+          <span>{t("Keep it to yourself. Anyone with it can connect as your Moblin.")}</span>
+          <button
+            type="button"
+            class="font-semibold text-danger hover:underline disabled:opacity-60"
+            disabled={props.busy}
+            onClick={() => void newKey()}
+          >
+            {t("Reset key")}
+          </button>
+        </p>
+      </div>
+      <p class="text-[15px] text-ink-2">
+        {t(
+          "Or set it all up at once on the device running Moblin: scan the QR code with its camera or open the deep link there.",
+        )}
+      </p>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" class={smallButtonClass} onClick={() => qrDialog?.showModal()}>
+          <Icon name="eye" class="size-4" />
+          {t("Show QR code")}
         </button>
-      </form>
+        <button type="button" class={smallButtonClass} onClick={copyDeepLink}>
+          <Icon name={copied() ? "check" : "copy"} class="size-4" />
+          {copied() ? t("Copied") : t("Copy deep link")}
+        </button>
+      </div>
       <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      <Show when={devices().length > 1}>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <label class="flex flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">{t("Song requests")}</span>
-            <select
-              disabled={props.busy}
-              onChange={(event) =>
-                choose(event.currentTarget.value, props.account.wheelDevice ?? "")
-              }
-              class={inputClass}
-            >
-              <For each={devices().filter((device) => device.enabled)}>
-                {(device) => (
-                  <option value={device.id} selected={device.id === props.account.musicDevice}>
-                    {device.name}
-                  </option>
-                )}
-              </For>
-            </select>
-          </label>
-          <label class="flex flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">{t("Wheel of luck")}</span>
-            <select
-              disabled={props.busy}
-              onChange={(event) =>
-                choose(props.account.musicDevice ?? "", event.currentTarget.value)
-              }
-              class={inputClass}
-            >
-              <For each={devices().filter((device) => device.enabled)}>
-                {(device) => (
-                  <option value={device.id} selected={device.id === props.account.wheelDevice}>
-                    {device.name}
-                  </option>
-                )}
-              </For>
-            </select>
-          </label>
-        </div>
+      <div class="flex flex-col gap-2">
+        <h3 class="text-[15px] font-semibold text-ink-2">{t("Connected devices")}</h3>
+        <Show
+          when={props.account.devices.length > 0}
+          fallback={<p class="text-muted">{t("No device is connected.")}</p>}
+        >
+          <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
+            <For each={props.account.devices}>
+              {(device) => (
+                <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+                  <span class="size-2.5 shrink-0 rounded-full bg-leaf" />
+                  <Show
+                    when={renaming() === device.id}
+                    fallback={
+                      <>
+                        <span class="min-w-0 flex-1 truncate font-semibold">{device.name}</span>
+                        <span class="text-[15px] text-muted">{gets(device)}</span>
+                        <button
+                          type="button"
+                          class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
+                          disabled={props.busy}
+                          onClick={() => startRenaming(device)}
+                        >
+                          {t("Rename")}
+                        </button>
+                      </>
+                    }
+                  >
+                    <form
+                      class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+                      onSubmit={(event) => rename(event, device.id)}
+                    >
+                      <input
+                        type="text"
+                        maxLength={30}
+                        aria-label={t("Device name")}
+                        placeholder={t("Device name")}
+                        value={name()}
+                        onInput={(event) => setName(event.currentTarget.value)}
+                        class={`${inputClass} max-w-64`}
+                      />
+                      <button
+                        type="submit"
+                        class={smallButtonClass}
+                        disabled={props.busy || name().trim() === ""}
+                      >
+                        {t("Save")}
+                      </button>
+                      <button
+                        type="button"
+                        class={smallButtonClass}
+                        onClick={() => setRenaming(null)}
+                      >
+                        {t("Cancel")}
+                      </button>
+                    </form>
+                  </Show>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
         <p class="text-[15px] text-muted">
           {t(
-            "Song requests and wheel spins go to the device picked for them. Tips go to every device. Nothing goes to a device that is off.",
+            "Song requests go to the first device with song requests on and wheel spins to the first one with a wheel picked, both set in Moblin's Moblin Cloud settings. Tips go to every device.",
           )}
         </p>
-      </Show>
+      </div>
+      <Modal ref={(element) => (qrDialog = element)}>
+        <div class="flex flex-col items-center gap-5">
+          <h2 class="font-display text-2xl font-bold">Moblin Cloud</h2>
+          <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
+          <p class="text-center text-[17px] text-ink-2">
+            {t("Scan it with the camera of the device running Moblin to set up Moblin Cloud.")}
+          </p>
+          <button type="button" class={ghostButtonClass} onClick={() => qrDialog?.close()}>
+            {t("Close")}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -2667,141 +2701,6 @@ function GoPremium() {
 const smallButtonClass =
   "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
 
-function DeviceSettings(props: {
-  device: Device;
-  busy: boolean;
-  open: boolean;
-  onToggle: () => void;
-  onNewKey: () => void;
-  onRemove: () => void;
-  onEnable: (enabled: boolean) => void;
-}) {
-  let qrDialog: HTMLDialogElement | undefined;
-  const [copied, flashCopied] = createFlash(1500);
-  const deepLink = () => {
-    const settings = { moblinCloud: { enabled: true, key: props.device.key } };
-    return `moblin://?${encodeURIComponent(JSON.stringify(settings))}`;
-  };
-  const copyDeepLink = async () => {
-    if (await copyText(deepLink())) {
-      flashCopied();
-    }
-  };
-  const newKey = () => {
-    if (
-      confirm(
-        t(
-          "{name} disconnects and its current Moblin Cloud key stops working. Paste the new one in Moblin to reconnect.",
-          { name: props.device.name },
-        ),
-      )
-    ) {
-      props.onNewKey();
-    }
-  };
-  const remove = () => {
-    if (
-      confirm(
-        t("{name} disconnects and its Moblin Cloud key stops working.", {
-          name: props.device.name,
-        }),
-      )
-    ) {
-      props.onRemove();
-    }
-  };
-
-  return (
-    <li>
-      <button
-        type="button"
-        aria-expanded={props.open}
-        onClick={props.onToggle}
-        class="flex w-full items-center gap-3 px-4 py-3 text-left"
-      >
-        <span
-          class={`size-2.5 shrink-0 rounded-full ${props.device.connected && props.device.enabled ? "bg-leaf" : "bg-muted"}`}
-        />
-        <span class="min-w-0 flex-1 truncate font-semibold">{props.device.name}</span>
-        <span class="text-[15px] text-muted">
-          {!props.device.enabled
-            ? t("Off")
-            : props.device.connected
-              ? t("Connected")
-              : t("Not connected")}
-        </span>
-        <Icon
-          name="chevron-down"
-          class={`size-5 shrink-0 text-muted transition-transform ${props.open ? "rotate-180" : ""}`}
-        />
-      </button>
-      <Show when={props.open}>
-        <div class="flex flex-col gap-4 px-4 pb-4">
-          <div class="flex flex-col gap-2">
-            <Value label={t("Moblin Cloud key")} text={props.device.key} secret />
-            <p class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[15px] text-muted">
-              <span>{t("Keep it to yourself. Anyone with it can connect as your Moblin.")}</span>
-              <button
-                type="button"
-                class="font-semibold text-danger hover:underline disabled:opacity-60"
-                disabled={props.busy}
-                onClick={newKey}
-              >
-                {t("Reset key")}
-              </button>
-            </p>
-          </div>
-          <p class="text-[15px] text-ink-2">
-            {t(
-              "Or set it all up at once on the device running Moblin: scan the QR code with its camera or open the deep link there.",
-            )}
-          </p>
-          <label class="flex items-center gap-3 text-ink-2">
-            <input
-              type="checkbox"
-              checked={props.device.enabled}
-              disabled={props.busy}
-              onChange={(event) => props.onEnable(event.currentTarget.checked)}
-              class="size-5 accent-moss"
-            />
-            {t("Send tips, song requests and wheel spins to this device")}
-          </label>
-          <div class="flex flex-wrap items-center gap-2">
-            <button type="button" class={smallButtonClass} onClick={() => qrDialog?.showModal()}>
-              <Icon name="eye" class="size-4" />
-              {t("Show QR code")}
-            </button>
-            <button type="button" class={smallButtonClass} onClick={copyDeepLink}>
-              <Icon name={copied() ? "check" : "copy"} class="size-4" />
-              {copied() ? t("Copied") : t("Copy deep link")}
-            </button>
-            <button
-              type="button"
-              class={`${smallButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
-              disabled={props.busy}
-              onClick={remove}
-            >
-              {t("Remove device")}
-            </button>
-          </div>
-          <Modal ref={(element) => (qrDialog = element)}>
-            <div class="flex flex-col items-center gap-5">
-              <h2 class="font-display text-2xl font-bold">{props.device.name}</h2>
-              <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
-              <p class="text-center text-[17px] text-ink-2">
-                {t("Scan it with the camera of the device running Moblin to set up Moblin Cloud.")}
-              </p>
-              <button type="button" class={ghostButtonClass} onClick={() => qrDialog?.close()}>
-                {t("Close")}
-              </button>
-            </div>
-          </Modal>
-        </div>
-      </Show>
-    </li>
-  );
-}
-
 function PickedAvatar(props: { picked: { name: string; avatar: string | null } }) {
   return (
     <span aria-hidden="true" class="pointer-events-none absolute top-1/2 left-1.5 -translate-y-1/2">
@@ -2849,17 +2748,8 @@ function Preview(props: { failed: boolean }) {
               avatar: null,
               twitch: { login: "", name: "", avatar: null },
               kick: null,
-              devices: [
-                {
-                  id: "",
-                  name: "Moblin",
-                  key: "moblin-cloud-key-preview",
-                  enabled: true,
-                  connected: true,
-                },
-              ],
-              musicDevice: null,
-              wheelDevice: null,
+              key: "moblin-cloud-key-preview",
+              devices: [{ id: "", name: "Moblin 1", music: true, wheel: true }],
               settings: {
                 id: "",
                 message: null,

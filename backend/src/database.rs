@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
+use uuid::Uuid;
 
 pub struct Database {
     connection: Mutex<Connection>,
@@ -16,6 +17,40 @@ impl Database {
                 .with_context(|| format!("failed to open {}", path.display()))?,
             None => Connection::open_in_memory()?,
         };
+        let columns = |table: &str, column: &str| -> Result<bool> {
+            let count: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info(?1) WHERE name = ?2",
+                    [table, column],
+                    |row| row.get(0),
+                )
+                .with_context(|| format!("failed to read the {table} columns"))?;
+            Ok(count > 0)
+        };
+        if columns("accounts", "id")? && !columns("accounts", "moblin_key")? {
+            connection
+                .execute_batch("ALTER TABLE accounts ADD COLUMN moblin_key TEXT")
+                .context("failed to add the accounts moblin_key column")?;
+        }
+        if columns("devices", "key")? {
+            let transaction = connection.unchecked_transaction()?;
+            transaction
+                .execute_batch("DROP TABLE devices")
+                .context("failed to drop the old devices table")?;
+            let ids: Vec<String> = transaction
+                .prepare("SELECT id FROM accounts")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            for id in ids {
+                transaction
+                    .execute(
+                        "UPDATE accounts SET moblin_key = ?1 WHERE id = ?2",
+                        [Uuid::new_v4().to_string(), id],
+                    )
+                    .context("failed to give the accounts a Moblin Cloud key")?;
+            }
+            transaction.commit()?;
+        }
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
@@ -23,8 +58,7 @@ impl Database {
                  CREATE TABLE IF NOT EXISTS accounts (
                      id TEXT PRIMARY KEY,
                      page_id TEXT,
-                     music_device TEXT,
-                     wheel_device TEXT,
+                     moblin_key TEXT,
                      sessions INTEGER NOT NULL,
                      merchant_id TEXT,
                      paypal_tracking_id TEXT,
@@ -32,15 +66,14 @@ impl Database {
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
+                 CREATE UNIQUE INDEX IF NOT EXISTS accounts_moblin_key ON accounts (moblin_key);
                  CREATE TABLE IF NOT EXISTS devices (
-                     key TEXT PRIMARY KEY,
                      account TEXT NOT NULL,
                      id TEXT NOT NULL,
                      name TEXT NOT NULL,
-                     position INTEGER NOT NULL,
-                     enabled INTEGER NOT NULL DEFAULT 1
+                     last_seen INTEGER NOT NULL,
+                     PRIMARY KEY (account, id)
                  );
-                 CREATE INDEX IF NOT EXISTS devices_account ON devices (account);
                  CREATE TABLE IF NOT EXISTS twitch_moderators (
                      broadcaster TEXT NOT NULL,
                      moderator TEXT NOT NULL,
@@ -122,15 +155,8 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
             )
             .context("failed to create the database tables")?;
-        for column in ["login", "name", "avatar"] {
-            let old: u32 = connection
-                .query_row(
-                    "SELECT count(*) FROM pragma_table_info('accounts') WHERE name = ?1",
-                    [column],
-                    |row| row.get(0),
-                )
-                .context("failed to read the accounts columns")?;
-            if old > 0 {
+        for column in ["login", "name", "avatar", "music_device", "wheel_device"] {
+            if columns("accounts", column)? {
                 connection
                     .execute_batch(&format!("ALTER TABLE accounts DROP COLUMN {column}"))
                     .with_context(|| format!("failed to drop the accounts {column} column"))?;
@@ -226,6 +252,74 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(page, "p");
+        }
+        remove(&path);
+    }
+
+    #[test]
+    fn every_account_gets_a_new_key_when_the_device_keys_are_dropped() {
+        let path = temporary_path("device-keys");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE accounts (
+                     id TEXT PRIMARY KEY,
+                     page_id TEXT,
+                     music_device TEXT,
+                     wheel_device TEXT,
+                     sessions INTEGER NOT NULL,
+                     merchant_id TEXT,
+                     paypal_tracking_id TEXT,
+                     stripe_account_id TEXT,
+                     stripe_ready INTEGER NOT NULL DEFAULT 0
+                 );
+                 CREATE TABLE devices (
+                     key TEXT PRIMARY KEY,
+                     account TEXT NOT NULL,
+                     id TEXT NOT NULL,
+                     name TEXT NOT NULL,
+                     position INTEGER NOT NULL,
+                     enabled INTEGER NOT NULL DEFAULT 1
+                 );
+                 CREATE INDEX devices_account ON devices (account);
+                 INSERT INTO accounts (id, page_id, music_device, sessions) VALUES ('a', 'p', 'd', 0), ('b', 'q', NULL, 0);
+                 INSERT INTO devices (key, account, id, name, position) VALUES ('k2', 'a', 'd', 'Two', 1), ('k1', 'a', 'p', 'One', 0);",
+            )
+            .unwrap();
+        drop(connection);
+        let mut new_keys = None;
+        for _ in 0..2 {
+            let database = Database::open(Some(&path)).unwrap();
+            let connection = database.lock();
+            let keys: Vec<(String, String)> = connection
+                .prepare("SELECT page_id, moblin_key FROM accounts ORDER BY id")
+                .unwrap()
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert_eq!(keys[0].0, "p");
+            assert_eq!(keys[1].0, "q");
+            for (_, key) in &keys {
+                assert!(Uuid::parse_str(key).is_ok());
+            }
+            assert_ne!(keys[0].1, keys[1].1);
+            assert_eq!(*new_keys.get_or_insert(keys.clone()), keys);
+            let columns: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info('accounts') WHERE name IN ('music_device', 'wheel_device')",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(columns, 0);
+            connection
+                .execute(
+                    "INSERT INTO devices (account, id, name, last_seen) VALUES ('a', 'x', 'Moblin 1', 0)",
+                    [],
+                )
+                .unwrap();
+            connection.execute("DELETE FROM devices", []).unwrap();
         }
         remove(&path);
     }

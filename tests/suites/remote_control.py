@@ -1,5 +1,6 @@
 from ..utils.config import Capability
 from ..utils.context import Context
+from ..utils.fake_moblin import FakeMoblin
 from ..utils.moblin import Moblin
 from ..utils.moblin import wheel_option
 from ..utils.test_case import TestCase
@@ -93,7 +94,7 @@ class RemoteControlNewMoblinCloudKeyDisconnects(RemoteControlTestCase):
         old_key = self.moblin.connected_key()
         assert old_key is not None
         position = self.moblin.rejected_keys_position()
-        new_key = self.dashboard.new_moblin_cloud_key()["devices"][0]["key"]
+        new_key = self.dashboard.new_moblin_cloud_key()["key"]
         self.assert_false(self.dashboard.account()["settings"]["connected"])
         self.moblin.wait_for_rejected_key(old_key, start=position)
         self.assert_false(self.connected())
@@ -194,46 +195,49 @@ class RemoteControlSongRequestsOff(RemoteControlTestCase):
             self.moblin.change_song_requests(True)
 
 
-class RemoteControlChosenDevices(RemoteControlTestCase):
-    """Send songs and spins to the devices picked in the dashboard, tips to any connected device, and nothing to a device turned off."""
+class RemoteControlDevices(RemoteControlTestCase):
+    """Send songs to the first device with song requests on, spins to the first with a wheel and tips to every device, all connected with the one Moblin Cloud key."""
 
     login = "devices"
 
     def run(self):
-        self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
+        key = self.dashboard.moblin_cloud_key()
+        self.moblin.connect_to_backend(key, WHEEL)
         self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be on the page")
-        first = self.dashboard.device_id()
-        other = self.dashboard.add_device("Other phone")["devices"][-1]["id"]
-        self.dashboard.choose_devices(other, other)
-        spin = self.viewer.spin()
-        self.assert_equal([spin["wheel"], spin["connected"]], [None, False])
-        self.assert_true(self.connected())
-        self.assert_backend_error(409, lambda: self.dashboard.test_song(SONG), "Connect Moblin first.")
-        self.assert_backend_error(409, self.dashboard.test_spin, "Connect Moblin first.")
+        self.second = FakeMoblin(None, self.backend.url, key=key, device_id="SECOND")
+        self.second.start()
+        self.wait_until(lambda: len(self.dashboard.account()["devices"]) == 2, "the second device to connect")
+        devices = self.dashboard.account()["devices"]
+        self.assert_equal(
+            [(device["id"], device["music"], device["wheel"]) for device in devices][1],
+            ("SECOND", False, False),
+        )
+        self.assert_equal([devices[0]["music"], devices[0]["wheel"]], [True, True])
+        self.moblin.change_song_requests(False)
+        self.wait_until(
+            lambda: self.dashboard.account()["devices"][1]["music"],
+            "song requests to go to the second device",
+        )
+        self.dashboard.test_song(SONG)
+        self.wait_until(
+            lambda: any(song["requestId"] is not None for song in self.second.songs),
+            "the second device to get the song",
+        )
         start = self.moblin.backend_requests_position()
         self.dashboard.test_tip()
         self.moblin.wait_for_new_backend_request("tip", start)
-        self.dashboard.choose_devices(first, first)
-        self.assert_true(self.viewer.spin()["connected"])
-        self.dashboard.enable_device(first, False)
-        self.assert_false(self.viewer.spin()["connected"])
-        self.assert_backend_error(409, self.dashboard.test_spin, "Connect Moblin first.")
-        start = self.moblin.backend_requests_position()
-        self.dashboard.test_tip()
-        self.dashboard.enable_device(first, True)
-        self.assert_true(self.viewer.spin()["connected"])
-        self.moblin.wait_for_new_backend_request("tip", start)
-        self.dashboard.remove_device(other)
-        self.assert_equal(self.dashboard.account()["musicDevice"], first)
+        self.wait_until(lambda: len(self.second.handled_request_ids) == 1, "the second device to get the tip")
+        self.second.stop()
+        self.wait_until(
+            lambda: len(self.dashboard.account()["devices"]) == 1, "the second device to disconnect"
+        )
+        self.assert_true(self.dashboard.account()["devices"][0]["music"])
 
     def teardown(self):
-        if not hasattr(self, "dashboard"):
-            return
-        devices = self.dashboard.account()["devices"]
-        if not devices[0]["enabled"]:
-            self.dashboard.enable_device(devices[0]["id"], True)
-        for device in devices[1:]:
-            self.dashboard.remove_device(device["id"])
+        if hasattr(self, "second"):
+            self.second.stop()
+        if self.context.moblin is not None and self.moblin.is_fake():
+            self.moblin.change_song_requests(True)
 
 
 def tests(context: Context):
@@ -246,5 +250,5 @@ def tests(context: Context):
         RemoteControlTestDeliveries(context),
         RemoteControlNoWheel(context),
         RemoteControlSongRequestsOff(context),
-        RemoteControlChosenDevices(context),
+        RemoteControlDevices(context),
     ]

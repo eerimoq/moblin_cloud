@@ -32,6 +32,8 @@ const add = (a: Counts, b: Counts): Counts => ({
 
 const reasonLabels: Record<string, string> = {
   "unknown-key": "Unknown or replaced key",
+  "no-device-id": "No device id",
+  "too-many-devices": "More than 5 devices",
   "feature-off": "Turned off on the page",
   offline: "Streamer offline",
   "requests-off": "Song requests off in Moblin",
@@ -870,8 +872,8 @@ function Loaded(props: { stats: AdminStats }) {
                 counters().step(
                   "moblinConnections",
                   "Connections",
-                  "Moblin connecting to Moblin Cloud with the key of a current device.",
-                  ["unknown-key"],
+                  "Moblin connecting to Moblin Cloud with the key of an account.",
+                  ["unknown-key", "no-device-id", "too-many-devices"],
                 ),
               ]}
             />

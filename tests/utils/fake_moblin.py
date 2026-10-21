@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import threading
+import uuid
 import zipfile
 from urllib.parse import parse_qs
 from urllib.parse import urlsplit
@@ -32,10 +33,18 @@ def wheel_of(options: list[dict] | None) -> dict | None:
 
 
 class FakeMoblin:
-    def __init__(self, url: str | None, api_url: str, songs: int = 0, key: str | None = None):
+    def __init__(
+        self,
+        url: str | None,
+        api_url: str,
+        songs: int = 0,
+        key: str | None = None,
+        device_id: str | None = None,
+    ):
         self.url = url
         self.api_url = api_url
         self.key = key
+        self.device_id = device_id or str(uuid.uuid4()).upper()
         self.wheel: dict | None = None
         self.song_requests = True
         self.songs: list[dict] = [
@@ -107,7 +116,7 @@ class FakeMoblin:
         for text in websocket:
             message = json.loads(text)
             if "hello" in message:
-                self.send(websocket, {"identify": {"streamerId": "FAKE", "authentication": "fake"}})
+                self.send(websocket, {"identify": {"streamerId": self.device_id, "authentication": "fake"}})
             elif "identified" in message:
                 if name == "cloud":
                     self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
@@ -223,6 +232,7 @@ def main():
     parser.add_argument("api_url", help="Where Moblin Cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
     parser.add_argument("--control", help="Where the remote control streamer connects at first.")
     parser.add_argument("--key", help="The Moblin Cloud key, instead of waiting for imported settings.")
+    parser.add_argument("--device-id", help="The id Moblin identifies itself with (random by default).")
     parser.add_argument(
         "--songs",
         type=int,
@@ -232,7 +242,7 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     LOGGER.setLevel(logging.DEBUG)
-    fake = FakeMoblin(args.control, args.api_url, args.songs, args.key)
+    fake = FakeMoblin(args.control, args.api_url, args.songs, args.key, args.device_id)
     fake.start()
     threading.Event().wait()
 

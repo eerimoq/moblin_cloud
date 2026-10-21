@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -9,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::time::sleep;
 
-use crate::accounts::{Accounts, Page};
 use crate::counters;
 use crate::database::Database;
 use crate::pages::format_price;
@@ -234,31 +232,18 @@ impl Deliveries {
         }
     }
 
-    pub async fn run(&self, streamers: &Streamers, accounts: &Accounts) {
+    pub async fn run(&self, streamers: &Streamers) {
         loop {
-            let mut by_device: Vec<(String, Vec<Targeted>)> = Vec::new();
-            let mut pages: HashMap<String, Option<Page>> = HashMap::new();
+            let mut by_device: Vec<((String, String), Vec<Targeted>)> = Vec::new();
             for delivery in self.pending() {
-                let page = pages.entry(delivery.streamer.clone()).or_insert_with(|| {
-                    accounts
-                        .of_page(&delivery.streamer)
-                        .map(|account| account.page)
-                });
-                let devices: Vec<String> = match (&delivery.item, &*page) {
-                    (_, None) => Vec::new(),
-                    (Item::Song { .. }, Some(page)) => page
-                        .music_device()
-                        .map(|device| device.id.clone())
+                let page = &delivery.streamer;
+                let devices: Vec<String> = match &delivery.item {
+                    Item::Song { .. } => streamers.music_device(page).into_iter().collect(),
+                    Item::Spin { .. } => streamers.wheel_device(page).into_iter().collect(),
+                    Item::Tip { .. } => streamers
+                        .devices(page)
                         .into_iter()
-                        .collect(),
-                    (Item::Spin { .. }, Some(page)) => page
-                        .wheel_device()
-                        .map(|device| device.id.clone())
-                        .into_iter()
-                        .collect(),
-                    (Item::Tip { .. }, Some(page)) => page
-                        .enabled_devices()
-                        .map(|device| device.id.clone())
+                        .map(|device| device.id)
                         .filter(|device| !delivery.delivered.contains(device))
                         .collect(),
                 };
@@ -267,21 +252,17 @@ impl Deliveries {
                     continue;
                 }
                 for device in &devices {
-                    if !streamers.is_connected(device) {
-                        continue;
-                    }
+                    let target = (page.clone(), device.clone());
                     let delivery = (delivery.clone(), devices.clone());
-                    match by_device.iter_mut().find(|(other, _)| other == device) {
+                    match by_device.iter_mut().find(|(other, _)| *other == target) {
                         Some((_, deliveries)) => deliveries.push(delivery),
-                        None => by_device.push((device.clone(), vec![delivery])),
+                        None => by_device.push((target, vec![delivery])),
                     }
                 }
             }
-            join_all(
-                by_device
-                    .into_iter()
-                    .map(|(device, deliveries)| self.deliver_all(streamers, device, deliveries)),
-            )
+            join_all(by_device.into_iter().map(|((page, device), deliveries)| {
+                self.deliver_all(streamers, page, device, deliveries)
+            }))
             .await;
             tokio::select! {
                 _ = self.added.notified() => {}
@@ -291,12 +272,18 @@ impl Deliveries {
         }
     }
 
-    async fn deliver_all(&self, streamers: &Streamers, device: String, deliveries: Vec<Targeted>) {
+    async fn deliver_all(
+        &self,
+        streamers: &Streamers,
+        page: String,
+        device: String,
+        deliveries: Vec<Targeted>,
+    ) {
         for (delivery, devices) in deliveries {
-            let counter = match deliver(streamers, &device, &delivery).await {
+            let counter = match deliver(streamers, &page, &device, &delivery).await {
                 Ok(Outcome::Delivered) => {
                     info!(
-                        "delivered {:?} in request {} to remote control streamer {device}",
+                        "delivered {:?} in request {} to remote control streamer {page} device {device}",
                         delivery.item, delivery.request_id
                     );
                     Some(delivery.counter("Deliveries"))
@@ -304,7 +291,7 @@ impl Deliveries {
                 Ok(Outcome::NotFound) => {
                     if self.failed(&delivery, "not-found") {
                         warn!(
-                            "{:?} in request {} was not found by remote control streamer {device}",
+                            "{:?} in request {} was not found by remote control streamer {page} device {device}",
                             delivery.item, delivery.request_id
                         );
                     }
@@ -314,7 +301,7 @@ impl Deliveries {
                 Err(error) => {
                     if self.failed(&delivery, "moblin-error") {
                         info!(
-                            "delivering request {} to remote control streamer {device} failed: {error:?}, retrying",
+                            "delivering request {} to remote control streamer {page} device {device} failed: {error:?}, retrying",
                             delivery.request_id
                         );
                     }
@@ -415,7 +402,8 @@ enum Outcome {
 
 async fn deliver(
     streamers: &Streamers,
-    id: &str,
+    page: &str,
+    device: &str,
     delivery: &Delivery,
 ) -> Result<Outcome, RequestError> {
     let request_id = delivery.moblin_request_id();
@@ -431,7 +419,7 @@ async fn deliver(
                 message: (!message.is_empty()).then(|| message.clone()),
                 request_id: Some(request_id),
             };
-            let status = streamers.music_uncached(id, add).await?;
+            let status = streamers.music_uncached((page, device), add).await?;
             if status.song_not_found == Some(true) {
                 Ok(Outcome::NotFound)
             } else {
@@ -444,7 +432,13 @@ async fn deliver(
             spins,
         } => {
             streamers
-                .spin_wheel(id, user.clone(), message.clone(), *spins, request_id)
+                .spin_wheel(
+                    (page, device),
+                    user.clone(),
+                    message.clone(),
+                    *spins,
+                    request_id,
+                )
                 .await?;
             Ok(Outcome::Delivered)
         }
@@ -456,7 +450,7 @@ async fn deliver(
         } => {
             streamers
                 .tip(
-                    id,
+                    (page, device),
                     user.clone(),
                     message.clone(),
                     format_price(*amount),

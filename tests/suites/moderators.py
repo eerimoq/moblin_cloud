@@ -219,11 +219,12 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
             [
                 account["name"],
                 account["twitch"],
+                account["key"],
                 account["devices"],
                 account["twitchModerators"],
                 account["moderating"],
             ],
-            [own["name"], own["twitch"], [], [], []],
+            [own["name"], own["twitch"], None, [], [], []],
         )
         self.assert_equal([account["admin"], account["premium"]], [False, own["premium"]])
         settings = account["settings"]

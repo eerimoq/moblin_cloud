@@ -19,9 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::accounts::{
-    Account, AccountError, AccountStats, Accounts, Device, Moderator, Page, Platform,
-};
+use crate::accounts::{Account, AccountError, AccountStats, Accounts, Moderator, Page, Platform};
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
 use crate::challenges::Challenges;
@@ -91,22 +89,10 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account", get(handle_account))
         .route("/account/link", post(handle_account_link))
         .route("/account/unlink/{platform}", post(handle_account_unlink))
-        .route("/account/devices", post(handle_account_devices))
+        .route("/account/key", post(handle_account_key))
         .route(
-            "/account/devices/choose",
-            post(handle_account_devices_choose),
-        )
-        .route(
-            "/account/devices/{device}/key",
-            post(handle_account_device_key),
-        )
-        .route(
-            "/account/devices/{device}/remove",
-            post(handle_account_device_remove),
-        )
-        .route(
-            "/account/devices/{device}/enabled",
-            post(handle_account_device_enabled),
+            "/account/devices/{device}/name",
+            post(handle_account_device_name),
         )
         .route("/account/settings", post(handle_account_settings))
         .route(
@@ -309,12 +295,34 @@ async fn handle_remote_control_streamer(
     Path(key): Path<String>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    let Some(id) = api.accounts.device_of_key(&key) else {
+    let Some(page) = api.accounts.page_of_key(&key) else {
         api.counters.bump("moblinConnectionsFailed:unknown-key");
         return Err(StatusCode::NOT_FOUND);
     };
-    api.counters.bump("moblinConnections");
-    Ok(upgrade.on_upgrade(move |socket| async move { api.remote_control.serve(id, socket).await }))
+    Ok(upgrade.on_upgrade(move |mut socket| async move {
+        let device = match api.remote_control.identify(&mut socket).await {
+            Ok(Some(device)) => device,
+            Ok(None) => {
+                api.counters.bump("moblinConnectionsFailed:no-device-id");
+                remote_control::refuse(socket).await;
+                return;
+            }
+            Err(error) => {
+                info!("remote control streamer {page} failed to identify: {error:#}");
+                return;
+            }
+        };
+        let Some(connection) = api.remote_control.connect(&page, &device) else {
+            info!("remote control streamer {page} device {device} rejected, too many devices");
+            api.counters
+                .bump("moblinConnectionsFailed:too-many-devices");
+            remote_control::refuse(socket).await;
+            return;
+        };
+        api.accounts.seen_device(&page, &device);
+        api.counters.bump("moblinConnections");
+        api.remote_control.serve(connection, socket).await
+    }))
 }
 
 fn page_of(api: &Api, id: &str) -> Option<Page> {
@@ -322,15 +330,7 @@ fn page_of(api: &Api, id: &str) -> Option<Page> {
 }
 
 fn music_device(api: &Api, id: &str) -> String {
-    page_of(api, id)
-        .and_then(|page| page.music_device().map(|device| device.id.clone()))
-        .unwrap_or_default()
-}
-
-fn wheel_device(api: &Api, id: &str) -> String {
-    page_of(api, id)
-        .and_then(|page| page.wheel_device().map(|device| device.id.clone()))
-        .unwrap_or_default()
+    api.remote_control.music_device(id).unwrap_or_default()
 }
 
 #[derive(Serialize)]
@@ -368,17 +368,10 @@ struct SettingsResponse {
     image: Option<String>,
 }
 
-fn any_connected(api: &Api, account: &Account) -> bool {
-    account
-        .page
-        .enabled_devices()
-        .any(|device| api.remote_control.is_connected(&device.id))
-}
-
 fn settings_response(api: &Api, id: String, settings: Settings) -> Json<SettingsResponse> {
     let account = api.accounts.of_page(&id).unwrap_or_default();
     Json(SettingsResponse {
-        connected: any_connected(api, &account),
+        connected: api.remote_control.is_connected(&id),
         currency: settings.currency().to_string(),
         songs: settings.songs,
         tips: settings.tips,
@@ -760,11 +753,8 @@ async fn signed_in_redirect(
             api.auth.link_token(sign_in.identity)
         ));
     }
-    let Some(((key, page), new_id)) = api
-        .remote_control
-        .new_key()
-        .zip(api.remote_control.new_account_id())
-    else {
+    let (key, page) = api.remote_control.new_key();
+    let Some(new_id) = api.remote_control.new_account_id() else {
         warn!(
             "no page could be created for {} user {}",
             platform.title(),
@@ -772,15 +762,9 @@ async fn signed_in_redirect(
         );
         return failed(false);
     };
-    let device = Device {
-        id: page.clone(),
-        name: "Moblin".to_string(),
-        key,
-        enabled: true,
-    };
     let (id, account) = match api
         .accounts
-        .signed_in(identity, (new_id, Page::new(page, device)))
+        .signed_in(identity, (new_id, Page { id: page, key }))
     {
         Ok(signed_in) => signed_in,
         Err(error) => {
@@ -930,9 +914,8 @@ struct AccountResponse {
     avatar: Option<String>,
     twitch: Option<PublicIdentity>,
     kick: Option<PublicIdentity>,
+    key: Option<String>,
     devices: Vec<DeviceResponse>,
-    music_device: Option<String>,
-    wheel_device: Option<String>,
     settings: SettingsResponse,
     admin: bool,
     premium: bool,
@@ -1004,9 +987,15 @@ fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse> {
 struct DeviceResponse {
     id: String,
     name: String,
-    key: String,
-    enabled: bool,
-    connected: bool,
+    music: bool,
+    wheel: bool,
+}
+
+fn device_name(names: &HashMap<String, String>, device: &str) -> String {
+    names
+        .get(device)
+        .cloned()
+        .unwrap_or_else(|| "Moblin".to_string())
 }
 
 fn not_signed_in() -> (StatusCode, String) {
@@ -1074,19 +1063,20 @@ fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
         avatar: account.avatar().map(str::to_string),
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
-        devices: page
-            .devices
-            .iter()
-            .map(|device| DeviceResponse {
-                id: device.id.clone(),
-                name: device.name.clone(),
-                key: device.key.clone(),
-                enabled: device.enabled,
-                connected: api.remote_control.is_connected(&device.id),
-            })
-            .collect(),
-        music_device: page.music_device().map(|device| device.id.clone()),
-        wheel_device: page.wheel_device().map(|device| device.id.clone()),
+        key: Some(page.key.clone()),
+        devices: {
+            let names = api.accounts.device_names(&page.id);
+            api.remote_control
+                .devices(&page.id)
+                .into_iter()
+                .map(|device| DeviceResponse {
+                    name: device_name(&names, &device.id),
+                    id: device.id,
+                    music: device.music,
+                    wheel: device.wheel,
+                })
+                .collect()
+        },
         settings: settings_response(api, page.id.clone(), settings).0,
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),
@@ -1213,12 +1203,8 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
             StatusCode::SERVICE_UNAVAILABLE,
             "too many accounts".to_string(),
         ),
-        AccountError::TooManyDevices => {
-            (StatusCode::CONFLICT, "at most 5 Moblin devices".to_string())
-        }
-        AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
-        AccountError::DeviceOff => (StatusCode::CONFLICT, "the device is off".to_string()),
         AccountError::UnknownModerator => (StatusCode::NOT_FOUND, "no such moderator".to_string()),
+        AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
         AccountError::TooManyModerators => {
             (StatusCode::CONFLICT, "at most 50 moderators".to_string())
         }
@@ -1241,13 +1227,6 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
             "the account could not be saved".to_string(),
         ),
     }
-}
-
-fn new_key(api: &Api) -> Result<(String, String), (StatusCode, String)> {
-    api.remote_control.new_key().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "no streamer could be created".to_string(),
-    ))
 }
 
 #[derive(Serialize)]
@@ -1424,13 +1403,14 @@ fn recent(
         .recent(&page.id, &query.kind, query.before.as_deref(), limit + 1);
     let more = orders.len() > limit;
     orders.truncate(limit);
+    let names = api.accounts.device_names(&page.id);
     let items = orders
         .into_iter()
         .map(|(id, at, order)| {
             let delivery = api.deliveries.get(&id);
             let devices = delivery
                 .as_ref()
-                .map(|delivery| recent_devices(&page, &order.item, delivery));
+                .map(|delivery| recent_devices(api, &page, &names, &order.item, delivery));
             let tier = match order.payee {
                 Payee::Twitch(tier) => Some(tier),
                 _ => None,
@@ -1479,40 +1459,76 @@ fn recent(
     Ok(Json(RecentResponse { items, more }))
 }
 
-fn recent_devices(page: &Page, item: &Item, delivery: &deliveries::Delivery) -> Vec<RecentDevice> {
-    let target = match item {
-        Item::Song { .. } => page.music_device(),
-        Item::Spin { .. } => page.wheel_device(),
-        Item::Tip { .. } => None,
-    }
-    .map(|device| device.id.clone());
-    page.devices
+fn recent_devices(
+    api: &Api,
+    page: &Page,
+    names: &HashMap<String, String>,
+    item: &Item,
+    delivery: &deliveries::Delivery,
+) -> Vec<RecentDevice> {
+    let mut devices: Vec<(String, bool)> = delivery
+        .delivered
         .iter()
-        .filter_map(|device| {
-            let received = delivery.delivered.contains(&device.id);
-            let waiting = match item {
-                Item::Tip { .. } => device.enabled,
-                _ => target.as_ref() == Some(&device.id),
-            };
-            (received || (waiting && !delivery.finished)).then(|| RecentDevice {
-                name: device.name.clone(),
-                received,
-            })
+        .map(|device| (device.clone(), true))
+        .collect();
+    if !delivery.finished {
+        let waiting = match item {
+            Item::Song { .. } => api
+                .remote_control
+                .music_device(&page.id)
+                .into_iter()
+                .collect(),
+            Item::Spin { .. } => api
+                .remote_control
+                .wheel_device(&page.id)
+                .into_iter()
+                .collect(),
+            Item::Tip { .. } => api
+                .remote_control
+                .devices(&page.id)
+                .into_iter()
+                .map(|device| device.id)
+                .collect::<Vec<_>>(),
+        };
+        for device in waiting {
+            if !devices.iter().any(|(other, _)| *other == device) {
+                devices.push((device, false));
+            }
+        }
+    }
+    devices
+        .into_iter()
+        .map(|(device, received)| RecentDevice {
+            name: device_name(names, &device),
+            received,
         })
         .collect()
 }
 
+async fn handle_account_key(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?.id;
+    let (key, _) = api.remote_control.new_key();
+    let account = api.accounts.replace_key(&id, key).map_err(account_error)?;
+    api.remote_control.disconnect(&account.page.id);
+    info!("{id} got a new Moblin Cloud key");
+    Ok(account_response(&api, account))
+}
+
 #[derive(Deserialize)]
-struct DeviceRequest {
+struct DeviceNameRequest {
     name: String,
 }
 
-async fn handle_account_devices(
+async fn handle_account_device_name(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
-    Json(request): Json<DeviceRequest>,
+    Path(device): Path<String>,
+    Json(request): Json<DeviceNameRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     let name = request.name.trim();
     if name.is_empty() || name.chars().count() > 30 {
         return Err((
@@ -1520,99 +1536,10 @@ async fn handle_account_devices(
             "the name must be 1 to 30 characters".to_string(),
         ));
     }
-    let (key, _) = new_key(&api)?;
-    let device = api.remote_control.new_request_id().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "no device could be created".to_string(),
-    ))?;
-    let account = api
-        .accounts
-        .add_device(
-            &id,
-            Device {
-                id: device.clone(),
-                name: name.to_string(),
-                key,
-                enabled: true,
-            },
-        )
+    api.accounts
+        .rename_device(&account.page.id, &device, name)
         .map_err(account_error)?;
-    info!("{id} added Moblin device {device}");
-    Ok(account_response(&api, account))
-}
-
-#[derive(Deserialize)]
-struct ChooseDevicesRequest {
-    music: String,
-    wheel: String,
-}
-
-async fn handle_account_devices_choose(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    Json(request): Json<ChooseDevicesRequest>,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
-    let account = api
-        .accounts
-        .choose_devices(&id, request.music, request.wheel)
-        .map_err(account_error)?;
-    Ok(account_response(&api, account))
-}
-
-async fn handle_account_device_key(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    Path(device): Path<String>,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
-    let (key, _) = new_key(&api)?;
-    let account = api
-        .accounts
-        .replace_key(&id, &device, key)
-        .map_err(account_error)?;
-    api.remote_control.disconnect(&device);
-    info!("{id} got a new Moblin Cloud key for device {device}");
-    Ok(account_response(&api, account))
-}
-
-#[derive(Deserialize)]
-struct EnabledRequest {
-    enabled: bool,
-}
-
-async fn handle_account_device_enabled(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    Path(device): Path<String>,
-    Json(request): Json<EnabledRequest>,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
-    let account = api
-        .accounts
-        .enable_device(&id, &device, request.enabled)
-        .map_err(account_error)?;
-    api.deliveries.notify();
-    info!(
-        "{id} turned Moblin device {device} {}",
-        if request.enabled { "on" } else { "off" }
-    );
-    Ok(account_response(&api, account))
-}
-
-async fn handle_account_device_remove(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    Path(device): Path<String>,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
-    let account = api
-        .accounts
-        .remove_device(&id, &device)
-        .map_err(account_error)?;
-    api.deliveries.notify();
-    api.remote_control.disconnect(&device);
-    info!("{id} removed Moblin device {device}");
+    info!("{id} renamed Moblin device {device}");
     Ok(account_response(&api, account))
 }
 
@@ -1781,9 +1708,8 @@ async fn handle_moderator_account(
         kick: public_identity(&account, Platform::Kick),
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
+        key: None,
         devices: Vec::new(),
-        music_device: None,
-        wheel_device: None,
         settings: without_payments(settings_response(&api, id.clone(), settings)).0,
         admin: false,
         premium: streamer_is_premium(&api, &id),
@@ -2111,9 +2037,7 @@ async fn handle_account_delete(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let id = signed_in(&api, &headers)?.id;
     let account = api.accounts.delete(&id).map_err(account_error)?;
-    for device in &account.page.devices {
-        api.remote_control.disconnect(&device.id);
-    }
+    api.remote_control.disconnect(&account.page.id);
     info!("{id} deleted their account");
     Ok(StatusCode::NO_CONTENT)
 }
@@ -2357,8 +2281,8 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
             environment: api.paypal.as_ref().map(PayPal::environment),
             stripe,
         }),
-        wheel: api.remote_control.wheel(&wheel_device(&api, &id)),
-        connected: api.remote_control.is_connected(&wheel_device(&api, &id)),
+        wheel: api.remote_control.wheel(&id),
+        connected: api.remote_control.is_connected(&id),
     })
 }
 
@@ -2427,12 +2351,12 @@ async fn handle_queue(
     let device = music_device(&api, &id);
     let status = api
         .remote_control
-        .music(&device, MusicCommand::Status {})
+        .music((&id, &device), MusicCommand::Status {})
         .await
         .map_err(music_error)?;
     Ok(Json(QueueResponse {
         status,
-        song_requests: api.remote_control.takes_song_requests(&device),
+        song_requests: api.remote_control.takes_song_requests(&id),
     }))
 }
 
@@ -2473,9 +2397,7 @@ async fn requested_song(
     id: &str,
     (link, user): (String, String),
 ) -> Result<RequestedSong, Failure> {
-    let device = music_device(api, id);
-    if api.remote_control.is_connected(&device) && !api.remote_control.takes_song_requests(&device)
-    {
+    if api.remote_control.is_connected(id) && !api.remote_control.takes_song_requests(id) {
         return Err(failure(
             "requests-off",
             StatusCode::CONFLICT,
@@ -2484,7 +2406,7 @@ async fn requested_song(
     }
     let song = api
         .remote_control
-        .find(&device, link.clone())
+        .find((id, &music_device(api, id)), link.clone())
         .await
         .map_err(music_error)?
         .ok_or(failure(
@@ -3024,12 +2946,12 @@ async fn moderator_music(
     let device = music_device(api, id);
     let status = api
         .remote_control
-        .music_uncached(&device, command)
+        .music_uncached((id, &device), command)
         .await
         .map_err(music_error)?;
     Ok(Json(QueueResponse {
         status,
-        song_requests: api.remote_control.takes_song_requests(&device),
+        song_requests: api.remote_control.takes_song_requests(id),
     }))
 }
 
@@ -3309,20 +3231,19 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         }
         Stage::Created => {}
     }
-    let music = music_device(api, id);
-    let refusal = if kind == "song" && !api.remote_control.is_connected(&music) {
+    let refusal = if kind == "song" && !api.remote_control.is_connected(id) {
         Some((
             "offline",
             StatusCode::NOT_FOUND,
             "The streamer went offline, so your payment was not taken.",
         ))
-    } else if kind == "song" && !api.remote_control.takes_song_requests(&music) {
+    } else if kind == "song" && !api.remote_control.takes_song_requests(id) {
         Some((
             "requests-off",
             StatusCode::CONFLICT,
             "The streamer stopped taking song requests, so your payment was not taken.",
         ))
-    } else if kind == "spin" && api.remote_control.wheel(&wheel_device(api, id)).is_none() {
+    } else if kind == "spin" && api.remote_control.wheel(id).is_none() {
         Some((
             "no-wheel",
             StatusCode::NOT_FOUND,
@@ -3721,9 +3642,8 @@ async fn spin_order(
 }
 
 fn wheel_available(api: &Api, id: &str) -> Result<(), Failure> {
-    let device = wheel_device(api, id);
-    if api.remote_control.wheel(&device).is_none() {
-        return Err(if api.remote_control.is_connected(&device) {
+    if api.remote_control.wheel(id).is_none() {
+        return Err(if api.remote_control.is_connected(id) {
             failure(
                 "no-wheel",
                 StatusCode::CONFLICT,
@@ -3817,7 +3737,7 @@ async fn account_test_song(
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let (id, account, request_id) = test_page(api, headers, None)?;
-    if !api.remote_control.is_connected(&music_device(api, &id)) {
+    if !api.remote_control.is_connected(&id) {
         return Err(moblin_not_connected());
     }
     let message = viewer_message(request.message)?;
@@ -3902,9 +3822,8 @@ async fn account_test_spin(
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let (id, account, request_id) = test_page(api, headers, page)?;
-    let device = wheel_device(api, &id);
-    if api.remote_control.wheel(&device).is_none() {
-        return Err(if api.remote_control.is_connected(&device) {
+    if api.remote_control.wheel(&id).is_none() {
+        return Err(if api.remote_control.is_connected(&id) {
             failure(
                 "no-wheel",
                 StatusCode::CONFLICT,
@@ -4043,7 +3962,7 @@ mod tests {
         });
         tokio::spawn({
             let api = api.clone();
-            async move { api.deliveries.run(&api.remote_control, &api.accounts).await }
+            async move { api.deliveries.run(&api.remote_control).await }
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -4065,7 +3984,7 @@ mod tests {
         }
     }
 
-    async fn identify<S>(socket: &mut S)
+    async fn identify<S>(socket: &mut S, device: &str)
     where
         S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
             + SinkExt<Message>
@@ -4076,7 +3995,7 @@ mod tests {
         assert_eq!(hello["hello"]["apiVersion"], "0.1");
         socket
             .send(Message::text(
-                json!({"identify": {"streamerId": "A", "authentication": "x"}}).to_string(),
+                json!({"identify": {"streamerId": device, "authentication": "x"}}).to_string(),
             ))
             .await
             .unwrap();
@@ -4839,12 +4758,16 @@ mod tests {
     >;
 
     async fn connect(address: &str, key: &str) -> Socket {
+        connect_as(address, key, "A").await
+    }
+
+    async fn connect_as(address: &str, key: &str, device: &str) -> Socket {
         let (mut socket, _) = tokio_tungstenite::connect_async(format!(
             "ws://{address}/remote-control/streamer/{key}"
         ))
         .await
         .unwrap();
-        identify(&mut socket).await;
+        identify(&mut socket, device).await;
         socket
     }
 
@@ -4938,65 +4861,18 @@ mod tests {
             .unwrap();
         assert_eq!(moderated["items"][0]["id"], "ORDER1");
         assert!(moderated["items"][0].get("provider").is_none());
-        let devices_url = format!("http://{address}/account/devices");
-        let account: Value = client
-            .post(&devices_url)
-            .bearer_auth(&session)
-            .json(&json!({"name": "Backup"}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let main_name = account["devices"][0]["name"].clone();
-        let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
-        assert_eq!(
-            recent().await["items"][0]["devices"],
-            json!([
-                {"name": main_name, "received": false},
-                {"name": "Backup", "received": false},
-            ])
-        );
-        let key = api.accounts.get("1").unwrap().page.devices[0].key.clone();
+        assert_eq!(recent().await["items"][0]["devices"], json!([]));
+        let key = api.accounts.get("1").unwrap().page.key.clone();
         let mut socket = connect(&address, &key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], "ORDER1");
-        socket
-            .send(Message::text(
-                json!({"response": {"id": request["request"]["id"], "result": {"ok": {}}}})
-                    .to_string(),
-            ))
-            .await
-            .unwrap();
-        for _ in 0..100 {
-            if api.deliveries.get("ORDER1").unwrap().delivered.len() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        let tip = &recent().await["items"][0];
-        assert_eq!(tip["status"], "waiting");
-        assert_eq!(
-            tip["devices"],
-            json!([
-                {"name": main_name, "received": true},
-                {"name": "Backup", "received": false},
-            ])
-        );
-        let response = client
-            .post(format!("{devices_url}/{backup_id}/remove"))
-            .bearer_auth(&session)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
+        answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
         let tip = &recent().await["items"][0];
         assert_eq!(tip["status"], "delivered");
         assert_eq!(
             tip["devices"],
-            json!([{"name": main_name, "received": true}])
+            json!([{"name": "Moblin 1", "received": true}])
         );
         let response = client
             .get(format!("http://{address}/account/recent?kind=tip"))
@@ -5025,7 +4901,7 @@ mod tests {
         };
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let key = api.accounts.get("1").unwrap().page.devices[0].key.clone();
+        let key = api.accounts.get("1").unwrap().page.key.clone();
         let mut socket = connect(&address, &key).await;
         let acknowledge = async |socket: &mut Socket, request_id: &str| {
             let request = receive(socket).await;
@@ -5263,7 +5139,7 @@ mod tests {
             assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
             settle(&api, Duration::ZERO).await;
             assert_eq!(api.deliveries.pending().len(), 1, "{fault:?}");
-            let key = api.accounts.get("1").unwrap().page.devices[0].key.clone();
+            let key = api.accounts.get("1").unwrap().page.key.clone();
             let socket = connect(&address, &key).await;
             tip_delivered_once(socket, &address, &key, &api, currency).await;
             let recent: Value = client
@@ -5280,113 +5156,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tips_reach_every_device_but_stop_waiting_for_removed_ones() {
+    async fn tips_reach_every_device_but_stop_waiting_for_disconnected_ones() {
         let (address, api) = start_api(None).await;
-        let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
-        let devices_url = format!("http://{address}/account/devices");
-        let account: Value = client
-            .post(&devices_url)
-            .bearer_auth(&session)
-            .json(&json!({"name": "Backup"}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
-        for request_id in ["TIP1", "TIP2"] {
-            api.deliveries.add_test(
-                id.clone(),
-                request_id.to_string(),
-                deliveries::Item::Tip {
-                    user: "Viewer".to_string(),
-                    message: String::new(),
-                    amount: 500,
-                    currency: "USD".to_string(),
-                },
-            );
-        }
-        let mut main = connect(&address, &key).await;
-        for request_id in ["TIP1", "TIP2"] {
-            let request = receive(&mut main).await;
-            assert_eq!(request["request"]["data"]["tip"]["requestId"], request_id);
-            answer(&mut main, &request, Value::Null).await;
-        }
-        for _ in 0..100 {
-            if api
-                .deliveries
-                .pending()
-                .iter()
-                .all(|delivery| delivery.delivered == vec![id.clone()])
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        assert_eq!(api.deliveries.pending().len(), 2);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(200), receive(&mut main))
-                .await
-                .is_err()
-        );
-        let response = client
-            .post(format!("{devices_url}/{backup_id}/remove"))
-            .bearer_auth(&session)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        wait_until_added(&api).await;
-    }
-
-    #[tokio::test]
-    async fn nothing_is_sent_to_a_disabled_device() {
-        let (address, api) = start_api(None).await;
-        let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
-        let devices_url = format!("http://{address}/account/devices");
-        let account: Value = client
-            .post(&devices_url)
-            .bearer_auth(&session)
-            .json(&json!({"name": "Backup"}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
-        let backup_key = account["devices"][1]["key"].as_str().unwrap().to_string();
-        let response = client
-            .post(format!("{devices_url}/{backup_id}/enabled"))
-            .bearer_auth(&session)
-            .json(&json!({"enabled": false}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let account: Value = response.json().await.unwrap();
-        assert_eq!(account["devices"][1]["enabled"], false);
-        let response = client
-            .post(format!("{devices_url}/x/enabled"))
-            .bearer_auth(&session)
-            .json(&json!({"enabled": false}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let mut backup = connect(&address, &backup_key).await;
-        let settings: Value = client
-            .get(format!("http://{address}/pages/{id}/spin"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(settings["connected"], false);
+        let (_, key, id) = streamer(&address, &api).await;
+        let mut main = connect_as(&address, &key, "main").await;
+        let mut backup = connect_as(&address, &key, "backup").await;
         api.deliveries.add_test(
             id.clone(),
             "TIP1".to_string(),
@@ -5397,29 +5171,129 @@ mod tests {
                 currency: "USD".to_string(),
             },
         );
-        assert!(
-            tokio::time::timeout(Duration::from_millis(200), receive(&mut backup))
-                .await
-                .is_err()
-        );
-        let mut main = connect(&address, &key).await;
         let request = receive(&mut main).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
         answer(&mut main, &request, Value::Null).await;
+        let request = receive(&mut backup).await;
+        assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
+        for _ in 0..100 {
+            if api.deliveries.get("TIP1").unwrap().delivered == ["main"] {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(api.deliveries.pending().len(), 1);
+        backup.close(None).await.unwrap();
+        for _ in 0..100 {
+            if api.remote_control.devices(&id).len() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        api.deliveries.notify();
         wait_until_added(&api).await;
-        let response = client
-            .post(format!("{devices_url}/{backup_id}/enabled"))
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut main))
+                .await
+                .is_err()
+        );
+    }
+
+    async fn refused(address: &str, key: &str, identify: Value) {
+        let (mut socket, _) = tokio_tungstenite::connect_async(format!(
+            "ws://{address}/remote-control/streamer/{key}"
+        ))
+        .await
+        .unwrap();
+        assert_eq!(receive(&mut socket).await["hello"]["apiVersion"], "0.1");
+        socket
+            .send(Message::text(identify.to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            receive(&mut socket).await,
+            json!({"identified": {"result": {"error": {}}}})
+        );
+        assert!(matches!(
+            socket.next().await,
+            None | Some(Err(_)) | Some(Ok(Message::Close(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn up_to_5_devices_connect_with_one_key() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let mut sockets = Vec::new();
+        for device in ["a", "b", "c", "d", "e"] {
+            sockets.push(connect_as(&address, &key, device).await);
+        }
+        refused(
+            &address,
+            &key,
+            json!({"identify": {"streamerId": "f", "authentication": "x"}}),
+        )
+        .await;
+        refused(&address, &key, json!({"identify": {"authentication": "x"}})).await;
+        sockets.push(connect_as(&address, &key, "a").await);
+        let account: Value = client
+            .get(format!("http://{address}/account"))
             .bearer_auth(&session)
-            .json(&json!({"enabled": true}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["key"], key);
+        assert_eq!(
+            account["devices"],
+            json!([
+                {"id": "b", "name": "Moblin 2", "music": true, "wheel": false},
+                {"id": "c", "name": "Moblin 3", "music": false, "wheel": false},
+                {"id": "d", "name": "Moblin 4", "music": false, "wheel": false},
+                {"id": "e", "name": "Moblin 5", "music": false, "wheel": false},
+                {"id": "a", "name": "Moblin 1", "music": false, "wheel": false},
+            ])
+        );
+        assert_eq!(api.remote_control.connected_count(), 5);
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map(|counter| counter.total)
+        };
+        assert_eq!(count("moblinConnections"), Some(6));
+        assert_eq!(count("moblinConnectionsFailed:too-many-devices"), Some(1));
+        assert_eq!(count("moblinConnectionsFailed:no-device-id"), Some(1));
+        let rename = |device: &str, name: &str| {
+            client
+                .post(format!("http://{address}/account/devices/{device}/name"))
+                .bearer_auth(&session)
+                .json(&json!({"name": name}))
+                .send()
+        };
+        let response = rename("x", "Backup").await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let response = rename("b", &"x".repeat(31)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let account: Value = rename("b", " Backup ").await.unwrap().json().await.unwrap();
+        assert_eq!(account["devices"][0]["name"], "Backup");
+        let response = rename("b", " ").await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = client
+            .post(format!("http://{address}/account/key"))
+            .bearer_auth(&session)
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(200), receive(&mut backup))
-                .await
-                .is_err()
-        );
+        let account: Value = response.json().await.unwrap();
+        assert_ne!(account["key"], key);
+        assert_eq!(account["devices"], json!([]));
+        assert!(!api.remote_control.is_connected(&id));
     }
 
     #[tokio::test]
@@ -5769,23 +5643,14 @@ mod tests {
         assert_eq!(song["message"], "Play it loud!");
         assert_eq!(song["amount"], 250);
         assert_eq!(song["status"], "notAdded");
-        let device = api.accounts.of_page(&id).unwrap().page.devices[0]
-            .name
-            .clone();
-        assert_eq!(
-            song["devices"],
-            json!([{"name": device, "received": false}])
-        );
+        assert_eq!(song["devices"], json!([]));
         let listed: Value = recent("kind=spin".to_string()).await.json().await.unwrap();
         assert_eq!(listed["items"].as_array().unwrap().len(), 1);
         let spin = &listed["items"][0];
         assert_eq!(spin["spins"], 2);
         assert_eq!(spin["message"], "Go!");
         assert_eq!(spin["status"], "waiting");
-        assert_eq!(
-            spin["devices"],
-            json!([{"name": device, "received": false}])
-        );
+        assert_eq!(spin["devices"], json!([]));
         api.orders
             .insert(
                 "OTHER",
@@ -5954,21 +5819,15 @@ mod tests {
     }
 
     fn key_of(account: &Value) -> String {
-        account["devices"][0]["key"].as_str().unwrap().to_string()
+        account["key"].as_str().unwrap().to_string()
     }
 
     fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Account {
-        let (key, page) = api.remote_control.new_key().unwrap();
-        let device = Device {
-            id: page.clone(),
-            name: "Moblin".to_string(),
-            key,
-            enabled: true,
-        };
+        let (key, page) = api.remote_control.new_key();
         api.accounts
             .signed_in(
                 &twitch_identity(id, name, login),
-                (id.to_string(), Page::new(page, device)),
+                (id.to_string(), Page { id: page, key }),
             )
             .unwrap()
             .1
@@ -5996,7 +5855,7 @@ mod tests {
         let account = create_account(api, "1", "Erik", "erik");
         (
             api.auth.session("1", 0),
-            account.page.devices[0].key.clone(),
+            account.page.key.clone(),
             account.page.id,
         )
     }
@@ -6961,69 +6820,50 @@ mod tests {
         assert_eq!(add["message"], "Testing");
     }
 
+    async fn send_event(socket: &mut Socket, event: Value) {
+        socket
+            .send(Message::text(json!({"event": {"data": event}}).to_string()))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(socket).await, json!({"pong": {}}));
+    }
+
     #[tokio::test]
-    async fn devices_take_music_and_wheel_as_chosen_and_all_get_tips() {
+    async fn songs_and_spins_go_to_the_first_device_taking_them_and_tips_to_all() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
-        let devices_url = format!("http://{address}/account/devices");
-        let response = client
-            .post(&devices_url)
-            .bearer_auth(&session)
-            .json(&json!({"name": " "}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let mut main = connect_as(&address, &key, "main").await;
+        let mut other = connect_as(&address, &key, "other").await;
+        send_event(&mut main, json!({"songRequests": {"enabled": false}})).await;
+        send_event(
+            &mut other,
+            json!({"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}),
+        )
+        .await;
         let account: Value = client
-            .post(&devices_url)
+            .get(format!("http://{address}/account"))
             .bearer_auth(&session)
-            .json(&json!({"name": " Backup "}))
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        let backup = account["devices"][1].clone();
-        assert_eq!(backup["name"], "Backup");
-        assert_eq!(account["musicDevice"], id);
-        let backup_id = backup["id"].as_str().unwrap().to_string();
-        let account: Value = client
-            .post(format!("{devices_url}/choose"))
-            .bearer_auth(&session)
-            .json(&json!({"music": backup_id, "wheel": id}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(account["musicDevice"], backup_id);
-        assert_eq!(account["wheelDevice"], id);
-        let mut main = connect(&address, &key).await;
-        let mut other = connect(&address, backup["key"].as_str().unwrap()).await;
-        main.send(Message::text(
-            json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})
-                .to_string(),
-        ))
-        .await
-        .unwrap();
-        other
-            .send(Message::text(
-                json!({"event": {"data": {"songRequests": {"enabled": false}}}}).to_string(),
-            ))
-            .await
-            .unwrap();
-        for socket in [&mut main, &mut other] {
-            socket
-                .send(Message::text(json!({"ping": {}}).to_string()))
-                .await
-                .unwrap();
-            assert_eq!(receive(socket).await, json!({"pong": {}}));
-        }
+        assert_eq!(
+            account["devices"],
+            json!([
+                {"id": "main", "name": "Moblin 1", "music": false, "wheel": false},
+                {"id": "other", "name": "Moblin 2", "music": true, "wheel": true},
+            ])
+        );
+        let spin_url = format!("http://{address}/pages/{id}/spin");
         let spin: Value = client
-            .get(format!("http://{address}/pages/{id}/spin"))
+            .get(&spin_url)
             .send()
             .await
             .unwrap()
@@ -7031,20 +6871,26 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(spin["wheel"]["options"][0]["text"], "A");
-        let queue = tokio::spawn({
-            let url = format!("http://{address}/pages/{id}/songs/queue");
-            async move {
+        let queue_url = format!("http://{address}/pages/{id}/songs/queue");
+        let queue = |url: String| {
+            tokio::spawn(async move {
                 reqwest::get(url)
                     .await
                     .unwrap()
                     .json::<Value>()
                     .await
                     .unwrap()
-            }
-        });
+            })
+        };
+        let status = queue(queue_url.clone());
         let request = receive(&mut other).await;
         answer(&mut other, &request, music(json!([]))).await;
-        assert_eq!(queue.await.unwrap()["songRequests"], false);
+        assert_eq!(status.await.unwrap()["songRequests"], true);
+        send_event(&mut other, json!({"songRequests": {"enabled": false}})).await;
+        let status = queue(queue_url.clone());
+        let request = receive(&mut main).await;
+        answer(&mut main, &request, music(json!([]))).await;
+        assert_eq!(status.await.unwrap()["songRequests"], false);
         api.deliveries.add_test(
             id.clone(),
             "TIP1".to_string(),
@@ -7061,18 +6907,23 @@ mod tests {
             answer(socket, &request, Value::Null).await;
         }
         wait_until_added(&api).await;
-        let account: Value = client
-            .post(format!("{devices_url}/{backup_id}/remove"))
-            .bearer_auth(&session)
+        other.close(None).await.unwrap();
+        for _ in 0..100 {
+            if api.remote_control.devices(&id).len() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let spin: Value = client
+            .get(&spin_url)
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(account["devices"].as_array().unwrap().len(), 1);
-        assert_eq!(account["musicDevice"], id);
-        assert!(!api.remote_control.is_connected(&backup_id));
+        assert_eq!(spin["wheel"], Value::Null);
+        assert_eq!(spin["connected"], true);
     }
 
     #[tokio::test]
@@ -8063,7 +7914,7 @@ mod tests {
             .unwrap();
         let key = key_of(&account);
         let page = account["settings"]["id"].as_str().unwrap();
-        assert_eq!(remote_control::id_of(&key).as_deref(), Some(page));
+        assert_eq!(remote_control::id_of(&key), page);
         assert_eq!(account["name"], "Erik");
         assert_eq!(account["avatar"], "https://static-cdn.jtvnw.net/erik.png");
         assert_eq!(
@@ -8071,13 +7922,7 @@ mod tests {
             json!({"login": "erik", "name": "Erik", "avatar": "https://static-cdn.jtvnw.net/erik.png"})
         );
         assert_eq!(account["kick"], Value::Null);
-        assert_eq!(account["devices"][0]["id"], page);
-        assert_eq!(account["devices"][0]["name"], "Moblin");
-        assert_eq!(account["devices"][0]["enabled"], true);
-        assert_eq!(account["devices"][0]["connected"], false);
-        assert_eq!(account["devices"].as_array().unwrap().len(), 1);
-        assert_eq!(account["musicDevice"], page);
-        assert_eq!(account["wheelDevice"], page);
+        assert_eq!(account["devices"], json!([]));
         assert_eq!(account["admin"], false);
         assert_eq!(account["premium"], false);
         assert_eq!(
@@ -9207,11 +9052,10 @@ mod tests {
         database
             .lock()
             .execute_batch(
-                "INSERT INTO accounts (id, page_id, sessions) VALUES
-                     ('0123456789abcdef0123456789abcdef', 'oldpage', 3);
+                "INSERT INTO accounts (id, page_id, moblin_key, sessions) VALUES
+                     ('0123456789abcdef0123456789abcdef', 'oldpage', 'k', 3);
                  INSERT INTO identities (platform, user_id, account, login, name) VALUES
                      ('twitch', '42', '0123456789abcdef0123456789abcdef', 'erik', 'Old Erik');
-                 INSERT INTO devices (key, account, id, name, position) VALUES ('k', '0123456789abcdef0123456789abcdef', 'oldpage', 'Moblin', 0);
                  INSERT INTO pages (id, settings) VALUES ('oldpage', '{\"message\":\"Old\"}');
                  INSERT INTO twitch_moderators (broadcaster, moderator, login, name) VALUES ('7', '42', 'erik', 'Erik');",
             )
@@ -9298,7 +9142,7 @@ mod tests {
         let mut socket = connect(&address, &key).await;
         assert!(api.remote_control.is_connected(&id));
         let account: Value = reqwest::Client::new()
-            .post(format!("http://{address}/account/devices/{id}/key"))
+            .post(format!("http://{address}/account/key"))
             .bearer_auth(&session)
             .send()
             .await
@@ -9424,7 +9268,7 @@ mod tests {
                 .page_of_login(Platform::Twitch, "erik")
                 .is_none()
         );
-        assert!(api.accounts.device_of_key(&key).is_none());
+        assert!(api.accounts.page_of_key(&key).is_none());
         assert!(api.accounts.moderators(Platform::Twitch, "21").is_empty());
         assert!(api.accounts.moderated(Platform::Twitch, "21").is_empty());
         assert_eq!(api.accounts.get("21").unwrap(), moderator);
@@ -9739,11 +9583,8 @@ mod tests {
         let client = reqwest::Client::new();
         for (method, path) in [
             ("GET", "/account"),
-            ("POST", "/account/devices"),
-            ("POST", "/account/devices/choose"),
-            ("POST", "/account/devices/d/key"),
-            ("POST", "/account/devices/d/remove"),
-            ("POST", "/account/devices/d/enabled"),
+            ("POST", "/account/key"),
+            ("POST", "/account/devices/d/name"),
             ("POST", "/account/settings"),
             ("POST", "/account/paypal/connect"),
             ("POST", "/account/paypal/check"),
@@ -9771,7 +9612,7 @@ mod tests {
                 );
             }
         }
-        let (unknown_key, _) = api.remote_control.new_key().unwrap();
+        let (unknown_key, _) = api.remote_control.new_key();
         assert!(
             tokio_tungstenite::connect_async(format!(
                 "ws://{address}/remote-control/streamer/{unknown_key}"
@@ -10328,6 +10169,7 @@ mod tests {
         assert_eq!(account["name"], "Erik");
         assert_eq!(account["twitch"]["login"], "erik");
         assert_eq!(account["kick"], Value::Null);
+        assert_eq!(account["key"], Value::Null);
         assert_eq!(account["devices"], json!([]));
         assert_eq!(account["admin"], false);
         assert_eq!(account["premium"], false);

@@ -136,20 +136,11 @@ class Dashboard(Client):
     def account(self) -> dict:
         return self.get("/account")
 
-    def add_device(self, name: str) -> dict:
-        return self.post("/account/devices", {"name": name})
+    def new_moblin_cloud_key(self) -> dict:
+        return self.post("/account/key")
 
-    def choose_devices(self, music: str, wheel: str) -> dict:
-        return self.post("/account/devices/choose", {"music": music, "wheel": wheel})
-
-    def new_moblin_cloud_key(self, device: str | None = None) -> dict:
-        return self.post(f"/account/devices/{device or self.device_id()}/key")
-
-    def remove_device(self, device: str) -> dict:
-        return self.post(f"/account/devices/{device}/remove")
-
-    def enable_device(self, device: str, enabled: bool) -> dict:
-        return self.post(f"/account/devices/{device}/enabled", {"enabled": enabled})
+    def rename_device(self, device: str, name: str) -> dict:
+        return self.post(f"/account/devices/{device}/name", {"name": name})
 
     def save_settings(
         self,
@@ -298,11 +289,8 @@ class Dashboard(Client):
     def page_id(self) -> str:
         return self.account()["settings"]["id"]
 
-    def device_id(self) -> str:
-        return self.account()["devices"][0]["id"]
-
     def moblin_cloud_key(self) -> str:
-        return self.account()["devices"][0]["key"]
+        return self.account()["key"]
 
 
 class Viewer(Client):

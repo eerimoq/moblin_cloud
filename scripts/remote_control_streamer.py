@@ -5,7 +5,7 @@ import asyncio
 import base64
 import hashlib
 import json
-import secrets
+import uuid
 
 import websockets
 
@@ -115,7 +115,7 @@ def main():
     )
     parser.add_argument("key", nargs="?", help="Moblin Cloud key. A new one is made up if not given.")
     args = parser.parse_args()
-    key = args.key or base64url(secrets.token_bytes(32))
+    key = args.key or str(uuid.uuid4())
     print(f"Moblin Cloud key: {key}")
     print(f"Page: http://localhost:5173/page/?streamer={id_of(key)}")
     print("Songs with the id 404 are not found.")
