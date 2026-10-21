@@ -2966,7 +2966,7 @@ function Preview(props: { failed: boolean }) {
         </div>
         <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 px-6 pb-10 text-center">
           <p class="text-lg font-semibold text-balance">
-            {t("Sign in with Twitch or Kick to create or manage your tip page.")}
+            {t("Sign in to create or manage your tip page.")}
           </p>
           <div class="flex flex-wrap justify-center gap-3">
             <PlatformSignIn platform="twitch" large>
