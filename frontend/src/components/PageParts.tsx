@@ -62,7 +62,7 @@ export function CloudHeader(props: { children?: JSX.Element }) {
       <div class="mx-auto flex min-h-16 max-w-[1120px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-2.5 sm:px-8 lg:min-h-18">
         <a href={asset(pages.dashboard)} class="flex shrink-0 items-center gap-3">
           <img src={asset("logos/logo-default.png")} alt="" class="h-9 w-auto" />
-          <span class="font-display text-2xl font-bold">Moblin Cloud</span>
+          <span class="font-display text-2xl font-bold max-sm:sr-only">Moblin Cloud</span>
         </a>
         {props.children}
       </div>
