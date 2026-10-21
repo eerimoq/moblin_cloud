@@ -51,16 +51,18 @@ frontend-run:
 	npm run dev
 
 # Runs the backend and fills it with a few streamers, for developing the website.
-# Signing in goes through the fake Twitch in tests/utils/fake_twitch.py, which signs in as any made-up
-# user, each with its own account: admin is an admin, premium a premium account, normal neither.
+# Signing in goes through the fake Twitch in tests/utils/fake_twitch.py and the fake Kick in
+# tests/utils/fake_kick.py, which sign in as any made-up user, each with its own account until
+# linked: admin is an admin, premium a premium account, normal neither, on both.
 backend-run *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	python3 -m tests.utils.fake_twitch --port 8081 &
+	python3 -m tests.utils.fake_kick --port 8082 &
 	trap 'kill $(jobs -p)' EXIT
 	cd backend
 	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --admins fake-admin --premium-accounts fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
+	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins fake-admin,kick:fake-admin --premium-accounts fake-premium,kick:fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	just backend-seed
 	wait

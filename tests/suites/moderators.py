@@ -98,9 +98,9 @@ class ModeratorsTurnedOn(ModeratorsTestCase):
             [
                 {
                     "id": self.page_id,
-                    "name": streamer["name"],
-                    "login": streamer["login"],
-                    "avatar": streamer["avatar"],
+                    "name": streamer["twitch"]["name"],
+                    "login": streamer["twitch"]["login"],
+                    "avatar": streamer["twitch"]["avatar"],
                 }
             ],
         )
@@ -201,12 +201,12 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
         self.assert_equal(
             [
                 account["name"],
-                account["login"],
+                account["twitch"],
                 account["devices"],
                 account["moderators"],
                 account["moderating"],
             ],
-            [own["name"], own["login"], [], [], []],
+            [own["name"], own["twitch"], [], [], []],
         )
         self.assert_equal([account["admin"], account["premium"]], [False, own["premium"]])
         settings = account["settings"]

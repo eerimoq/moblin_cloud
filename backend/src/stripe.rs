@@ -73,7 +73,12 @@ impl Stripe {
             .header("Stripe-Account", account)
     }
 
-    pub async fn create_account(&self, user: &str, name: &str, country: &str) -> Result<String> {
+    pub async fn create_account(
+        &self,
+        user: (&str, &str),
+        name: &str,
+        country: &str,
+    ) -> Result<String> {
         #[derive(Deserialize)]
         struct Body {
             id: String,
@@ -91,7 +96,7 @@ impl Stripe {
                 "configuration": {"merchant": {"capabilities": {
                     "card_payments": {"requested": true},
                 }}},
-                "metadata": {"twitch_user_id": user},
+                "metadata": {user.0: user.1},
             }))
             .send()
             .await

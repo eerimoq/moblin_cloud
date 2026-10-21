@@ -1,6 +1,13 @@
 import { createSignal, onMount } from "solid-js";
 import { BackendError, backendUrl, call, post } from "./backend";
-import { type MusicCommand, type MusicStatus, type Page, type Settings } from "./remoteControl";
+import {
+  type Identity,
+  type MusicCommand,
+  type MusicStatus,
+  type Page,
+  type Platform,
+  type Settings,
+} from "./remoteControl";
 
 export type Device = {
   id: string;
@@ -12,8 +19,9 @@ export type Device = {
 
 export type Account = {
   name: string;
-  login: string;
   avatar: string | null;
+  twitch: Identity | null;
+  kick: Identity | null;
   devices: Device[];
   musicDevice: string | null;
   wheelDevice: string | null;
@@ -64,7 +72,13 @@ export type AdminStats = {
     started: number;
     now: number;
     memory: number | null;
-    integrations: { twitch: boolean; appAttest: boolean; paypal: boolean; stripe: boolean };
+    integrations: {
+      twitch: boolean;
+      kick: boolean;
+      appAttest: boolean;
+      paypal: boolean;
+      stripe: boolean;
+    };
   };
   accounts: { total: number; paypal: number; stripe: number; premium: number };
   moblin: { connectedDevices: number };
@@ -93,22 +107,39 @@ export function saveSession(session: string | null) {
   } catch {}
 }
 
-export function takeSignInResult(): { session: string | null; failed: boolean } {
+export function takeSignInResult(): {
+  session: string | null;
+  failed: boolean;
+  link: string | null;
+  linkFailed: boolean;
+} {
   const hash = location.hash.slice(1);
-  const session = new URLSearchParams(hash).get("session");
+  const params = new URLSearchParams(hash);
+  const session = params.get("session");
+  const link = params.get("link");
   const failed = hash === "signInFailed";
-  if (session || failed) {
-    history.replaceState(null, "", location.pathname + location.search);
+  const linkFailed = hash === "linkFailed";
+  if (session || failed || link || linkFailed) {
+    history.replaceState(
+      null,
+      "",
+      `${location.pathname}${location.search}${link || linkFailed ? "#linked" : ""}`,
+    );
   }
-  return { session, failed };
+  return { session, failed, link, linkFailed };
 }
 
-export const signInUrl = `${backendUrl}/auth/twitch/login`;
+export const signInUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/login`;
+
+export const linkUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/login?link=1`;
+
+export type LinkResult = { linked: true } | { linked: false; error: string | null };
 
 export function createAccountSession() {
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [signInFailed, setSignInFailed] = createSignal(false);
+  const [linkResult, setLinkResult] = createSignal<LinkResult | null>(null);
 
   onMount(async () => {
     const result = takeSignInResult();
@@ -116,10 +147,25 @@ export function createAccountSession() {
       saveSession(result.session);
     }
     setSignInFailed(result.failed);
+    if (result.linkFailed) {
+      setLinkResult({ linked: false, error: null });
+    }
     const stored = readSession();
     if (stored) {
       try {
-        setSession({ session: stored, account: await fetchAccount(stored) });
+        let account = await fetchAccount(stored);
+        if (result.link) {
+          try {
+            account = await linkAccount(stored, result.link);
+            setLinkResult({ linked: true });
+          } catch (error) {
+            setLinkResult({
+              linked: false,
+              error: error instanceof BackendError && error.message ? error.message : null,
+            });
+          }
+        }
+        setSession({ session: stored, account });
       } catch (error) {
         if (error instanceof BackendError && error.status === 401) {
           saveSession(null);
@@ -144,7 +190,7 @@ export function createAccountSession() {
     signOut();
   };
 
-  return { session, loading, signInFailed, signOut, signOutAll };
+  return { session, loading, signInFailed, linkResult, signOut, signOutAll };
 }
 
 const accountPath = (page?: string) =>
@@ -182,6 +228,12 @@ export const moderateMusic = (
 
 export const addModeratorSong = (session: string, page: string, song: string, message: string) =>
   call<object>(`${accountPath(page)}/songs`, session, post({ song, message: message || null }));
+
+export const linkAccount = (session: string, token: string) =>
+  call<Account>("/account/link", session, post({ token }));
+
+export const unlinkAccount = (session: string, platform: Platform) =>
+  call<Account>(`/account/unlink/${platform}`, session, post());
 
 export const signOutEverywhere = (session: string) =>
   call<void>("/account/sign-out", session, post());

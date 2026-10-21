@@ -36,7 +36,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use crate::accounts::Accounts;
 use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
-use crate::auth::{Auth, OAuthApp};
+use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::challenges::Challenges;
 use crate::counters::Counters;
 use crate::database::Database;
@@ -83,6 +83,17 @@ struct Cli {
         requires = "twitch_client_id"
     )]
     twitch_client_secret: Option<String>,
+    /// Kick application client ID.
+    #[arg(long, env = "KICK_CLIENT_ID", requires = "kick_client_secret")]
+    kick_client_id: Option<String>,
+    /// Kick application client secret.
+    #[arg(
+        long,
+        env = "KICK_CLIENT_SECRET",
+        hide_env_values = true,
+        requires = "kick_client_id"
+    )]
+    kick_client_secret: Option<String>,
     /// Twitch channel whose live status the website shows.
     #[arg(long, env = "TWITCH_LIVE_CHANNEL", default_value = "eerimoq")]
     twitch_live_channel: String,
@@ -149,10 +160,14 @@ struct Cli {
     /// fake Twitch in development and tests. No client ID and secret are needed to sign in then.
     #[arg(long, value_name = "URL")]
     twitch_sign_in_url: Option<String>,
-    /// Twitch user IDs allowed to see the admin page.
+    /// Base URL of the OAuth and API endpoints to sign in with instead of Kick's, for a fake
+    /// Kick in development and tests. No client ID and secret are needed to sign in then.
+    #[arg(long, value_name = "URL")]
+    kick_sign_in_url: Option<String>,
+    /// Twitch user IDs, or kick:<Kick user ID>, allowed to see the admin page.
     #[arg(long, env = "ADMINS", value_delimiter = ',')]
     admins: Vec<String>,
-    /// Twitch user IDs of the premium accounts, which get the premium features.
+    /// Twitch user IDs, or kick:<Kick user ID>, of the premium accounts, which get the premium features.
     #[arg(long, env = "PREMIUM_ACCOUNTS", value_delimiter = ',')]
     premium_accounts: Vec<String>,
 }
@@ -197,6 +212,28 @@ async fn main() -> Result<()> {
             None
         }
     };
+    let kick_app = match (
+        cli.kick_client_id,
+        cli.kick_client_secret,
+        &cli.kick_sign_in_url,
+    ) {
+        (client_id, client_secret, Some(url)) => {
+            warn!("signing in with {url} instead of Kick");
+            Some(KickApp::at(
+                url,
+                url,
+                client_id.unwrap_or_default(),
+                client_secret.unwrap_or_default(),
+            ))
+        }
+        (Some(client_id), Some(client_secret), None) => {
+            Some(KickApp::kick(client_id, client_secret))
+        }
+        _ => {
+            warn!("no Kick client ID and secret, not signing in with Kick");
+            None
+        }
+    };
     if cli.session_secret.is_none() {
         warn!("no session secret, signing everyone out on restart");
     }
@@ -205,6 +242,7 @@ async fn main() -> Result<()> {
         cli.public_url,
         cli.frontend_url,
         twitch_app,
+        kick_app,
         cli.session_secret.as_deref(),
     )?;
     if cli.database.is_none() {

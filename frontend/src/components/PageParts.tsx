@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "soli
 import { asset } from "../asset";
 import { signInUrl } from "../data/account";
 import { pages } from "../data/links";
+import { type Platform, platformNames } from "../data/remoteControl";
 import CopyButton from "./CopyButton";
 import Icon, { type IconName } from "./Icon";
 import { t } from "../i18n";
@@ -33,14 +34,27 @@ export function Notice(props: { status?: boolean; error?: boolean; children: JSX
   );
 }
 
-export function TwitchSignIn(props: { children: JSX.Element }) {
+export const platformButtonClass = (platform: Platform) =>
+  platform === "twitch"
+    ? "bg-twitch text-white hover:bg-twitch-bright"
+    : "bg-kick text-black hover:bg-kick-bright";
+
+export function PlatformSignIn(props: {
+  platform: Platform;
+  href?: string;
+  large?: boolean;
+  children?: JSX.Element;
+}) {
   return (
     <a
-      href={signInUrl}
-      class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
+      href={props.href ?? signInUrl(props.platform)}
+      aria-label={t("Sign in with {platform}", { platform: platformNames[props.platform] })}
+      class={`inline-flex items-center justify-center rounded-full font-display font-semibold whitespace-nowrap transition-colors ${
+        props.large ? "h-13 gap-2.5 px-6 text-lg" : "h-11 gap-2 px-5 text-base"
+      } ${platformButtonClass(props.platform)}`}
     >
-      <Icon name="twitch" class="size-5" />
-      {props.children}
+      <Icon name={props.platform} class="size-5" />
+      {props.children ?? platformNames[props.platform]}
     </a>
   );
 }

@@ -3,6 +3,7 @@ import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
 import { poll } from "../poll";
+import BrandIcon from "../components/BrandIcon";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
 import { createRecent, Latest } from "../components/Latest";
@@ -17,9 +18,9 @@ import {
   Hero,
   inputClass,
   Notice,
+  PlatformSignIn,
   SaveButton,
   Spinner,
-  TwitchSignIn,
   Value,
 } from "../components/PageParts";
 import {
@@ -40,15 +41,17 @@ import {
   enableDevice,
   fetchAccount,
   fetchRecent,
+  linkUrl,
+  type LinkResult,
   newDeviceKey,
   removeDevice,
   removeImage,
   saveAccountSettings,
   resendRecent,
   sendTest,
-  signInUrl,
   deleteAccount,
   stripeCountries,
+  unlinkAccount,
   uploadImage,
   type Account,
   type Device,
@@ -61,6 +64,7 @@ import { links, pages } from "../data/links";
 import {
   accentAttributes,
   accents,
+  channelText,
   currencies,
   fonts,
   hundredths,
@@ -69,6 +73,9 @@ import {
   loadFonts,
   musicStatus,
   pageImageUrl,
+  type Platform,
+  platformNames,
+  platforms,
   tierCount,
   tierNumbers,
   type Feature,
@@ -99,8 +106,14 @@ const fontNames: Record<string, string> = {
   pixel: t("Pixel"),
 };
 
-const pageUrl = (account: Account) =>
-  new URL(asset(`/twitch/${encodeURIComponent(account.login)}`), location.origin).href;
+const pageUrl = (platform: Platform, login: string) =>
+  new URL(asset(`/${platform}/${encodeURIComponent(login)}`), location.origin).href;
+
+const pageUrls = (account: Account) =>
+  platforms.flatMap((platform) => {
+    const identity = account[platform];
+    return identity ? [{ platform, url: pageUrl(platform, identity.login) }] : [];
+  });
 
 const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
 
@@ -169,9 +182,15 @@ const forbidden = (error: unknown) => error instanceof BackendError && error.sta
 
 function SignInAgain() {
   return (
-    <a href={signInUrl} class={ghostButtonClass}>
-      {t("Sign in again")}
-    </a>
+    <span class="flex flex-wrap gap-3">
+      <For each={platforms}>
+        {(platform) => (
+          <PlatformSignIn platform={platform} large>
+            {t("Sign in again")}
+          </PlatformSignIn>
+        )}
+      </For>
+    </span>
   );
 }
 
@@ -715,19 +734,33 @@ function YourPage(props: {
           "Share it with your viewers so they can send you tips, request songs and spin your wheel.",
         )}
       </p>
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div class="min-w-0 flex-1">
-          <Value label={t("Address")} text={pageUrl(props.account)} href={pageUrl(props.account)} />
-        </div>
-        <a
-          href={pageUrl(props.account)}
-          target="_blank"
-          rel="noopener"
-          class={`${ghostButtonClass} shrink-0`}
-        >
-          {t("Open tip page")}
-        </a>
-      </div>
+      <For each={pageUrls(props.account)}>
+        {(address) => (
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="min-w-0 flex-1">
+              <Value
+                label={
+                  pageUrls(props.account).length > 1
+                    ? t("Address for {platform} viewers", {
+                        platform: platformNames[address.platform],
+                      })
+                    : t("Address")
+                }
+                text={address.url}
+                href={address.url}
+              />
+            </div>
+            <a
+              href={address.url}
+              target="_blank"
+              rel="noopener"
+              class={`${ghostButtonClass} shrink-0`}
+            >
+              {t("Open tip page")}
+            </a>
+          </div>
+        )}
+      </For>
       <Show when={props.account.premium}>
         <BannerImage settings={props.page} busy={props.busy} onImage={props.onImage} />
       </Show>
@@ -1155,6 +1188,98 @@ const moderationErrorText = (error: unknown) =>
     ? error.message
     : t("Something went wrong. Try again.");
 
+const linkResultText = (result: LinkResult) =>
+  result.linked ? t("Linked.") : (result.error ?? t("Linking did not work. Try again."));
+
+function LinkedAccounts(props: {
+  session: string;
+  account: Account;
+  result: LinkResult | null;
+  preview?: boolean;
+  onAccount: (account: Account) => void;
+  onSignOut: () => void;
+}) {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const linked = () => platforms.filter((platform) => props.account[platform] !== null);
+  const unlink = async (platform: Platform) => {
+    if (props.preview) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      props.onAccount(await unlinkAccount(props.session, platform));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setError(moderationErrorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section class={cardClass}>
+      <h2 class="text-[23px] font-semibold">{t("Linked accounts")}</h2>
+      <p class="text-ink-2">
+        {t(
+          "Sign in with any linked account to get this dashboard. Your tip page gets an address for each of them.",
+        )}
+      </p>
+      <Show when={props.result}>
+        {(result) => (
+          <Notice status={result().linked} error={!result().linked}>
+            {linkResultText(result())}
+          </Notice>
+        )}
+      </Show>
+      <Show when={error()}>{(error) => <Notice error>{error()}</Notice>}</Show>
+      <ul class="flex flex-col gap-3">
+        <For each={platforms}>
+          {(platform) => (
+            <li class="flex items-center gap-3 rounded-2xl border-[1.5px] border-line bg-well px-4 py-3">
+              <BrandIcon name={platform} class="size-9" />
+              <div class="min-w-0 flex-1">
+                <div class="font-semibold">{platformNames[platform]}</div>
+                <div class="truncate text-[15px] text-muted">
+                  <Show when={props.account[platform]} fallback={t("Not linked")}>
+                    {(identity) => channelText(platform, identity().login)}
+                  </Show>
+                </div>
+              </div>
+              <Show
+                when={props.account[platform]}
+                fallback={
+                  <a href={props.preview ? undefined : linkUrl(platform)} class={smallButtonClass}>
+                    {t("Link")}
+                  </a>
+                }
+              >
+                <button
+                  type="button"
+                  class={smallButtonClass}
+                  disabled={busy() || linked().length < 2}
+                  title={linked().length < 2 ? t("Link another account first.") : undefined}
+                  onClick={() => void unlink(platform)}
+                >
+                  {t("Unlink")}
+                </button>
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
+      <p class="text-[15px] text-muted">
+        {t(
+          "Songs and spins for subscribers and moderators need a linked Twitch account. An account that already has its own page can't be linked. Delete that page first.",
+        )}
+      </p>
+    </section>
+  );
+}
+
 function MusicQueue(props: { session: string; page: string; onSignOut: () => void }) {
   const [status, setStatus] = createSignal<Status>("loading");
   const [busy, setBusy] = createSignal(false);
@@ -1581,6 +1706,7 @@ function Admin(props: {
   session: string;
   account: Account;
   page?: string;
+  linkResult?: LinkResult | null;
   onSignOut: () => void;
   preview?: boolean;
 }) {
@@ -1704,7 +1830,7 @@ function Admin(props: {
       id: "moderators",
       label: t("Moderators"),
       icon: "shield",
-      shown: () => !moderating(),
+      shown: () => !moderating() && account().twitch !== null,
       status: () => onOff(account().moderators.some((moderator) => moderator.enabled)),
     },
     {
@@ -1720,6 +1846,13 @@ function Admin(props: {
       icon: "smartphone",
       shown: () => !moderating(),
       status: () => connectedOrNot(settings().connected),
+    },
+    {
+      id: "linked",
+      label: t("Linked accounts"),
+      icon: "user",
+      shown: () => !moderating(),
+      status: () => null,
     },
   ];
   const visible = () => sections.filter((section) => section.shown());
@@ -1870,12 +2003,14 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
-          <SubscriberSettings
-            kind="spin"
-            tiers={settings().subSpins}
-            busy={busy()}
-            onSave={(subSpins) => save({ subSpins })}
-          />
+          <Show when={account().twitch}>
+            <SubscriberSettings
+              kind="spin"
+              tiers={settings().subSpins}
+              busy={busy()}
+              onSave={(subSpins) => save({ subSpins })}
+            />
+          </Show>
           <TestSend
             kind="spin"
             session={props.session}
@@ -1909,12 +2044,14 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
-          <SubscriberSettings
-            kind="song"
-            tiers={settings().subSongs}
-            busy={busy()}
-            onSave={(subSongs) => save({ subSongs })}
-          />
+          <Show when={account().twitch}>
+            <SubscriberSettings
+              kind="song"
+              tiers={settings().subSongs}
+              busy={busy()}
+              onSave={(subSongs) => save({ subSongs })}
+            />
+          </Show>
           <SongLengthSettings
             maxSongLength={settings().maxSongLength}
             busy={busy()}
@@ -1967,11 +2104,23 @@ function Admin(props: {
             </Show>
           </div>
         </Show>
-        <Show when={!moderating()}>
+        <Show when={!moderating() && account().twitch}>
           <div hidden={active() !== "moderators"}>
             <ModeratorSettings
               session={props.session}
               moderators={account().moderators}
+              onAccount={setAccount}
+              onSignOut={props.onSignOut}
+            />
+          </div>
+        </Show>
+        <Show when={!moderating()}>
+          <div hidden={active() !== "linked"}>
+            <LinkedAccounts
+              session={props.session}
+              account={account()}
+              result={props.linkResult ?? null}
+              preview={props.preview}
               onAccount={setAccount}
               onSignOut={props.onSignOut}
             />
@@ -2614,8 +2763,9 @@ function Preview(props: { failed: boolean }) {
             session=""
             account={{
               name: "",
-              login: "",
               avatar: null,
+              twitch: { login: "", name: "", avatar: null },
+              kick: null,
               devices: [
                 {
                   id: "",
@@ -2667,15 +2817,16 @@ function Preview(props: { failed: boolean }) {
         </div>
         <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 px-6 pb-10 text-center">
           <p class="text-lg font-semibold text-balance">
-            {t("Sign in with Twitch to create or manage your tip page.")}
+            {t("Sign in with Twitch or Kick to create or manage your tip page.")}
           </p>
-          <a
-            href={signInUrl}
-            class="inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-twitch px-6 font-display text-lg font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
-          >
-            <Icon name="twitch" class="size-5" />
-            {t("Sign in with Twitch")}
-          </a>
+          <div class="flex flex-wrap justify-center gap-3">
+            <PlatformSignIn platform="twitch" large>
+              {t("Sign in with Twitch")}
+            </PlatformSignIn>
+            <PlatformSignIn platform="kick" large>
+              {t("Sign in with Kick")}
+            </PlatformSignIn>
+          </div>
         </div>
       </div>
     </div>
@@ -2683,7 +2834,8 @@ function Preview(props: { failed: boolean }) {
 }
 
 export default function Dashboard() {
-  const { session, loading, signInFailed, signOut, signOutAll } = createAccountSession();
+  const { session, loading, signInFailed, linkResult, signOut, signOutAll } =
+    createAccountSession();
 
   const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
   const chooseChannel = (login: string) => {
@@ -2704,7 +2856,10 @@ export default function Dashboard() {
           when={session()}
           fallback={
             <Show when={!loading()}>
-              <TwitchSignIn>{t("Sign in")}</TwitchSignIn>
+              <span class="ml-auto flex items-center gap-2">
+                <PlatformSignIn platform="twitch" />
+                <PlatformSignIn platform="kick" />
+              </span>
             </Show>
           }
         >
@@ -2796,6 +2951,7 @@ export default function Dashboard() {
                     <Admin
                       session={current.session}
                       account={current.account}
+                      linkResult={linkResult()}
                       onSignOut={signOut}
                     />
                   }

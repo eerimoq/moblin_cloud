@@ -20,7 +20,7 @@ use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{
-    Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, Page,
+    Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, Page, Platform,
 };
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
@@ -83,9 +83,14 @@ pub fn router(api: Arc<Api>) -> Router {
             get(handle_remote_control_streamer),
         )
         .route("/pages/twitch/{login}", get(handle_twitch_page))
-        .route("/auth/twitch/login", get(handle_login))
-        .route("/auth/twitch/callback", get(handle_callback))
+        .route("/pages/kick/{login}", get(handle_kick_page))
+        .route("/auth/twitch/login", get(handle_twitch_login))
+        .route("/auth/twitch/callback", get(handle_twitch_callback))
+        .route("/auth/kick/login", get(handle_kick_login))
+        .route("/auth/kick/callback", get(handle_kick_callback))
         .route("/account", get(handle_account))
+        .route("/account/link", post(handle_account_link))
+        .route("/account/unlink/{platform}", post(handle_account_unlink))
         .route("/account/devices", post(handle_account_devices))
         .route(
             "/account/devices/choose",
@@ -589,20 +594,38 @@ async fn update_settings(
 #[derive(Deserialize)]
 struct LoginQuery {
     page: Option<String>,
+    link: Option<String>,
 }
 
-async fn handle_login(
+async fn handle_twitch_login(
     State(api): State<Arc<Api>>,
     Query(query): Query<LoginQuery>,
 ) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
     if let Some(page) = &query.page
-        && api.accounts.streamer_of_page(page).is_none()
+        && api
+            .accounts
+            .of_page(page)
+            .is_none_or(|account| account.twitch().is_none())
     {
         return Err(StatusCode::NOT_FOUND);
     }
     let (url, state) = api
         .auth
-        .login_url(query.page.as_deref())
+        .twitch_login_url(query.page.as_deref(), query.link.is_some())
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok((
+        [(SET_COOKIE, api.auth.state_cookie(&state))],
+        Redirect::to(&url),
+    ))
+}
+
+async fn handle_kick_login(
+    State(api): State<Arc<Api>>,
+    Query(query): Query<LoginQuery>,
+) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
+    let (url, state) = api
+        .auth
+        .kick_login_url(query.link.is_some())
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     Ok((
         [(SET_COOKIE, api.auth.state_cookie(&state))],
@@ -628,58 +651,125 @@ struct CallbackQuery {
     error: Option<String>,
 }
 
-async fn handle_callback(
+async fn handle_twitch_callback(
     State(api): State<Arc<Api>>,
     Query(query): Query<CallbackQuery>,
     headers: HeaderMap,
 ) -> ([(HeaderName, String); 1], Redirect) {
     (
         [(SET_COOKIE, api.auth.cleared_state_cookie())],
-        signed_in_redirect(&api, query, cookie(&headers, STATE_COOKIE)).await,
+        signed_in_redirect(
+            &api,
+            Platform::Twitch,
+            query,
+            cookie(&headers, STATE_COOKIE),
+        )
+        .await,
+    )
+}
+
+async fn handle_kick_callback(
+    State(api): State<Arc<Api>>,
+    Query(query): Query<CallbackQuery>,
+    headers: HeaderMap,
+) -> ([(HeaderName, String); 1], Redirect) {
+    (
+        [(SET_COOKIE, api.auth.cleared_state_cookie())],
+        signed_in_redirect(&api, Platform::Kick, query, cookie(&headers, STATE_COOKIE)).await,
     )
 }
 
 async fn signed_in_redirect(
     api: &Api,
+    platform: Platform,
     query: CallbackQuery,
     browser_state: Option<&str>,
 ) -> Redirect {
     let dashboard = format!("{}/dashboard/", api.auth.frontend_url);
-    let Some(state) = query.state else {
-        return Redirect::to(&format!("{dashboard}#signInFailed"));
+    let failed = |link: bool| {
+        Redirect::to(&format!(
+            "{dashboard}#{}",
+            if link { "linkFailed" } else { "signInFailed" }
+        ))
     };
-    let page = match api.auth.consume_state(&state, browser_state) {
-        Ok(page) => page,
+    let Some(state) = query.state else {
+        return failed(false);
+    };
+    let state = match api.auth.consume_state(&state, browser_state) {
+        Ok(state) => state,
         Err(StateError {
             page: Some(page),
             error,
         }) => return viewer_redirect(api, &page, Err(error)).await,
         Err(StateError { error, .. }) => {
-            warn!("signing in with Twitch failed: {error:#}");
-            return Redirect::to(&format!("{dashboard}#signInFailed"));
+            warn!("signing in with {} failed: {error:#}", platform.title());
+            return failed(false);
         }
     };
     let sign_in = match query.code {
-        Some(code) => api.auth.callback(&code).await,
+        Some(code) => match platform {
+            Platform::Twitch => api.auth.twitch_callback(&code).await,
+            Platform::Kick => {
+                api.auth
+                    .kick_callback(&code, state.verifier.as_deref().unwrap_or_default())
+                    .await
+            }
+        },
         None => Err(anyhow::anyhow!(
-            "Twitch answered {}",
+            "{} answered {}",
+            platform.title(),
             query.error.as_deref().unwrap_or("no code")
         )),
     };
-    if let Some(page) = page {
+    if let Some(page) = state.page {
         return viewer_redirect(api, &page, sign_in).await;
     }
     let sign_in = match sign_in {
         Ok(sign_in) => sign_in,
         Err(error) => {
-            warn!("signing in with Twitch failed: {error:#}");
-            return Redirect::to(&format!("{dashboard}#signInFailed"));
+            warn!(
+                "{} with {} failed: {error:#}",
+                if state.link { "linking" } else { "signing in" },
+                platform.title()
+            );
+            return failed(state.link);
         }
     };
-    let user = &sign_in.user;
-    let Some((key, page)) = api.remote_control.new_key() else {
-        warn!("no page could be created for {}", user.id);
-        return Redirect::to(&format!("{dashboard}#signInFailed"));
+    let identity = &sign_in.identity;
+    if platform == Platform::Twitch {
+        match api.auth.channel_moderators(&sign_in).await {
+            Ok(moderators) => api
+                .accounts
+                .set_channel_moderators(&identity.user_id, &moderators),
+            Err(error) => warn!(
+                "looking up the moderators of Twitch user {} failed: {error:#}",
+                identity.user_id
+            ),
+        }
+    }
+    if state.link {
+        info!(
+            "{} user {} ({}) is being linked",
+            platform.title(),
+            identity.user_id,
+            identity.login
+        );
+        return Redirect::to(&format!(
+            "{dashboard}#link={}",
+            api.auth.link_token(sign_in.identity)
+        ));
+    }
+    let Some(((key, page), new_id)) = api
+        .remote_control
+        .new_key()
+        .zip(api.remote_control.new_account_id())
+    else {
+        warn!(
+            "no page could be created for {} user {}",
+            platform.title(),
+            identity.user_id
+        );
+        return failed(false);
     };
     let device = Device {
         id: page.clone(),
@@ -687,52 +777,62 @@ async fn signed_in_redirect(
         key,
         enabled: true,
     };
-    let account = match api.accounts.signed_in(
-        &user.id,
-        &user.name,
-        &user.login,
-        user.avatar.as_deref(),
-        Page::new(page, device),
-    ) {
-        Ok(account) => account,
+    let (id, account) = match api
+        .accounts
+        .signed_in(identity, (new_id, Page::new(page, device)))
+    {
+        Ok(signed_in) => signed_in,
         Err(error) => {
-            warn!("saving account {} failed: {error:?}", user.id);
-            return Redirect::to(&format!("{dashboard}#signInFailed"));
+            warn!(
+                "saving the account of {} user {} failed: {error:?}",
+                platform.title(),
+                identity.user_id
+            );
+            return failed(false);
         }
     };
-    match api.auth.channel_moderators(&sign_in).await {
-        Ok(moderators) => api.accounts.set_channel_moderators(&user.id, &moderators),
-        Err(error) => warn!("looking up the moderators of {} failed: {error:#}", user.id),
-    }
-    info!("Twitch user {} ({}) signed in", user.id, user.login);
+    info!(
+        "{} user {} ({}) signed in to account {id}",
+        platform.title(),
+        identity.user_id,
+        identity.login
+    );
     Redirect::to(&format!(
         "{dashboard}#session={}",
-        api.auth.session(&user.id, account.sessions)
+        api.auth.session(&id, account.sessions)
     ))
 }
 
 async fn viewer_redirect(api: &Api, page: &str, sign_in: Result<SignIn>) -> Redirect {
-    let streamer = api.accounts.streamer_of_page(page);
-    let url = match &streamer {
-        Some((_, login)) => format!("{}/twitch/{login}", api.auth.frontend_url),
-        None => format!("{}/page/?streamer={page}", api.auth.frontend_url),
+    let twitch = api
+        .accounts
+        .of_page(page)
+        .and_then(|account| account.twitch().cloned());
+    let url = match &twitch {
+        Some(twitch) if !twitch.login.is_empty() => {
+            format!("{}/twitch/{}", api.auth.frontend_url, twitch.login)
+        }
+        _ => format!("{}/page/?streamer={page}", api.auth.frontend_url),
     };
     let tier = async {
         let sign_in = sign_in?;
-        let (broadcaster, _) = streamer.context("the page has no streamer")?;
-        let tier = api.auth.subscription_tier(&sign_in, &broadcaster).await?;
-        anyhow::Ok((sign_in.user, tier))
+        let twitch = twitch.context("the page has no Twitch streamer")?;
+        let tier = api
+            .auth
+            .subscription_tier(&sign_in, &twitch.user_id)
+            .await?;
+        anyhow::Ok((sign_in.identity, tier))
     };
     match tier.await {
         Ok((user, tier)) => {
             info!(
                 "Twitch user {} ({}) signed in as a viewer of page {page} with subscription tier {tier:?}",
-                user.id, user.login
+                user.user_id, user.login
             );
             Redirect::to(&format!(
                 "{url}#viewer={}",
                 api.auth
-                    .viewer_session(user.id, user.name, page.to_string(), tier)
+                    .viewer_session(user.user_id, user.name, page.to_string(), tier)
             ))
         }
         Err(error) => {
@@ -742,12 +842,51 @@ async fn viewer_redirect(api: &Api, page: &str, sign_in: Result<SignIn>) -> Redi
     }
 }
 
+#[derive(Deserialize)]
+struct LinkRequest {
+    token: String,
+}
+
+async fn handle_account_link(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<LinkRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let SignedIn { id, .. } = signed_in(&api, &headers)?;
+    let identity = api.auth.link_of(&request.token).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Linking took too long. Try again.".to_string(),
+    ))?;
+    let account = api.accounts.link(&id, &identity).map_err(account_error)?;
+    info!(
+        "{id} linked {} user {} ({})",
+        identity.platform.title(),
+        identity.user_id,
+        identity.login
+    );
+    Ok(account_response(&api, account))
+}
+
+async fn handle_account_unlink(
+    State(api): State<Arc<Api>>,
+    Path(platform): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let SignedIn { id, .. } = signed_in(&api, &headers)?;
+    let platform = Platform::parse(&platform)
+        .ok_or((StatusCode::NOT_FOUND, "no such platform".to_string()))?;
+    let account = api.accounts.unlink(&id, platform).map_err(account_error)?;
+    info!("{id} unlinked {}", platform.title());
+    Ok(account_response(&api, account))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AccountResponse {
     name: String,
-    login: String,
     avatar: Option<String>,
+    twitch: Option<PublicIdentity>,
+    kick: Option<PublicIdentity>,
     devices: Vec<DeviceResponse>,
     music_device: Option<String>,
     wheel_device: Option<String>,
@@ -756,6 +895,21 @@ struct AccountResponse {
     premium: bool,
     moderating: Vec<ModeratingResponse>,
     moderators: Vec<ChannelModerator>,
+}
+
+#[derive(Serialize)]
+struct PublicIdentity {
+    login: String,
+    name: String,
+    avatar: Option<String>,
+}
+
+fn public_identity(account: &Account, platform: Platform) -> Option<PublicIdentity> {
+    account.identity(platform).map(|identity| PublicIdentity {
+        login: identity.login.clone(),
+        name: identity.name.clone(),
+        avatar: identity.avatar.clone(),
+    })
 }
 
 #[derive(Serialize)]
@@ -792,41 +946,58 @@ fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, St
         .and_then(|value| value.strip_prefix("Bearer "))
         .and_then(|session| api.auth.session_of(session))
         .ok_or_else(not_signed_in)?;
+    let fresh = session.is_fresh();
+    let id = match api.accounts.get(&session.account) {
+        Some(_) => session.account,
+        None => api
+            .accounts
+            .account_of_identity(Platform::Twitch, &session.account)
+            .ok_or_else(not_signed_in)?,
+    };
     let account = api
         .accounts
-        .get(&session.account)
+        .get(&id)
         .filter(|account| account.sessions == session.generation)
         .ok_or_else(not_signed_in)?;
-    Ok(SignedIn {
-        fresh: session.is_fresh(),
-        id: session.account,
-        account,
-    })
+    Ok(SignedIn { fresh, id, account })
 }
 
-fn is_admin(api: &Api, id: &str) -> bool {
-    api.admins.iter().any(|admin| admin == id)
+fn is_admin(api: &Api, account: &Account) -> bool {
+    account
+        .identities
+        .iter()
+        .any(|identity| api.admins.contains(&identity.admin_key()))
 }
 
-fn is_premium(api: &Api, id: &str) -> bool {
-    is_admin(api, id) || api.premium_accounts.iter().any(|premium| premium == id)
+fn is_premium(api: &Api, account: &Account) -> bool {
+    is_admin(api, account)
+        || account
+            .identities
+            .iter()
+            .any(|identity| api.premium_accounts.contains(&identity.admin_key()))
+}
+
+fn twitch_needed() -> (StatusCode, String) {
+    (StatusCode::CONFLICT, "Link Twitch first.".to_string())
 }
 
 fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
     let signed_in = signed_in(api, headers)?;
-    if !is_admin(api, &signed_in.id) {
+    if !is_admin(api, &signed_in.account) {
         return Err((StatusCode::FORBIDDEN, "not an admin".to_string()));
     }
     Ok(signed_in)
 }
 
-fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountResponse> {
+fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
     let page = &account.page;
     let settings = api.pages.get(&page.id);
+    let twitch = account.twitch_id().map(str::to_string);
     Json(AccountResponse {
-        name: account.name,
-        login: account.login,
-        avatar: account.avatar,
+        name: account.name.clone(),
+        avatar: account.avatar.clone(),
+        twitch: public_identity(&account, Platform::Twitch),
+        kick: public_identity(&account, Platform::Kick),
         devices: page
             .devices
             .iter()
@@ -841,18 +1012,25 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
         music_device: page.music_device().map(|device| device.id.clone()),
         wheel_device: page.wheel_device().map(|device| device.id.clone()),
         settings: settings_response(api, page.id.clone(), settings).0,
-        admin: is_admin(api, id),
-        premium: is_premium(api, id),
-        moderators: api.accounts.channel_moderators(id),
-        moderating: api
-            .accounts
-            .moderated(id)
+        admin: is_admin(api, &account),
+        premium: is_premium(api, &account),
+        moderators: twitch
+            .as_deref()
+            .map(|twitch| api.accounts.channel_moderators(twitch))
+            .unwrap_or_default(),
+        moderating: twitch
+            .as_deref()
+            .map(|twitch| api.accounts.moderated(twitch))
+            .unwrap_or_default()
             .into_iter()
-            .map(|streamer| ModeratingResponse {
-                id: streamer.page.id,
-                name: streamer.name,
-                login: streamer.login,
-                avatar: streamer.avatar,
+            .filter_map(|streamer| {
+                let channel = streamer.twitch()?;
+                Some(ModeratingResponse {
+                    id: streamer.page.id.clone(),
+                    name: channel.name.clone(),
+                    login: channel.login.clone(),
+                    avatar: channel.avatar.clone(),
+                })
             })
             .collect(),
     })
@@ -870,14 +1048,15 @@ async fn handle_account_moderator(
     Json(request): Json<ModeratorRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let twitch = account.twitch_id().ok_or_else(twitch_needed)?;
     api.accounts
-        .enable_moderator(&id, &moderator, request.enabled)
+        .enable_moderator(twitch, &moderator, request.enabled)
         .map_err(account_error)?;
     info!(
         "{id} turned moderator {moderator} {}",
         if request.enabled { "on" } else { "off" }
     );
-    Ok(account_response(&api, &id, account))
+    Ok(account_response(&api, account))
 }
 
 fn account_error(error: AccountError) -> (StatusCode, String) {
@@ -893,6 +1072,20 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
         AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
         AccountError::DeviceOff => (StatusCode::CONFLICT, "the device is off".to_string()),
         AccountError::UnknownModerator => (StatusCode::NOT_FOUND, "no such moderator".to_string()),
+        AccountError::IdentityTaken(platform) => (
+            StatusCode::CONFLICT,
+            format!(
+                "This {} account already has its own page. Delete it first.",
+                platform.title()
+            ),
+        ),
+        AccountError::UnknownIdentity => {
+            (StatusCode::NOT_FOUND, "no such linked account".to_string())
+        }
+        AccountError::LastIdentity => (
+            StatusCode::CONFLICT,
+            "You can't unlink the only way to sign in. Link another platform first.".to_string(),
+        ),
         AccountError::NotSaved => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "the account could not be saved".to_string(),
@@ -932,6 +1125,7 @@ struct ServerStats {
 #[serde(rename_all = "camelCase")]
 struct Integrations {
     twitch: bool,
+    kick: bool,
     app_attest: bool,
     paypal: bool,
     stripe: bool,
@@ -974,6 +1168,7 @@ async fn handle_admin_stats(
             memory: resident_memory(),
             integrations: Integrations {
                 twitch: api.live.is_some(),
+                kick: api.auth.has_kick(),
                 app_attest: api.app_attest.is_some(),
                 paypal: api.paypal.is_some(),
                 stripe: api.stripe.is_some(),
@@ -1004,8 +1199,8 @@ async fn handle_account(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    Ok(account_response(&api, &id, account))
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
+    Ok(account_response(&api, account))
 }
 
 #[derive(Deserialize)]
@@ -1189,7 +1384,7 @@ async fn handle_account_devices(
         )
         .map_err(account_error)?;
     info!("{id} added Moblin device {device}");
-    Ok(account_response(&api, &id, account))
+    Ok(account_response(&api, account))
 }
 
 #[derive(Deserialize)]
@@ -1208,7 +1403,7 @@ async fn handle_account_devices_choose(
         .accounts
         .choose_devices(&id, request.music, request.wheel)
         .map_err(account_error)?;
-    Ok(account_response(&api, &id, account))
+    Ok(account_response(&api, account))
 }
 
 async fn handle_account_device_key(
@@ -1224,7 +1419,7 @@ async fn handle_account_device_key(
         .map_err(account_error)?;
     api.remote_control.disconnect(&device);
     info!("{id} got a new Moblin Cloud key for device {device}");
-    Ok(account_response(&api, &id, account))
+    Ok(account_response(&api, account))
 }
 
 #[derive(Deserialize)]
@@ -1248,7 +1443,7 @@ async fn handle_account_device_enabled(
         "{id} turned Moblin device {device} {}",
         if request.enabled { "on" } else { "off" }
     );
-    Ok(account_response(&api, &id, account))
+    Ok(account_response(&api, account))
 }
 
 async fn handle_account_device_remove(
@@ -1264,7 +1459,7 @@ async fn handle_account_device_remove(
     api.deliveries.notify();
     api.remote_control.disconnect(&device);
     info!("{id} removed Moblin device {device}");
-    Ok(account_response(&api, &id, account))
+    Ok(account_response(&api, account))
 }
 
 async fn handle_account_image(
@@ -1282,7 +1477,7 @@ async fn account_image(
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
     let SignedIn { id, account, .. } = signed_in(api, headers)?;
-    let premium = is_premium(api, &id);
+    let premium = is_premium(api, &account);
     save_image(api, &id, account.page.id, premium, body).await
 }
 
@@ -1311,8 +1506,8 @@ async fn moderator_image(
 
 fn streamer_is_premium(api: &Api, page: &str) -> bool {
     api.accounts
-        .streamer_of_page(page)
-        .is_some_and(|(streamer, _)| is_premium(api, &streamer))
+        .of_page(page)
+        .is_some_and(|account| is_premium(api, &account))
 }
 
 async fn save_image(
@@ -1392,9 +1587,9 @@ async fn handle_account_settings(
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.id;
-    update_settings(&api, page, is_premium(&api, &id), request).await
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
+    let premium = is_premium(&api, &account);
+    update_settings(&api, account.page.id, premium, request).await
 }
 
 async fn handle_moderator_settings(
@@ -1428,8 +1623,9 @@ async fn handle_moderator_account(
     ))?;
     let settings = api.pages.get(&id);
     Ok(Json(AccountResponse {
+        twitch: public_identity(&account, Platform::Twitch),
+        kick: public_identity(&account, Platform::Kick),
         name: account.name,
-        login: account.login,
         avatar: account.avatar,
         devices: Vec::new(),
         music_device: None,
@@ -1653,8 +1849,17 @@ async fn handle_account_stripe_connect(
                     StatusCode::BAD_REQUEST,
                     "pick one of the countries Stripe supports".to_string(),
                 ))?;
+            let user = account
+                .twitch()
+                .map(|twitch| ("twitch_user_id", twitch.user_id.as_str()))
+                .or_else(|| {
+                    account
+                        .identity(Platform::Kick)
+                        .map(|kick| ("kick_user_id", kick.user_id.as_str()))
+                })
+                .unwrap_or(("account", id.as_str()));
             let stripe_account_id = stripe
-                .create_account(&id, &account.name, &country)
+                .create_account(user, &account.name, &country)
                 .await
                 .map_err(|error| {
                     warn!("creating a Stripe account in {country} for {id} failed: {error:#}");
@@ -1793,9 +1998,8 @@ struct NameResponse {
 
 #[derive(Serialize)]
 struct ProfileResponse {
-    name: String,
-    login: String,
-    avatar: Option<String>,
+    twitch: Option<PublicIdentity>,
+    kick: Option<PublicIdentity>,
     message: Option<String>,
     accent: Option<String>,
     font: Option<String>,
@@ -1809,9 +2013,8 @@ async fn handle_page(
     let account = api.accounts.of_page(&id).ok_or(StatusCode::NOT_FOUND)?;
     let settings = api.pages.get(&id);
     Ok(Json(ProfileResponse {
-        name: account.name,
-        login: account.login,
-        avatar: account.avatar,
+        twitch: public_identity(&account, Platform::Twitch),
+        kick: public_identity(&account, Platform::Kick),
         message: settings.message,
         accent: settings.accent,
         font: settings.font,
@@ -1839,11 +2042,36 @@ async fn handle_twitch_page(
     State(api): State<Arc<Api>>,
     Path(login): Path<String>,
 ) -> Result<Json<NameResponse>, StatusCode> {
+    page_of_login(&api, Platform::Twitch, &login)
+}
+
+async fn handle_kick_page(
+    State(api): State<Arc<Api>>,
+    Path(login): Path<String>,
+) -> Result<Json<NameResponse>, StatusCode> {
+    page_of_login(&api, Platform::Kick, &login)
+}
+
+fn page_of_login(
+    api: &Api,
+    platform: Platform,
+    login: &str,
+) -> Result<Json<NameResponse>, StatusCode> {
     let id = api
         .accounts
-        .page_of_login(&login)
+        .page_of_login(platform, login)
         .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(NameResponse { id }))
+}
+
+fn sub_tiers(api: &Api, id: &str, tiers: Option<&Tiers>) -> Option<Tiers> {
+    tiers
+        .filter(|_| {
+            api.accounts
+                .of_page(id)
+                .is_some_and(|account| account.twitch().is_some())
+        })
+        .cloned()
 }
 
 fn client_id(api: &Api, merchant_id: &Option<String>) -> Option<String> {
@@ -1891,7 +2119,7 @@ async fn handle_songs(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Js
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     Json(SongsResponse {
-        sub_songs: settings.sub_songs().cloned(),
+        sub_songs: sub_tiers(&api, &id, settings.sub_songs()),
         max_song_minutes: settings.max_song_minutes(),
         songs: settings.songs().map(|songs| PublicSongs {
             price: songs.price,
@@ -1965,7 +2193,7 @@ async fn handle_spin(State(api): State<Arc<Api>>, Path(id): Path<String>) -> Jso
     let stripe = public_stripe(&api, &id);
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(SpinResponse {
-        sub_spins: settings.sub_spins().cloned(),
+        sub_spins: sub_tiers(&api, &id, settings.sub_spins()),
         spin: settings.spin().filter(|_| payable).map(|spin| PublicSpin {
             options: spin.options.clone(),
             currency,
@@ -2279,7 +2507,7 @@ async fn handle_subscriber_song_allowance(
         &headers,
         &id,
         SubscriberKind::Song,
-        api.pages.get(&id).sub_songs().cloned(),
+        sub_tiers(&api, &id, api.pages.get(&id).sub_songs()),
     )
 }
 
@@ -2293,7 +2521,7 @@ async fn handle_subscriber_spin_allowance(
         &headers,
         &id,
         SubscriberKind::Spin,
-        api.pages.get(&id).sub_spins().cloned(),
+        sub_tiers(&api, &id, api.pages.get(&id).sub_spins()),
     )
 }
 
@@ -2476,13 +2704,8 @@ async fn subscriber_song(
     request: SubscriberSongRequest,
 ) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
     let settings = api.pages.get(&id);
-    let subscriber = subscriber(
-        api,
-        headers,
-        &id,
-        SubscriberKind::Song,
-        settings.sub_songs(),
-    )?;
+    let sub_songs = sub_tiers(api, &id, settings.sub_songs());
+    let subscriber = subscriber(api, headers, &id, SubscriberKind::Song, sub_songs.as_ref())?;
     let message = viewer_message(request.message)?;
     let song_and_user = song_and_user(SongRequest {
         song: request.song,
@@ -2516,13 +2739,8 @@ fn subscriber_spin(
     request: SubscriberSpinRequest,
 ) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
     let settings = api.pages.get(&id);
-    let subscriber = subscriber(
-        api,
-        headers,
-        &id,
-        SubscriberKind::Spin,
-        settings.sub_spins(),
-    )?;
+    let sub_spins = sub_tiers(api, &id, settings.sub_spins());
+    let subscriber = subscriber(api, headers, &id, SubscriberKind::Spin, sub_spins.as_ref())?;
     wheel_available(api, &id)?;
     let order = Order {
         streamer: id,
@@ -2542,10 +2760,12 @@ fn subscriber_spin(
 fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = signed_in(api, headers)?;
     let allowed = signed_in.account.page.id == id
-        || api
-            .accounts
-            .streamer_of_page(id)
-            .is_some_and(|(broadcaster, _)| api.accounts.moderates(&signed_in.id, &broadcaster));
+        || signed_in.account.twitch_id().is_some_and(|moderator| {
+            api.accounts
+                .of_page(id)
+                .and_then(|streamer| streamer.twitch_id().map(str::to_string))
+                .is_some_and(|broadcaster| api.accounts.moderates(moderator, &broadcaster))
+        });
     if !allowed {
         return Err(failure(
             "not-moderator",
@@ -3573,8 +3793,11 @@ mod tests {
     use serde_json::{Value, json};
     use tokio_tungstenite::tungstenite::Message;
 
+    use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+
     use super::*;
-    use crate::auth::OAuthApp;
+    use crate::accounts::Identity;
+    use crate::auth::{KickApp, OAuthApp};
 
     async fn start() -> String {
         start_with(None).await
@@ -3585,13 +3808,14 @@ mod tests {
     }
 
     async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
-        start_api_with(paypal, None, None, None).await
+        start_api_with(paypal, None, None, None, None).await
     }
 
     async fn start_api_with(
         paypal: Option<PayPal>,
         stripe: Option<Stripe>,
         twitch: Option<OAuthApp>,
+        kick: Option<KickApp>,
         pages: Option<Pages>,
     ) -> (String, Arc<Api>) {
         let database = Database::memory();
@@ -3613,6 +3837,7 @@ mod tests {
                 "http://localhost".to_string(),
                 "https://moblin.app".to_string(),
                 twitch,
+                kick,
                 Some("secret"),
             )
             .unwrap(),
@@ -4113,7 +4338,8 @@ mod tests {
 
     async fn start_stripe_api() -> (String, Arc<Api>, FakeStripe) {
         let (stripe_url, fake) = start_stripe().await;
-        let (address, api) = start_api_with(None, Some(new_stripe(stripe_url)), None, None).await;
+        let (address, api) =
+            start_api_with(None, Some(new_stripe(stripe_url)), None, None, None).await;
         (address, api, fake)
     }
 
@@ -5506,7 +5732,7 @@ mod tests {
             .unwrap();
         let (paypal_url, _) = start_paypal().await;
         let (address, _) =
-            start_api_with(Some(new_paypal(paypal_url)), None, None, Some(pages)).await;
+            start_api_with(Some(new_paypal(paypal_url)), None, None, None, Some(pages)).await;
         let client = reqwest::Client::new();
         let public: Value = client
             .get(format!("http://{address}/pages/p/songs"))
@@ -5549,8 +5775,22 @@ mod tests {
             enabled: true,
         };
         api.accounts
-            .signed_in(id, name, login, None, Page::new(page, device))
+            .signed_in(
+                &twitch_identity(id, name, login),
+                (id.to_string(), Page::new(page, device)),
+            )
             .unwrap()
+            .1
+    }
+
+    fn twitch_identity(id: &str, name: &str, login: &str) -> Identity {
+        Identity {
+            platform: Platform::Twitch,
+            user_id: id.to_string(),
+            login: login.to_string(),
+            name: name.to_string(),
+            avatar: None,
+        }
     }
 
     fn channel_moderator(id: &str, login: &str, name: &str) -> ChannelModerator {
@@ -6917,7 +7157,8 @@ mod tests {
     #[tokio::test]
     async fn viewers_sign_in_with_their_subscription_tier() {
         let twitch = start_twitch().await;
-        let (address, api) = start_api_with(None, None, Some(twitch_app(&twitch)), None).await;
+        let (address, api) =
+            start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -7493,7 +7734,8 @@ mod tests {
     #[tokio::test]
     async fn streamers_sign_in_and_manage_their_page() {
         let twitch = start_twitch().await;
-        let (address, api) = start_api_with(None, None, Some(twitch_app(&twitch)), None).await;
+        let (address, api) =
+            start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -7653,8 +7895,12 @@ mod tests {
         let page = account["settings"]["id"].as_str().unwrap();
         assert_eq!(remote_control::id_of(&key).as_deref(), Some(page));
         assert_eq!(account["name"], "Erik");
-        assert_eq!(account["login"], "erik");
         assert_eq!(account["avatar"], "https://static-cdn.jtvnw.net/erik.png");
+        assert_eq!(
+            account["twitch"],
+            json!({"login": "erik", "name": "Erik", "avatar": "https://static-cdn.jtvnw.net/erik.png"})
+        );
+        assert_eq!(account["kick"], Value::Null);
         assert_eq!(account["devices"][0]["id"], page);
         assert_eq!(account["devices"][0]["name"], "Moblin");
         assert_eq!(account["devices"][0]["enabled"], true);
@@ -7727,9 +7973,12 @@ mod tests {
         assert_eq!(
             profile,
             json!({
-                "name": "Erik",
-                "login": "erik",
-                "avatar": "https://static-cdn.jtvnw.net/erik.png",
+                "twitch": {
+                    "name": "Erik",
+                    "login": "erik",
+                    "avatar": "https://static-cdn.jtvnw.net/erik.png",
+                },
+                "kick": null,
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
                 "font": null,
@@ -7758,6 +8007,578 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(key_of(&again), key);
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeKick {
+        challenge: Arc<std::sync::Mutex<Option<String>>>,
+        tokens: Arc<std::sync::Mutex<Vec<Value>>>,
+    }
+
+    async fn start_kick() -> (String, FakeKick) {
+        let fake = FakeKick::default();
+        let user_of = |token: &str| match token {
+            "kick-a" => Some(json!({
+                "user_id": 123,
+                "name": "KickErik",
+                "email": "erik@example.com",
+                "profile_picture": "https://files.kick.com/erik.png",
+            })),
+            "kick-b" => Some(json!({
+                "user_id": "456",
+                "name": "",
+                "profile_picture": "http://files.kick.com/other.png",
+            })),
+            _ => None,
+        };
+        let bearer = |headers: &HeaderMap| {
+            headers[AUTHORIZATION]
+                .to_str()
+                .unwrap()
+                .strip_prefix("Bearer ")
+                .unwrap()
+                .to_string()
+        };
+        let router = Router::new()
+            .route(
+                "/token",
+                post({
+                    let challenge = fake.challenge.clone();
+                    let tokens = fake.tokens.clone();
+                    move |axum::Form(form): axum::Form<HashMap<String, String>>| async move {
+                        let expected = challenge.lock().unwrap().clone().unwrap();
+                        let verifier = &form["code_verifier"];
+                        tokens.lock().unwrap().push(json!(form));
+                        if BASE64_URL_SAFE_NO_PAD.encode(ring::digest::digest(
+                            &ring::digest::SHA256,
+                            verifier.as_bytes(),
+                        )) != expected
+                            || !form["code"].starts_with("kick-")
+                        {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"error": "invalid_grant"})),
+                            );
+                        }
+                        (
+                            StatusCode::OK,
+                            Json(json!({
+                                "access_token": form["code"],
+                                "token_type": "Bearer",
+                                "expires_in": 7200,
+                                "scope": "user:read channel:read",
+                            })),
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/users",
+                get(move |headers: HeaderMap| async move {
+                    match user_of(&bearer(&headers)) {
+                        Some(user) => (
+                            StatusCode::OK,
+                            Json(json!({"data": [user], "message": "OK"})),
+                        ),
+                        None => (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({"message": "Unauthorized"})),
+                        ),
+                    }
+                }),
+            )
+            .route(
+                "/channels",
+                get(move |headers: HeaderMap| async move {
+                    let (id, slug) = match bearer(&headers).as_str() {
+                        "kick-a" => (json!(123), "KickErik"),
+                        "kick-b" => (json!(456), "other-kick"),
+                        _ => return StatusCode::UNAUTHORIZED.into_response(),
+                    };
+                    Json(json!({"data": [{
+                        "broadcaster_user_id": id,
+                        "slug": slug,
+                        "channel_description": "",
+                        "stream": {"is_live": false},
+                    }], "message": "OK"}))
+                    .into_response()
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        (format!("http://{address}"), fake)
+    }
+
+    fn kick_app(kick: &str) -> KickApp {
+        KickApp {
+            client_id: "kid".to_string(),
+            client_secret: "ksecret".to_string(),
+            authorize_url: format!("{kick}/authorize"),
+            token_url: format!("{kick}/token"),
+            users_url: format!("{kick}/users"),
+            channels_url: format!("{kick}/channels"),
+        }
+    }
+
+    struct SignInFlow {
+        client: reqwest::Client,
+        address: String,
+        fake_kick: FakeKick,
+    }
+
+    impl SignInFlow {
+        fn new(address: &str, fake_kick: FakeKick) -> Self {
+            Self {
+                client: reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .unwrap(),
+                address: address.to_string(),
+                fake_kick,
+            }
+        }
+
+        async fn start(&self, path: &str) -> (HashMap<String, String>, String) {
+            let response = self
+                .client
+                .get(format!("http://{}{path}", self.address))
+                .send()
+                .await
+                .unwrap();
+            let cookie = response.headers()["set-cookie"]
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_string();
+            let query: HashMap<_, _> = reqwest::Url::parse(&location(&response))
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect();
+            if let Some(challenge) = query.get("code_challenge") {
+                *self.fake_kick.challenge.lock().unwrap() = Some(challenge.clone());
+            }
+            (query, cookie)
+        }
+
+        async fn finish(&self, platform: &str, code: &str, state: &str, cookie: &str) -> String {
+            location(
+                &self
+                    .client
+                    .get(format!(
+                        "http://{}/auth/{platform}/callback?code={code}&state={state}",
+                        self.address
+                    ))
+                    .header("cookie", cookie)
+                    .send()
+                    .await
+                    .unwrap(),
+            )
+        }
+
+        async fn sign_in(&self, platform: &str, code: &str) -> String {
+            let (query, cookie) = self.start(&format!("/auth/{platform}/login")).await;
+            self.finish(platform, code, &query["state"], &cookie).await
+        }
+
+        async fn link(&self, platform: &str, code: &str) -> String {
+            let (query, cookie) = self.start(&format!("/auth/{platform}/login?link=1")).await;
+            self.finish(platform, code, &query["state"], &cookie).await
+        }
+    }
+
+    fn session_of(dashboard: &str) -> String {
+        dashboard
+            .strip_prefix("https://moblin.app/dashboard/#session=")
+            .unwrap_or_else(|| panic!("{dashboard}"))
+            .to_string()
+    }
+
+    fn link_of(dashboard: &str) -> String {
+        dashboard
+            .strip_prefix("https://moblin.app/dashboard/#link=")
+            .unwrap_or_else(|| panic!("{dashboard}"))
+            .to_string()
+    }
+
+    async fn account_of(address: &str, session: &str) -> Value {
+        reqwest::Client::new()
+            .get(format!("http://{address}/account"))
+            .bearer_auth(session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap()
+    }
+
+    async fn get_json(address: &str, path: &str) -> (StatusCode, Value) {
+        let response = reqwest::Client::new()
+            .get(format!("http://{address}{path}"))
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        (status, response.json().await.unwrap_or(Value::Null))
+    }
+
+    #[tokio::test]
+    async fn kick_streamers_sign_in_with_pkce() {
+        let (kick, fake) = start_kick().await;
+        let (address, api) = start_api_with(None, None, None, Some(kick_app(&kick)), None).await;
+        let flow = SignInFlow::new(&address, fake.clone());
+        let unconfigured = start().await;
+        let response = reqwest::Client::new()
+            .get(format!("http://{unconfigured}/auth/kick/login"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let (query, cookie) = flow.start("/auth/kick/login").await;
+        assert_eq!(query["client_id"], "kid");
+        assert_eq!(query["redirect_uri"], "http://localhost/auth/kick/callback");
+        assert_eq!(query["scope"], "user:read channel:read");
+        assert_eq!(query["code_challenge_method"], "S256");
+        assert_eq!(cookie, format!("moblin_sign_in_state={}", query["state"]));
+        assert_eq!(
+            flow.finish(
+                "kick",
+                "kick-a",
+                &query["state"],
+                "moblin_sign_in_state=other"
+            )
+            .await,
+            "https://moblin.app/dashboard/#signInFailed"
+        );
+        let session = session_of(&flow.sign_in("kick", "kick-a").await);
+        let token = fake.tokens.lock().unwrap().last().unwrap().clone();
+        assert_eq!(token["client_id"], "kid");
+        assert_eq!(token["client_secret"], "ksecret");
+        assert_eq!(token["grant_type"], "authorization_code");
+        assert_eq!(token["redirect_uri"], "http://localhost/auth/kick/callback");
+        let account = account_of(&address, &session).await;
+        assert_eq!(account["name"], "KickErik");
+        assert_eq!(account["avatar"], "https://files.kick.com/erik.png");
+        assert_eq!(account["twitch"], Value::Null);
+        assert_eq!(
+            account["kick"],
+            json!({"login": "kickerik", "name": "KickErik", "avatar": "https://files.kick.com/erik.png"})
+        );
+        assert_eq!(account["moderators"], json!([]));
+        assert_eq!(account["moderating"], json!([]));
+        let id = account["settings"]["id"].as_str().unwrap().to_string();
+        let session_account = api.auth.session_of(&session).unwrap().account;
+        assert_ne!(session_account, "123");
+        assert_eq!(session_account.len(), 32);
+        assert!(session_account.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(api.accounts.get(&session_account).unwrap().page.id, id);
+        assert_eq!(api.accounts.get("123"), None);
+        let (status, name) = get_json(&address, "/pages/kick/KickErik").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(name["id"], id);
+        let (status, _) = get_json(&address, "/pages/twitch/kickerik").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
+        assert_eq!(profile["twitch"], Value::Null);
+        assert_eq!(profile["kick"]["login"], "kickerik");
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({
+                "subSongs": {"tier1": 1, "tier2": 2, "tier3": 3},
+                "subSpins": {"tier1": 1, "tier2": 2, "tier3": 3},
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
+        assert_eq!(songs["subSongs"], Value::Null);
+        let (_, spin) = get_json(&address, &format!("/pages/{id}/spin")).await;
+        assert_eq!(spin["subSpins"], Value::Null);
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login?page={id}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let response = client
+            .post(format!("http://{address}/account/moderators/7"))
+            .bearer_auth(&session)
+            .json(&json!({"enabled": true}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.text().await.unwrap(), "Link Twitch first.");
+        let again = session_of(&flow.sign_in("kick", "kick-a").await);
+        assert_eq!(
+            api.auth.session_of(&again).unwrap().account,
+            session_account
+        );
+        assert_eq!(account_of(&address, &again).await["settings"]["id"], id);
+        assert_eq!(
+            flow.sign_in("kick", "unknown").await,
+            "https://moblin.app/dashboard/#signInFailed"
+        );
+        let other = session_of(&flow.sign_in("kick", "kick-b").await);
+        let other = account_of(&address, &other).await;
+        assert_eq!(
+            other["kick"],
+            json!({"login": "other-kick", "name": "other-kick", "avatar": null})
+        );
+        assert_ne!(other["settings"]["id"], id);
+        let account = api.accounts.get(&session_account).unwrap();
+        assert_eq!(account.identities[0].admin_key(), "kick:123");
+        assert!(!is_admin(&api, &account));
+        assert_eq!(
+            api.accounts.stats(&["kick:123", "kick:456", "123"]).premium,
+            2
+        );
+        assert_eq!(api.accounts.stats(&["123", "456"]).premium, 0);
+    }
+
+    #[tokio::test]
+    async fn linked_platforms_share_one_account() {
+        let twitch = start_twitch().await;
+        let (kick, fake) = start_kick().await;
+        let (address, api) = start_api_with(
+            None,
+            None,
+            Some(twitch_app(&twitch)),
+            Some(kick_app(&kick)),
+            None,
+        )
+        .await;
+        let flow = SignInFlow::new(&address, fake.clone());
+        let client = reqwest::Client::new();
+        let session = session_of(&flow.sign_in("twitch", "c").await);
+        let account = account_of(&address, &session).await;
+        let id = account["settings"]["id"].as_str().unwrap().to_string();
+        let key = key_of(&account);
+        let twitch_account = api.auth.session_of(&session).unwrap().account;
+        assert_ne!(twitch_account, "42");
+        assert_eq!(account["kick"], Value::Null);
+        let link = |token: &str, session: &str| {
+            client
+                .post(format!("http://{address}/account/link"))
+                .bearer_auth(session)
+                .json(&json!({"token": token}))
+                .send()
+        };
+        let unlink = |platform: &str, session: &str| {
+            client
+                .post(format!("http://{address}/account/unlink/{platform}"))
+                .bearer_auth(session)
+                .send()
+        };
+        let response = unlink("twitch", &session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "You can't unlink the only way to sign in. Link another platform first."
+        );
+        let response = unlink("kick", &session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let response = unlink("youtube", &session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let response = link("garbage", &session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            flow.link("kick", "unknown").await,
+            "https://moblin.app/dashboard/#linkFailed"
+        );
+        let token = link_of(&flow.link("kick", "kick-a").await);
+        assert_eq!(api.auth.link_of(&token).unwrap().user_id, "123".to_string());
+        assert_eq!(
+            api.accounts.get(&twitch_account).unwrap().identities.len(),
+            1
+        );
+        let response = link(&token, "garbage").await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let account: Value = link(&token, &session).await.unwrap().json().await.unwrap();
+        assert_eq!(account["twitch"]["login"], "erik");
+        assert_eq!(account["kick"]["login"], "kickerik");
+        assert_eq!(account["name"], "Erik");
+        assert_eq!(account["settings"]["id"], id);
+        assert_eq!(key_of(&account), key);
+        let kick_session = session_of(&flow.sign_in("kick", "kick-a").await);
+        assert_eq!(
+            api.auth.session_of(&kick_session).unwrap().account,
+            twitch_account
+        );
+        let account = account_of(&address, &kick_session).await;
+        assert_eq!(account["settings"]["id"], id);
+        assert_eq!(account["twitch"]["login"], "erik");
+        assert_eq!(key_of(&account), key);
+        for path in ["/pages/twitch/erik", "/pages/kick/kickerik"] {
+            let (status, name) = get_json(&address, path).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert_eq!(name["id"], id, "{path}");
+        }
+        let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
+        assert_eq!(
+            profile["twitch"],
+            json!({"login": "erik", "name": "Erik", "avatar": "https://static-cdn.jtvnw.net/erik.png"})
+        );
+        assert_eq!(
+            profile["kick"],
+            json!({"login": "kickerik", "name": "KickErik", "avatar": "https://files.kick.com/erik.png"})
+        );
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"subSongs": {"tier1": 1, "tier2": 2, "tier3": 3}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
+        assert_eq!(songs["subSongs"]["tier1"], 1);
+        let other = session_of(&flow.sign_in("kick", "kick-b").await);
+        let other_account = api.auth.session_of(&other).unwrap().account;
+        assert_ne!(other_account, twitch_account);
+        let token = link_of(&flow.link("twitch", "c").await);
+        let response = link(&token, &other).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "This Twitch account already has its own page. Delete it first."
+        );
+        let token = link_of(&flow.link("kick", "kick-b").await);
+        let response = link(&token, &session).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "This Kick account already has its own page. Delete it first."
+        );
+        assert_eq!(
+            api.accounts.get(&other_account).unwrap().identities.len(),
+            1
+        );
+        assert_eq!(
+            api.accounts.get(&twitch_account).unwrap().identities.len(),
+            2
+        );
+        let account: Value = unlink("twitch", &kick_session)
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(account["twitch"], Value::Null);
+        assert_eq!(account["kick"]["login"], "kickerik");
+        assert_eq!(account["name"], "KickErik");
+        assert_eq!(account["settings"]["id"], id);
+        let (status, _) = get_json(&address, "/pages/twitch/erik").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
+        assert_eq!(songs["subSongs"], Value::Null);
+        assert_eq!(account_of(&address, &session).await["settings"]["id"], id);
+        let fresh = session_of(&flow.sign_in("twitch", "c").await);
+        let fresh_account = api.auth.session_of(&fresh).unwrap().account;
+        assert_ne!(fresh_account, twitch_account);
+        assert_ne!(account_of(&address, &fresh).await["settings"]["id"], id);
+        let (status, name) = get_json(&address, "/pages/twitch/erik").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_ne!(name["id"], id);
+    }
+
+    #[tokio::test]
+    async fn old_twitch_accounts_get_new_ids_and_keep_their_page_and_sessions() {
+        let twitch = start_twitch().await;
+        let path = crate::database::temporary_path("old-twitch-accounts");
+        let database = Database::open(Some(&path)).unwrap();
+        database
+            .lock()
+            .execute_batch(
+                "INSERT INTO accounts (id, name, login, avatar, page_id, sessions) VALUES
+                     ('42', 'Old Erik', 'erik', NULL, 'oldpage', 3);
+                 INSERT INTO devices (key, account, id, name, position) VALUES ('k', '42', 'oldpage', 'Moblin', 0);
+                 INSERT INTO pages (id, settings) VALUES ('oldpage', '{\"message\":\"Old\"}');
+                 INSERT INTO channel_moderators (broadcaster, moderator, login, name) VALUES ('7', '42', 'erik', 'Erik');
+                 INSERT INTO enabled_moderators (broadcaster, moderator) VALUES ('7', '42');
+                 DELETE FROM identities;",
+            )
+            .unwrap();
+        drop(database);
+        let database = Database::open(Some(&path)).unwrap();
+        let api = Arc::new(Api {
+            store: Arc::new(Store::new(6, Database::memory())),
+            challenges: Challenges::new(),
+            app_attest: None,
+            live: None,
+            remote_control: Streamers::new(),
+            pages: Pages::new(database.clone()),
+            paypal: None,
+            stripe: None,
+            orders: Orders::new(database.clone()),
+            allowances: Allowances::new(database.clone()),
+            deliveries: Deliveries::new(database.clone()),
+            auth: Auth::new(
+                reqwest::Client::new(),
+                "http://localhost".to_string(),
+                "https://moblin.app".to_string(),
+                Some(twitch_app(&twitch)),
+                None,
+                Some("secret"),
+            )
+            .unwrap(),
+            accounts: Accounts::new(database.clone()),
+            counters: Counters::new(database.clone()),
+            database,
+            admins: vec!["42".to_string()],
+            premium_accounts: Vec::new(),
+            started: 0,
+            tests: Mutex::default(),
+            song_finds: Mutex::default(),
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
+        tokio::spawn({
+            let api = api.clone();
+            async move { axum::serve(listener, router(api)).await }
+        });
+        assert_eq!(api.accounts.get("42"), None);
+        let id = api
+            .accounts
+            .account_of_identity(Platform::Twitch, "42")
+            .unwrap();
+        assert_eq!(id.len(), 32);
+        let old_session = api.auth.session("42", 3);
+        let account = account_of(&address, &old_session).await;
+        assert_eq!(account["settings"]["id"], "oldpage");
+        assert_eq!(account["twitch"]["login"], "erik");
+        assert_eq!(account["admin"], true);
+        let response = reqwest::Client::new()
+            .get(format!("http://{address}/account"))
+            .bearer_auth(api.auth.session("42", 2))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        create_account(&api, "7", "Streamer", "streamer");
+        assert_eq!(
+            account_of(&address, &old_session).await["moderating"][0]["login"],
+            "streamer"
+        );
+        let flow = SignInFlow::new(&address, FakeKick::default());
+        let session = session_of(&flow.sign_in("twitch", "c").await);
+        assert_eq!(api.auth.session_of(&session).unwrap().account, id);
+        let account = account_of(&address, &session).await;
+        assert_eq!(account["settings"]["id"], "oldpage");
+        assert_eq!(account["settings"]["message"], "Old");
+        assert_eq!(account["name"], "Erik");
+        assert_eq!(key_of(&account), "k");
+        assert_eq!(account["admin"], true);
+        let (_, name) = get_json(&address, "/pages/twitch/erik").await;
+        assert_eq!(name["id"], "oldpage");
+        crate::database::remove(&path);
     }
 
     #[tokio::test]
@@ -7880,7 +8701,11 @@ mod tests {
         assert!(!api.remote_control.is_connected(&id));
         assert_eq!(api.deliveries.count(), 0);
         assert!(api.accounts.get("1").is_none());
-        assert!(api.accounts.page_of_login("erik").is_none());
+        assert!(
+            api.accounts
+                .page_of_login(Platform::Twitch, "erik")
+                .is_none()
+        );
         assert!(api.accounts.device_of_key(&key).is_none());
         assert!(api.accounts.channel_moderators("21").is_empty());
         assert!(api.accounts.moderated("21").is_empty());
@@ -7936,7 +8761,10 @@ mod tests {
         );
         let again = create_account(&api, "1", "Erik", "erik");
         assert_ne!(again.page.id, id);
-        assert_eq!(api.accounts.page_of_login("erik"), Some(again.page.id));
+        assert_eq!(
+            api.accounts.page_of_login(Platform::Twitch, "erik"),
+            Some(again.page.id)
+        );
     }
 
     #[tokio::test]
@@ -8463,7 +9291,7 @@ mod tests {
         assert!(server["now"].as_u64().unwrap() > 0);
         assert_eq!(
             server["integrations"],
-            json!({"twitch": false, "appAttest": false, "paypal": false, "stripe": false})
+            json!({"twitch": false, "kick": false, "appAttest": false, "paypal": false, "stripe": false})
         );
         assert_eq!(
             stats,
@@ -8752,7 +9580,8 @@ mod tests {
         assert_eq!(own["settings"]["merchantId"], "MERCHANT00001");
         let account: Value = get(&mod1, "").await.json().await.unwrap();
         assert_eq!(account["name"], "Erik");
-        assert_eq!(account["login"], "erik");
+        assert_eq!(account["twitch"]["login"], "erik");
+        assert_eq!(account["kick"], Value::Null);
         assert_eq!(account["devices"], json!([]));
         assert_eq!(account["admin"], false);
         assert_eq!(account["premium"], false);

@@ -226,11 +226,43 @@ export const captureOrder = async (kind: keyof typeof segments, id: string, orde
 
 export const musicStatus = (id: string) => call<MusicStatus>(pagePath(id, "/songs/queue"));
 
-export type Profile = Page & {
-  name: string;
+export type Platform = "twitch" | "kick";
+
+export const platforms: Platform[] = ["twitch", "kick"];
+
+export const platformNames: Record<Platform, string> = { twitch: "Twitch", kick: "Kick" };
+
+export const channelUrl = (platform: Platform, login: string) =>
+  platform === "twitch"
+    ? `https://www.twitch.tv/${encodeURIComponent(login)}`
+    : `https://kick.com/${encodeURIComponent(login)}`;
+
+export const channelText = (platform: Platform, login: string) =>
+  platform === "twitch" ? `twitch.tv/${login}` : `kick.com/${login}`;
+
+export type Identity = {
   login: string;
+  name: string;
   avatar: string | null;
+};
+
+export type Profile = Page & {
+  twitch: Identity | null;
+  kick: Identity | null;
   image: string | null;
+};
+
+export const identityOf = (
+  profile: { twitch: Identity | null; kick: Identity | null },
+  platform: Platform | null,
+): (Identity & { platform: Platform }) | null => {
+  for (const name of platform ? [platform] : platforms) {
+    const identity = profile[name];
+    if (identity) {
+      return { ...identity, platform: name };
+    }
+  }
+  return null;
 };
 
 export const pageImageUrl = (id: string, version: string) =>
@@ -327,5 +359,5 @@ export const orderSpin = (
     }),
   );
 
-export const idOfTwitchLogin = async (login: string) =>
-  (await call<{ id: string }>(`/twitch/${encodeURIComponent(login)}`)).id;
+export const idOfLogin = async (platform: Platform, login: string) =>
+  (await call<{ id: string }>(`/${platform}/${encodeURIComponent(login)}`)).id;

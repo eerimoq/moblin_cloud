@@ -6,17 +6,20 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use reqwest::{Client, Url};
+use ring::digest::{SHA256, digest};
 use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::accounts::ChannelModerator;
+use crate::accounts::{ChannelModerator, Identity, Platform};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
 const SESSION_LIFETIME: u64 = 30 * 24 * 60 * 60;
 const VIEWER_LIFETIME: u64 = 24 * 60 * 60;
+const LINK_LIFETIME: u64 = 600;
 const VIEWER_PREFIX: &str = "viewer:";
+const LINK_PREFIX: &str = "link:";
 pub const STATE_COOKIE: &str = "moblin_sign_in_state";
 
 pub struct OAuthApp {
@@ -54,6 +57,39 @@ impl OAuthApp {
     }
 }
 
+pub struct KickApp {
+    pub client_id: String,
+    pub client_secret: String,
+    pub authorize_url: String,
+    pub token_url: String,
+    pub users_url: String,
+    pub channels_url: String,
+}
+
+impl KickApp {
+    pub fn kick(client_id: String, client_secret: String) -> Self {
+        Self::at(
+            "https://id.kick.com",
+            "https://api.kick.com",
+            client_id,
+            client_secret,
+        )
+    }
+
+    pub fn at(id_url: &str, api_url: &str, client_id: String, client_secret: String) -> Self {
+        let id_url = id_url.trim_end_matches('/');
+        let api_url = api_url.trim_end_matches('/');
+        Self {
+            client_id,
+            client_secret,
+            authorize_url: format!("{id_url}/oauth/authorize"),
+            token_url: format!("{id_url}/oauth/token"),
+            users_url: format!("{api_url}/public/v1/users"),
+            channels_url: format!("{api_url}/public/v1/channels"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Session {
     pub account: String,
@@ -67,17 +103,16 @@ impl Session {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct User {
-    pub id: String,
-    pub name: String,
-    pub login: String,
-    pub avatar: Option<String>,
+pub struct SignIn {
+    pub identity: Identity,
+    token: Option<String>,
 }
 
-pub struct SignIn {
-    pub user: User,
-    token: Option<String>,
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SignInState {
+    pub page: Option<String>,
+    pub link: bool,
+    pub verifier: Option<String>,
 }
 
 #[derive(Debug)]
@@ -95,14 +130,22 @@ pub struct Viewer {
     pub issued: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+struct Link {
+    #[serde(flatten)]
+    identity: Identity,
+    issued: u64,
+}
+
 pub struct Auth {
     client: Client,
     public_url: String,
     pub frontend_url: String,
     twitch: Option<OAuthApp>,
+    kick: Option<KickApp>,
     key: hmac::Key,
     random: SystemRandom,
-    pending: Mutex<HashMap<String, (Instant, Option<String>)>>,
+    pending: Mutex<HashMap<String, (Instant, SignInState)>>,
 }
 
 impl Auth {
@@ -111,6 +154,7 @@ impl Auth {
         public_url: String,
         frontend_url: String,
         twitch: Option<OAuthApp>,
+        kick: Option<KickApp>,
         secret: Option<&str>,
     ) -> Result<Self> {
         let random = SystemRandom::new();
@@ -124,19 +168,28 @@ impl Auth {
             public_url: public_url.trim_end_matches('/').to_string(),
             frontend_url: frontend_url.trim_end_matches('/').to_string(),
             twitch,
+            kick,
             key,
             random,
             pending: Mutex::new(HashMap::new()),
         })
     }
 
-    fn redirect_uri(&self) -> String {
-        format!("{}/auth/twitch/callback", self.public_url)
+    pub fn has_kick(&self) -> bool {
+        self.kick.is_some()
     }
 
-    pub fn login_url(&self, page: Option<&str>) -> Option<(String, String)> {
+    fn redirect_uri(&self, platform: Platform) -> String {
+        format!("{}/auth/{}/callback", self.public_url, platform.name())
+    }
+
+    pub fn twitch_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
         let app = self.twitch.as_ref()?;
-        let state = self.new_state(page)?;
+        let state = self.new_state(SignInState {
+            page: page.map(str::to_string),
+            link,
+            verifier: None,
+        })?;
         let scope = if page.is_some() {
             "user:read:subscriptions"
         } else {
@@ -146,9 +199,34 @@ impl Auth {
             &app.authorize_url,
             [
                 ("client_id", app.client_id.as_str()),
-                ("redirect_uri", self.redirect_uri().as_str()),
+                ("redirect_uri", self.redirect_uri(Platform::Twitch).as_str()),
                 ("response_type", "code"),
                 ("scope", scope),
+                ("state", state.as_str()),
+            ],
+        )
+        .ok()
+        .map(|url| (url.into(), state))
+    }
+
+    pub fn kick_login_url(&self, link: bool) -> Option<(String, String)> {
+        let app = self.kick.as_ref()?;
+        let verifier = self.random_token()?;
+        let challenge = BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()));
+        let state = self.new_state(SignInState {
+            page: None,
+            link,
+            verifier: Some(verifier),
+        })?;
+        Url::parse_with_params(
+            &app.authorize_url,
+            [
+                ("client_id", app.client_id.as_str()),
+                ("redirect_uri", self.redirect_uri(Platform::Kick).as_str()),
+                ("response_type", "code"),
+                ("scope", "user:read channel:read"),
+                ("code_challenge", challenge.as_str()),
+                ("code_challenge_method", "S256"),
                 ("state", state.as_str()),
             ],
         )
@@ -169,10 +247,14 @@ impl Auth {
         self.state_cookie("").replace("Max-Age=600", "Max-Age=0")
     }
 
-    fn new_state(&self, page: Option<&str>) -> Option<String> {
+    fn random_token(&self) -> Option<String> {
         let mut bytes = [0; 32];
         self.random.fill(&mut bytes).ok()?;
-        let state = BASE64_URL_SAFE_NO_PAD.encode(bytes);
+        Some(BASE64_URL_SAFE_NO_PAD.encode(bytes))
+    }
+
+    fn new_state(&self, state: SignInState) -> Option<String> {
+        let token = self.random_token()?;
         {
             let mut pending = self.pending.lock().unwrap();
             if pending.len() >= MAX_PENDING {
@@ -181,17 +263,17 @@ impl Auth {
                     return None;
                 }
             }
-            pending.insert(state.clone(), (Instant::now(), page.map(str::to_string)));
+            pending.insert(token.clone(), (Instant::now(), state));
         }
-        Some(state)
+        Some(token)
     }
 
     pub fn consume_state(
         &self,
         state: &str,
         browser_state: Option<&str>,
-    ) -> Result<Option<String>, StateError> {
-        let Some((created, page)) = self.pending.lock().unwrap().remove(state) else {
+    ) -> Result<SignInState, StateError> {
+        let Some((created, pending)) = self.pending.lock().unwrap().remove(state) else {
             return Err(StateError {
                 page: None,
                 error: anyhow!("unknown state"),
@@ -199,35 +281,28 @@ impl Auth {
         };
         if created.elapsed() >= STATE_LIFETIME {
             return Err(StateError {
-                page,
+                page: pending.page,
                 error: anyhow!("expired state"),
             });
         }
         if browser_state != Some(state) {
             return Err(StateError {
-                page,
+                page: pending.page,
                 error: anyhow!("the state is from another browser"),
             });
         }
-        Ok(page)
+        Ok(pending)
     }
 
-    pub async fn callback(&self, code: &str) -> Result<SignIn> {
-        let app = self.twitch.as_ref().context("Twitch not configured")?;
+    async fn access_token(&self, url: &str, form: &[(&str, &str)]) -> Result<String> {
         #[derive(Deserialize)]
         struct Token {
             access_token: String,
         }
         let token: Token = self
             .client
-            .post(&app.token_url)
-            .form(&[
-                ("client_id", app.client_id.as_str()),
-                ("client_secret", app.client_secret.as_str()),
-                ("code", code),
-                ("grant_type", "authorization_code"),
-                ("redirect_uri", self.redirect_uri().as_str()),
-            ])
+            .post(url)
+            .form(form)
             .send()
             .await
             .context("failed to exchange the code")?
@@ -236,6 +311,23 @@ impl Auth {
             .json()
             .await
             .context("unexpected answer to the code exchange")?;
+        Ok(token.access_token)
+    }
+
+    pub async fn twitch_callback(&self, code: &str) -> Result<SignIn> {
+        let app = self.twitch.as_ref().context("Twitch not configured")?;
+        let token = self
+            .access_token(
+                &app.token_url,
+                &[
+                    ("client_id", app.client_id.as_str()),
+                    ("client_secret", app.client_secret.as_str()),
+                    ("code", code),
+                    ("grant_type", "authorization_code"),
+                    ("redirect_uri", self.redirect_uri(Platform::Twitch).as_str()),
+                ],
+            )
+            .await?;
         #[derive(Deserialize)]
         struct Users {
             data: Vec<TwitchUser>,
@@ -250,7 +342,7 @@ impl Auth {
         let users: Users = self
             .client
             .get(&app.users_url)
-            .bearer_auth(&token.access_token)
+            .bearer_auth(&token)
             .header("Client-Id", &app.client_id)
             .send()
             .await
@@ -265,7 +357,8 @@ impl Auth {
             bail!("no user id or login");
         }
         Ok(SignIn {
-            user: User {
+            identity: Identity {
+                platform: Platform::Twitch,
                 name: user
                     .display_name
                     .filter(|name| !name.is_empty())
@@ -274,9 +367,98 @@ impl Auth {
                 avatar: user
                     .profile_image_url
                     .filter(|url| url.starts_with("https://")),
-                id: user.id,
+                user_id: user.id,
             },
-            token: Some(token.access_token),
+            token: Some(token),
+        })
+    }
+
+    pub async fn kick_callback(&self, code: &str, verifier: &str) -> Result<SignIn> {
+        let app = self.kick.as_ref().context("Kick not configured")?;
+        let token = self
+            .access_token(
+                &app.token_url,
+                &[
+                    ("client_id", app.client_id.as_str()),
+                    ("client_secret", app.client_secret.as_str()),
+                    ("code", code),
+                    ("code_verifier", verifier),
+                    ("grant_type", "authorization_code"),
+                    ("redirect_uri", self.redirect_uri(Platform::Kick).as_str()),
+                ],
+            )
+            .await?;
+        #[derive(Deserialize)]
+        struct Users {
+            data: Vec<KickUser>,
+        }
+        #[derive(Deserialize)]
+        struct KickUser {
+            #[serde(deserialize_with = "id_text")]
+            user_id: String,
+            name: Option<String>,
+            profile_picture: Option<String>,
+        }
+        #[derive(Deserialize)]
+        struct Channels {
+            data: Vec<KickChannel>,
+        }
+        #[derive(Deserialize)]
+        struct KickChannel {
+            #[serde(deserialize_with = "id_text")]
+            broadcaster_user_id: String,
+            slug: String,
+        }
+        let users: Users = self
+            .client
+            .get(&app.users_url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .context("failed to get the user")?
+            .error_for_status()
+            .context("the user was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the user request")?;
+        let user = users.data.into_iter().next().context("no user")?;
+        if user.user_id.is_empty() {
+            bail!("no user id");
+        }
+        let channels: Channels = self
+            .client
+            .get(&app.channels_url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .context("failed to get the channel")?
+            .error_for_status()
+            .context("the channel was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the channel request")?;
+        let channel = channels
+            .data
+            .into_iter()
+            .find(|channel| channel.broadcaster_user_id == user.user_id)
+            .context("no channel")?;
+        if channel.slug.is_empty() {
+            bail!("no channel slug");
+        }
+        Ok(SignIn {
+            identity: Identity {
+                platform: Platform::Kick,
+                name: user
+                    .name
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| channel.slug.clone()),
+                login: channel.slug.to_lowercase(),
+                avatar: user
+                    .profile_picture
+                    .filter(|url| url.starts_with("https://")),
+                user_id: user.user_id,
+            },
+            token: None,
         })
     }
 
@@ -292,7 +474,7 @@ impl Auth {
             .get(&app.subscriptions_url)
             .query(&[
                 ("broadcaster_id", broadcaster),
-                ("user_id", &sign_in.user.id),
+                ("user_id", &sign_in.identity.user_id),
             ])
             .bearer_auth(token)
             .header("Client-Id", &app.client_id)
@@ -350,7 +532,7 @@ impl Auth {
         let mut after = None;
         for _ in 0..20 {
             let mut query = vec![
-                ("broadcaster_id", sign_in.user.id.clone()),
+                ("broadcaster_id", sign_in.identity.user_id.clone()),
                 ("first", "100".to_string()),
             ];
             if let Some(cursor) = after {
@@ -398,7 +580,7 @@ impl Auth {
 
     pub fn session_of(&self, session: &str) -> Option<Session> {
         let payload = self.verified(session)?;
-        if payload.starts_with(VIEWER_PREFIX) {
+        if payload.starts_with(VIEWER_PREFIX) || payload.starts_with(LINK_PREFIX) {
             return None;
         }
         let (rest, issued) = payload.rsplit_once(':')?;
@@ -438,6 +620,23 @@ impl Auth {
         (viewer.issued + VIEWER_LIFETIME > now()).then_some(viewer)
     }
 
+    pub fn link_token(&self, identity: Identity) -> String {
+        let link = Link {
+            identity,
+            issued: now(),
+        };
+        self.sign(&format!(
+            "{LINK_PREFIX}{}",
+            serde_json::to_string(&link).unwrap()
+        ))
+    }
+
+    pub fn link_of(&self, token: &str) -> Option<Identity> {
+        let payload = self.verified(token)?;
+        let link: Link = serde_json::from_str(payload.strip_prefix(LINK_PREFIX)?).ok()?;
+        (link.issued + LINK_LIFETIME > now()).then_some(link.identity)
+    }
+
     fn sign(&self, payload: &str) -> String {
         let tag = hmac::sign(&self.key, payload.as_bytes());
         format!(
@@ -454,6 +653,14 @@ impl Auth {
         hmac::verify(&self.key, &payload, &tag).ok()?;
         String::from_utf8(payload).ok()
     }
+}
+
+fn id_text<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(text) => text,
+        serde_json::Value::Number(number) => number.to_string(),
+        _ => String::new(),
+    })
 }
 
 fn now() -> u64 {
@@ -473,9 +680,18 @@ mod tests {
             "https://api.example.com/".to_string(),
             "https://example.com".to_string(),
             Some(OAuthApp::twitch("id".to_string(), "secret".to_string())),
+            Some(KickApp::kick("kid".to_string(), "ksecret".to_string())),
             Some(secret),
         )
         .unwrap()
+    }
+
+    fn query_of(url: &str) -> HashMap<String, String> {
+        Url::parse(url)
+            .unwrap()
+            .query_pairs()
+            .into_owned()
+            .collect()
     }
 
     #[test]
@@ -502,7 +718,7 @@ mod tests {
     #[test]
     fn states_are_single_use() {
         let auth = new_auth("secret");
-        let (url, state) = auth.login_url(None).unwrap();
+        let (url, state) = auth.twitch_login_url(None, false).unwrap();
         let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(url.host_str(), Some("id.twitch.tv"));
@@ -513,14 +729,17 @@ mod tests {
         assert_eq!(query["scope"], "openid moderation:read");
         assert_eq!(query["state"], state);
         let state = Some(state.as_str());
-        assert_eq!(auth.consume_state(&query["state"], state).unwrap(), None);
+        assert_eq!(
+            auth.consume_state(&query["state"], state).unwrap(),
+            SignInState::default()
+        );
         assert!(auth.consume_state(&query["state"], state).is_err());
         auth.pending.lock().unwrap().insert(
             "old".to_string(),
-            (Instant::now() - STATE_LIFETIME * 2, None),
+            (Instant::now() - STATE_LIFETIME * 2, SignInState::default()),
         );
         assert!(auth.consume_state("old", Some("old")).is_err());
-        let (url, state) = auth.login_url(Some("page")).unwrap();
+        let (url, state) = auth.twitch_login_url(Some("page"), false).unwrap();
         let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(query["scope"], "user:read:subscriptions");
@@ -531,11 +750,57 @@ mod tests {
                 .as_deref(),
             Some("page")
         );
-        let (_, state) = auth.login_url(Some("page")).unwrap();
+        let (_, state) = auth.twitch_login_url(Some("page"), false).unwrap();
         assert_eq!(
-            auth.consume_state(&state, Some(&state)).unwrap().as_deref(),
+            auth.consume_state(&state, Some(&state))
+                .unwrap()
+                .page
+                .as_deref(),
             Some("page")
         );
+        let (_, state) = auth.twitch_login_url(None, true).unwrap();
+        assert!(auth.consume_state(&state, Some(&state)).unwrap().link);
+    }
+
+    #[test]
+    fn kick_signs_in_with_pkce() {
+        let auth = new_auth("secret");
+        let (url, state) = auth.kick_login_url(true).unwrap();
+        let parsed = Url::parse(&url).unwrap();
+        assert_eq!(parsed.host_str(), Some("id.kick.com"));
+        assert_eq!(parsed.path(), "/oauth/authorize");
+        let query = query_of(&url);
+        assert_eq!(query["client_id"], "kid");
+        assert_eq!(
+            query["redirect_uri"],
+            "https://api.example.com/auth/kick/callback"
+        );
+        assert_eq!(query["response_type"], "code");
+        assert_eq!(query["scope"], "user:read channel:read");
+        assert_eq!(query["code_challenge_method"], "S256");
+        assert_eq!(query["state"], state);
+        let pending = auth.consume_state(&state, Some(&state)).unwrap();
+        assert!(pending.link);
+        assert_eq!(pending.page, None);
+        let verifier = pending.verifier.unwrap();
+        assert!(verifier.len() >= 43);
+        assert_eq!(
+            query["code_challenge"],
+            BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()))
+        );
+        let (other, _) = auth.kick_login_url(false).unwrap();
+        assert_ne!(query_of(&other)["code_challenge"], query["code_challenge"]);
+        let without = Auth::new(
+            Client::new(),
+            "https://api.example.com".to_string(),
+            "https://example.com".to_string(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(without.kick_login_url(false).is_none());
+        assert!(without.twitch_login_url(None, false).is_none());
     }
 
     #[test]
@@ -572,6 +837,33 @@ mod tests {
     }
 
     #[test]
+    fn link_tokens_carry_the_identity_for_ten_minutes() {
+        let auth = new_auth("secret");
+        let identity = Identity {
+            platform: Platform::Kick,
+            user_id: "123".to_string(),
+            login: "erik".to_string(),
+            name: "Erik".to_string(),
+            avatar: Some("https://files.kick.com/erik.png".to_string()),
+        };
+        let token = auth.link_token(identity.clone());
+        assert_eq!(auth.link_of(&token), Some(identity.clone()));
+        assert_eq!(auth.session_of(&token), None);
+        assert_eq!(auth.viewer_of(&token), None);
+        assert_eq!(new_auth("other").link_of(&token), None);
+        assert_eq!(auth.link_of(&auth.session("1", 0)), None);
+        let expired = auth.sign(&format!(
+            "{LINK_PREFIX}{}",
+            serde_json::to_string(&Link {
+                identity,
+                issued: now() - LINK_LIFETIME,
+            })
+            .unwrap()
+        ));
+        assert_eq!(auth.link_of(&expired), None);
+    }
+
+    #[test]
     fn state_cookie_is_secure_over_https() {
         assert_eq!(
             new_auth("secret").state_cookie("s"),
@@ -581,6 +873,7 @@ mod tests {
             Client::new(),
             "http://localhost:5173/api".to_string(),
             "http://localhost:5173".to_string(),
+            None,
             None,
             None,
         )
@@ -614,5 +907,24 @@ mod tests {
             OAuthApp::twitch("id".to_string(), "secret".to_string()).authorize_url,
             "https://id.twitch.tv/oauth2/authorize"
         );
+    }
+
+    #[test]
+    fn kick_app_at_another_kick() {
+        let app = KickApp::at(
+            "http://localhost:8082/",
+            "http://localhost:8082",
+            "id".to_string(),
+            "secret".to_string(),
+        );
+        assert_eq!(app.authorize_url, "http://localhost:8082/oauth/authorize");
+        assert_eq!(app.token_url, "http://localhost:8082/oauth/token");
+        assert_eq!(app.users_url, "http://localhost:8082/public/v1/users");
+        assert_eq!(app.channels_url, "http://localhost:8082/public/v1/channels");
+        let app = KickApp::kick("id".to_string(), "secret".to_string());
+        assert_eq!(app.authorize_url, "https://id.kick.com/oauth/authorize");
+        assert_eq!(app.token_url, "https://id.kick.com/oauth/token");
+        assert_eq!(app.users_url, "https://api.kick.com/public/v1/users");
+        assert_eq!(app.channels_url, "https://api.kick.com/public/v1/channels");
     }
 }

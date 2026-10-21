@@ -12,6 +12,7 @@ from systest import wait_until
 
 from .config import FRONTEND_URL
 from .config import Config
+from .fake_kick import FakeKick
 from .fake_twitch import FakeTwitch
 from .utils import FILES_DIR
 from .utils import REPO_DIR
@@ -38,6 +39,7 @@ class Backend:
         self._lines: list[str] = []
         self._process: ManagedProcess | None = None
         self.fake_twitch: FakeTwitch | None = None
+        self.fake_kick: FakeKick | None = None
 
     def __enter__(self):
         self.start()
@@ -54,6 +56,8 @@ class Backend:
         if self.config.twitch_sign_in() == "fake":
             self.fake_twitch = FakeTwitch()
             self.fake_twitch.start()
+            self.fake_kick = FakeKick()
+            self.fake_kick.start()
         self._process = ManagedProcess(
             [str(BINARY), *self._arguments()],
             LOGGER_PROCESS,
@@ -70,6 +74,9 @@ class Backend:
         if self.fake_twitch is not None:
             self.fake_twitch.stop()
             self.fake_twitch = None
+        if self.fake_kick is not None:
+            self.fake_kick.stop()
+            self.fake_kick = None
 
     def restart(self):
         self.stop()
@@ -137,6 +144,8 @@ class Backend:
                 arguments += ["--app-id", app_id]
         if self.fake_twitch is not None:
             arguments += ["--twitch-sign-in-url", self.fake_twitch.url]
+        if self.fake_kick is not None:
+            arguments += ["--kick-sign-in-url", self.fake_kick.url]
         twitch = self.config.twitch()
         if twitch is not None:
             arguments += [

@@ -35,7 +35,7 @@ impl Database {
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
-                 CREATE INDEX IF NOT EXISTS accounts_login ON accounts (login);
+                 DROP INDEX IF EXISTS accounts_login;
                  CREATE TABLE IF NOT EXISTS devices (
                      key TEXT PRIMARY KEY,
                      account TEXT NOT NULL,
@@ -52,6 +52,7 @@ impl Database {
                      name TEXT NOT NULL,
                      PRIMARY KEY (broadcaster, moderator)
                  );
+                 CREATE INDEX IF NOT EXISTS channel_moderators_moderator ON channel_moderators (moderator);
                  CREATE TABLE IF NOT EXISTS enabled_moderators (
                      broadcaster TEXT NOT NULL,
                      moderator TEXT NOT NULL,
@@ -108,7 +109,33 @@ impl Database {
                  );
                  CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);
                  CREATE INDEX IF NOT EXISTS deliveries_streamer ON deliveries (streamer, test);
-                 CREATE INDEX IF NOT EXISTS deliveries_open ON deliveries (requested_at) WHERE NOT finished AND failure IS NOT 'not-found';",
+                 CREATE INDEX IF NOT EXISTS deliveries_open ON deliveries (requested_at) WHERE NOT finished AND failure IS NOT 'not-found';
+                 CREATE TABLE IF NOT EXISTS identities (
+                     platform TEXT NOT NULL,
+                     user_id TEXT NOT NULL,
+                     account TEXT NOT NULL,
+                     login TEXT NOT NULL,
+                     name TEXT NOT NULL,
+                     avatar TEXT,
+                     PRIMARY KEY (platform, user_id)
+                 );
+                 CREATE INDEX IF NOT EXISTS identities_account ON identities (account);
+                 CREATE INDEX IF NOT EXISTS identities_login ON identities (platform, login);
+                 INSERT OR IGNORE INTO identities (platform, user_id, account, login, name, avatar)
+                     SELECT 'twitch', id, id, login, name, avatar FROM accounts
+                     WHERE id NOT IN (SELECT account FROM identities);
+                 BEGIN;
+                 CREATE TEMP TABLE renamed_accounts AS
+                     SELECT id AS old, lower(hex(randomblob(16))) AS new FROM accounts
+                     WHERE length(id) != 32 OR id IS NOT lower(hex(unhex(id)));
+                 UPDATE accounts SET id = (SELECT new FROM renamed_accounts WHERE old = accounts.id)
+                     WHERE id IN (SELECT old FROM renamed_accounts);
+                 UPDATE devices SET account = (SELECT new FROM renamed_accounts WHERE old = devices.account)
+                     WHERE account IN (SELECT old FROM renamed_accounts);
+                 UPDATE identities SET account = (SELECT new FROM renamed_accounts WHERE old = identities.account)
+                     WHERE account IN (SELECT old FROM renamed_accounts);
+                 DROP TABLE renamed_accounts;
+                 COMMIT;",
             )
             .context("failed to create the database tables")?;
         connection.set_prepared_statement_cache_capacity(64);

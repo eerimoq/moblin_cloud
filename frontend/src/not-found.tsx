@@ -9,10 +9,10 @@ const Page = lazy(() => import("./pages/Page"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 
 const path = location.pathname.slice(import.meta.env.BASE_URL.length);
-const twitchLogin = path.match(/^twitch\/([^/]+)\/?$/)?.[1];
+const streamer = path.match(/^(twitch|kick)\/([^/]+)\/?$/);
 const dashboard = /^dashboard\/twitch\/[^/]+\/?$/.test(path);
 
-if (twitchLogin) {
+if (streamer) {
   document.title = "Moblin";
 } else if (dashboard) {
   document.title = t("Moblin Cloud – Moblin");
@@ -20,8 +20,8 @@ if (twitchLogin) {
 
 render(
   () =>
-    twitchLogin ? (
-      <Page twitch={decodeURIComponent(twitchLogin)} />
+    streamer ? (
+      <Page platform={streamer[1] as "twitch" | "kick"} login={decodeURIComponent(streamer[2])} />
     ) : dashboard ? (
       <DashboardPage />
     ) : (

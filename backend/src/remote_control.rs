@@ -284,6 +284,15 @@ impl Streamers {
         Some(BASE64_URL_SAFE_NO_PAD.encode(self.random_bytes::<16>()?))
     }
 
+    pub fn new_account_id(&self) -> Option<String> {
+        Some(
+            self.random_bytes::<16>()?
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        )
+    }
+
     pub fn disconnect(&self, id: &str) {
         self.sessions.lock().unwrap().by_id.remove(id);
     }

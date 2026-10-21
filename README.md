@@ -33,10 +33,12 @@ just frontend-run
 ```
 
 and open http://localhost:5173. The backend runs in development mode: it is
-filled with made-up streamers and signs in with a fake Twitch
-(`tests/utils/fake_twitch.py`, started by `just backend-run`), so no
-credentials are needed. Sign in at http://localhost:5173/dashboard/ and the
-fake Twitch asks which made-up user to sign in as: `admin` is an admin,
+filled with made-up streamers and signs in with a fake Twitch and a fake Kick
+(`tests/utils/fake_twitch.py` and `tests/utils/fake_kick.py`, started by
+`just backend-run`), so no credentials are needed. Sign in at
+http://localhost:5173/dashboard/ and the fake asks which made-up user to
+sign in as (the same login on Twitch and Kick is two different users until
+linked in the dashboard's Linked accounts section): `admin` is an admin,
 `premium` a premium account, `normal` neither, a login ending in 1, 2 or 3
 is a subscriber of that tier, and `mod_normal` moderates `normal` (listed in
 the dashboard when `normal` signs in, to be turned on there). Each login has

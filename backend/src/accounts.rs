@@ -6,17 +6,83 @@ use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Platform {
+    Twitch,
+    Kick,
+}
+
+impl Platform {
+    pub fn name(self) -> &'static str {
+        match self {
+            Platform::Twitch => "twitch",
+            Platform::Kick => "kick",
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Platform::Twitch => "Twitch",
+            Platform::Kick => "Kick",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "twitch" => Some(Platform::Twitch),
+            "kick" => Some(Platform::Kick),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Identity {
+    pub platform: Platform,
+    pub user_id: String,
+    pub login: String,
+    pub name: String,
+    pub avatar: Option<String>,
+}
+
+impl Identity {
+    pub fn admin_key(&self) -> String {
+        match self.platform {
+            Platform::Twitch => self.user_id.clone(),
+            Platform::Kick => format!("kick:{}", self.user_id),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Account {
     pub name: String,
     pub login: String,
     pub avatar: Option<String>,
+    pub identities: Vec<Identity>,
     pub page: Page,
     pub sessions: u64,
     pub merchant_id: Option<String>,
     pub paypal_tracking_id: Option<String>,
     pub stripe_account_id: Option<String>,
     pub stripe_ready: bool,
+}
+
+impl Account {
+    pub fn identity(&self, platform: Platform) -> Option<&Identity> {
+        self.identities
+            .iter()
+            .find(|identity| identity.platform == platform)
+    }
+
+    pub fn twitch(&self) -> Option<&Identity> {
+        self.identity(Platform::Twitch)
+    }
+
+    pub fn twitch_id(&self) -> Option<&str> {
+        self.twitch().map(|twitch| twitch.user_id.as_str())
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -89,6 +155,9 @@ pub enum AccountError {
     UnknownDevice,
     DeviceOff,
     UnknownModerator,
+    IdentityTaken(Platform),
+    UnknownIdentity,
+    LastIdentity,
     NotSaved,
 }
 
@@ -104,17 +173,22 @@ const COLUMNS: &str = "name, login, avatar, page_id, music_device, wheel_device,
 
 const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', name, 'key', key, 'enabled', json(iif(enabled, 'true', 'false'))) ORDER BY position) FROM devices WHERE account = accounts.id)";
 
-const SAME_LOGIN: &str = "login != '' AND login = lower(trim(?1))";
+const IDENTITIES: &str = "(SELECT json_group_array(json_object('platform', platform, 'user_id', user_id, 'login', login, 'name', name, 'avatar', avatar) ORDER BY platform = 'twitch' DESC, platform) FROM identities WHERE account = accounts.id)";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
     let devices: String = row.get(11)?;
     let devices = serde_json::from_str(&devices).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, error.into())
     })?;
+    let identities: String = row.get(12)?;
+    let identities = serde_json::from_str(&identities).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(12, rusqlite::types::Type::Text, error.into())
+    })?;
     Ok(Account {
         name: row.get(0)?,
         login: row.get(1)?,
         avatar: row.get(2)?,
+        identities,
         page: Page {
             id: row.get(3)?,
             devices,
@@ -129,6 +203,16 @@ fn account(row: &Row) -> rusqlite::Result<Account> {
     })
 }
 
+fn read(connection: &Connection, id: &str) -> rusqlite::Result<Option<Account>> {
+    connection
+        .query_row(
+            &format!("SELECT {COLUMNS}, {DEVICES}, {IDENTITIES} FROM accounts WHERE id = ?1"),
+            [id],
+            account,
+        )
+        .optional()
+}
+
 fn save_devices(connection: &Connection, id: &str, devices: &[Device]) -> rusqlite::Result<()> {
     connection.execute("DELETE FROM devices WHERE account = ?1", [id])?;
     for (position, device) in devices.iter().enumerate() {
@@ -138,6 +222,57 @@ fn save_devices(connection: &Connection, id: &str, devices: &[Device]) -> rusqli
         )?;
     }
     Ok(())
+}
+
+fn save_identity(connection: &Connection, id: &str, identity: &Identity) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT OR REPLACE INTO identities (platform, user_id, account, login, name, avatar) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            identity.platform.name(),
+            identity.user_id,
+            id,
+            identity.login,
+            identity.name,
+            identity.avatar,
+        ],
+    )?;
+    let renamed: Vec<String> = connection
+        .prepare_cached(
+            "UPDATE identities SET login = '' WHERE platform = ?1 AND user_id != ?2 AND login != '' AND login = lower(trim(?3)) RETURNING account",
+        )?
+        .query_map(
+            params![identity.platform.name(), identity.user_id, identity.login],
+            |row| row.get(0),
+        )?
+        .collect::<rusqlite::Result<_>>()?;
+    for account in renamed.iter().chain([&id.to_string()]) {
+        sync_profile(connection, account)?;
+    }
+    Ok(())
+}
+
+fn sync_profile(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE accounts SET name = identity.name, login = identity.login, avatar = identity.avatar
+         FROM (SELECT name, login, avatar FROM identities WHERE account = ?1 ORDER BY platform = 'twitch' DESC, platform LIMIT 1) AS identity
+         WHERE accounts.id = ?1",
+        [id],
+    )?;
+    Ok(())
+}
+
+fn account_of_identity(
+    connection: &Connection,
+    platform: Platform,
+    user_id: &str,
+) -> rusqlite::Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT account FROM identities WHERE platform = ?1 AND user_id = ?2",
+            [platform.name(), user_id],
+            |row| row.get(0),
+        )
+        .optional()
 }
 
 fn not_saved(error: rusqlite::Error) -> AccountError {
@@ -160,48 +295,123 @@ impl Accounts {
 
     pub fn signed_in(
         &self,
-        id: &str,
-        name: &str,
-        login: &str,
-        avatar: Option<&str>,
-        page: Page,
-    ) -> Result<Account, AccountError> {
-        let account = self.change(id, Some(page), |account| {
-            account.name = name.to_string();
-            account.login = login.to_string();
-            account.avatar = avatar.map(str::to_string);
-            Ok(())
-        })?;
-        if let Err(error) = self.database.lock().execute(
-            &format!("UPDATE accounts SET login = '' WHERE id != ?2 AND {SAME_LOGIN}"),
-            params![login, id],
-        ) {
-            warn!("failed to save accounts: {error:#}");
+        identity: &Identity,
+        new_account: (String, Page),
+    ) -> Result<(String, Account), AccountError> {
+        let mut database = self.database.lock();
+        let transaction = database.transaction().map_err(not_saved)?;
+        let existing = account_of_identity(&transaction, identity.platform, &identity.user_id)
+            .map_err(not_saved)?;
+        let id = match existing {
+            Some(id) => id,
+            None => {
+                let (id, page) = new_account;
+                if count(&transaction).map_err(not_saved)? >= 10000 {
+                    return Err(AccountError::Full);
+                }
+                transaction
+                    .execute(
+                        &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, NULL, NULL, NULL, 0)"),
+                        params![
+                            id,
+                            identity.name,
+                            identity.login,
+                            identity.avatar,
+                            page.id,
+                            page.music_device,
+                            page.wheel_device,
+                        ],
+                    )
+                    .map_err(not_saved)?;
+                save_devices(&transaction, &id, &page.devices).map_err(not_saved)?;
+                transaction
+                    .execute(
+                        "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{\"max_song_length\":{\"enabled\":true,\"minutes\":7}}')",
+                        [&page.id],
+                    )
+                    .map_err(not_saved)?;
+                id
+            }
+        };
+        save_identity(&transaction, &id, identity).map_err(not_saved)?;
+        let account = read(&transaction, &id)
+            .map_err(not_saved)?
+            .ok_or(AccountError::Unknown)?;
+        transaction.commit().map_err(not_saved)?;
+        Ok((id, account))
+    }
+
+    pub fn link(&self, id: &str, identity: &Identity) -> Result<Account, AccountError> {
+        let mut database = self.database.lock();
+        let transaction = database.transaction().map_err(not_saved)?;
+        read(&transaction, id)
+            .map_err(not_saved)?
+            .ok_or(AccountError::Unknown)?;
+        if let Some(other) = account_of_identity(&transaction, identity.platform, &identity.user_id)
+            .map_err(not_saved)?
+            && other != id
+        {
+            return Err(AccountError::IdentityTaken(identity.platform));
         }
+        save_identity(&transaction, id, identity).map_err(not_saved)?;
+        let account = read(&transaction, id)
+            .map_err(not_saved)?
+            .ok_or(AccountError::Unknown)?;
+        transaction.commit().map_err(not_saved)?;
         Ok(account)
     }
 
-    pub fn page_of_login(&self, login: &str) -> Option<String> {
-        Some(self.find(SAME_LOGIN, login)?.page.id)
+    pub fn unlink(&self, id: &str, platform: Platform) -> Result<Account, AccountError> {
+        let mut database = self.database.lock();
+        let transaction = database.transaction().map_err(not_saved)?;
+        let account = read(&transaction, id)
+            .map_err(not_saved)?
+            .ok_or(AccountError::Unknown)?;
+        if account.identity(platform).is_none() {
+            return Err(AccountError::UnknownIdentity);
+        }
+        if account.identities.len() < 2 {
+            return Err(AccountError::LastIdentity);
+        }
+        transaction
+            .execute(
+                "DELETE FROM identities WHERE account = ?1 AND platform = ?2",
+                [id, platform.name()],
+            )
+            .map_err(not_saved)?;
+        sync_profile(&transaction, id).map_err(not_saved)?;
+        let account = read(&transaction, id)
+            .map_err(not_saved)?
+            .ok_or(AccountError::Unknown)?;
+        transaction.commit().map_err(not_saved)?;
+        Ok(account)
+    }
+
+    pub fn account_of_identity(&self, platform: Platform, user_id: &str) -> Option<String> {
+        account_of_identity(&self.database.lock(), platform, user_id).unwrap_or_else(|error| {
+            warn!("failed to read identities: {error:#}");
+            None
+        })
+    }
+
+    pub fn page_of_login(&self, platform: Platform, login: &str) -> Option<String> {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT page_id FROM identities JOIN accounts ON accounts.id = identities.account
+                 WHERE platform = ?1 AND identities.login != '' AND identities.login = lower(trim(?2))",
+                [platform.name(), login],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read identities: {error:#}");
+                None
+            })
     }
 
     pub fn of_page(&self, page: &str) -> Option<Account> {
         self.find("page_id = ?1", page)
-    }
-
-    pub fn streamer_of_page(&self, page: &str) -> Option<(String, String)> {
-        self.database
-            .lock()
-            .query_row(
-                "SELECT id, login FROM accounts WHERE page_id = ?1",
-                [page],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .unwrap_or_else(|error| {
-                warn!("failed to read accounts: {error:#}");
-                None
-            })
     }
 
     pub fn device_of_key(&self, key: &str) -> Option<String> {
@@ -218,7 +428,7 @@ impl Accounts {
     }
 
     pub fn add_device(&self, id: &str, device: Device) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             let page = &mut account.page;
             if page.devices.len() >= 5 {
                 return Err(AccountError::TooManyDevices);
@@ -229,7 +439,7 @@ impl Accounts {
     }
 
     pub fn remove_device(&self, id: &str, device: &str) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             let page = &mut account.page;
             page.device_mut(device)?;
             page.devices.retain(|other| other.id != device);
@@ -248,7 +458,7 @@ impl Accounts {
         device: &str,
         key: String,
     ) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             let page = &mut account.page;
             page.device_mut(device)?.key = key;
             Ok(())
@@ -261,7 +471,7 @@ impl Accounts {
         device: &str,
         enabled: bool,
     ) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             let page = &mut account.page;
             page.device_mut(device)?.enabled = enabled;
             if !enabled {
@@ -281,7 +491,7 @@ impl Accounts {
         music: String,
         wheel: String,
     ) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             let page = &mut account.page;
             for device in [&music, &wheel] {
                 if !page.device_mut(device)?.enabled {
@@ -295,7 +505,7 @@ impl Accounts {
     }
 
     pub fn start_paypal(&self, id: &str, tracking_id: String) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             account.paypal_tracking_id = Some(tracking_id);
             Ok(())
         })
@@ -307,7 +517,7 @@ impl Accounts {
         tracking_id: &str,
         merchant_id: String,
     ) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             if account.paypal_tracking_id.as_deref() == Some(tracking_id) {
                 account.merchant_id = Some(merchant_id);
                 account.paypal_tracking_id = None;
@@ -349,7 +559,7 @@ impl Accounts {
     }
 
     pub fn forget_paypal(&self, id: &str) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             account.merchant_id = None;
             account.paypal_tracking_id = None;
             Ok(())
@@ -357,7 +567,7 @@ impl Accounts {
     }
 
     pub fn start_stripe(&self, id: &str, account_id: String) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             if account.stripe_account_id.as_ref() != Some(&account_id) {
                 account.stripe_account_id = Some(account_id);
                 account.stripe_ready = false;
@@ -372,7 +582,7 @@ impl Accounts {
         account_id: &str,
         ready: bool,
     ) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             if account.stripe_account_id.as_deref() == Some(account_id) {
                 account.stripe_ready = ready;
             }
@@ -381,7 +591,7 @@ impl Accounts {
     }
 
     pub fn forget_stripe(&self, id: &str) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             account.stripe_account_id = None;
             account.stripe_ready = false;
             Ok(())
@@ -477,13 +687,13 @@ impl Accounts {
         Ok(())
     }
 
-    pub fn moderates(&self, id: &str, broadcaster: &str) -> bool {
+    pub fn moderates(&self, moderator: &str, broadcaster: &str) -> bool {
         self.database
             .lock()
             .query_row(
                 "SELECT 1 FROM channel_moderators JOIN enabled_moderators USING (moderator, broadcaster)
                  WHERE moderator = ?1 AND broadcaster = ?2",
-                [id, broadcaster],
+                [moderator, broadcaster],
                 |_| Ok(()),
             )
             .optional()
@@ -494,19 +704,19 @@ impl Accounts {
             .is_some()
     }
 
-    pub fn moderated(&self, id: &str) -> Vec<Account> {
+    pub fn moderated(&self, moderator: &str) -> Vec<Account> {
         let broadcasters: Vec<String> = {
             let database = self.database.lock();
             let result = database
                 .prepare_cached(
-                    "SELECT broadcaster FROM channel_moderators
+                    "SELECT identities.account FROM channel_moderators
                      JOIN enabled_moderators USING (moderator, broadcaster)
-                     JOIN accounts ON accounts.id = broadcaster
-                     WHERE moderator = ?1 ORDER BY accounts.name COLLATE NOCASE",
+                     JOIN identities ON identities.platform = 'twitch' AND identities.user_id = broadcaster
+                     WHERE moderator = ?1 ORDER BY identities.name COLLATE NOCASE",
                 )
                 .and_then(|mut statement| {
                     statement
-                        .query_map([id], |row| row.get(0))?
+                        .query_map([moderator], |row| row.get(0))?
                         .collect::<rusqlite::Result<_>>()
                 });
             result.unwrap_or_else(|error| {
@@ -521,7 +731,7 @@ impl Accounts {
     }
 
     pub fn sign_out(&self, id: &str) -> Result<Account, AccountError> {
-        self.change(id, None, |account| {
+        self.change(id, |account| {
             account.sessions += 1;
             Ok(())
         })
@@ -530,33 +740,33 @@ impl Accounts {
     pub fn delete(&self, id: &str) -> Result<Account, AccountError> {
         let mut database = self.database.lock();
         let transaction = database.transaction().map_err(not_saved)?;
-        let account = transaction
-            .query_row(
-                &format!("SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE id = ?1"),
-                [id],
-                account,
-            )
-            .optional()
+        let account = read(&transaction, id)
             .map_err(not_saved)?
             .ok_or(AccountError::Unknown)?;
         let page = account.page.id.as_str();
-        for (statement, key) in [
+        let mut statements = vec![
             ("DELETE FROM accounts WHERE id = ?1", id),
             ("DELETE FROM devices WHERE account = ?1", id),
-            (
-                "DELETE FROM channel_moderators WHERE broadcaster = ?1 OR moderator = ?1",
-                id,
-            ),
-            (
-                "DELETE FROM enabled_moderators WHERE broadcaster = ?1 OR moderator = ?1",
-                id,
-            ),
+            ("DELETE FROM identities WHERE account = ?1", id),
             ("DELETE FROM pages WHERE id = ?1", page),
             ("DELETE FROM page_images WHERE id = ?1", page),
             ("DELETE FROM orders WHERE streamer = ?1", page),
             ("DELETE FROM deliveries WHERE streamer = ?1", page),
             ("DELETE FROM subscriber_allowances WHERE page = ?1", page),
-        ] {
+        ];
+        if let Some(twitch) = account.twitch_id() {
+            statements.extend([
+                (
+                    "DELETE FROM channel_moderators WHERE broadcaster = ?1 OR moderator = ?1",
+                    twitch,
+                ),
+                (
+                    "DELETE FROM enabled_moderators WHERE broadcaster = ?1 OR moderator = ?1",
+                    twitch,
+                ),
+            ]);
+        }
+        for (statement, key) in statements {
             transaction.execute(statement, [key]).map_err(not_saved)?;
         }
         transaction.commit().map_err(not_saved)?;
@@ -568,7 +778,11 @@ impl Accounts {
             .lock()
             .query_row(
                 "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0),
-                        count(*) FILTER (WHERE id IN (SELECT value FROM json_each(?1)))
+                        count(*) FILTER (WHERE EXISTS (
+                            SELECT 1 FROM identities WHERE identities.account = accounts.id
+                            AND iif(platform = 'twitch', user_id, platform || ':' || user_id)
+                                IN (SELECT value FROM json_each(?1))
+                        ))
                  FROM accounts",
                 [serde_json::to_string(premium).unwrap()],
                 |row| {
@@ -590,7 +804,7 @@ impl Accounts {
         self.database
             .lock()
             .prepare_cached(&format!(
-                "SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE {condition} LIMIT 1"
+                "SELECT {COLUMNS}, {DEVICES}, {IDENTITIES} FROM accounts WHERE {condition} LIMIT 1"
             ))
             .and_then(|mut statement| statement.query_row([value], account).optional())
             .unwrap_or_else(|error| {
@@ -602,34 +816,16 @@ impl Accounts {
     fn change(
         &self,
         id: &str,
-        create: Option<Page>,
         change: impl FnOnce(&mut Account) -> Result<(), AccountError>,
     ) -> Result<Account, AccountError> {
         let mut database = self.database.lock();
         let transaction = database.transaction().map_err(not_saved)?;
-        let old = transaction
-            .query_row(
-                &format!("SELECT {COLUMNS}, {DEVICES} FROM accounts WHERE id = ?1"),
-                [id],
-                account,
-            )
-            .optional()
-            .map_err(not_saved)?;
-        let mut account = match &old {
-            Some(account) => account.clone(),
-            None => match create {
-                None => return Err(AccountError::Unknown),
-                Some(_) if count(&transaction).map_err(not_saved)? >= 10000 => {
-                    return Err(AccountError::Full);
-                }
-                Some(page) => Account {
-                    page,
-                    ..Account::default()
-                },
-            },
-        };
+        let old = read(&transaction, id)
+            .map_err(not_saved)?
+            .ok_or(AccountError::Unknown)?;
+        let mut account = old.clone();
         change(&mut account)?;
-        if old.as_ref() == Some(&account) {
+        if old == account {
             return Ok(account);
         }
         transaction
@@ -651,16 +847,8 @@ impl Accounts {
                 ],
             )
             .map_err(not_saved)?;
-        if old.as_ref().map(|old| &old.page.devices) != Some(&account.page.devices) {
+        if old.page.devices != account.page.devices {
             save_devices(&transaction, id, &account.page.devices).map_err(not_saved)?;
-        }
-        if old.is_none() {
-            transaction
-                .execute(
-                    "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{\"max_song_length\":{\"enabled\":true,\"minutes\":7}}')",
-                    [&account.page.id],
-                )
-                .map_err(not_saved)?;
         }
         transaction.commit().map_err(not_saved)?;
         Ok(account)
@@ -689,36 +877,154 @@ mod tests {
         Page::new(id.to_string(), device(id, key))
     }
 
+    fn twitch(id: &str, name: &str, login: &str) -> Identity {
+        Identity {
+            platform: Platform::Twitch,
+            user_id: id.to_string(),
+            login: login.to_string(),
+            name: name.to_string(),
+            avatar: None,
+        }
+    }
+
+    fn kick(id: &str, name: &str, login: &str) -> Identity {
+        Identity {
+            platform: Platform::Kick,
+            ..twitch(id, name, login)
+        }
+    }
+
+    fn sign_in(
+        accounts: &Accounts,
+        id: &str,
+        name: &str,
+        login: &str,
+        page: Page,
+    ) -> Result<Account, AccountError> {
+        accounts
+            .signed_in(&twitch(id, name, login), (id.to_string(), page))
+            .map(|(_, account)| account)
+    }
+
     #[test]
     fn pages_are_kept() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.get("1"), None);
         assert_eq!(
-            accounts.signed_in("1", "Erik", "erik", None, page("p", "k")),
+            sign_in(&accounts, "1", "Erik", "erik", page("p", "k")),
             Ok(Account {
                 name: "Erik".to_string(),
                 login: "erik".to_string(),
+                identities: vec![twitch("1", "Erik", "erik")],
                 page: page("p", "k"),
                 ..Account::default()
             })
         );
+        let (id, account) = accounts
+            .signed_in(
+                &twitch("1", "Eerimoq", "eerimoq"),
+                ("other".to_string(), page("q", "o")),
+            )
+            .unwrap();
+        assert_eq!(id, "1");
+        assert_eq!(account.page, page("p", "k"));
+        assert_eq!(accounts.get("1").unwrap().name, "Eerimoq");
+        assert_eq!(accounts.get("other"), None);
+        assert_eq!(accounts.page_of_login(Platform::Twitch, "erik"), None);
         assert_eq!(
             accounts
-                .signed_in("1", "Eerimoq", "eerimoq", None, page("q", "o"))
-                .unwrap()
-                .page,
-            page("p", "k")
+                .page_of_login(Platform::Twitch, "eerimoq")
+                .as_deref(),
+            Some("p")
         );
-        assert_eq!(accounts.get("1").unwrap().name, "Eerimoq");
+    }
+
+    #[test]
+    fn platforms_are_linked_and_unlinked() {
+        let accounts = Accounts::new(Database::memory());
+        assert_eq!(
+            accounts.link("1", &kick("7", "Erik", "erik")),
+            Err(AccountError::Unknown)
+        );
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        let (other, _) = accounts
+            .signed_in(
+                &kick("8", "Other", "other"),
+                ("random".to_string(), page("q", "l")),
+            )
+            .unwrap();
+        assert_eq!(other, "random");
+        assert_eq!(accounts.get("random").unwrap().name, "Other");
+        assert_eq!(
+            accounts.link("1", &kick("8", "Other", "other")),
+            Err(AccountError::IdentityTaken(Platform::Kick))
+        );
+        assert_eq!(
+            accounts.link("random", &twitch("1", "Erik", "erik")),
+            Err(AccountError::IdentityTaken(Platform::Twitch))
+        );
+        let account = accounts.link("1", &kick("7", "Kick Erik", "erik")).unwrap();
+        assert_eq!(
+            account.identities,
+            [twitch("1", "Erik", "erik"), kick("7", "Kick Erik", "erik")]
+        );
+        assert_eq!(account.name, "Erik");
+        assert_eq!(
+            accounts.page_of_login(Platform::Kick, "erik").as_deref(),
+            Some("p")
+        );
+        assert_eq!(
+            accounts.page_of_login(Platform::Twitch, "other").as_deref(),
+            None
+        );
+        let (id, account) = accounts
+            .signed_in(
+                &kick("7", "Kick Erik", "kickerik"),
+                ("unused".to_string(), page("r", "m")),
+            )
+            .unwrap();
+        assert_eq!(id, "1");
+        assert_eq!(account.identities[1].login, "kickerik");
+        assert_eq!(accounts.get("unused"), None);
+        assert_eq!(
+            accounts.unlink("1", Platform::Twitch).unwrap().identities,
+            [kick("7", "Kick Erik", "kickerik")]
+        );
+        assert_eq!(accounts.get("1").unwrap().name, "Kick Erik");
+        assert_eq!(
+            accounts.unlink("1", Platform::Twitch),
+            Err(AccountError::UnknownIdentity)
+        );
+        assert_eq!(
+            accounts.unlink("1", Platform::Kick),
+            Err(AccountError::LastIdentity)
+        );
+        assert_eq!(accounts.page_of_login(Platform::Twitch, "erik"), None);
+        let (id, _) = accounts
+            .signed_in(
+                &twitch("1", "Erik", "erik"),
+                ("fresh".to_string(), page("s", "n")),
+            )
+            .unwrap();
+        assert_eq!(id, "fresh");
+        assert_eq!(
+            accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
+            Some("s")
+        );
+        assert_eq!(
+            accounts.link("1", &twitch("1", "Erik", "erik")),
+            Err(AccountError::IdentityTaken(Platform::Twitch))
+        );
+        let account = accounts.link("1", &kick("7", "Again", "kickerik")).unwrap();
+        assert_eq!(account.identities.len(), 1);
+        assert_eq!(account.name, "Again");
     }
 
     #[test]
     fn moderators_need_the_streamer_to_turn_them_on() {
         let accounts = Accounts::new(Database::memory());
         for (id, name, key) in [("1", "Erik", "k"), ("2", "Bob", "l"), ("3", "Alice", "m")] {
-            accounts
-                .signed_in(id, name, &name.to_lowercase(), None, page(id, key))
-                .unwrap();
+            sign_in(&accounts, id, name, &name.to_lowercase(), page(id, key)).unwrap();
         }
         let names = |id| {
             accounts
@@ -784,33 +1090,67 @@ mod tests {
     }
 
     #[test]
+    fn moderated_channels_are_found_by_twitch_identity() {
+        let accounts = Accounts::new(Database::memory());
+        let (streamer, _) = accounts
+            .signed_in(
+                &twitch("42", "Streamer", "streamer"),
+                ("s".to_string(), page("p", "k")),
+            )
+            .unwrap();
+        sign_in(&accounts, "1", "Mod", "mod", page("q", "l")).unwrap();
+        accounts.set_channel_moderators(
+            "42",
+            &[ChannelModerator {
+                id: "1".to_string(),
+                login: "mod".to_string(),
+                name: "Mod".to_string(),
+                enabled: false,
+            }],
+        );
+        accounts.enable_moderator("42", "1", true).unwrap();
+        assert_eq!(accounts.moderated("1")[0].page.id, "p");
+        assert!(accounts.moderates("1", "42"));
+        accounts
+            .link("s", &kick("9", "Streamer", "streamer"))
+            .unwrap();
+        accounts.unlink("s", Platform::Twitch).unwrap();
+        assert!(accounts.moderated("1").is_empty());
+        assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
+        accounts
+            .link("s", &twitch("42", "Streamer", "streamer"))
+            .unwrap();
+        assert_eq!(accounts.moderated("1")[0].page.id, "p");
+    }
+
+    #[test]
     fn pages_find_their_account() {
         let accounts = Accounts::new(Database::memory());
         accounts
             .signed_in(
-                "1",
-                "Erik",
-                "erik",
-                Some("https://example.com/a.png"),
-                page("p", "k"),
+                &Identity {
+                    avatar: Some("https://example.com/a.png".to_string()),
+                    ..twitch("1", "Erik", "erik")
+                },
+                ("1".to_string(), page("p", "k")),
             )
             .unwrap();
         assert_eq!(accounts.of_page("q"), None);
         let account = accounts.of_page("p").unwrap();
         assert_eq!(account.login, "erik");
         assert_eq!(account.avatar.as_deref(), Some("https://example.com/a.png"));
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
+        assert_eq!(
+            account.twitch().unwrap().avatar.as_deref(),
+            Some("https://example.com/a.png")
+        );
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
         assert_eq!(accounts.of_page("p").unwrap().avatar, None);
     }
 
     #[test]
     fn keys_are_replaced() {
         let accounts = Accounts::new(Database::memory());
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
         assert_eq!(accounts.device_of_key("k").as_deref(), Some("p"));
         assert_eq!(
             accounts.replace_key("1", "d", "n".to_string()),
@@ -834,9 +1174,7 @@ mod tests {
             accounts.add_device("1", device("a", "ka")),
             Err(AccountError::Unknown)
         );
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
         for name in ["a", "b", "c", "d"] {
             accounts
                 .add_device("1", device(name, &format!("k{name}")))
@@ -908,20 +1246,20 @@ mod tests {
         let page = accounts.get("1").unwrap().page;
         assert!(page.devices.is_empty());
         assert_eq!(page.music_device(), None);
-        assert_eq!(accounts.page_of_login("erik").as_deref(), Some("p"));
+        assert_eq!(
+            accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
+            Some("p")
+        );
     }
 
     #[test]
     fn signing_out_ends_sessions() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.sign_out("1"), Err(AccountError::Unknown));
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
         assert_eq!(accounts.sign_out("1").unwrap().sessions, 1);
         assert_eq!(
-            accounts
-                .signed_in("1", "Erik", "erik", None, page("q", "o"))
+            sign_in(&accounts, "1", "Erik", "erik", page("q", "o"))
                 .unwrap()
                 .sessions,
             1
@@ -935,9 +1273,7 @@ mod tests {
             accounts.start_paypal("1", "a".to_string()),
             Err(AccountError::Unknown)
         );
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
         accounts.start_paypal("1", "a".to_string()).unwrap();
         accounts.start_paypal("1", "b".to_string()).unwrap();
         let account = accounts
@@ -977,9 +1313,7 @@ mod tests {
             accounts.start_stripe("1", "acct_1".to_string()),
             Err(AccountError::Unknown)
         );
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
         accounts.start_stripe("1", "acct_1".to_string()).unwrap();
         assert!(
             !accounts
@@ -1011,52 +1345,165 @@ mod tests {
     #[test]
     fn logins_find_pages() {
         let accounts = Accounts::new(Database::memory());
-        assert_eq!(accounts.page_of_login("erik"), None);
-        accounts
-            .signed_in("1", "Erik", "erik", None, page("a", "k"))
-            .unwrap();
-        assert_eq!(accounts.page_of_login("ERIK").as_deref(), Some("a"));
-        assert_eq!(accounts.page_of_login("other"), None);
-        assert_eq!(accounts.page_of_login(""), None);
-        accounts
-            .signed_in("2", "Erik", "erik", None, page("c", "l"))
-            .unwrap();
-        assert_eq!(accounts.page_of_login("erik").as_deref(), Some("c"));
+        assert_eq!(accounts.page_of_login(Platform::Twitch, "erik"), None);
+        sign_in(&accounts, "1", "Erik", "erik", page("a", "k")).unwrap();
+        assert_eq!(
+            accounts.page_of_login(Platform::Twitch, "ERIK").as_deref(),
+            Some("a")
+        );
+        assert_eq!(accounts.page_of_login(Platform::Kick, "erik"), None);
+        assert_eq!(accounts.page_of_login(Platform::Twitch, "other"), None);
+        assert_eq!(accounts.page_of_login(Platform::Twitch, ""), None);
+        sign_in(&accounts, "2", "Erik", "erik", page("c", "l")).unwrap();
+        assert_eq!(
+            accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
+            Some("c")
+        );
         assert_eq!(accounts.get("1").unwrap().login, "");
+        assert_eq!(accounts.get("1").unwrap().twitch().unwrap().login, "");
+        accounts
+            .signed_in(
+                &kick("5", "Erik", "erik"),
+                ("3".to_string(), page("d", "m")),
+            )
+            .unwrap();
+        assert_eq!(
+            accounts.page_of_login(Platform::Kick, "erik").as_deref(),
+            Some("d")
+        );
+        assert_eq!(
+            accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
+            Some("c")
+        );
     }
 
     #[test]
     fn premium_accounts_are_counted() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.stats(&["1"]).premium, 0);
+        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "2", "Other", "other", page("q", "l")).unwrap();
         accounts
-            .signed_in("1", "Erik", "erik", None, page("p", "k"))
-            .unwrap();
-        accounts
-            .signed_in("2", "Other", "other", None, page("q", "l"))
+            .signed_in(
+                &kick("7", "Kicker", "kicker"),
+                ("random".to_string(), page("r", "m")),
+            )
             .unwrap();
         let stats = accounts.stats(&["1", "1", "3"]);
-        assert_eq!((stats.total, stats.premium), (2, 1));
+        assert_eq!((stats.total, stats.premium), (3, 1));
         assert_eq!(accounts.stats(&[]).premium, 0);
+        assert_eq!(accounts.stats(&["7"]).premium, 0);
+        assert_eq!(accounts.stats(&["kick:7"]).premium, 1);
+        accounts.link("1", &kick("8", "Erik", "erik")).unwrap();
+        assert_eq!(accounts.stats(&["1", "kick:8"]).premium, 1);
+        assert_eq!(accounts.stats(&["kick:8", "kick:7"]).premium, 2);
     }
 
     #[test]
     fn accounts_are_saved() {
         let path = database::temporary_path("accounts");
         let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        let id = "0123456789abcdef0123456789abcdef";
         accounts
-            .signed_in("3", "erik", "erik", None, page("p", "k"))
+            .signed_in(
+                &twitch("3", "erik", "erik"),
+                (id.to_string(), page("p", "k")),
+            )
             .unwrap();
         let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
         assert_eq!(
-            accounts.get("3"),
+            accounts.get(id),
             Some(Account {
                 name: "erik".to_string(),
                 login: "erik".to_string(),
                 avatar: None,
+                identities: vec![twitch("3", "erik", "erik")],
                 page: page("p", "k"),
                 ..Account::default()
             })
+        );
+        database::remove(&path);
+    }
+
+    #[test]
+    fn old_accounts_get_their_twitch_identity_and_a_new_id_on_start() {
+        let path = database::temporary_path("old-accounts");
+        let database = Database::open(Some(&path)).unwrap();
+        database
+            .lock()
+            .execute_batch(
+                "INSERT INTO accounts (id, name, login, avatar, page_id, sessions) VALUES
+                     ('42', 'Erik', 'erik', 'https://example.com/erik.png', 'p', 2),
+                     ('43', 'Other', '', NULL, 'q', 0),
+                     ('OPtedsiM9Y1rORSrMVpQQg', 'Base', 'base', NULL, 'r', 0),
+                     ('0123456789abcdef0123456789abcdef', 'Hex', 'hex', NULL, 's', 0);
+                 INSERT INTO devices (key, account, id, name, position) VALUES ('k', '42', 'p', 'Moblin', 0);
+                 DELETE FROM identities;
+                 INSERT INTO identities (platform, user_id, account, login, name) VALUES
+                     ('kick', '5', 'OPtedsiM9Y1rORSrMVpQQg', 'base', 'Base'),
+                     ('kick', '6', '0123456789abcdef0123456789abcdef', 'hex', 'Hex');",
+            )
+            .unwrap();
+        drop(database);
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        assert_eq!(accounts.get("42"), None);
+        assert_eq!(accounts.get("OPtedsiM9Y1rORSrMVpQQg"), None);
+        let base = accounts.account_of_identity(Platform::Kick, "5").unwrap();
+        assert_eq!(base.len(), 32);
+        assert_eq!(accounts.get(&base).unwrap().page.id, "r");
+        assert_eq!(
+            accounts.account_of_identity(Platform::Kick, "6").as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(
+            accounts
+                .get("0123456789abcdef0123456789abcdef")
+                .unwrap()
+                .identities
+                .len(),
+            1
+        );
+        let id = accounts
+            .account_of_identity(Platform::Twitch, "42")
+            .unwrap();
+        assert_eq!(id.len(), 32);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+        let account = accounts.get(&id).unwrap();
+        assert_eq!(
+            account.identities,
+            [Identity {
+                avatar: Some("https://example.com/erik.png".to_string()),
+                ..twitch("42", "Erik", "erik")
+            }]
+        );
+        assert_eq!(account.sessions, 2);
+        assert_eq!(account.page.devices, [device("p", "k")]);
+        assert_eq!(accounts.device_of_key("k").as_deref(), Some("p"));
+        assert_eq!(
+            accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
+            Some("p")
+        );
+        let other = accounts
+            .account_of_identity(Platform::Twitch, "43")
+            .unwrap();
+        assert_ne!(other, "43");
+        assert_eq!(accounts.get(&other).unwrap().identities[0].login, "");
+        let (again, account) = accounts
+            .signed_in(
+                &twitch("42", "Erik", "erik"),
+                ("random".to_string(), page("r", "m")),
+            )
+            .unwrap();
+        assert_eq!(again, id);
+        assert_eq!(account.page.id, "p");
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        assert_eq!(accounts.get(&id).unwrap().page.id, "p");
+        accounts.link(&id, &kick("7", "Erik", "erik")).unwrap();
+        accounts.unlink(&id, Platform::Twitch).unwrap();
+        let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
+        assert_eq!(
+            accounts.get(&id).unwrap().identities,
+            [kick("7", "Erik", "erik")]
         );
         database::remove(&path);
     }

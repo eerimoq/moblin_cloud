@@ -26,10 +26,13 @@ import { links, pages } from "../data/links";
 import {
   accentAttributes,
   captureOrder,
+  channelText,
+  channelUrl,
   formatPrice,
   fetchAllowance,
   hundredths,
-  idOfTwitchLogin,
+  identityOf,
+  idOfLogin,
   loadFonts,
   musicStatus,
   orderSong,
@@ -48,8 +51,10 @@ import {
   tierNumbers,
   viewerSignInUrl,
   type Allowance,
+  type Identity,
   type Order,
   type PayPalConfig,
+  type Platform,
   type Profile,
   type Provider,
   type PublicPayment,
@@ -910,17 +915,19 @@ function TipJar(props: {
   );
 }
 
-function Avatar(props: { profile: Profile; class: string; cutout?: boolean }) {
+type Streamer = Identity & { platform: Platform };
+
+function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) {
   const ring = (color: string) =>
     props.cutout ? "ring-4 ring-page" : `ring-4 ${color} ring-offset-4 ring-offset-page`;
   return (
     <Show
-      when={props.profile.avatar}
+      when={props.streamer.avatar}
       fallback={
         <span
           class={`flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring("ring-moss/40")} ${props.class}`}
         >
-          {props.profile.name.slice(0, 1).toUpperCase()}
+          {props.streamer.name.slice(0, 1).toUpperCase()}
         </span>
       }
     >
@@ -935,16 +942,19 @@ function Avatar(props: { profile: Profile; class: string; cutout?: boolean }) {
   );
 }
 
-function TwitchLink(props: { profile: Profile }) {
+function ChannelLink(props: { streamer: Streamer }) {
   return (
     <a
-      href={`https://www.twitch.tv/${encodeURIComponent(props.profile.login)}`}
+      href={channelUrl(props.streamer.platform, props.streamer.login)}
       target="_blank"
       rel="noopener"
       class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
     >
-      <Icon name="twitch" class="size-5 shrink-0 text-twitch" />
-      <span class="truncate">twitch.tv/{props.profile.login}</span>
+      <Icon
+        name={props.streamer.platform}
+        class={`size-5 shrink-0 ${props.streamer.platform === "twitch" ? "text-twitch" : "text-kick"}`}
+      />
+      <span class="truncate">{channelText(props.streamer.platform, props.streamer.login)}</span>
     </a>
   );
 }
@@ -989,15 +999,14 @@ async function signedInAccount(): Promise<Account | null> {
   }
 }
 
-function dashboardLink(profile: Profile, account: Account | null): DashboardLink | null {
+function dashboardLink(id: string, account: Account | null): DashboardLink | null {
   if (!account) {
     return null;
   }
-  const login = profile.login.toLowerCase();
-  if (account.login.toLowerCase() === login) {
+  if (account.settings.id === id) {
     return { href: asset(pages.dashboard), own: true };
   }
-  const channel = account.moderating.find((channel) => channel.login.toLowerCase() === login);
+  const channel = account.moderating.find((channel) => channel.id === id);
   return channel
     ? {
         href: asset(`${pages.dashboard}twitch/${encodeURIComponent(channel.login)}`),
@@ -1009,13 +1018,19 @@ function dashboardLink(profile: Profile, account: Account | null): DashboardLink
 function StreamerHeader(props: {
   id: string | null;
   profile: Profile | null;
+  platform: Platform | null;
   unknown: boolean;
   dashboard: DashboardLink | null;
 }) {
-  const banner = () => {
+  const shown = () => {
     const profile = props.profile;
-    return props.id && profile?.image
-      ? { profile, src: pageImageUrl(props.id, profile.image) }
+    const streamer = profile && identityOf(profile, props.platform);
+    return profile && streamer ? { profile, streamer } : null;
+  };
+  const banner = () => {
+    const current = shown();
+    return props.id && current?.profile.image
+      ? { ...current, src: pageImageUrl(props.id, current.profile.image) }
       : null;
   };
 
@@ -1033,7 +1048,7 @@ function StreamerHeader(props: {
         fallback={
           <div class="mx-auto flex max-w-[720px] flex-col items-center gap-4 px-5 pt-8 pb-4 text-center sm:px-8 lg:pt-12">
             <Show
-              when={props.profile}
+              when={shown()}
               fallback={
                 <Show when={props.unknown}>
                   <h1 class="text-[40px] leading-[1.05] font-bold sm:text-6xl">
@@ -1042,11 +1057,11 @@ function StreamerHeader(props: {
                 </Show>
               }
             >
-              {(profile) => (
+              {(current) => (
                 <>
-                  <Avatar profile={profile()} class="size-28 text-5xl sm:size-32" />
-                  <TwitchLink profile={profile()} />
-                  <Greeting profile={profile()} />
+                  <Avatar streamer={current().streamer} class="size-28 text-5xl sm:size-32" />
+                  <ChannelLink streamer={current().streamer} />
+                  <Greeting profile={current().profile} />
                 </>
               )}
             </Show>
@@ -1062,12 +1077,12 @@ function StreamerHeader(props: {
             />
             <div class="flex items-start justify-between gap-4 px-4 sm:px-6">
               <Avatar
-                profile={banner().profile}
+                streamer={banner().streamer}
                 cutout
                 class="relative -mt-10 size-20 text-3xl sm:-mt-12 sm:size-24 sm:text-4xl"
               />
               <div class="mt-3 min-w-0">
-                <TwitchLink profile={banner().profile} />
+                <ChannelLink streamer={banner().streamer} />
               </div>
             </div>
             <Show when={banner().profile.message}>
@@ -1418,7 +1433,7 @@ function WaysToTip(props: {
   );
 }
 
-function Viewer(props: { id: string | null; twitch: string | null }) {
+function Viewer(props: { id: string | null; platform: Platform | null; login: string | null }) {
   const [id, setId] = createSignal(props.id);
   const [status, setStatus] = createSignal<Status>("loading");
   const [song, setSong] = createSignal("");
@@ -1439,6 +1454,10 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, { equals: sameData });
   const [streamerConnected, setStreamerConnected] = createSignal(false);
   const [profile, setProfile] = createSignal<Profile | null>(null);
+  const streamerName = () => {
+    const current = profile();
+    return current ? identityOf(current, props.platform)?.name : undefined;
+  };
   const [dashboard, setDashboard] = createSignal<DashboardLink | null>(null);
   const [styled, setStyled] = createSignal(false);
   const [section, setSection] = createSignal<Section | null>(
@@ -1667,9 +1686,9 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   };
 
   onMount(async () => {
-    if (props.twitch) {
+    if (props.platform && props.login) {
       try {
-        setId(await idOfTwitchLogin(props.twitch));
+        setId(await idOfLogin(props.platform, props.login));
       } catch {
         setStatus("unknown");
       }
@@ -1692,11 +1711,14 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
       Promise.all([streamerProfile(current), signedInAccount()])
         .then(([found, account]) => {
           batch(() => {
-            setDashboard(dashboardLink(found, account));
+            setDashboard(dashboardLink(current, account));
             setProfile(found);
           });
           loadFonts(found.font ? [found.font] : []);
-          document.title = `${found.name} – Moblin`;
+          const streamer = identityOf(found, props.platform);
+          if (streamer) {
+            document.title = `${streamer.name} – Moblin`;
+          }
         })
         .catch(() => {})
         .finally(() => setStyled(true));
@@ -1725,6 +1747,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
         <StreamerHeader
           id={id()}
           profile={profile()}
+          platform={props.platform}
           unknown={status() === "unknown"}
           dashboard={dashboard()}
         />
@@ -1740,7 +1763,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
             class={`mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8 ${styled() ? "" : "invisible"}`}
           >
             <WaysToTip
-              streamer={profile()?.name}
+              streamer={streamerName()}
               ways={ways()}
               section={shown()}
               onSection={changeSection}
@@ -1913,9 +1936,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   );
 }
 
-export default function Page(props: { twitch?: string }) {
+export default function Page(props: { platform?: Platform; login?: string }) {
   const id = new URLSearchParams(location.search).get("streamer");
-  const twitch = props.twitch ?? null;
 
-  return <Viewer id={id} twitch={twitch} />;
+  return <Viewer id={id} platform={props.platform ?? null} login={props.login ?? null} />;
 }

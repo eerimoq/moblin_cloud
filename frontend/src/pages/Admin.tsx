@@ -9,7 +9,7 @@ import {
   Hero,
   Notice,
   Spinner,
-  TwitchSignIn,
+  PlatformSignIn,
 } from "../components/PageParts";
 import { createAccountSession, fetchAdminStats, type AdminStats } from "../data/account";
 import { BackendError } from "../data/backend";
@@ -749,6 +749,7 @@ function Loaded(props: { stats: AdminStats }) {
         "Twitch credentials, for profiles, the live status and sign in.",
         server().integrations.twitch,
       ],
+      ["Kick", "Kick credentials, for signing in with Kick.", server().integrations.kick],
       [
         "App Attest",
         "Only the Moblin app may post live. Off with --allow-unattested.",
@@ -959,7 +960,10 @@ export default function Admin() {
           when={session()}
           fallback={
             <Show when={!loading()}>
-              <TwitchSignIn>Sign in</TwitchSignIn>
+              <span class="flex items-center gap-2">
+                <PlatformSignIn platform="twitch" />
+                <PlatformSignIn platform="kick" />
+              </span>
             </Show>
           }
         >
