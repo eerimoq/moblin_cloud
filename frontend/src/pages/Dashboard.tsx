@@ -28,6 +28,7 @@ import {
   inputClass,
   Notice,
   SaveButton,
+  KickSignIn,
   Spinner,
   TwitchSignIn,
   Value,
@@ -2697,7 +2698,10 @@ export default function Dashboard() {
           when={session()}
           fallback={
             <Show when={!loading()}>
-              <TwitchSignIn>{t("Sign in")}</TwitchSignIn>
+              <div class="flex gap-2">
+                <TwitchSignIn label={t("Sign in with Twitch")}>{t("Sign in")}</TwitchSignIn>
+                <KickSignIn label={t("Sign in with Kick")}>{t("Sign in")}</KickSignIn>
+              </div>
             </Show>
           }
         >

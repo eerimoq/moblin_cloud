@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { asset } from "../asset";
-import { signInUrl } from "../data/account";
+import { kickSignInUrl, signInUrl } from "../data/account";
 import { pages } from "../data/links";
 import CopyButton from "./CopyButton";
 import Icon, { type IconName } from "./Icon";
@@ -33,13 +33,27 @@ export function Notice(props: { status?: boolean; error?: boolean; children: JSX
   );
 }
 
-export function TwitchSignIn(props: { children: JSX.Element }) {
+export function TwitchSignIn(props: { children: JSX.Element; label?: string }) {
   return (
     <a
       href={signInUrl}
+      aria-label={props.label}
       class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
     >
       <Icon name="twitch" class="size-5" />
+      {props.children}
+    </a>
+  );
+}
+
+export function KickSignIn(props: { children: JSX.Element; label?: string }) {
+  return (
+    <a
+      href={kickSignInUrl}
+      aria-label={props.label}
+      class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-kick px-5 font-display text-base font-semibold whitespace-nowrap text-black transition-colors hover:bg-kick-bright"
+    >
+      <Icon name="kick" class="size-5" />
       {props.children}
     </a>
   );

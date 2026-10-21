@@ -1486,18 +1486,20 @@ function Viewer(props: { id: string | null; twitch: string | null; kick: string 
         section: "spin",
         icon: "wheel",
         title: t("Spin the wheel"),
-        text: wheel()
-          ? t("Your tip spins the wheel live on stream.")
-          : t("Twitch subscribers spin the wheel live on stream."),
+        text:
+          wheel() || profile()?.platform === "kick"
+            ? t("Your tip spins the wheel live on stream.")
+            : t("Twitch subscribers spin the wheel live on stream."),
         enabled: spinnable(),
       },
       {
         section: "songs",
         icon: "music",
         title: t("Request a song"),
-        text: payable()
-          ? t("Your tip puts a song in the queue.")
-          : t("Twitch subscribers add songs to the queue."),
+        text:
+          payable() || profile()?.platform === "kick"
+            ? t("Your tip puts a song in the queue.")
+            : t("Twitch subscribers add songs to the queue."),
         enabled: songs(),
       },
     ];

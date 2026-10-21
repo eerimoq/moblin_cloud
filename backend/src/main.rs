@@ -160,6 +160,10 @@ struct Cli {
     /// fake Twitch in development and tests. No client ID and secret are needed to sign in then.
     #[arg(long, value_name = "URL")]
     twitch_sign_in_url: Option<String>,
+    /// Base URL of the OAuth and API endpoints to sign in with instead of Kick's, for a fake Kick
+    /// in development. No client ID and secret are needed to sign in then.
+    #[arg(long, value_name = "URL")]
+    kick_sign_in_url: Option<String>,
     /// Twitch user IDs allowed to see the admin page.
     #[arg(long, env = "ADMINS", value_delimiter = ',')]
     admins: Vec<String>,
@@ -218,13 +222,30 @@ async fn main() -> Result<()> {
         twitch_app,
         cli.session_secret.as_deref(),
     )?
-    .with_kick(match (cli.kick_client_id, cli.kick_client_secret) {
-        (Some(client_id), Some(client_secret)) => Some(KickApp::new(client_id, client_secret)),
-        _ => {
-            warn!("no Kick client ID and secret, not signing in with Kick");
-            None
-        }
-    });
+    .with_kick(
+        match (
+            cli.kick_client_id,
+            cli.kick_client_secret,
+            cli.kick_sign_in_url,
+        ) {
+            (client_id, client_secret, Some(url)) => {
+                warn!("signing in with {url} instead of Kick");
+                Some(KickApp::at(
+                    &url,
+                    &url,
+                    client_id.unwrap_or_default(),
+                    client_secret.unwrap_or_default(),
+                ))
+            }
+            (Some(client_id), Some(client_secret), None) => {
+                Some(KickApp::new(client_id, client_secret))
+            }
+            _ => {
+                warn!("no Kick client ID and secret, not signing in with Kick");
+                None
+            }
+        },
+    );
     if cli.database.is_none() {
         warn!(
             "no database, forgetting streamers, accounts, page settings and undelivered requests on restart"

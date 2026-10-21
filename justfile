@@ -57,10 +57,11 @@ backend-run *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	python3 -m tests.utils.fake_twitch --port 8081 &
+	python3 -m tests.utils.fake_kick --port 8082 &
 	trap 'kill $(jobs -p)' EXIT
 	cd backend
 	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --admins fake-admin --premium-accounts fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
+	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins fake-admin --premium-accounts fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	just backend-seed
 	wait
