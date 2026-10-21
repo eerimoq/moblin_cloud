@@ -236,7 +236,6 @@ impl Deliveries {
 
     pub async fn run(&self, streamers: &Streamers, accounts: &Accounts) {
         loop {
-            self.expire();
             let mut by_device: Vec<(String, Vec<Targeted>)> = Vec::new();
             let mut pages: HashMap<String, Option<Page>> = HashMap::new();
             for delivery in self.pending() {

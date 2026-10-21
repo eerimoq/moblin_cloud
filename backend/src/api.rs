@@ -3135,6 +3135,7 @@ pub async fn settle_orders(api: Arc<Api>) {
         expire_orders(&api).await;
         api.orders.prune();
         api.allowances.prune();
+        api.deliveries.expire();
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
