@@ -250,6 +250,17 @@
   }
 }
 
+/* The player's lists: a thin scrollbar only while scrolling or hovered. */
+@utility scrollbar-fading {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.3s;
+  &:hover,
+  &[data-scrolling] {
+    scrollbar-color: var(--color-ghost-line) transparent;
+  }
+}
+
 /* The bars of the player's now playing disc. */
 @utility equalizer-bar {
   height: 100%;

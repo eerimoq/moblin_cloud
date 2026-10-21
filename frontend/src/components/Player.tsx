@@ -1,4 +1,4 @@
-import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { createEffect, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import Icon from "./Icon";
 import { Notice } from "./PageParts";
 import {
@@ -98,54 +98,58 @@ function NowPlaying(props: {
 }) {
   const playing = () => props.song !== null && props.status.playing;
   return (
-    <div class="flex flex-col gap-3 rounded-2xl bg-well p-4">
-      <div class="flex items-center gap-4">
-        <span
-          class={`flex size-12 shrink-0 items-center justify-center rounded-full ${
-            props.song ? "bg-moss text-white" : "bg-ghost text-muted"
-          }`}
-        >
-          <Show when={props.song} fallback={<Icon name="music" class="size-6" />}>
-            <Show when={playing()} fallback={<Icon name="pause" class="size-6" />}>
-              <Equalizer />
-            </Show>
-          </Show>
-        </span>
-        <Show
-          when={props.song}
-          fallback={<span class="text-lg font-semibold text-ink-2">{t("Nothing is playing")}</span>}
-        >
-          {(song) => (
-            <span class="flex min-w-0 flex-col">
-              <span class="text-xs font-semibold tracking-wide text-leaf uppercase">
-                {playing() ? t("Now playing") : t("Paused")}
-              </span>
-              <SongText song={song()} large />
-            </span>
-          )}
-        </Show>
-        <Show when={props.song}>{(song) => <Duration song={song()} class="ml-auto" />}</Show>
-        <Show when={props.moderate}>
-          {(moderate) => (
-            <span class={`flex shrink-0 gap-1 ${props.song?.duration ? "" : "ml-auto"}`}>
-              <button
-                type="button"
-                class={iconButtonClass}
-                disabled={props.busy || props.status.songs.length === 0}
-                aria-label={playing() ? t("Pause") : t("Play")}
-                title={playing() ? t("Pause") : t("Play")}
-                onClick={() => moderate()(playing() ? "pause" : "play")}
-              >
-                <Icon name={playing() ? "pause" : "play"} class="size-5" />
-              </button>
-              <Show when={props.song}>
-                {(song) => <RemoveButton song={song()} moderate={moderate()} busy={props.busy} />}
+    <div class="scrollbar-fading -mx-4 overflow-hidden [scrollbar-gutter:stable]">
+      <div class="flex flex-col gap-3 rounded-2xl bg-well p-4">
+        <div class="flex items-center gap-4">
+          <span
+            class={`flex size-10 shrink-0 items-center justify-center rounded-full ${
+              props.song ? "bg-moss text-white" : "bg-ghost text-muted"
+            }`}
+          >
+            <Show when={props.song} fallback={<Icon name="music" class="size-5" />}>
+              <Show when={playing()} fallback={<Icon name="pause" class="size-5" />}>
+                <Equalizer />
               </Show>
-            </span>
-          )}
-        </Show>
+            </Show>
+          </span>
+          <Show
+            when={props.song}
+            fallback={
+              <span class="text-lg font-semibold text-ink-2">{t("Nothing is playing")}</span>
+            }
+          >
+            {(song) => (
+              <span class="flex min-w-0 flex-col">
+                <span class="text-xs font-semibold tracking-wide text-leaf uppercase">
+                  {playing() ? t("Now playing") : t("Paused")}
+                </span>
+                <SongText song={song()} large />
+              </span>
+            )}
+          </Show>
+          <Show when={props.song}>{(song) => <Duration song={song()} class="ml-auto" />}</Show>
+          <Show when={props.moderate}>
+            {(moderate) => (
+              <span class={`flex shrink-0 gap-1 ${props.song?.duration ? "" : "ml-auto"}`}>
+                <button
+                  type="button"
+                  class={iconButtonClass}
+                  disabled={props.busy || props.status.songs.length === 0}
+                  aria-label={playing() ? t("Pause") : t("Play")}
+                  title={playing() ? t("Pause") : t("Play")}
+                  onClick={() => moderate()(playing() ? "pause" : "play")}
+                >
+                  <Icon name={playing() ? "pause" : "play"} class="size-5" />
+                </button>
+                <Show when={props.song}>
+                  {(song) => <RemoveButton song={song()} moderate={moderate()} busy={props.busy} />}
+                </Show>
+              </span>
+            )}
+          </Show>
+        </div>
+        {props.error}
       </div>
-      {props.error}
     </div>
   );
 }
@@ -162,7 +166,7 @@ function SongRow(props: {
   return (
     <li class="flex flex-col gap-3 border-t border-line py-3 first:border-t-0">
       <div class="flex items-center gap-4">
-        <span class="w-7 shrink-0 text-right font-mono text-sm text-muted tabular-nums">
+        <span class="w-10 shrink-0 text-center font-mono text-sm text-muted tabular-nums">
           {props.marker}
         </span>
         <SongText song={song()} played={props.played} />
@@ -190,31 +194,18 @@ function SongRow(props: {
   );
 }
 
-type View = "next" | "played";
-
-function ViewButton(props: {
-  view: View;
-  shown: View;
-  count: number;
-  onShow: (view: View) => void;
-  children: JSX.Element;
-}) {
-  const selected = () => props.view === props.shown;
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected()}
-      class={`flex h-9 items-center gap-2 rounded-full px-4 text-[15px] font-semibold whitespace-nowrap transition-colors ${
-        selected() ? "bg-moss text-white" : "text-muted hover:text-ink"
-      }`}
-      onClick={() => props.onShow(props.view)}
-    >
-      {props.children}
-      <span class={`tabular-nums ${selected() ? "text-white/75" : ""}`}>{props.count}</span>
-    </button>
-  );
-}
+const scrollView = (classes: string) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    class: `scrollbar-fading overflow-y-auto [scrollbar-gutter:stable] ${classes}`,
+    onScroll: (event: Event) => {
+      const element = event.currentTarget as HTMLElement;
+      element.dataset.scrolling = "";
+      clearTimeout(timer);
+      timer = setTimeout(() => delete element.dataset.scrolling, 600);
+    },
+  };
+};
 
 export default function Player(props: {
   status: Status;
@@ -230,7 +221,15 @@ export default function Player(props: {
   };
   const next = () => music()?.songs.slice(currentIndex() === null ? 0 : currentIndex()! + 1) ?? [];
   const played = () => (music()?.songs.slice(0, currentIndex() ?? 0) ?? []).reverse();
-  const [shown, setShown] = createSignal<View>("next");
+  const oldestFirst = () => played().slice().reverse();
+  const [showHistory, setShowHistory] = createSignal(false);
+  const [history, setHistory] = createSignal<HTMLDivElement>();
+  createEffect(() => {
+    const element = history();
+    if (element && played().length > 0) {
+      element.scrollTop = element.scrollHeight;
+    }
+  });
   const [target, setTarget] = createSignal<string | null>(null);
   const moderate = props.moderate
     ? (command: MusicCommand, song?: string) => {
@@ -256,57 +255,52 @@ export default function Player(props: {
         <Match when={music()}>
           {(status) => (
             <>
-              <NowPlaying
-                status={status()}
-                song={current()}
-                moderate={moderate}
-                busy={props.busy}
-                error={errorFor(current()?.id ?? "controls")}
-              />
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div
-                  role="tablist"
-                  class="flex gap-1 rounded-full border-[1.5px] border-line bg-well p-1"
-                >
-                  <ViewButton view="next" shown={shown()} count={next().length} onShow={setShown}>
-                    {t("Up next")}
-                  </ViewButton>
-                  <ViewButton
-                    view="played"
-                    shown={shown()}
-                    count={played().length}
-                    onShow={setShown}
-                  >
-                    {t("History")}
-                  </ViewButton>
+              <Show when={played().length > 0 || moderate}>
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <Show when={played().length > 0} fallback={<span />}>
+                    <button
+                      type="button"
+                      class="inline-flex h-9 items-center gap-2 rounded-full border-[1.5px] border-line bg-well px-4 text-[15px] font-semibold text-ink-2 transition-colors hover:text-ink"
+                      aria-expanded={showHistory()}
+                      onClick={() => setShowHistory(!showHistory())}
+                    >
+                      <Icon
+                        name="chevron-down"
+                        class={`size-4 transition-transform ${showHistory() ? "" : "rotate-180"}`}
+                      />
+                      {showHistory() ? t("Hide history") : t("Show history")}
+                      <span class="text-muted tabular-nums">{played().length}</span>
+                    </button>
+                  </Show>
+                  <Show when={moderate}>
+                    <button
+                      type="button"
+                      class={`${dangerIconButtonClass} w-auto gap-2 px-3 text-[15px] font-semibold`}
+                      disabled={props.busy || status().songs.length === 0}
+                      onClick={clear}
+                    >
+                      <Icon name="trash" class="size-5" />
+                      {t("Clear")}
+                    </button>
+                  </Show>
                 </div>
-                <Show when={moderate}>
-                  <button
-                    type="button"
-                    class={`${dangerIconButtonClass} w-auto gap-2 px-3 text-[15px] font-semibold`}
-                    disabled={props.busy || status().songs.length === 0}
-                    onClick={clear}
-                  >
-                    <Icon name="trash" class="size-5" />
-                    {t("Clear")}
-                  </button>
-                </Show>
-              </div>
+              </Show>
               {errorFor("clear")}
-              <Show
-                when={shown() === "next"}
-                fallback={
-                  <Show
-                    when={played().length > 0}
-                    fallback={<p class="text-ink-2">{t("No songs have been played yet.")}</p>}
+              <div class="flex flex-col gap-3">
+                <Show when={showHistory() && played().length > 0}>
+                  <div
+                    ref={setHistory}
+                    {...scrollView(
+                      "max-h-[264px] [mask-image:linear-gradient(to_bottom,transparent,black_28px)]",
+                    )}
                   >
                     <ol class="flex flex-col">
-                      <For each={played()}>
+                      <For each={oldestFirst()}>
                         {(song, index) => (
                           <SongRow
                             song={song}
                             played
-                            marker={-(index() + 1)}
+                            marker={index() + 1}
                             moderate={moderate}
                             busy={props.busy}
                             error={errorFor(song.id)}
@@ -314,9 +308,15 @@ export default function Player(props: {
                         )}
                       </For>
                     </ol>
-                  </Show>
-                }
-              >
+                  </div>
+                </Show>
+                <NowPlaying
+                  status={status()}
+                  song={current()}
+                  moderate={moderate}
+                  busy={props.busy}
+                  error={errorFor(current()?.id ?? "controls")}
+                />
                 <Show
                   when={next().length > 0}
                   fallback={
@@ -327,21 +327,23 @@ export default function Player(props: {
                     </p>
                   }
                 >
-                  <ol class="flex flex-col">
-                    <For each={next()}>
-                      {(song, index) => (
-                        <SongRow
-                          song={song}
-                          marker={index() + 1}
-                          moderate={moderate}
-                          busy={props.busy}
-                          error={errorFor(song.id)}
-                        />
-                      )}
-                    </For>
-                  </ol>
+                  <div class="scrollbar-fading overflow-hidden [scrollbar-gutter:stable]">
+                    <ol class="flex flex-col">
+                      <For each={next()}>
+                        {(song, index) => (
+                          <SongRow
+                            song={song}
+                            marker={played().length + index() + (current() ? 2 : 1)}
+                            moderate={moderate}
+                            busy={props.busy}
+                            error={errorFor(song.id)}
+                          />
+                        )}
+                      </For>
+                    </ol>
+                  </div>
                 </Show>
-              </Show>
+              </div>
             </>
           )}
         </Match>
