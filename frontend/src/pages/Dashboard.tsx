@@ -1200,7 +1200,7 @@ function ModeratorList(props: {
         <ul class="flex flex-col gap-3">
           <For each={props.moderators}>
             {(moderator) => (
-              <li class="flex items-center justify-between gap-3">
+              <li class="flex items-center gap-3">
                 <span class="flex min-w-0 flex-col">
                   <span class="truncate font-semibold">{moderator.name}</span>
                   <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
