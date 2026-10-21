@@ -1,4 +1,4 @@
-import { backendUrl } from "./backend";
+import { BackendError, backendUrl, call as callBackend, post } from "./backend";
 import { t } from "../i18n";
 
 export type MusicCommand = "play" | "pause" | "clear" | "remove" | "select";
@@ -106,8 +106,15 @@ const fontFamilies: Record<string, string[]> = {
 
 export const fonts = Object.keys(fontFamilies);
 
+const loadedFonts = new Set<string>();
+
 export const loadFonts = (names: string[]) => {
-  const families = names.flatMap((name) => fontFamilies[name] ?? []);
+  const families = names
+    .filter((name) => !loadedFonts.has(name))
+    .flatMap((name) => {
+      loadedFonts.add(name);
+      return fontFamilies[name] ?? [];
+    });
   if (families.length === 0) {
     return;
   }
@@ -182,6 +189,11 @@ export const currencies = [
   "USD",
 ];
 
+export const providerName = (provider: Provider) => (provider === "paypal" ? "PayPal" : "Stripe");
+
+export const spinsText = (spins: number) =>
+  spins === 1 ? t("1 spin") : t("{count} spins", { count: spins });
+
 export const formatPrice = (price: Price) =>
   new Intl.NumberFormat(undefined, { style: "currency", currency: price.currency }).format(
     price.price / 100,
@@ -190,27 +202,18 @@ export const formatPrice = (price: Price) =>
 export const hundredths = (amount: string) =>
   Math.round(Number.parseFloat(amount.trim().replace(",", ".")) * 100);
 
-export class BackendError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+const call = <T>(path: string, init?: RequestInit, viewer?: string) =>
+  callBackend<T>(`/pages${path}`, viewer, init);
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${backendUrl}/pages${path}`, init);
-  if (!response.ok) {
-    throw new BackendError(response.status, await response.text());
-  }
-  return response.json();
-}
+const pagePath = (id: string, rest = "") => `/${encodeURIComponent(id)}${rest}`;
 
-const capture = async (path: string) => {
+const segments = { song: "songs", tip: "tips", spin: "spin" } as const;
+
+export const captureOrder = async (kind: keyof typeof segments, id: string, orderId: string) => {
+  const path = pagePath(id, `/${segments[kind]}/orders/${encodeURIComponent(orderId)}/capture`);
   for (let attempt = 1; ; attempt++) {
     try {
-      return await call<object>(path, { method: "POST" });
+      return await call<object>(path, post());
     } catch (error) {
       if ((error instanceof BackendError && error.status < 500) || attempt === 4) {
         throw error;
@@ -220,14 +223,7 @@ const capture = async (path: string) => {
   }
 };
 
-export const musicStatus = (id: string) =>
-  call<MusicStatus>(`/${encodeURIComponent(id)}/songs/queue`);
-
-const post = (body: unknown) => ({
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
-});
+export const musicStatus = (id: string) => call<MusicStatus>(pagePath(id, "/songs/queue"));
 
 export type Profile = Page & {
   name: string;
@@ -239,11 +235,11 @@ export type Profile = Page & {
 export const pageImageUrl = (id: string, version: string) =>
   `${backendUrl}/pages/${encodeURIComponent(id)}/image?v=${encodeURIComponent(version)}`;
 
-export const streamerProfile = (id: string) => call<Profile>(`/${encodeURIComponent(id)}`);
+export const streamerProfile = (id: string) => call<Profile>(pagePath(id));
 
 export const streamerSongs = (id: string) =>
   call<{ paywall: PublicPaywall | null; subSongs: Tiers | null; maxSongMinutes: number | null }>(
-    `/${encodeURIComponent(id)}/songs`,
+    pagePath(id, "/songs"),
   );
 
 export type Allowance = {
@@ -256,17 +252,15 @@ export type Allowance = {
 export const viewerSignInUrl = (id: string) =>
   `${backendUrl}/auth/twitch/login?${new URLSearchParams({ page: id })}`;
 
-export const fetchSongAllowance = (id: string, viewer: string) =>
-  call<Allowance>(`/${encodeURIComponent(id)}/songs/subscriber`, {
-    headers: { authorization: `Bearer ${viewer}` },
-  });
+export const fetchAllowance = (kind: "song" | "spin", id: string, viewer: string) =>
+  call<Allowance>(pagePath(id, `/${segments[kind]}/subscriber`), undefined, viewer);
 
 export const requestSubscriberSong = (id: string, viewer: string, song: string, message: string) =>
-  call<{ left: number }>(`/${encodeURIComponent(id)}/songs/subscriber`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${viewer}` },
-    body: JSON.stringify({ song, message: message || null }),
-  });
+  call<{ left: number }>(
+    pagePath(id, "/songs/subscriber"),
+    post({ song, message: message || null }),
+    viewer,
+  );
 
 export const orderSong = (
   id: string,
@@ -276,15 +270,12 @@ export const orderSong = (
   provider: Provider,
 ) =>
   call<Order>(
-    `/${encodeURIComponent(id)}/songs/orders`,
+    pagePath(id, "/songs/orders"),
     post({ song, user: user || null, message: message || null, provider }),
   );
 
-export const captureSong = (id: string, orderId: string) =>
-  capture(`/${encodeURIComponent(id)}/songs/orders/${encodeURIComponent(orderId)}/capture`);
-
 export const streamerTips = async (id: string) =>
-  (await call<{ tips: PublicTips | null }>(`/${encodeURIComponent(id)}/tips`)).tips;
+  (await call<{ tips: PublicTips | null }>(pagePath(id, "/tips"))).tips;
 
 export const orderTip = (
   id: string,
@@ -294,12 +285,9 @@ export const orderTip = (
   provider: Provider,
 ) =>
   call<Order>(
-    `/${encodeURIComponent(id)}/tips/orders`,
+    pagePath(id, "/tips/orders"),
     post({ amount, user: user || null, message: message || null, provider }),
   );
-
-export const captureTip = (id: string, orderId: string) =>
-  capture(`/${encodeURIComponent(id)}/tips/orders/${encodeURIComponent(orderId)}/capture`);
 
 export type Wheel = {
   options: { text: string; weight: number }[];
@@ -311,19 +299,14 @@ export const streamerSpin = (id: string) =>
     subSpins: Tiers | null;
     wheel: Wheel | null;
     connected: boolean;
-  }>(`/${encodeURIComponent(id)}/spin`);
-
-export const fetchSpinAllowance = (id: string, viewer: string) =>
-  call<Allowance>(`/${encodeURIComponent(id)}/spin/subscriber`, {
-    headers: { authorization: `Bearer ${viewer}` },
-  });
+  }>(pagePath(id, "/spin"));
 
 export const requestSubscriberSpin = (id: string, viewer: string, message: string) =>
-  call<{ left: number }>(`/${encodeURIComponent(id)}/spin/subscriber`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${viewer}` },
-    body: JSON.stringify({ message: message || null }),
-  });
+  call<{ left: number }>(
+    pagePath(id, "/spin/subscriber"),
+    post({ message: message || null }),
+    viewer,
+  );
 
 export const orderSpin = (
   id: string,
@@ -333,7 +316,7 @@ export const orderSpin = (
   provider: Provider,
 ) =>
   call<Order>(
-    `/${encodeURIComponent(id)}/spin/orders`,
+    pagePath(id, "/spin/orders"),
     post({
       spins: option.spins,
       price: option.price,
@@ -342,9 +325,6 @@ export const orderSpin = (
       provider,
     }),
   );
-
-export const captureSpin = (id: string, orderId: string) =>
-  capture(`/${encodeURIComponent(id)}/spin/orders/${encodeURIComponent(orderId)}/capture`);
 
 export const idOfTwitchLogin = async (login: string) =>
   (await call<{ id: string }>(`/twitch/${encodeURIComponent(login)}`)).id;

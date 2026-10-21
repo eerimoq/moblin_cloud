@@ -1,8 +1,10 @@
 /* @refresh reload */
+import { lazy } from "solid-js";
 import { render } from "solid-js/web";
 import "./index.css";
 import NotFound from "./pages/NotFound";
-import Page from "./pages/Page";
+
+const Page = lazy(() => import("./pages/Page"));
 
 const twitchLogin = location.pathname
   .slice(import.meta.env.BASE_URL.length)

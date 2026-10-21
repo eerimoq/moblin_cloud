@@ -1,11 +1,6 @@
-import { backendUrl } from "./backend";
-import {
-  BackendError,
-  type MusicCommand,
-  type MusicStatus,
-  type Page,
-  type Settings,
-} from "./remoteControl";
+import { createSignal, onMount } from "solid-js";
+import { BackendError, backendUrl, call, post } from "./backend";
+import { type MusicCommand, type MusicStatus, type Page, type Settings } from "./remoteControl";
 
 export type Device = {
   id: string;
@@ -50,7 +45,6 @@ export type Recent = {
   amount: number;
   currency: string;
   name?: string;
-  link?: string;
   message?: string;
   spins?: number;
   tier?: number;
@@ -104,31 +98,55 @@ export function takeSignInResult(): { session: string | null; failed: boolean } 
 
 export const signInUrl = `${backendUrl}/auth/twitch/login`;
 
-async function call<T>(session: string | null, path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-  if (session) {
-    headers.set("authorization", `Bearer ${session}`);
-  }
-  const response = await fetch(`${backendUrl}${path}`, { ...init, headers });
-  if (!response.ok) {
-    throw new BackendError(response.status, await response.text());
-  }
-  return response.json();
-}
+export function createAccountSession() {
+  const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
+  const [loading, setLoading] = createSignal(true);
+  const [signInFailed, setSignInFailed] = createSignal(false);
 
-const post = (body: unknown) => ({
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
-});
+  onMount(async () => {
+    const result = takeSignInResult();
+    if (result.session) {
+      saveSession(result.session);
+    }
+    setSignInFailed(result.failed);
+    const stored = readSession();
+    if (stored) {
+      try {
+        setSession({ session: stored, account: await fetchAccount(stored) });
+      } catch (error) {
+        if (error instanceof BackendError && error.status === 401) {
+          saveSession(null);
+        }
+      }
+    }
+    setLoading(false);
+  });
+
+  const signOut = () => {
+    saveSession(null);
+    setSession(null);
+  };
+
+  const signOutAll = async () => {
+    const current = session();
+    if (current) {
+      try {
+        await signOutEverywhere(current.session);
+      } catch {}
+    }
+    signOut();
+  };
+
+  return { session, loading, signInFailed, signOut, signOutAll };
+}
 
 const accountPath = (page?: string) =>
   page === undefined ? "/account" : `/account/pages/${encodeURIComponent(page)}`;
 
 export const fetchAccount = (session: string, page?: string) =>
-  call<Account>(session, accountPath(page));
+  call<Account>(accountPath(page), session);
 
-export const fetchAdminStats = (session: string) => call<AdminStats>(session, "/admin/stats");
+export const fetchAdminStats = (session: string) => call<AdminStats>("/admin/stats", session);
 
 export const fetchRecent = (
   session: string,
@@ -138,85 +156,58 @@ export const fetchRecent = (
   before?: string,
 ) =>
   call<RecentList>(
-    session,
     `${accountPath(page)}/recent?${new URLSearchParams({ kind, limit: String(limit), ...(before ? { before } : {}) })}`,
+    session,
   );
 
 export const resendRecent = (session: string, id: string, page?: string) =>
-  call<object>(session, `${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, {
-    method: "POST",
-  });
+  call<object>(`${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, session, post());
 
 export const enableModerator = (session: string, moderator: string, enabled: boolean) =>
-  call<Account>(session, `/account/moderators/${encodeURIComponent(moderator)}`, post({ enabled }));
+  call<Account>(`/account/moderators/${encodeURIComponent(moderator)}`, session, post({ enabled }));
 
 export const moderateMusic = (
   session: string,
   page: string,
   command: MusicCommand,
   song?: string,
-) =>
-  call<MusicStatus>(
-    session,
-    `/account/pages/${encodeURIComponent(page)}/music`,
-    post({ command, id: song }),
-  );
+) => call<MusicStatus>(`${accountPath(page)}/music`, session, post({ command, id: song }));
 
 export const addModeratorSong = (session: string, page: string, song: string, message: string) =>
-  call<object>(
-    session,
-    `/account/pages/${encodeURIComponent(page)}/songs`,
-    post({ song, message: message || null }),
-  );
+  call<object>(`${accountPath(page)}/songs`, session, post({ song, message: message || null }));
 
-export async function signOutEverywhere(session: string) {
-  await fetch(`${backendUrl}/account/sign-out`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${session}` },
-  });
-}
+export const signOutEverywhere = (session: string) =>
+  call<void>("/account/sign-out", session, post());
 
-export async function deleteAccount(session: string) {
-  const response = await fetch(`${backendUrl}/account/delete`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${session}` },
-  });
-  if (!response.ok) {
-    throw new BackendError(response.status, await response.text());
-  }
-}
+export const deleteAccount = (session: string) => call<void>("/account/delete", session, post());
 
 export const addDevice = (session: string, name: string) =>
-  call<Account>(session, "/account/devices", post({ name }));
+  call<Account>("/account/devices", session, post({ name }));
 
 export const chooseDevices = (session: string, music: string, wheel: string) =>
-  call<Account>(session, "/account/devices/choose", post({ music, wheel }));
+  call<Account>("/account/devices/choose", session, post({ music, wheel }));
 
 export const newDeviceKey = (session: string, device: string) =>
-  call<Account>(session, `/account/devices/${encodeURIComponent(device)}/key`, {
-    method: "POST",
-  });
+  call<Account>(`/account/devices/${encodeURIComponent(device)}/key`, session, post());
 
 export const removeDevice = (session: string, device: string) =>
-  call<Account>(session, `/account/devices/${encodeURIComponent(device)}/remove`, {
-    method: "POST",
-  });
+  call<Account>(`/account/devices/${encodeURIComponent(device)}/remove`, session, post());
 
 export const enableDevice = (session: string, device: string, enabled: boolean) =>
   call<Account>(
-    session,
     `/account/devices/${encodeURIComponent(device)}/enabled`,
+    session,
     post({ enabled }),
   );
 
 export const connectPayPal = async (session: string) =>
-  (await call<{ url: string }>(session, "/account/paypal/connect", { method: "POST" })).url;
+  (await call<{ url: string }>("/account/paypal/connect", session, post())).url;
 
 export const checkPayPal = (session: string) =>
-  call<Settings>(session, "/account/paypal/check", { method: "POST" });
+  call<Settings>("/account/paypal/check", session, post());
 
 export const disconnectPayPal = (session: string) =>
-  call<Settings>(session, "/account/paypal/disconnect", { method: "POST" });
+  call<Settings>("/account/paypal/disconnect", session, post());
 
 export const stripeCountries = [
   "AE",
@@ -266,23 +257,23 @@ export const stripeCountries = [
 ];
 
 export const connectStripe = async (session: string, country: string) =>
-  (await call<{ url: string }>(session, "/account/stripe/connect", post({ country }))).url;
+  (await call<{ url: string }>("/account/stripe/connect", session, post({ country }))).url;
 
 export const checkStripe = (session: string) =>
-  call<Settings>(session, "/account/stripe/check", { method: "POST" });
+  call<Settings>("/account/stripe/check", session, post());
 
 export const disconnectStripe = (session: string) =>
-  call<Settings>(session, "/account/stripe/disconnect", { method: "POST" });
+  call<Settings>("/account/stripe/disconnect", session, post());
 
 export const uploadImage = (session: string, image: File, page?: string) =>
-  call<Settings>(session, `${accountPath(page)}/image`, {
+  call<Settings>(`${accountPath(page)}/image`, session, {
     method: "POST",
     headers: { "content-type": image.type || "application/octet-stream" },
     body: image,
   });
 
 export const removeImage = (session: string, page?: string) =>
-  call<Settings>(session, `${accountPath(page)}/image/remove`, { method: "POST" });
+  call<Settings>(`${accountPath(page)}/image/remove`, session, post());
 
 export type SettingsChanges = Page &
   Pick<
@@ -292,15 +283,15 @@ export type SettingsChanges = Page &
 
 export const sendTest = (
   session: string,
-  kind: "song" | "tip" | "spin",
+  kind: RecentKind,
   body: { song?: string; message?: string },
   page?: string,
-) => call<object>(session, `${accountPath(page)}/test/${kind}`, post(body));
+) => call<object>(`${accountPath(page)}/test/${kind}`, session, post(body));
 
 export const saveAccountSettings = (session: string, settings: SettingsChanges, page?: string) =>
   call<Settings>(
-    session,
     `${accountPath(page)}/settings`,
+    session,
     post({
       currency: settings.currency,
       paywall: settings.paywall,

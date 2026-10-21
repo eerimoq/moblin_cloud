@@ -1,4 +1,4 @@
-import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
@@ -19,10 +19,12 @@ import {
   Notice,
   SaveButton,
   Spinner,
+  TwitchSignIn,
   Value,
 } from "../components/PageParts";
 import {
   addDevice,
+  createAccountSession,
   addModeratorSong,
   enableModerator,
   type ChannelModerator,
@@ -39,29 +41,26 @@ import {
   fetchAccount,
   fetchRecent,
   newDeviceKey,
-  readSession,
   removeDevice,
   removeImage,
   saveAccountSettings,
-  saveSession,
   resendRecent,
   sendTest,
   signInUrl,
-  signOutEverywhere,
   deleteAccount,
   stripeCountries,
-  takeSignInResult,
   uploadImage,
   type Account,
   type Device,
   type Recent,
+  type RecentKind,
   type SettingsChanges,
 } from "../data/account";
+import { BackendError } from "../data/backend";
 import { links, pages } from "../data/links";
 import {
   accentAttributes,
   accents,
-  BackendError,
   currencies,
   defaultTitle,
   fonts,
@@ -165,35 +164,75 @@ function stripeErrorText(error: unknown) {
   return t("Something went wrong. Try again.");
 }
 
+const forbidden = (error: unknown) => error instanceof BackendError && error.status === 403;
+
+function SignInAgain() {
+  return (
+    <a href={signInUrl} class={ghostButtonClass}>
+      {t("Sign in again")}
+    </a>
+  );
+}
+
+function createSave(
+  busy: () => boolean,
+  run: () => Promise<void>,
+  errorText: (error: unknown) => string,
+) {
+  const [saving, setSaving] = createSignal(false);
+  const [saved, flashSaved] = createFlash(2000);
+  const [failure, setFailure] = createSignal<{ error: unknown } | null>(null);
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (busy()) {
+      return;
+    }
+    setFailure(null);
+    setSaving(true);
+    try {
+      await run();
+      flashSaved();
+    } catch (error) {
+      setFailure({ error });
+    } finally {
+      setSaving(false);
+    }
+  };
+  return { busy, saving, saved, failure, errorText, submit };
+}
+
+function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: boolean }) {
+  return (
+    <div class="flex flex-wrap items-center gap-4">
+      <SaveButton
+        saving={props.save.saving()}
+        saved={props.save.saved()}
+        disabled={props.save.busy()}
+      />
+      <Show when={props.save.failure()}>
+        {(failure) => <Notice status>{props.save.errorText(failure().error)}</Notice>}
+      </Show>
+      <Show when={props.signInAgain && forbidden(props.save.failure()?.error)}>
+        <SignInAgain />
+      </Show>
+    </div>
+  );
+}
+
 function CurrencySettings(props: {
   currency: string;
   busy: boolean;
   onSave: (changes: { currency: string }) => Promise<void>;
 }) {
   const [currency, setCurrency] = createSignal(props.currency);
-  const [saving, setSaving] = createSignal(false);
-  const [saved, flashSaved] = createFlash(2000);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (props.busy) {
-      return;
-    }
-    setError(null);
-    setSaving(true);
-    try {
-      await props.onSave({ currency: currency() });
-      flashSaved();
-    } catch (error) {
-      setError(paymentErrorText(error, t("Pick one of the currencies.")));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = createSave(
+    () => props.busy,
+    () => props.onSave({ currency: currency() }),
+    (error) => paymentErrorText(error, t("Pick one of the currencies.")),
+  );
 
   return (
-    <form class={cardClass} onSubmit={submit}>
+    <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Currency")}</h2>
       <p class="text-ink-2">
         {t("Viewers pay all tips, song requests and wheel spins in this currency.")}
@@ -206,12 +245,72 @@ function CurrencySettings(props: {
       >
         <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
       </select>
-      <div class="flex flex-wrap items-center gap-4">
-        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </div>
+      <SaveFooter save={save} />
     </form>
   );
+}
+
+function createProviderActions(
+  props: { session: string; onSettings: (settings: Settings) => void; onSignOut: () => void },
+  provider: {
+    errorText: (error: unknown) => string;
+    connect: () => Promise<string>;
+    check: (session: string) => Promise<Settings>;
+    disconnect: (session: string) => Promise<Settings>;
+    confirmText: string;
+  },
+) {
+  const [working, setWorking] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [signInAgain, setSignInAgain] = createSignal(false);
+
+  const begin = () => {
+    setError(null);
+    setSignInAgain(false);
+    setWorking(true);
+  };
+
+  const failed = (error: unknown) => {
+    if (signedOut(error)) {
+      props.onSignOut();
+      return;
+    }
+    setError(provider.errorText(error));
+    setSignInAgain(forbidden(error));
+  };
+
+  const run = async (action: () => Promise<Settings>, report = true) => {
+    begin();
+    try {
+      props.onSettings(await action());
+    } catch (error) {
+      if (report) {
+        failed(error);
+      }
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const connect = async () => {
+    begin();
+    try {
+      location.href = await provider.connect();
+    } catch (error) {
+      failed(error);
+      setWorking(false);
+    }
+  };
+
+  const check = (quiet: boolean) => run(() => provider.check(props.session), !quiet);
+
+  const disconnect = async () => {
+    if (confirm(provider.confirmText)) {
+      await run(() => provider.disconnect(props.session));
+    }
+  };
+
+  return { working, error, signInAgain, connect, check, disconnect };
 }
 
 function PayPalAccount(props: {
@@ -220,63 +319,13 @@ function PayPalAccount(props: {
   onSettings: (settings: Settings) => void;
   onSignOut: () => void;
 }) {
-  const [working, setWorking] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const [signInAgain, setSignInAgain] = createSignal(false);
-
-  const failed = (error: unknown) => {
-    if (signedOut(error)) {
-      props.onSignOut();
-      return;
-    }
-    setError(payPalErrorText(error));
-    setSignInAgain(error instanceof BackendError && error.status === 403);
-  };
-
-  const connect = async () => {
-    setError(null);
-    setSignInAgain(false);
-    setWorking(true);
-    try {
-      location.href = await connectPayPal(props.session);
-    } catch (error) {
-      failed(error);
-      setWorking(false);
-    }
-  };
-
-  const check = async (quiet: boolean) => {
-    setError(null);
-    setSignInAgain(false);
-    setWorking(true);
-    try {
-      props.onSettings(await checkPayPal(props.session));
-    } catch (error) {
-      if (!quiet) {
-        failed(error);
-      }
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const disconnect = async () => {
-    if (
-      !confirm(t("Viewers can't pay you with PayPal until you connect a PayPal account again."))
-    ) {
-      return;
-    }
-    setError(null);
-    setSignInAgain(false);
-    setWorking(true);
-    try {
-      props.onSettings(await disconnectPayPal(props.session));
-    } catch (error) {
-      failed(error);
-    } finally {
-      setWorking(false);
-    }
-  };
+  const { working, error, signInAgain, connect, check, disconnect } = createProviderActions(props, {
+    errorText: payPalErrorText,
+    connect: () => connectPayPal(props.session),
+    check: checkPayPal,
+    disconnect: disconnectPayPal,
+    confirmText: t("Viewers can't pay you with PayPal until you connect a PayPal account again."),
+  });
 
   onMount(() => {
     const search = new URLSearchParams(location.search);
@@ -348,9 +397,7 @@ function PayPalAccount(props: {
         </Show>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
-          <a href={signInUrl} class={ghostButtonClass}>
-            {t("Sign in again")}
-          </a>
+          <SignInAgain />
         </Show>
       </div>
     </div>
@@ -382,66 +429,16 @@ function StripeAccount(props: {
   onSignOut: () => void;
 }) {
   const [country, setCountry] = createSignal(guessStripeCountry());
-  const [working, setWorking] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const [signInAgain, setSignInAgain] = createSignal(false);
+  const { working, error, signInAgain, connect, check, disconnect } = createProviderActions(props, {
+    errorText: stripeErrorText,
+    connect: () => connectStripe(props.session, country()),
+    check: checkStripe,
+    disconnect: disconnectStripe,
+    confirmText: t("Viewers can't pay you with Stripe until you connect a Stripe account again."),
+  });
   const [waiting, setWaiting] = createSignal(false);
   let stopped = false;
   onCleanup(() => (stopped = true));
-
-  const failed = (error: unknown) => {
-    if (signedOut(error)) {
-      props.onSignOut();
-      return;
-    }
-    setError(stripeErrorText(error));
-    setSignInAgain(error instanceof BackendError && error.status === 403);
-  };
-
-  const connect = async () => {
-    setError(null);
-    setSignInAgain(false);
-    setWorking(true);
-    try {
-      location.href = await connectStripe(props.session, country());
-    } catch (error) {
-      failed(error);
-      setWorking(false);
-    }
-  };
-
-  const check = async (quiet: boolean) => {
-    setError(null);
-    setSignInAgain(false);
-    setWorking(true);
-    try {
-      props.onSettings(await checkStripe(props.session));
-    } catch (error) {
-      if (!quiet) {
-        failed(error);
-      }
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const disconnect = async () => {
-    if (
-      !confirm(t("Viewers can't pay you with Stripe until you connect a Stripe account again."))
-    ) {
-      return;
-    }
-    setError(null);
-    setSignInAgain(false);
-    setWorking(true);
-    try {
-      props.onSettings(await disconnectStripe(props.session));
-    } catch (error) {
-      failed(error);
-    } finally {
-      setWorking(false);
-    }
-  };
 
   const wait = async () => {
     setWaiting(true);
@@ -571,9 +568,7 @@ function StripeAccount(props: {
         </Show>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
         <Show when={signInAgain()}>
-          <a href={signInUrl} class={ghostButtonClass}>
-            {t("Sign in again")}
-          </a>
+          <SignInAgain />
         </Show>
       </div>
     </div>
@@ -691,29 +686,14 @@ function YourPage(props: {
   );
   const [font, setFont] = createSignal(props.page.font ?? fonts[0]);
   onMount(() => loadFonts(fonts));
-  const [saving, setSaving] = createSignal(false);
-  const [saved, flashSaved] = createFlash(2000);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (props.busy) {
-      return;
-    }
-    setError(null);
-    setSaving(true);
-    try {
-      await props.onSave({ title: title(), message: message(), accent: accent(), font: font() });
-      flashSaved();
-    } catch {
-      setError(t("Something went wrong. Try again."));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = createSave(
+    () => props.busy,
+    () => props.onSave({ title: title(), message: message(), accent: accent(), font: font() }),
+    () => t("Something went wrong. Try again."),
+  );
 
   return (
-    <form class={cardClass} onSubmit={submit}>
+    <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">
         {props.moderating
           ? t("The tip page of {name}", { name: props.account.name })
@@ -864,10 +844,7 @@ function YourPage(props: {
           )}
         </p>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
-        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </div>
+      <SaveFooter save={save} />
     </form>
   );
 }
@@ -882,34 +859,14 @@ function SongSettings(props: {
   const [price, setPrice] = createSignal(
     props.paywall ? (props.paywall.price / 100).toFixed(2) : "1.00",
   );
-  const [saving, setSaving] = createSignal(false);
-  const [saved, flashSaved] = createFlash(2000);
-  const [error, setError] = createSignal<string | null>(null);
-  const [signInAgain, setSignInAgain] = createSignal(false);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (props.busy) {
-      return;
-    }
-    setError(null);
-    setSignInAgain(false);
-    setSaving(true);
-    try {
-      await props.onSave({
-        paywall: enabled() ? { price: hundredths(price()) } : null,
-      });
-      flashSaved();
-    } catch (error) {
-      setError(paymentErrorText(error, t("Enter a price from 0.50 to 100000.")));
-      setSignInAgain(error instanceof BackendError && error.status === 403);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = createSave(
+    () => props.busy,
+    () => props.onSave({ paywall: enabled() ? { price: hundredths(price()) } : null }),
+    (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
+  );
 
   return (
-    <form class={cardClass} onSubmit={submit}>
+    <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Song requests")}</h2>
       <p class="text-ink-2">
         {t(
@@ -948,15 +905,7 @@ function SongSettings(props: {
           </span>
         </label>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
-        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-        <Show when={signInAgain()}>
-          <a href={signInUrl} class={ghostButtonClass}>
-            {t("Sign in again")}
-          </a>
-        </Show>
-      </div>
+      <SaveFooter save={save} signInAgain />
     </form>
   );
 }
@@ -975,39 +924,25 @@ function SubscriberSettings(props: {
       String((props.tiers ? tierCount(props.tiers, tier) : [1, 5, 10][tier - 1]) * unit),
     ),
   );
-  const [saving, setSaving] = createSignal(false);
-  const [saved, flashSaved] = createFlash(2000);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (props.busy) {
-      return;
-    }
-    setError(null);
-    setSaving(true);
-    const [tier1, tier2, tier3] = amounts().map((count) =>
-      Math.round((Number.parseInt(count, 10) || 0) / unit),
-    );
-    try {
-      await props.onSave(enabled() ? { tier1, tier2, tier3 } : null);
-      flashSaved();
-    } catch (error) {
-      setError(
-        paymentErrorText(
-          error,
-          song
-            ? t("Enter 0 to 500 minutes per tier, and more than 0 for at least one tier.")
-            : t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier."),
-        ),
+  const save = createSave(
+    () => props.busy,
+    () => {
+      const [tier1, tier2, tier3] = amounts().map((count) =>
+        Math.round((Number.parseInt(count, 10) || 0) / unit),
       );
-    } finally {
-      setSaving(false);
-    }
-  };
+      return props.onSave(enabled() ? { tier1, tier2, tier3 } : null);
+    },
+    (error) =>
+      paymentErrorText(
+        error,
+        song
+          ? t("Enter 0 to 500 minutes per tier, and more than 0 for at least one tier.")
+          : t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier."),
+      ),
+  );
 
   return (
-    <form class={cardClass} onSubmit={submit}>
+    <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">
         {song ? t("Songs for Twitch subscribers") : t("Spins for Twitch subscribers")}
       </h2>
@@ -1068,10 +1003,7 @@ function SubscriberSettings(props: {
             : t("Spins per month for each tier.")}
         </span>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
-        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </div>
+      <SaveFooter save={save} />
     </form>
   );
 }
@@ -1083,29 +1015,14 @@ function SongLengthSettings(props: {
 }) {
   const [enabled, setEnabled] = createSignal(props.maxSongMinutes !== null);
   const [minutes, setMinutes] = createSignal(String(props.maxSongMinutes ?? 10));
-  const [saving, setSaving] = createSignal(false);
-  const [saved, flashSaved] = createFlash(2000);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (props.busy) {
-      return;
-    }
-    setError(null);
-    setSaving(true);
-    try {
-      await props.onSave(enabled() ? Number.parseInt(minutes(), 10) || 0 : null);
-      flashSaved();
-    } catch {
-      setError(t("Enter 1 to 60 minutes."));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = createSave(
+    () => props.busy,
+    () => props.onSave(enabled() ? Number.parseInt(minutes(), 10) || 0 : null),
+    () => t("Enter 1 to 60 minutes."),
+  );
 
   return (
-    <form class={cardClass} onSubmit={submit}>
+    <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Longest song")}</h2>
       <p class="text-ink-2">
         {t(
@@ -1137,10 +1054,7 @@ function SongLengthSettings(props: {
           />
         </label>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
-        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </div>
+      <SaveFooter save={save} />
     </form>
   );
 }
@@ -1279,74 +1193,6 @@ function MusicQueue(props: { session: string; page: string; onSignOut: () => voi
   );
 }
 
-function FreeSong(props: { session: string; page: string; onSignOut: () => void }) {
-  const [song, setSong] = createSignal("");
-  const [message, setMessage] = createSignal("");
-  const [sending, setSending] = createSignal(false);
-  const [sent, flashSent] = createFlash(3000);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (sending()) {
-      return;
-    }
-    setError(null);
-    setSending(true);
-    try {
-      await addModeratorSong(props.session, props.page, song().trim(), message().trim());
-      setSong("");
-      setMessage("");
-      flashSent();
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      setError(moderationErrorText(error));
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">{t("Add a song for free")}</h2>
-      <input
-        type="url"
-        required
-        maxLength={500}
-        aria-label={t("Apple Music song link")}
-        placeholder="https://music.apple.com/…"
-        value={song()}
-        onInput={(event) => setSong(event.currentTarget.value)}
-        autocomplete="off"
-        spellcheck={false}
-        class={inputClass}
-      />
-      <input
-        type="text"
-        maxLength={200}
-        aria-label={t("Message (optional)")}
-        placeholder={t("Message (optional)")}
-        value={message()}
-        onInput={(event) => setMessage(event.currentTarget.value)}
-        class={inputClass}
-      />
-      <div class="flex flex-wrap items-center gap-4">
-        <button type="submit" class={buttonClass} disabled={sending() || !song().trim()}>
-          <Show when={sent()}>
-            <Icon name="check" class="size-5" />
-          </Show>
-          <span aria-live="polite">
-            {sending() ? t("Sending…") : sent() ? t("Queued for Moblin") : t("Add song")}
-          </span>
-        </button>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </div>
-    </form>
-  );
-}
-
 function MoneyInput(props: {
   value: string;
   onValue: (value: string) => void;
@@ -1379,34 +1225,14 @@ function TipSettings(props: {
   const [amounts, setAmounts] = createSignal(
     (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
   );
-  const [saving, setSaving] = createSignal(false);
-  const [saved, flashSaved] = createFlash(2000);
-  const [error, setError] = createSignal<string | null>(null);
-  const [signInAgain, setSignInAgain] = createSignal(false);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (props.busy) {
-      return;
-    }
-    setError(null);
-    setSignInAgain(false);
-    setSaving(true);
-    try {
-      await props.onSave({
-        tips: enabled() ? { amounts: amountsOf(amounts()) } : null,
-      });
-      flashSaved();
-    } catch (error) {
-      setError(paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")));
-      setSignInAgain(error instanceof BackendError && error.status === 403);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = createSave(
+    () => props.busy,
+    () => props.onSave({ tips: enabled() ? { amounts: amountsOf(amounts()) } : null }),
+    (error) => paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")),
+  );
 
   return (
-    <form class={cardClass} onSubmit={submit}>
+    <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Tips")}</h2>
       <p class="text-ink-2">
         {t(
@@ -1467,15 +1293,7 @@ function TipSettings(props: {
           </div>
         </fieldset>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
-        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-        <Show when={signInAgain()}>
-          <a href={signInUrl} class={ghostButtonClass}>
-            {t("Sign in again")}
-          </a>
-        </Show>
-      </div>
+      <SaveFooter save={save} signInAgain />
     </form>
   );
 }
@@ -1499,21 +1317,10 @@ function SpinSettings(props: {
 
   const changeOption = (index: number, change: Partial<{ spins: string; price: string }>) =>
     setOptions(options().map((old, at) => (at === index ? { ...old, ...change } : old)));
-  const [saving, setSaving] = createSignal(false);
-  const [saved, flashSaved] = createFlash(2000);
-  const [error, setError] = createSignal<string | null>(null);
-  const [signInAgain, setSignInAgain] = createSignal(false);
-
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (props.busy) {
-      return;
-    }
-    setError(null);
-    setSignInAgain(false);
-    setSaving(true);
-    try {
-      await props.onSave({
+  const save = createSave(
+    () => props.busy,
+    () =>
+      props.onSave({
         spin: enabled()
           ? {
               options: options()
@@ -1524,18 +1331,12 @@ function SpinSettings(props: {
                 })),
             }
           : null,
-      });
-      flashSaved();
-    } catch (error) {
-      setError(paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")));
-      setSignInAgain(error instanceof BackendError && error.status === 403);
-    } finally {
-      setSaving(false);
-    }
-  };
+      }),
+    (error) => paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")),
+  );
 
   return (
-    <form class={cardClass} onSubmit={submit}>
+    <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Wheel of luck")}</h2>
       <p class="text-ink-2">
         {t(
@@ -1605,24 +1406,18 @@ function SpinSettings(props: {
           </div>
         </fieldset>
       </Show>
-      <div class="flex flex-wrap items-center gap-4">
-        <SaveButton saving={saving()} saved={saved()} disabled={props.busy} />
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-        <Show when={signInAgain()}>
-          <a href={signInUrl} class={ghostButtonClass}>
-            {t("Sign in again")}
-          </a>
-        </Show>
-      </div>
+      <SaveFooter save={save} signInAgain />
     </form>
   );
 }
 
-function TestSend(props: {
-  kind: "song" | "tip" | "spin";
-  session: string;
-  page?: string;
+function SendForm(props: {
+  title: string;
+  description?: string;
+  songField: boolean;
+  label: string;
   preview?: boolean;
+  send: (song: string, message: string) => Promise<unknown>;
   onSignOut: () => void;
 }) {
   const [song, setSong] = createSignal("");
@@ -1639,13 +1434,8 @@ function TestSend(props: {
     setError(null);
     setSending(true);
     try {
-      await sendTest(
-        props.session,
-        props.kind,
-        props.kind === "song" ? { song: song(), message: message() } : { message: message() },
-        props.page,
-      );
-      if (props.kind === "song") {
+      await props.send(song(), message());
+      if (props.songField) {
         setSong("");
         setMessage("");
       }
@@ -1654,11 +1444,7 @@ function TestSend(props: {
       if (signedOut(error)) {
         props.onSignOut();
       }
-      setError(
-        error instanceof BackendError && error.status >= 400 && error.status < 500
-          ? error.message
-          : t("Something went wrong. Try again."),
-      );
+      setError(moderationErrorText(error));
     } finally {
       setSending(false);
     }
@@ -1666,22 +1452,21 @@ function TestSend(props: {
 
   return (
     <form class={cardClass} onSubmit={submit}>
-      <h2 class="text-[23px] font-semibold">{t("Test it")}</h2>
-      <p class="text-ink-2">
-        {props.kind === "song"
-          ? t("Add a song to Moblin's queue for free, to check that song requests work.")
-          : props.kind === "tip"
-            ? t("Send yourself a tip for free, to check that tips show up in Moblin.")
-            : t("Spin your wheel in Moblin for free, to check that it works.")}
-      </p>
-      <Show when={props.kind === "song"}>
+      <h2 class="text-[23px] font-semibold">{props.title}</h2>
+      <Show when={props.description}>
+        <p class="text-ink-2">{props.description}</p>
+      </Show>
+      <Show when={props.songField}>
         <input
           type="url"
           required
+          maxLength={500}
           aria-label={t("Apple Music song link")}
           placeholder="https://music.apple.com/…"
           value={song()}
           onInput={(event) => setSong(event.currentTarget.value)}
+          autocomplete="off"
+          spellcheck={false}
           class={inputClass}
         />
       </Show>
@@ -1695,25 +1480,77 @@ function TestSend(props: {
         class={inputClass}
       />
       <div class="flex flex-wrap items-center gap-4">
-        <button type="submit" class={buttonClass} disabled={sending()}>
+        <button
+          type="submit"
+          class={buttonClass}
+          disabled={sending() || (props.songField && !song().trim())}
+        >
           <Show when={sent()}>
             <Icon name="check" class="size-5" />
           </Show>
           <span aria-live="polite">
-            {sending()
-              ? t("Sending…")
-              : sent()
-                ? t("Queued for Moblin")
-                : props.kind === "song"
-                  ? t("Send test song")
-                  : props.kind === "tip"
-                    ? t("Send test tip")
-                    : t("Send test spin")}
+            {sending() ? t("Sending…") : sent() ? t("Queued for Moblin") : props.label}
           </span>
         </button>
         <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </div>
     </form>
+  );
+}
+
+const testTexts: Record<RecentKind, { description: string; label: string }> = {
+  song: {
+    description: t("Add a song to Moblin's queue for free, to check that song requests work."),
+    label: t("Send test song"),
+  },
+  tip: {
+    description: t("Send yourself a tip for free, to check that tips show up in Moblin."),
+    label: t("Send test tip"),
+  },
+  spin: {
+    description: t("Spin your wheel in Moblin for free, to check that it works."),
+    label: t("Send test spin"),
+  },
+};
+
+function TestSend(props: {
+  kind: RecentKind;
+  session: string;
+  page?: string;
+  preview?: boolean;
+  onSignOut: () => void;
+}) {
+  return (
+    <SendForm
+      title={t("Test it")}
+      description={testTexts[props.kind].description}
+      label={testTexts[props.kind].label}
+      songField={props.kind === "song"}
+      preview={props.preview}
+      onSignOut={props.onSignOut}
+      send={(song, message) =>
+        sendTest(
+          props.session,
+          props.kind,
+          props.kind === "song" ? { song, message } : { message },
+          props.page,
+        )
+      }
+    />
+  );
+}
+
+function FreeSong(props: { session: string; page: string; onSignOut: () => void }) {
+  return (
+    <SendForm
+      title={t("Add a song for free")}
+      label={t("Add song")}
+      songField
+      onSignOut={props.onSignOut}
+      send={(song, message) =>
+        addModeratorSong(props.session, props.page, song.trim(), message.trim())
+      }
+    />
   );
 }
 
@@ -1738,52 +1575,44 @@ function Admin(props: {
     props.preview,
   );
 
+  const guard = async <T,>(promise: Promise<T>) => {
+    try {
+      return await promise;
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      throw error;
+    }
+  };
+
+  const busyWith = async <T,>(call: () => Promise<T>, apply: (value: T) => void) => {
+    setBusy(true);
+    try {
+      apply(await guard(call()));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resend = async (item: Recent) => {
     if (props.preview) {
       return;
     }
-    try {
-      await resendRecent(props.session, item.id, props.page);
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      throw error;
-    }
+    await guard(resendRecent(props.session, item.id, props.page));
     await loadRecent();
   };
 
-  const changeImage = async (image: File | null) => {
-    setBusy(true);
-    try {
-      setSettings(
-        await (image
+  const changeImage = (image: File | null) =>
+    busyWith(
+      () =>
+        image
           ? uploadImage(props.session, image, props.page)
-          : removeImage(props.session, props.page)),
-      );
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      throw error;
-    } finally {
-      setBusy(false);
-    }
-  };
+          : removeImage(props.session, props.page),
+      setSettings,
+    );
 
-  const changeDevices = async (change: () => Promise<Account>) => {
-    setBusy(true);
-    try {
-      setAccount(await change());
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      throw error;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const changeDevices = (change: () => Promise<Account>) => busyWith(change, setAccount);
 
   onMount(() => {
     if (props.preview) {
@@ -1806,21 +1635,11 @@ function Admin(props: {
     );
   });
 
-  const save = async (changes: Partial<SettingsChanges>) => {
-    setBusy(true);
-    try {
-      setSettings(
-        await saveAccountSettings(props.session, { ...settings(), ...changes }, props.page),
-      );
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      throw error;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const save = (changes: Partial<SettingsChanges>) =>
+    busyWith(
+      () => saveAccountSettings(props.session, { ...settings(), ...changes }, props.page),
+      setSettings,
+    );
 
   const payments = () => settings().paypal || settings().stripe;
   const sections: {
@@ -2120,13 +1939,8 @@ function Admin(props: {
   );
 }
 
-function AccountDialog(props: {
-  ref: (dialog: HTMLDialogElement) => void;
-  session: string;
-  onSignOut: () => void;
-}) {
+function Modal(props: { ref: (dialog: HTMLDialogElement) => void; children: JSX.Element }) {
   let dialog: HTMLDialogElement | undefined;
-
   return (
     <dialog
       ref={(element) => {
@@ -2140,6 +1954,25 @@ function AccountDialog(props: {
         }
       }}
     >
+      {props.children}
+    </dialog>
+  );
+}
+
+function AccountDialog(props: {
+  ref: (dialog: HTMLDialogElement) => void;
+  session: string;
+  onSignOut: () => void;
+}) {
+  let dialog: HTMLDialogElement | undefined;
+
+  return (
+    <Modal
+      ref={(element) => {
+        dialog = element;
+        props.ref(element);
+      }}
+    >
       <div class="flex flex-col gap-5">
         <h2 class="font-display text-2xl font-bold">{t("Account")}</h2>
         <DeleteAccount session={props.session} onSignOut={props.onSignOut} />
@@ -2149,7 +1982,7 @@ function AccountDialog(props: {
           </button>
         </div>
       </div>
-    </dialog>
+    </Modal>
   );
 }
 
@@ -2305,7 +2138,7 @@ function NeedsPayments(props: {
 }
 
 function QrCode(props: { text: string; label: string }) {
-  const qr = () => encode(props.text, { border: 4 });
+  const qr = createMemo(() => encode(props.text, { border: 4 }));
   const path = () =>
     qr()
       .data.flatMap((row, y) => row.map((dark, x) => (dark ? `M${x} ${y}h1v1h-1z` : "")))
@@ -2476,15 +2309,7 @@ function GoPremium() {
         <Icon name="star" class="size-4" />
         <span class="max-sm:sr-only">{t("Go premium")}</span>
       </button>
-      <dialog
-        ref={(element) => (dialog = element)}
-        class="m-auto w-[calc(100%-2rem)] max-w-md rounded-3xl border-[1.5px] border-line bg-card p-6 text-ink backdrop:bg-black/60 sm:p-8"
-        onClick={(event) => {
-          if (event.target === dialog) {
-            dialog?.close();
-          }
-        }}
-      >
+      <Modal ref={(element) => (dialog = element)}>
         <div class="flex flex-col gap-5">
           <h2 class="font-display text-2xl font-bold">{t("Go premium")}</h2>
           <p class="text-[17px] text-ink-2">
@@ -2517,7 +2342,7 @@ function GoPremium() {
             </button>
           </div>
         </div>
-      </dialog>
+      </Modal>
     </>
   );
 }
@@ -2642,15 +2467,7 @@ function DeviceSettings(props: {
               {t("Remove device")}
             </button>
           </div>
-          <dialog
-            ref={(element) => (qrDialog = element)}
-            class="m-auto w-[calc(100%-2rem)] max-w-md rounded-3xl border-[1.5px] border-line bg-card p-6 text-ink backdrop:bg-black/60 sm:p-8"
-            onClick={(event) => {
-              if (event.target === qrDialog) {
-                qrDialog?.close();
-              }
-            }}
-          >
+          <Modal ref={(element) => (qrDialog = element)}>
             <div class="flex flex-col items-center gap-5">
               <h2 class="font-display text-2xl font-bold">{props.device.name}</h2>
               <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
@@ -2661,7 +2478,7 @@ function DeviceSettings(props: {
                 {t("Close")}
               </button>
             </div>
-          </dialog>
+          </Modal>
         </div>
       </Show>
     </li>
@@ -2781,33 +2598,7 @@ function Preview(props: { failed: boolean }) {
 }
 
 export default function Dashboard() {
-  const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
-  const [loading, setLoading] = createSignal(true);
-  const [signInFailed, setSignInFailed] = createSignal(false);
-
-  onMount(async () => {
-    const result = takeSignInResult();
-    if (result.session) {
-      saveSession(result.session);
-    }
-    setSignInFailed(result.failed);
-    const stored = readSession();
-    if (stored) {
-      try {
-        setSession({ session: stored, account: await fetchAccount(stored) });
-      } catch (error) {
-        if (signedOut(error)) {
-          saveSession(null);
-        }
-      }
-    }
-    setLoading(false);
-  });
-
-  const signOut = () => {
-    saveSession(null);
-    setSession(null);
-  };
+  const { session, loading, signInFailed, signOut, signOutAll } = createAccountSession();
 
   const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
   const chooseChannel = (login: string) => {
@@ -2836,13 +2627,7 @@ export default function Dashboard() {
           when={session()}
           fallback={
             <Show when={!loading()}>
-              <a
-                href={signInUrl}
-                class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
-              >
-                <Icon name="twitch" class="size-5" />
-                {t("Sign in")}
-              </a>
+              <TwitchSignIn>{t("Sign in")}</TwitchSignIn>
             </Show>
           }
         >
@@ -2899,12 +2684,7 @@ export default function Dashboard() {
                       onClick: () => accountDialog?.showModal(),
                     },
                   ]}
-                  onSignOut={async () => {
-                    try {
-                      await signOutEverywhere(current().session);
-                    } catch {}
-                    signOut();
-                  }}
+                  onSignOut={signOutAll}
                 />
                 <AccountDialog
                   ref={(dialog) => (accountDialog = dialog)}

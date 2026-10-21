@@ -9,19 +9,10 @@ import {
   Hero,
   Notice,
   Spinner,
+  TwitchSignIn,
 } from "../components/PageParts";
-import {
-  fetchAccount,
-  fetchAdminStats,
-  readSession,
-  saveSession,
-  signInUrl,
-  signOutEverywhere,
-  takeSignInResult,
-  type Account,
-  type AdminStats,
-} from "../data/account";
-import { BackendError } from "../data/remoteControl";
+import { createAccountSession, fetchAdminStats, type AdminStats } from "../data/account";
+import { BackendError } from "../data/backend";
 
 type Counts = { today: number; week: number; total: number };
 
@@ -144,6 +135,16 @@ type Kind = {
   deliveries: string[];
 };
 
+const captureReasons = [
+  "payments-unavailable",
+  "not-saved",
+  "not-approved",
+  "pending",
+  "provider",
+  "unknown",
+  "crashed",
+];
+
 const kinds: Kind[] = [
   {
     kind: "tip",
@@ -156,16 +157,7 @@ const kinds: Kind[] = [
       "provider",
       "not-saved",
     ],
-    payments: [
-      "expired",
-      "payments-unavailable",
-      "not-saved",
-      "not-approved",
-      "pending",
-      "provider",
-      "unknown",
-      "crashed",
-    ],
+    payments: ["expired", ...captureReasons],
     tests: ["account", "too-many-tests", "invalid-message", "crashed"],
     deliveries: ["moblin-error"],
   },
@@ -182,17 +174,7 @@ const kinds: Kind[] = [
       "provider",
       "not-saved",
     ],
-    payments: [
-      "expired",
-      "no-wheel",
-      "payments-unavailable",
-      "not-saved",
-      "not-approved",
-      "pending",
-      "provider",
-      "unknown",
-      "crashed",
-    ],
+    payments: ["expired", "no-wheel", ...captureReasons],
     subscribers: {
       event: "subSpins",
       reasons: [
@@ -228,18 +210,7 @@ const kinds: Kind[] = [
       "provider",
       "not-saved",
     ],
-    payments: [
-      "expired",
-      "offline",
-      "requests-off",
-      "payments-unavailable",
-      "not-saved",
-      "not-approved",
-      "pending",
-      "provider",
-      "unknown",
-      "crashed",
-    ],
+    payments: ["expired", "offline", "requests-off", ...captureReasons],
     subscribers: {
       event: "subSongs",
       reasons: [
@@ -922,33 +893,7 @@ function Stats(props: { session: string; onSignOut: () => void }) {
 }
 
 export default function Admin() {
-  const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
-  const [loading, setLoading] = createSignal(true);
-  const [signInFailed, setSignInFailed] = createSignal(false);
-
-  onMount(async () => {
-    const result = takeSignInResult();
-    if (result.session) {
-      saveSession(result.session);
-    }
-    setSignInFailed(result.failed);
-    const stored = readSession();
-    if (stored) {
-      try {
-        setSession({ session: stored, account: await fetchAccount(stored) });
-      } catch (error) {
-        if (error instanceof BackendError && error.status === 401) {
-          saveSession(null);
-        }
-      }
-    }
-    setLoading(false);
-  });
-
-  const signOut = () => {
-    saveSession(null);
-    setSession(null);
-  };
+  const { session, loading, signInFailed, signOut, signOutAll } = createAccountSession();
 
   return (
     <>
@@ -957,13 +902,7 @@ export default function Admin() {
           when={session()}
           fallback={
             <Show when={!loading()}>
-              <a
-                href={signInUrl}
-                class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
-              >
-                <Icon name="twitch" class="size-5" />
-                Sign in
-              </a>
+              <TwitchSignIn>Sign in</TwitchSignIn>
             </Show>
           }
         >
@@ -971,12 +910,7 @@ export default function Admin() {
             <AccountMenu
               name={current().account.name}
               avatar={current().account.avatar}
-              onSignOut={async () => {
-                try {
-                  await signOutEverywhere(current().session);
-                } catch {}
-                signOut();
-              }}
+              onSignOut={signOutAll}
             />
           )}
         </Show>

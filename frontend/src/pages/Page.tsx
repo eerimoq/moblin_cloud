@@ -1,10 +1,6 @@
 import { loadCoreSdkScript, type OneTimePaymentSession } from "@paypal/paypal-js/sdk-v6";
-import {
-  loadStripe,
-  type Stripe,
-  type StripeElements,
-  type StripePaymentElement,
-} from "@stripe/stripe-js";
+import type { Stripe, StripeElements, StripePaymentElement } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js/pure";
 import {
   batch,
   createEffect,
@@ -19,6 +15,7 @@ import {
   Switch,
 } from "solid-js";
 import { asset } from "../asset";
+import { BackendError } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
 import Queue, { type Status } from "../components/Queue";
@@ -28,13 +25,9 @@ import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/P
 import { links, pages } from "../data/links";
 import {
   accentAttributes,
-  BackendError,
-  captureSong,
-  captureSpin,
-  captureTip,
+  captureOrder,
   formatPrice,
-  fetchSongAllowance,
-  fetchSpinAllowance,
+  fetchAllowance,
   hundredths,
   idOfTwitchLogin,
   loadFonts,
@@ -43,6 +36,8 @@ import {
   orderSpin,
   orderTip,
   pageImageUrl,
+  providerName,
+  spinsText,
   requestSubscriberSong,
   requestSubscriberSpin,
   streamerProfile,
@@ -159,8 +154,6 @@ function paymentOf(current: PublicPayment): Payment | null {
 
 const sameData = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-const providerName = (provider: Provider) => (provider === "stripe" ? "Stripe" : "PayPal");
-
 type PayOptions = {
   start: () => boolean;
   createOrder: (provider: Provider) => Promise<Order>;
@@ -168,6 +161,55 @@ type PayOptions = {
   onCancel: () => void;
   onError: (provider: Provider) => void;
 };
+
+function payOptions(props: {
+  start: () => boolean;
+  order: (provider: Provider) => Promise<Order>;
+  capture: (orderId: string) => Promise<unknown>;
+  paid: () => void;
+  cancelled: string;
+  showError: (error: unknown) => void;
+  setBusy: (busy: boolean) => void;
+  setResult: (result: Result | null) => void;
+}): PayOptions {
+  let orderError: unknown = null;
+  return {
+    start: props.start,
+    createOrder: async (provider) => {
+      orderError = null;
+      try {
+        return await props.order(provider);
+      } catch (error) {
+        orderError = error;
+        throw error;
+      }
+    },
+    complete: async (orderId) => {
+      props.setBusy(true);
+      props.setResult(null);
+      try {
+        await props.capture(orderId);
+        props.paid();
+      } catch (error) {
+        props.showError(error);
+      } finally {
+        props.setBusy(false);
+      }
+    },
+    onCancel: () => props.setResult({ text: props.cancelled }),
+    onError: (provider) => {
+      if (orderError) {
+        props.showError(orderError);
+      } else {
+        props.setResult({
+          text: t("{provider} could not complete the payment. Try again.", {
+            provider: providerName(provider),
+          }),
+        });
+      }
+    },
+  };
+}
 
 function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabled: boolean }) {
   let container: HTMLDivElement | undefined;
@@ -699,6 +741,28 @@ function AmountChips(props: {
   );
 }
 
+function NameField(props: {
+  name: string;
+  onName: (name: string) => void;
+  placeholder: string;
+  hidden?: boolean;
+}) {
+  return (
+    <label class={`flex flex-col gap-2 ${props.hidden ? "hidden" : ""}`}>
+      <span class="text-[15px] font-semibold text-ink-2">{t("Your name (optional)")}</span>
+      <input
+        type="text"
+        maxLength={25}
+        value={props.name}
+        onInput={(event) => props.onName(event.currentTarget.value)}
+        placeholder={props.placeholder}
+        autocomplete="nickname"
+        class={inputClass}
+      />
+    </label>
+  );
+}
+
 function MessageField(props: {
   message: string;
   onMessage: (message: string) => void;
@@ -740,7 +804,6 @@ function TipJar(props: {
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(null);
   let form: HTMLFormElement | undefined;
-  let orderError: unknown = null;
 
   const amount = () => {
     const current = choice();
@@ -756,7 +819,7 @@ function TipJar(props: {
     props.onError(error);
   };
 
-  const options: PayOptions = {
+  const options = payOptions({
     start: () => {
       setResult(null);
       if (busy() || amount() === null || !form?.reportValidity()) {
@@ -765,49 +828,18 @@ function TipJar(props: {
       saveName(props.name.trim());
       return true;
     },
-    createOrder: async (provider) => {
-      orderError = null;
-      try {
-        return await orderTip(
-          props.id,
-          amount() ?? 0,
-          props.name.trim(),
-          message().trim(),
-          provider,
-        );
-      } catch (error) {
-        orderError = error;
-        throw error;
-      }
+    order: (provider) =>
+      orderTip(props.id, amount() ?? 0, props.name.trim(), message().trim(), provider),
+    capture: (orderId) => captureOrder("tip", props.id, orderId),
+    paid: () => {
+      props.onPaid(t("Your tip is on its way to the streamer."));
+      setMessage("");
     },
-    complete: async (orderId) => {
-      setBusy(true);
-      setResult(null);
-      try {
-        await captureTip(props.id, orderId);
-        props.onPaid(t("Your tip is on its way to the streamer."));
-        setMessage("");
-      } catch (error) {
-        showError(error);
-      } finally {
-        setBusy(false);
-      }
-    },
-    onCancel: () => {
-      setResult({ text: t("Payment cancelled. No tip was sent.") });
-    },
-    onError: (provider) => {
-      if (orderError) {
-        showError(orderError);
-      } else {
-        setResult({
-          text: t("{provider} could not complete the payment. Try again.", {
-            provider: providerName(provider),
-          }),
-        });
-      }
-    },
-  };
+    cancelled: t("Payment cancelled. No tip was sent."),
+    showError,
+    setBusy,
+    setResult,
+  });
 
   return (
     <form
@@ -845,18 +877,11 @@ function TipJar(props: {
           </label>
         </Show>
       </fieldset>
-      <label class="flex flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">{t("Your name (optional)")}</span>
-        <input
-          type="text"
-          maxLength={25}
-          value={props.name}
-          onInput={(event) => props.onName(event.currentTarget.value)}
-          placeholder={t("Shown with your message")}
-          autocomplete="nickname"
-          class={inputClass}
-        />
-      </label>
+      <NameField
+        name={props.name}
+        onName={props.onName}
+        placeholder={t("Shown with your message")}
+      />
       <MessageField
         message={message()}
         onMessage={setMessage}
@@ -1079,9 +1104,6 @@ function PoweredBy() {
   );
 }
 
-const spinsText = (spins: number) =>
-  spins === 1 ? t("1 spin") : t("{count} spins", { count: spins });
-
 const wheelColors = [
   "fill-wheel-1",
   "fill-wheel-2",
@@ -1170,14 +1192,13 @@ function SpinWheel(props: {
   const [result, setResult] = createSignal<Result | null>(
     props.signInFailed ? { text: t("Signing in with Twitch failed. Try again.") } : null,
   );
-  let orderError: unknown = null;
 
   const showError = (error: unknown) => {
     setResult({ text: errorText(error) });
     props.onError(error);
   };
 
-  const options: PayOptions = {
+  const options = payOptions({
     start: () => {
       setResult(null);
       if (busy()) {
@@ -1186,47 +1207,22 @@ function SpinWheel(props: {
       saveName(props.name.trim());
       return true;
     },
-    createOrder: async (provider) => {
-      orderError = null;
-      try {
-        return await orderSpin(props.id, choice(), props.name.trim(), message().trim(), provider);
-      } catch (error) {
-        orderError = error;
-        throw error;
-      }
+    order: (provider) =>
+      orderSpin(props.id, choice(), props.name.trim(), message().trim(), provider),
+    capture: (orderId) => captureOrder("spin", props.id, orderId),
+    paid: () => {
+      props.onPaid(
+        choice().spins === 1
+          ? t("Your spin starts on stream in a moment.")
+          : t("Your spins start on stream in a moment."),
+      );
+      setMessage("");
     },
-    complete: async (orderId) => {
-      setBusy(true);
-      setResult(null);
-      try {
-        await captureSpin(props.id, orderId);
-        props.onPaid(
-          choice().spins === 1
-            ? t("Your spin starts on stream in a moment.")
-            : t("Your spins start on stream in a moment."),
-        );
-        setMessage("");
-      } catch (error) {
-        showError(error);
-      } finally {
-        setBusy(false);
-      }
-    },
-    onCancel: () => {
-      setResult({ text: t("Payment cancelled. No tip was sent and the wheel was not spun.") });
-    },
-    onError: (provider) => {
-      if (orderError) {
-        showError(orderError);
-      } else {
-        setResult({
-          text: t("{provider} could not complete the payment. Try again.", {
-            provider: providerName(provider),
-          }),
-        });
-      }
-    },
-  };
+    cancelled: t("Payment cancelled. No tip was sent and the wheel was not spun."),
+    showError,
+    setBusy,
+    setResult,
+  });
 
   const spinAsSubscriber = async () => {
     if (busy() || !props.viewer) {
@@ -1292,18 +1288,12 @@ function SpinWheel(props: {
           </div>
         </fieldset>
       </Show>
-      <label class={`flex flex-col gap-2 ${props.spin ? "" : "hidden"}`}>
-        <span class="text-[15px] font-semibold text-ink-2">{t("Your name (optional)")}</span>
-        <input
-          type="text"
-          maxLength={25}
-          value={props.name}
-          onInput={(event) => props.onName(event.currentTarget.value)}
-          placeholder={t("Shown with your spin")}
-          autocomplete="nickname"
-          class={inputClass}
-        />
-      </label>
+      <NameField
+        name={props.name}
+        onName={props.onName}
+        placeholder={t("Shown with your spin")}
+        hidden={!props.spin}
+      />
       <MessageField
         message={message()}
         onMessage={setMessage}
@@ -1454,9 +1444,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const [spinSignInFailed, setSpinSignInFailed] = createSignal(false);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
   const [spin, setSpin] = createSignal<PublicSpin | null>(null);
-  const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, {
-    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
-  });
+  const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, { equals: sameData });
   const [streamerConnected, setStreamerConnected] = createSignal(false);
   const [profile, setProfile] = createSignal<Profile | null>(null);
   const [dashboard, setDashboard] = createSignal<DashboardLink | null>(null);
@@ -1522,7 +1510,6 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
   const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
   const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
   const spinnable = () => wheel() !== null || subSpins() !== null;
-  let orderError: unknown = null;
   const [cheer, setCheer] = createSignal<{ title: string; text: string } | null>(null);
 
   const celebrate = (text: string, title = t("Thanks for the tip!")) => setCheer({ title, text });
@@ -1557,8 +1544,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
     try {
       await Promise.all([
-        subSongs() && fetchSongAllowance(current, session).then(setSongAllowance),
-        subSpins() && fetchSpinAllowance(current, session).then(setSpinAllowance),
+        subSongs() && fetchAllowance("song", current, session).then(setSongAllowance),
+        subSpins() && fetchAllowance("spin", current, session).then(setSpinAllowance),
       ]);
     } catch (error) {
       if (error instanceof BackendError && error.status === 401) {
@@ -1663,50 +1650,17 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     }
   };
 
-  const payOptions: PayOptions = {
+  const songPayOptions = payOptions({
     start,
-    createOrder: async (provider) => {
-      orderError = null;
-      try {
-        return await orderSong(
-          id() ?? "",
-          song().trim(),
-          name().trim(),
-          message().trim(),
-          provider,
-        );
-      } catch (error) {
-        orderError = error;
-        throw error;
-      }
-    },
-    complete: async (orderId) => {
-      setBusy(true);
-      setResult(null);
-      try {
-        await captureSong(id() ?? "", orderId);
-        requested();
-      } catch (error) {
-        showError(error);
-      } finally {
-        setBusy(false);
-      }
-    },
-    onCancel: () => {
-      setResult({ text: t("Payment cancelled. No tip was sent and no song was added.") });
-    },
-    onError: (provider) => {
-      if (orderError) {
-        showError(orderError);
-      } else {
-        setResult({
-          text: t("{provider} could not complete the payment. Try again.", {
-            provider: providerName(provider),
-          }),
-        });
-      }
-    },
-  };
+    order: (provider) =>
+      orderSong(id() ?? "", song().trim(), name().trim(), message().trim(), provider),
+    capture: (orderId) => captureOrder("song", id() ?? "", orderId),
+    paid: () => requested(),
+    cancelled: t("Payment cancelled. No tip was sent and no song was added."),
+    showError,
+    setBusy,
+    setResult,
+  });
 
   const refresh = async () => {
     const current = id();
@@ -1851,20 +1805,12 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                   )}
                 </Show>
               </label>
-              <label class={`flex flex-col gap-2 ${payable() ? "" : "hidden"}`}>
-                <span class="text-[15px] font-semibold text-ink-2">
-                  {t("Your name (optional)")}
-                </span>
-                <input
-                  type="text"
-                  maxLength={25}
-                  value={name()}
-                  onInput={(event) => setName(event.currentTarget.value)}
-                  placeholder={t("Shown next to the song")}
-                  autocomplete="nickname"
-                  class={inputClass}
-                />
-              </label>
+              <NameField
+                name={name()}
+                onName={setName}
+                placeholder={t("Shown next to the song")}
+                hidden={!payable()}
+              />
               <MessageField
                 message={message()}
                 onMessage={setMessage}
@@ -1891,7 +1837,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                       <ResultLine result={result()} />
                       <PayButtons
                         payment={current.payment}
-                        options={payOptions}
+                        options={songPayOptions}
                         disabled={
                           busy() || typeof status() === "string" || closed() || !song().trim()
                         }

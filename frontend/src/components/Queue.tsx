@@ -26,7 +26,7 @@ function SongRow(props: {
   marker: JSX.Element;
   current?: boolean;
   played?: boolean;
-  moderate?: (target: string, command: MusicCommand, song?: string) => void;
+  moderate?: Moderate;
   busy?: boolean;
   error: JSX.Element;
 }) {
@@ -74,7 +74,7 @@ function SongRow(props: {
                 disabled={props.busy || props.current}
                 aria-label={t("Play {song} now", { song: song().title })}
                 title={t("Play now")}
-                onClick={() => moderate()(song().id, "select", song().id)}
+                onClick={() => moderate()("select", song().id)}
               >
                 <Icon name="play" class="size-5" />
               </button>
@@ -84,7 +84,7 @@ function SongRow(props: {
                 disabled={props.busy}
                 aria-label={t("Remove {song}", { song: song().title })}
                 title={t("Remove")}
-                onClick={() => moderate()(song().id, "remove", song().id)}
+                onClick={() => moderate()("remove", song().id)}
               >
                 <Icon name="trash" class="size-5" />
               </button>
@@ -109,14 +109,14 @@ export default function Queue(props: {
   const played = () => (music()?.songs.slice(0, firstQueued()) ?? []).reverse();
   const [target, setTarget] = createSignal<string | null>(null);
   const moderate = props.moderate
-    ? (target: string, command: MusicCommand, song?: string) => {
-        setTarget(target);
+    ? (command: MusicCommand, song?: string) => {
+        setTarget(song ?? "controls");
         props.moderate?.(command, song);
       }
     : undefined;
   const clear = () => {
     if (confirm(t("Remove every song from the queue?"))) {
-      moderate?.("controls", "clear");
+      moderate?.("clear");
     }
   };
   const errorFor = (at: string) => (
@@ -135,7 +135,7 @@ export default function Queue(props: {
                   type="button"
                   class={ghostButtonClass}
                   disabled={props.busy}
-                  onClick={() => moderate?.("controls", status().playing ? "pause" : "play")}
+                  onClick={() => moderate?.(status().playing ? "pause" : "play")}
                 >
                   <Icon name={status().playing ? "pause" : "play"} class="size-5" />
                   {status().playing ? t("Pause") : t("Play")}

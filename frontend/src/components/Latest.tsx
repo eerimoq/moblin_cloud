@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import Icon from "./Icon";
 import { cardClass, ghostButtonClass, Spinner } from "./PageParts";
 import type { Recent, RecentKind, RecentList } from "../data/account";
-import { formatPrice } from "../data/remoteControl";
+import { formatPrice, providerName, spinsText } from "../data/remoteControl";
 import { language, t } from "../i18n";
 
 const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
@@ -97,7 +97,7 @@ export function Latest(props: {
                             {(provider) => (
                               <span class="text-muted">
                                 {" · "}
-                                {provider() === "paypal" ? "PayPal" : "Stripe"}
+                                {providerName(provider())}
                               </span>
                             )}
                           </Show>
@@ -107,11 +107,7 @@ export function Latest(props: {
                         {(name) => <span class="truncate text-ink-2">{name()}</span>}
                       </Show>
                       <Show when={item.spins}>
-                        {(spins) => (
-                          <span class="text-ink-2">
-                            {spins() === 1 ? t("1 spin") : t("{count} spins", { count: spins() })}
-                          </span>
-                        )}
+                        {(spins) => <span class="text-ink-2">{spinsText(spins())}</span>}
                       </Show>
                       <Show when={item.message}>
                         {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}

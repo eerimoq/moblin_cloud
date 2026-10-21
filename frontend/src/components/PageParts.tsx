@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { asset } from "../asset";
+import { signInUrl } from "../data/account";
 import { pages } from "../data/links";
 import CopyButton from "./CopyButton";
 import Icon, { type IconName } from "./Icon";
@@ -29,6 +30,18 @@ export function Notice(props: { status?: boolean; error?: boolean; children: JSX
     >
       {props.children}
     </p>
+  );
+}
+
+export function TwitchSignIn(props: { children: JSX.Element }) {
+  return (
+    <a
+      href={signInUrl}
+      class="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-twitch px-5 font-display text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-twitch-bright"
+    >
+      <Icon name="twitch" class="size-5" />
+      {props.children}
+    </a>
   );
 }
 
@@ -203,21 +216,13 @@ export function Band(props: { children: JSX.Element; tight?: boolean }) {
   );
 }
 
-export function Value(props: {
-  label: string;
-  text: string;
-  href?: string;
-  secret?: boolean;
-  hideLabel?: boolean;
-}) {
+export function Value(props: { label: string; text: string; href?: string; secret?: boolean }) {
   const [shown, setShown] = createSignal(false);
   const shownText = () => (props.secret && !shown() ? "•".repeat(24) : props.text);
 
   return (
     <div class="flex flex-col gap-2">
-      <span class={props.hideLabel ? "sr-only" : "text-[15px] font-semibold text-ink-2"}>
-        {props.label}
-      </span>
+      <span class="text-[15px] font-semibold text-ink-2">{props.label}</span>
       <span class="flex items-start gap-2 rounded-2xl border-[1.5px] border-line bg-well px-4 py-3">
         <Show
           when={props.href}
