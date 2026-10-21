@@ -118,13 +118,13 @@ export function AccountMenu(props: {
         aria-label={t("Account")}
         aria-haspopup="menu"
         aria-expanded={open()}
-        class="flex size-11 items-center justify-center rounded-full transition-colors hover:bg-ghost aria-expanded:bg-ghost"
+        class="flex size-11 items-center justify-center rounded-full transition-shadow hover:ring-2 hover:ring-ghost-line aria-expanded:ring-2 aria-expanded:ring-ghost-line"
         onClick={() => setOpen(!open())}
       >
         <Show
           when={props.avatar}
           fallback={
-            <span class="flex size-9 items-center justify-center rounded-full bg-moss font-display text-base font-semibold text-white">
+            <span class="flex size-11 items-center justify-center rounded-full bg-moss font-display text-lg font-semibold text-white">
               {props.name.slice(0, 1).toUpperCase()}
             </span>
           }
@@ -134,7 +134,7 @@ export function AccountMenu(props: {
               src={avatar()}
               alt=""
               referrerpolicy="no-referrer"
-              class="size-9 rounded-full bg-ghost object-cover"
+              class="size-11 rounded-full bg-ghost object-cover"
             />
           )}
         </Show>
