@@ -227,7 +227,9 @@ export function Value(props: { label: string; text: string; href?: string; secre
         <Show
           when={props.href}
           fallback={
-            <code class="min-w-0 flex-1 font-mono text-[15px] break-all">{shownText()}</code>
+            <code class="min-w-0 flex-1 font-mono text-[15px] leading-7 break-all">
+              {shownText()}
+            </code>
           }
         >
           {(href) => (
@@ -235,7 +237,7 @@ export function Value(props: { label: string; text: string; href?: string; secre
               href={href()}
               target="_blank"
               rel="noopener"
-              class="min-w-0 flex-1 font-mono text-[15px] break-all text-leaf hover:text-leaf-bright"
+              class="min-w-0 flex-1 font-mono text-[15px] leading-7 break-all text-leaf hover:text-leaf-bright"
             >
               {props.text}
             </a>
