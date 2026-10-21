@@ -43,7 +43,8 @@ impl Database {
                      account TEXT NOT NULL,
                      id TEXT NOT NULL,
                      name TEXT NOT NULL,
-                     position INTEGER NOT NULL
+                     position INTEGER NOT NULL,
+                     enabled INTEGER NOT NULL DEFAULT 1
                  );
                  CREATE INDEX IF NOT EXISTS devices_account ON devices (account);
                  CREATE TABLE IF NOT EXISTS channel_moderators (
@@ -114,6 +115,7 @@ impl Database {
             ("accounts", "stripe_ready", "INTEGER NOT NULL DEFAULT 0"),
             ("accounts", "music_device", "TEXT"),
             ("accounts", "wheel_device", "TEXT"),
+            ("devices", "enabled", "INTEGER NOT NULL DEFAULT 1"),
             ("deliveries", "delivered", "TEXT NOT NULL DEFAULT '[]'"),
             ("deliveries", "failure", "TEXT"),
             ("deliveries", "finished", "INTEGER NOT NULL DEFAULT 0"),

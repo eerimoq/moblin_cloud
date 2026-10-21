@@ -222,6 +222,7 @@ async fn main() -> Result<()> {
             id: page.clone(),
             name: "Moblin".to_string(),
             key,
+            enabled: true,
         };
         Some(Page::new(page, device))
     });

@@ -11,6 +11,7 @@ export type Device = {
   id: string;
   name: string;
   key: string;
+  enabled: boolean;
   connected: boolean;
 };
 
@@ -200,6 +201,13 @@ export const removeDevice = (session: string, device: string) =>
   call<Account>(session, `/account/devices/${encodeURIComponent(device)}/remove`, {
     method: "POST",
   });
+
+export const enableDevice = (session: string, device: string, enabled: boolean) =>
+  call<Account>(
+    session,
+    `/account/devices/${encodeURIComponent(device)}/enabled`,
+    post({ enabled }),
+  );
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>(session, "/account/paypal/connect", { method: "POST" })).url;

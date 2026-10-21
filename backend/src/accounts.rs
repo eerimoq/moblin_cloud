@@ -32,6 +32,7 @@ pub struct Device {
     pub id: String,
     pub name: String,
     pub key: String,
+    pub enabled: bool,
 }
 
 impl Page {
@@ -52,11 +53,15 @@ impl Page {
         self.device_or_first(&self.wheel_device)
     }
 
+    pub fn enabled_devices(&self) -> impl Iterator<Item = &Device> {
+        self.devices.iter().filter(|device| device.enabled)
+    }
+
     fn device_or_first(&self, id: &Option<String>) -> Option<&Device> {
         self.devices
             .iter()
             .find(|device| Some(&device.id) == id.as_ref())
-            .or(self.devices.first())
+            .or(self.enabled_devices().next())
     }
 
     fn device_mut(&mut self, id: &str) -> Result<&mut Device, AccountError> {
@@ -82,6 +87,7 @@ pub enum AccountError {
     Full,
     TooManyDevices,
     UnknownDevice,
+    DeviceOff,
     UnknownModerator,
     NotSaved,
 }
@@ -96,7 +102,7 @@ pub struct ChannelModerator {
 
 const COLUMNS: &str = "name, login, avatar, page_id, music_device, wheel_device, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
 
-const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', name, 'key', key) ORDER BY position) FROM devices WHERE account = accounts.id)";
+const DEVICES: &str = "(SELECT json_group_array(json_object('id', id, 'name', name, 'key', key, 'enabled', json(iif(enabled, 'true', 'false'))) ORDER BY position) FROM devices WHERE account = accounts.id)";
 
 const SAME_LOGIN: &str = "login != '' AND login = lower(trim(?1))";
 
@@ -127,8 +133,8 @@ fn save_devices(connection: &Connection, id: &str, devices: &[Device]) -> rusqli
     connection.execute("DELETE FROM devices WHERE account = ?1", [id])?;
     for (position, device) in devices.iter().enumerate() {
         connection.execute(
-            "INSERT INTO devices (key, account, id, name, position) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![device.key, id, device.id, device.name, position],
+            "INSERT INTO devices (key, account, id, name, position, enabled) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![device.key, id, device.id, device.name, position, device.enabled],
         )?;
     }
     Ok(())
@@ -285,6 +291,26 @@ impl Accounts {
         })
     }
 
+    pub fn enable_device(
+        &self,
+        id: &str,
+        device: &str,
+        enabled: bool,
+    ) -> Result<Account, AccountError> {
+        self.change(id, None, |account| {
+            let page = &mut account.page;
+            page.device_mut(device)?.enabled = enabled;
+            if !enabled {
+                for chosen in [&mut page.music_device, &mut page.wheel_device] {
+                    if chosen.as_deref() == Some(device) {
+                        *chosen = None;
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
     pub fn choose_devices(
         &self,
         id: &str,
@@ -293,8 +319,11 @@ impl Accounts {
     ) -> Result<Account, AccountError> {
         self.change(id, None, |account| {
             let page = &mut account.page;
-            page.device_mut(&music)?;
-            page.device_mut(&wheel)?;
+            for device in [&music, &wheel] {
+                if !page.device_mut(device)?.enabled {
+                    return Err(AccountError::DeviceOff);
+                }
+            }
             page.music_device = Some(music);
             page.wheel_device = Some(wheel);
             Ok(())
@@ -680,6 +709,7 @@ mod tests {
             id: id.to_string(),
             name: "Moblin".to_string(),
             key: key.to_string(),
+            enabled: true,
         }
     }
 
@@ -881,6 +911,39 @@ mod tests {
             .page;
         assert_eq!(page.music_device().unwrap().id, "a");
         assert_eq!(page.wheel_device().unwrap().id, "b");
+        assert_eq!(
+            accounts.enable_device("1", "x", false),
+            Err(AccountError::UnknownDevice)
+        );
+        let page = accounts.enable_device("1", "a", false).unwrap().page;
+        assert!(!page.devices[1].enabled);
+        assert_eq!(page.music_device, None);
+        assert_eq!(page.music_device().unwrap().id, "p");
+        assert_eq!(page.wheel_device().unwrap().id, "b");
+        assert_eq!(
+            accounts.choose_devices("1", "a".to_string(), "b".to_string()),
+            Err(AccountError::DeviceOff)
+        );
+        let page = accounts.enable_device("1", "p", false).unwrap().page;
+        assert_eq!(page.music_device().unwrap().id, "b");
+        assert_eq!(
+            page.enabled_devices()
+                .map(|device| device.id.as_str())
+                .collect::<Vec<_>>(),
+            ["b", "c", "d"]
+        );
+        let page = accounts.enable_device("1", "a", true).unwrap().page;
+        assert_eq!(page.music_device().unwrap().id, "a");
+        let accounts = Accounts::new(accounts.database.clone());
+        let page = accounts.get("1").unwrap().page;
+        assert!(!page.devices[0].enabled);
+        assert!(page.devices[1].enabled);
+        accounts.enable_device("1", "p", true).unwrap();
+        let page = accounts
+            .choose_devices("1", "a".to_string(), "b".to_string())
+            .unwrap()
+            .page;
+        assert_eq!(page.music_device().unwrap().id, "a");
         let page = accounts.remove_device("1", "a").unwrap().page;
         assert_eq!(page.music_device, None);
         assert_eq!(page.music_device().unwrap().id, "p");
@@ -1066,6 +1129,7 @@ mod tests {
                     id: "b".to_string(),
                     name: "Tablet".to_string(),
                     key: "l".to_string(),
+                    enabled: true,
                 }
             ]
         );

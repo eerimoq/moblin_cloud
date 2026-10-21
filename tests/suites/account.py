@@ -75,6 +75,7 @@ class AccountSignIn(AccountTestCase):
                         "id": page_id,
                         "name": "Moblin",
                         "key": account["devices"][0]["key"],
+                        "enabled": True,
                         "connected": False,
                     }
                 ],
@@ -219,7 +220,7 @@ class AccountNewMoblinCloudKey(AccountTestCase):
 
 
 class AccountDevices(AccountTestCase):
-    """Add up to 5 Moblin devices, each with its own Moblin Cloud key, pick devices and remove them."""
+    """Add up to 5 Moblin devices, each with its own Moblin Cloud key, pick, turn off and remove devices."""
 
     def run(self):
         dashboard = self.sign_in("devices")
@@ -242,6 +243,18 @@ class AccountDevices(AccountTestCase):
         second = account["devices"][1]["id"]
         self.assert_equal((account["musicDevice"], account["wheelDevice"]), (first, first))
         self.assert_backend_error(404, lambda: dashboard.choose_devices(second, "x"), "no such device")
+        account = dashboard.choose_devices(second, first)
+        self.assert_equal((account["musicDevice"], account["wheelDevice"]), (second, first))
+        self.assert_backend_error(404, lambda: dashboard.enable_device("x", False), "no such device")
+        account = dashboard.enable_device(second, False)
+        self.assert_equal(
+            [device["enabled"] for device in account["devices"]], [True, False, True, True, True]
+        )
+        self.assert_equal((account["musicDevice"], account["wheelDevice"]), (first, first))
+        self.assert_true(streamer_connects(port, keys[1]))
+        self.assert_backend_error(409, lambda: dashboard.choose_devices(second, first), "the device is off")
+        account = dashboard.enable_device(second, True)
+        self.assert_equal((account["musicDevice"], account["wheelDevice"]), (first, first))
         account = dashboard.choose_devices(second, first)
         self.assert_equal((account["musicDevice"], account["wheelDevice"]), (second, first))
         account = dashboard.remove_device(second)

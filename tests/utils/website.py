@@ -148,6 +148,9 @@ class Dashboard(Client):
     def remove_device(self, device: str) -> dict:
         return self.post(f"/account/devices/{device}/remove")
 
+    def enable_device(self, device: str, enabled: bool) -> dict:
+        return self.post(f"/account/devices/{device}/enabled", {"enabled": enabled})
+
     def save_settings(
         self,
         currency: str | None = None,

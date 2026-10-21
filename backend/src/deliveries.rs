@@ -254,8 +254,7 @@ impl Deliveries {
                         .into_iter()
                         .collect(),
                     (Item::Tip { .. }, Some(page)) => page
-                        .devices
-                        .iter()
+                        .enabled_devices()
                         .map(|device| device.id.clone())
                         .filter(|device| !delivery.delivered.contains(device))
                         .collect(),

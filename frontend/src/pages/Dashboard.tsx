@@ -33,6 +33,7 @@ import {
   connectStripe,
   disconnectPayPal,
   disconnectStripe,
+  enableDevice,
   fetchAccount,
   fetchRecent,
   newDeviceKey,
@@ -2114,6 +2115,9 @@ function Admin(props: {
             }
             onNewKey={(device) => changeDevices(() => newDeviceKey(props.session, device))}
             onRemove={(device) => changeDevices(() => removeDevice(props.session, device))}
+            onEnable={(device, enabled) =>
+              changeDevices(() => enableDevice(props.session, device, enabled))
+            }
           />
         </div>
         <Show when={!moderating()}>
@@ -2310,6 +2314,7 @@ function MoblinSettings(props: {
   onChoose: (music: string, wheel: string) => Promise<void>;
   onNewKey: (device: string) => Promise<void>;
   onRemove: (device: string) => Promise<void>;
+  onEnable: (device: string, enabled: boolean) => Promise<void>;
 }) {
   const [name, setName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
@@ -2361,6 +2366,7 @@ function MoblinSettings(props: {
                     onToggle={() => setOpened(opened() === id ? null : id)}
                     onNewKey={() => run(() => props.onNewKey(id))}
                     onRemove={() => run(() => props.onRemove(id))}
+                    onEnable={(enabled) => run(() => props.onEnable(id, enabled))}
                   />
                 )}
               </Show>
@@ -2400,7 +2406,7 @@ function MoblinSettings(props: {
               }
               class={inputClass}
             >
-              <For each={devices()}>
+              <For each={devices().filter((device) => device.enabled)}>
                 {(device) => (
                   <option value={device.id} selected={device.id === props.account.musicDevice}>
                     {device.name}
@@ -2418,7 +2424,7 @@ function MoblinSettings(props: {
               }
               class={inputClass}
             >
-              <For each={devices()}>
+              <For each={devices().filter((device) => device.enabled)}>
                 {(device) => (
                   <option value={device.id} selected={device.id === props.account.wheelDevice}>
                     {device.name}
@@ -2430,7 +2436,7 @@ function MoblinSettings(props: {
         </div>
         <p class="text-[15px] text-muted">
           {t(
-            "Song requests and wheel spins go to the device picked for them. Tips go to every device.",
+            "Song requests and wheel spins go to the device picked for them. Tips go to every device. Nothing goes to a device that is off.",
           )}
         </p>
       </Show>
@@ -2508,8 +2514,9 @@ function DeviceSettings(props: {
   onToggle: () => void;
   onNewKey: () => void;
   onRemove: () => void;
+  onEnable: (enabled: boolean) => void;
 }) {
-  const [qrShown, setQrShown] = createSignal(false);
+  let qrDialog: HTMLDialogElement | undefined;
   const [copied, flashCopied] = createFlash(1500);
   const deepLink = () => {
     const settings = { moblinCloud: { enabled: true, key: props.device.key } };
@@ -2553,11 +2560,15 @@ function DeviceSettings(props: {
         class="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
         <span
-          class={`size-2.5 shrink-0 rounded-full ${props.device.connected ? "bg-leaf" : "bg-muted"}`}
+          class={`size-2.5 shrink-0 rounded-full ${props.device.connected && props.device.enabled ? "bg-leaf" : "bg-muted"}`}
         />
         <span class="min-w-0 flex-1 truncate font-semibold">{props.device.name}</span>
         <span class="text-[15px] text-muted">
-          {props.device.connected ? t("Connected") : t("Not connected")}
+          {!props.device.enabled
+            ? t("Off")
+            : props.device.connected
+              ? t("Connected")
+              : t("Not connected")}
         </span>
         <Icon
           name="chevron-down"
@@ -2566,36 +2577,73 @@ function DeviceSettings(props: {
       </button>
       <Show when={props.open}>
         <div class="flex flex-col gap-4 px-4 pb-4">
-          <Value label={t("Moblin Cloud key")} text={props.device.key} secret />
-          <Notice>
-            {t(
-              "Keep it to yourself. Anyone with it can connect as your Moblin. Reset it if it leaks.",
-            )}
-          </Notice>
+          <div class="flex flex-col gap-2">
+            <Value label={t("Moblin Cloud key")} text={props.device.key} secret />
+            <p class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[15px] text-muted">
+              <span>{t("Keep it to yourself. Anyone with it can connect as your Moblin.")}</span>
+              <button
+                type="button"
+                class="font-semibold text-danger hover:underline disabled:opacity-60"
+                disabled={props.busy}
+                onClick={newKey}
+              >
+                {t("Reset key")}
+              </button>
+            </p>
+          </div>
           <p class="text-[15px] text-ink-2">
             {t(
               "Or set it all up at once on the device running Moblin: scan the QR code with its camera or open the deep link there.",
             )}
           </p>
+          <label class="flex items-center gap-3 text-ink-2">
+            <input
+              type="checkbox"
+              checked={props.device.enabled}
+              disabled={props.busy}
+              onChange={(event) => props.onEnable(event.currentTarget.checked)}
+              class="size-5 accent-moss"
+            />
+            {t("Send tips, song requests and wheel spins to this device")}
+          </label>
           <div class="flex flex-wrap items-center gap-2">
-            <button type="button" class={smallButtonClass} onClick={() => setQrShown(!qrShown())}>
-              <Icon name={qrShown() ? "eye-off" : "eye"} class="size-4" />
-              {qrShown() ? t("Hide QR code") : t("Show QR code")}
+            <button type="button" class={smallButtonClass} onClick={() => qrDialog?.showModal()}>
+              <Icon name="eye" class="size-4" />
+              {t("Show QR code")}
             </button>
             <button type="button" class={smallButtonClass} onClick={copyDeepLink}>
               <Icon name={copied() ? "check" : "copy"} class="size-4" />
               {copied() ? t("Copied") : t("Copy deep link")}
             </button>
-            <button type="button" class={smallButtonClass} disabled={props.busy} onClick={newKey}>
-              {t("Reset Moblin Cloud key")}
-            </button>
-            <button type="button" class={smallButtonClass} disabled={props.busy} onClick={remove}>
+            <button
+              type="button"
+              class={`${smallButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
+              disabled={props.busy}
+              onClick={remove}
+            >
               {t("Remove device")}
             </button>
           </div>
-          <Show when={qrShown()}>
-            <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
-          </Show>
+          <dialog
+            ref={(element) => (qrDialog = element)}
+            class="m-auto w-[calc(100%-2rem)] max-w-md rounded-3xl border-[1.5px] border-line bg-card p-6 text-ink backdrop:bg-black/60 sm:p-8"
+            onClick={(event) => {
+              if (event.target === qrDialog) {
+                qrDialog?.close();
+              }
+            }}
+          >
+            <div class="flex flex-col items-center gap-5">
+              <h2 class="font-display text-2xl font-bold">{props.device.name}</h2>
+              <QrCode text={deepLink()} label={t("QR code that sets up Moblin Cloud in Moblin")} />
+              <p class="text-center text-[17px] text-ink-2">
+                {t("Scan it with the camera of the device running Moblin to set up Moblin Cloud.")}
+              </p>
+              <button type="button" class={ghostButtonClass} onClick={() => qrDialog?.close()}>
+                {t("Close")}
+              </button>
+            </div>
+          </dialog>
         </div>
       </Show>
     </li>
@@ -2670,7 +2718,13 @@ function Preview(props: { failed: boolean }) {
               login: "",
               avatar: null,
               devices: [
-                { id: "", name: "Moblin", key: "moblin-cloud-key-preview", connected: true },
+                {
+                  id: "",
+                  name: "Moblin",
+                  key: "moblin-cloud-key-preview",
+                  enabled: true,
+                  connected: true,
+                },
               ],
               musicDevice: null,
               wheelDevice: null,

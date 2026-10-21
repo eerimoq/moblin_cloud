@@ -193,7 +193,7 @@ class RemoteControlSongRequestsOff(RemoteControlTestCase):
 
 
 class RemoteControlChosenDevices(RemoteControlTestCase):
-    """Send songs and spins to the devices picked in the dashboard, and tips to any connected device."""
+    """Send songs and spins to the devices picked in the dashboard, tips to any connected device, and nothing to a device turned off."""
 
     def run(self):
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
@@ -211,13 +211,24 @@ class RemoteControlChosenDevices(RemoteControlTestCase):
         self.moblin.wait_for_new_backend_request("tip", start)
         self.dashboard.choose_devices(first, first)
         self.assert_true(self.viewer.spin()["connected"])
+        self.dashboard.enable_device(first, False)
+        self.assert_false(self.viewer.spin()["connected"])
+        self.assert_backend_error(409, self.dashboard.test_spin, "Connect Moblin first.")
+        start = self.moblin.backend_requests_position()
+        self.dashboard.test_tip()
+        self.dashboard.enable_device(first, True)
+        self.assert_true(self.viewer.spin()["connected"])
+        self.moblin.wait_for_new_backend_request("tip", start)
         self.dashboard.remove_device(other)
         self.assert_equal(self.dashboard.account()["musicDevice"], first)
 
     def teardown(self):
         if not hasattr(self, "dashboard"):
             return
-        for device in self.dashboard.account()["devices"][1:]:
+        devices = self.dashboard.account()["devices"]
+        if not devices[0]["enabled"]:
+            self.dashboard.enable_device(devices[0]["id"], True)
+        for device in devices[1:]:
             self.dashboard.remove_device(device["id"])
 
 

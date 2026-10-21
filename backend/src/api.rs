@@ -98,6 +98,10 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/devices/{device}/remove",
             post(handle_account_device_remove),
         )
+        .route(
+            "/account/devices/{device}/enabled",
+            post(handle_account_device_enabled),
+        )
         .route("/account/settings", post(handle_account_settings))
         .route(
             "/account/image",
@@ -358,8 +362,7 @@ struct SettingsResponse {
 fn any_connected(api: &Api, account: &Account) -> bool {
     account
         .page
-        .devices
-        .iter()
+        .enabled_devices()
         .any(|device| api.remote_control.is_connected(&device.id))
 }
 
@@ -685,6 +688,7 @@ async fn signed_in_redirect(
         id: page.clone(),
         name: "Moblin".to_string(),
         key,
+        enabled: true,
     };
     let account = match api.accounts.signed_in(
         &user.id,
@@ -770,6 +774,7 @@ struct DeviceResponse {
     id: String,
     name: String,
     key: String,
+    enabled: bool,
     connected: bool,
 }
 
@@ -832,6 +837,7 @@ fn account_response(api: &Api, id: &str, account: Account) -> Json<AccountRespon
                 id: device.id.clone(),
                 name: device.name.clone(),
                 key: device.key.clone(),
+                enabled: device.enabled,
                 connected: api.remote_control.is_connected(&device.id),
             })
             .collect(),
@@ -888,6 +894,7 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
             (StatusCode::CONFLICT, "at most 5 Moblin devices".to_string())
         }
         AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
+        AccountError::DeviceOff => (StatusCode::CONFLICT, "the device is off".to_string()),
         AccountError::UnknownModerator => (StatusCode::NOT_FOUND, "no such moderator".to_string()),
         AccountError::NotSaved => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1095,7 +1102,7 @@ fn recent_devices(page: &Page, delivery: &deliveries::Delivery) -> Vec<RecentDev
         .iter()
         .filter_map(|device| {
             let received = delivery.delivered.contains(&device.id);
-            (received || !delivery.finished).then(|| RecentDevice {
+            (received || (device.enabled && !delivery.finished)).then(|| RecentDevice {
                 name: device.name.clone(),
                 received,
             })
@@ -1134,6 +1141,7 @@ async fn handle_account_devices(
                 id: device.clone(),
                 name: name.to_string(),
                 key,
+                enabled: true,
             },
         )
         .map_err(account_error)?;
@@ -1173,6 +1181,30 @@ async fn handle_account_device_key(
         .map_err(account_error)?;
     api.remote_control.disconnect(&device);
     info!("{id} got a new Moblin Cloud key for device {device}");
+    Ok(account_response(&api, &id, account))
+}
+
+#[derive(Deserialize)]
+struct EnabledRequest {
+    enabled: bool,
+}
+
+async fn handle_account_device_enabled(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Path(device): Path<String>,
+    Json(request): Json<EnabledRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let id = signed_in(&api, &headers)?.id;
+    let account = api
+        .accounts
+        .enable_device(&id, &device, request.enabled)
+        .map_err(account_error)?;
+    api.deliveries.notify();
+    info!(
+        "{id} turned Moblin device {device} {}",
+        if request.enabled { "on" } else { "off" }
+    );
     Ok(account_response(&api, &id, account))
 }
 
@@ -4871,6 +4903,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn nothing_is_sent_to_a_disabled_device() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let devices_url = format!("http://{address}/account/devices");
+        let account: Value = client
+            .post(&devices_url)
+            .bearer_auth(&session)
+            .json(&json!({"name": "Backup"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let backup_id = account["devices"][1]["id"].as_str().unwrap().to_string();
+        let backup_key = account["devices"][1]["key"].as_str().unwrap().to_string();
+        let response = client
+            .post(format!("{devices_url}/{backup_id}/enabled"))
+            .bearer_auth(&session)
+            .json(&json!({"enabled": false}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let account: Value = response.json().await.unwrap();
+        assert_eq!(account["devices"][1]["enabled"], false);
+        let response = client
+            .post(format!("{devices_url}/x/enabled"))
+            .bearer_auth(&session)
+            .json(&json!({"enabled": false}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let mut backup = connect(&address, &backup_key).await;
+        let settings: Value = client
+            .get(format!("http://{address}/pages/{id}/spin"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(settings["connected"], false);
+        api.deliveries.add_test(
+            id.clone(),
+            "TIP1".to_string(),
+            deliveries::Item::Tip {
+                user: "Viewer".to_string(),
+                message: String::new(),
+                amount: 500,
+                currency: "USD".to_string(),
+            },
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut backup))
+                .await
+                .is_err()
+        );
+        let mut main = connect(&address, &key).await;
+        let request = receive(&mut main).await;
+        assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
+        answer(&mut main, &request, Value::Null).await;
+        wait_until_added(&api).await;
+        let response = client
+            .post(format!("{devices_url}/{backup_id}/enabled"))
+            .bearer_auth(&session)
+            .json(&json!({"enabled": true}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut backup))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn lost_capture_answers_are_settled_right_away() {
         let (address, api, fake) = start_paid_fake().await;
         let capture_url = paypal_tip_order(&address, &api).await;
@@ -5400,6 +5513,7 @@ mod tests {
             id: page.clone(),
             name: "Moblin".to_string(),
             key,
+            enabled: true,
         };
         api.accounts
             .signed_in(id, name, login, None, Page::new(page, device))
@@ -7509,6 +7623,7 @@ mod tests {
         assert_eq!(account["avatar"], "https://static-cdn.jtvnw.net/erik.png");
         assert_eq!(account["devices"][0]["id"], page);
         assert_eq!(account["devices"][0]["name"], "Moblin");
+        assert_eq!(account["devices"][0]["enabled"], true);
         assert_eq!(account["devices"][0]["connected"], false);
         assert_eq!(account["devices"].as_array().unwrap().len(), 1);
         assert_eq!(account["musicDevice"], page);
@@ -8048,6 +8163,7 @@ mod tests {
             ("POST", "/account/devices/choose"),
             ("POST", "/account/devices/d/key"),
             ("POST", "/account/devices/d/remove"),
+            ("POST", "/account/devices/d/enabled"),
             ("POST", "/account/settings"),
             ("POST", "/account/paypal/connect"),
             ("POST", "/account/paypal/check"),
@@ -8063,7 +8179,7 @@ mod tests {
             ] {
                 let mut request = client
                     .request(method.parse().unwrap(), format!("http://{address}{path}"))
-                    .json(&json!({"paywall": null, "name": "Moblin", "music": "d", "wheel": "d"}));
+                    .json(&json!({"paywall": null, "name": "Moblin", "music": "d", "wheel": "d", "enabled": false}));
                 if let Some(token) = token {
                     request = request.bearer_auth(token);
                 }
