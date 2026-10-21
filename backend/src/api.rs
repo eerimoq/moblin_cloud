@@ -17,7 +17,7 @@ use base64::prelude::BASE64_STANDARD;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 use crate::accounts::{
     Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, Page,
@@ -72,7 +72,7 @@ pub fn router(api: Arc<Api>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(HeaderValue::from_static("https://moblin.app"))
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers(Any)
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE])
         .max_age(Duration::from_secs(7200));
     Router::new()
         .route("/streamers", get(handle_streamers))
