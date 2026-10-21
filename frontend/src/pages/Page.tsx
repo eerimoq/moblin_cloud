@@ -566,18 +566,17 @@ function TwitchBox(props: {
       {t("Sign out")}
     </button>
   );
-  const amount = (count: number) => (song() ? count * 5 : count);
   const offer = () => {
     const values = {
       counts: tiers()
-        .map((tier) => amount(tier.count))
+        .map((tier) => tier.count)
         .join(" / "),
       tiers: tiers()
         .map((tier) => tier.tier)
         .join(" / "),
     };
     return song()
-      ? t("{counts} minutes a month for tier {tiers}", values)
+      ? t("{counts} songs a month for tier {tiers}", values)
       : t("{counts} spins a month for tier {tiers}", values);
   };
 
@@ -603,7 +602,7 @@ function TwitchBox(props: {
                 <Match when={current().left === 0}>
                   {song()
                     ? t(
-                        "You have used all your minutes this month. New ones come on the 1st of the month.",
+                        "You have used all your songs this month. New ones come on the 1st of the month.",
                       )
                     : t(
                         "You have used all your spins this month. New ones come on the 1st of the month.",
@@ -611,9 +610,9 @@ function TwitchBox(props: {
                 </Match>
                 <Match when={current().left > 0}>
                   {song()
-                    ? t("{left} of {allowance} minutes left this month", {
-                        left: amount(current().left),
-                        allowance: amount(current().allowance),
+                    ? t("{left} of {allowance} songs left this month", {
+                        left: current().left,
+                        allowance: current().allowance,
                       })
                     : t("{left} of {allowance} spins left this month", {
                         left: current().left,
@@ -625,9 +624,7 @@ function TwitchBox(props: {
           </Show>
         </span>
         <Show when={song() && !props.paid}>
-          <span class="text-sm text-muted">
-            {t("Every started 5 minutes of the song counts, and it always plays in full.")}
-          </span>
+          <span class="text-sm text-muted">{t("The song always plays in full.")}</span>
         </Show>
       </p>
       <Show when={!props.paid}>
@@ -1819,14 +1816,8 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                         <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
                           {t("Your tip")}
                         </span>
-                        <span class="text-ink-2">
-                          {tRich("{price} per 5 minutes", {
-                            price: (
-                              <span class="font-display text-4xl font-semibold text-ink">
-                                {formatPrice(current)}
-                              </span>
-                            ),
-                          })}
+                        <span class="font-display text-4xl font-semibold text-ink">
+                          {formatPrice(current)}
                         </span>
                       </p>
                       <ResultLine result={result()} />
@@ -1840,8 +1831,7 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
                       />
                       <p class="text-center text-sm text-muted">
                         {tRich(
-                          "Every started 5 minutes of the song counts, and it always plays in full. " +
-                            "Your tip goes straight to the streamer. {terms}",
+                          "The song always plays in full. Your tip goes straight to the streamer. {terms}",
                           { terms: <TermsLink /> },
                         )}
                       </p>

@@ -2132,10 +2132,6 @@ fn check_song_length(max_minutes: Option<u32>, song: &RequestedSong) -> Result<(
     Ok(())
 }
 
-fn song_price(price: u32, duration: Option<u32>) -> u32 {
-    price.saturating_mul(duration.unwrap_or(0).div_ceil(300).max(1))
-}
-
 fn queue(
     api: &Api,
     id: String,
@@ -2214,7 +2210,7 @@ async fn song_order(
         },
         user: song.user,
         payee,
-        price: song_price(songs.price, song.duration),
+        price: songs.price,
         currency,
     };
     Ok(Json(start_order(api, order).await?))
@@ -2353,17 +2349,12 @@ impl SubscriberKind {
         }
     }
 
-    fn short(self, left: u32) -> Failure {
+    fn used_up(self) -> Failure {
         match self {
-            Self::Song if left > 0 => failure(
-                "too-long",
-                StatusCode::CONFLICT,
-                "The song is longer than the minutes you have left this month.",
-            ),
             Self::Song => failure(
-                "no-minutes-left",
+                "no-songs-left",
                 StatusCode::CONFLICT,
-                "You have used all your minutes this month.",
+                "You have used all your songs this month.",
             ),
             Self::Spin => failure(
                 "no-spins-left",
@@ -2387,7 +2378,6 @@ struct Subscriber {
     viewer: Viewer,
     tier: u8,
     allowance: u32,
-    left: u32,
 }
 
 fn subscriber(
@@ -2429,13 +2419,12 @@ fn subscriber(
         .left(id, &viewer.id, kind.name(), allowance)
         .map_err(not_saved)?;
     if left == 0 {
-        return Err(kind.short(0));
+        return Err(kind.used_up());
     }
     Ok(Subscriber {
         viewer,
         tier,
         allowance,
-        left,
     })
 }
 
@@ -2451,7 +2440,6 @@ fn queue_for_subscriber(
     api: &Api,
     subscriber: &Subscriber,
     kind: SubscriberKind,
-    units: u32,
     order: &Order,
 ) -> Result<u32, Failure> {
     let request_id = new_request_id(api)?;
@@ -2463,14 +2451,13 @@ fn queue_for_subscriber(
             &subscriber.viewer.id,
             kind.name(),
             subscriber.allowance,
-            units,
             |connection| {
                 insert_captured(connection, &request_id, order)?;
                 deliveries::insert(connection, &order.streamer, &request_id, &item)
             },
         )
         .map_err(not_saved)?
-        .map_err(|left| kind.short(left))?;
+        .ok_or(kind.used_up())?;
     api.deliveries.notify();
     info!(
         "queued {:?} for tier {} subscriber {:?} in request {request_id} for remote control streamer {}",
@@ -2506,10 +2493,6 @@ async fn subscriber_song(
     limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
     check_song_length(settings.max_song_minutes(), &song)?;
-    let units = song_price(1, song.duration);
-    if units > subscriber.left {
-        return Err(SubscriberKind::Song.short(subscriber.left));
-    }
     let order = Order {
         streamer: id,
         item: Item::Song {
@@ -2522,7 +2505,7 @@ async fn subscriber_song(
         price: 0,
         currency: settings.currency().to_string(),
     };
-    let left = queue_for_subscriber(api, &subscriber, SubscriberKind::Song, units, &order)?;
+    let left = queue_for_subscriber(api, &subscriber, SubscriberKind::Song, &order)?;
     Ok((StatusCode::ACCEPTED, Json(LeftResponse { left })))
 }
 
@@ -2552,7 +2535,7 @@ fn subscriber_spin(
         price: 0,
         currency: settings.currency().to_string(),
     };
-    let left = queue_for_subscriber(api, &subscriber, SubscriberKind::Spin, 1, &order)?;
+    let left = queue_for_subscriber(api, &subscriber, SubscriberKind::Spin, &order)?;
     Ok((StatusCode::ACCEPTED, Json(LeftResponse { left })))
 }
 
@@ -4386,7 +4369,7 @@ mod tests {
         .await;
         assert_eq!(created.await.unwrap()["orderId"], "pi_1");
         let payment = fake.payment.lock().unwrap().clone().unwrap();
-        assert_eq!(payment["form"]["amount"], "500");
+        assert_eq!(payment["form"]["amount"], "250");
         assert_eq!(payment["form"]["currency"], "sek");
         socket.close(None).await.unwrap();
         for _ in 0..100 {
@@ -5668,7 +5651,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn long_songs_cost_more() {
+    async fn songs_cost_the_same_whatever_their_length() {
         let (address, api, paypal_order) = start_paid().await;
         let (key, id) = paid_streamer(&address, &api).await;
         let mut socket = connect(&address, &key).await;
@@ -5676,8 +5659,8 @@ mod tests {
         for (duration, value) in [
             (None, "2.50"),
             (Some(300), "2.50"),
-            (Some(301), "5.00"),
-            (Some(601), "7.50"),
+            (Some(301), "2.50"),
+            (Some(601), "2.50"),
         ] {
             let created = tokio::spawn({
                 let orders_url = orders_url.clone();
@@ -7255,24 +7238,20 @@ mod tests {
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_eq!(
             response.text().await.unwrap(),
-            "You have used all your minutes this month."
+            "You have used all your songs this month."
         );
         let tier3 = viewer("31", &id, Some(3));
-        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(301)).await;
-        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 1}));
-        let request = receive(&mut socket).await;
-        answer(&mut socket, &request, music(json!([]))).await;
-        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(301)).await;
-        assert_eq!(response.status(), StatusCode::CONFLICT);
-        assert_eq!(
-            response.text().await.unwrap(),
-            "The song is longer than the minutes you have left this month."
-        );
-        let response = subscriber_song_found(&mut socket, &address, &id, &tier3, Some(300)).await;
-        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 0}));
-        let request = receive(&mut socket).await;
-        answer(&mut socket, &request, music(json!([]))).await;
-        wait_until_added(&api).await;
+        for (duration, left) in [(Some(3600), 2), (Some(301), 1), (Some(300), 0)] {
+            let response =
+                subscriber_song_found(&mut socket, &address, &id, &tier3, duration).await;
+            assert_eq!(
+                response.json::<Value>().await.unwrap(),
+                json!({"left": left})
+            );
+            let request = receive(&mut socket).await;
+            answer(&mut socket, &request, music(json!([]))).await;
+            wait_until_added(&api).await;
+        }
         let response = send_subscriber_song(&address, &id, &tier3, LINK).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let response = settings(json!({"subSongs": {"tier1": 1, "tier2": 0, "tier3": 4}}))
@@ -7298,7 +7277,7 @@ mod tests {
             .await
             .unwrap();
         let items = recent["items"].as_array().unwrap();
-        assert_eq!(items.len(), 3);
+        assert_eq!(items.len(), 4);
         let first = items.last().unwrap();
         assert_eq!(first["id"], request_id.as_str());
         assert_eq!(first["user"], "Viewer 11");
@@ -7317,14 +7296,13 @@ mod tests {
                 .find(|counter| counter.name == name)
                 .map_or(0, |counter| counter.total)
         };
-        assert_eq!(count("subSongs"), 3);
-        assert_eq!(count("subSongsFailed:no-minutes-left"), 2);
+        assert_eq!(count("subSongs"), 4);
+        assert_eq!(count("subSongsFailed:no-songs-left"), 2);
         assert_eq!(count("subSongsFailed:tier-excluded"), 1);
         assert_eq!(count("subSongsFailed:not-subscribed"), 1);
         assert_eq!(count("subSongsFailed:feature-off"), 2);
         assert_eq!(count("subSongsFailed:offline"), 1);
-        assert_eq!(count("songDeliveries"), 3);
-        assert_eq!(count("subSongsFailed:too-long"), 1);
+        assert_eq!(count("songDeliveries"), 4);
     }
 
     #[tokio::test]

@@ -52,26 +52,25 @@ impl Allowances {
         viewer: &str,
         kind: &str,
         allowance: u32,
-        units: u32,
         then: impl FnOnce(&Connection) -> rusqlite::Result<()>,
-    ) -> Result<std::result::Result<u32, u32>> {
+    ) -> Result<Option<u32>> {
         let mut database = self.database.lock();
         let transaction = database.transaction()?;
         let month = month(&transaction)?;
         let left = allowance.saturating_sub(used(&transaction, page, viewer, kind, &month)?);
-        if units > left {
-            return Ok(Err(left));
+        if left == 0 {
+            return Ok(None);
         }
         transaction.execute(
-            "INSERT INTO subscriber_allowances (page, viewer, kind, month, count) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (page, viewer, kind, month) DO UPDATE SET count = count + ?5",
-            params![page, viewer, kind, month, units],
+            "INSERT INTO subscriber_allowances (page, viewer, kind, month, count) VALUES (?1, ?2, ?3, ?4, 1)
+             ON CONFLICT (page, viewer, kind, month) DO UPDATE SET count = count + 1",
+            params![page, viewer, kind, month],
         )?;
         then(&transaction)?;
         transaction
             .commit()
             .with_context(|| format!("failed to save the {kind} of {viewer} on page {page}"))?;
-        Ok(Ok(left - units))
+        Ok(Some(left - 1))
     }
 
     pub fn prune(&self) {
@@ -102,20 +101,21 @@ mod tests {
     #[test]
     fn kinds_are_counted_apart_and_old_months_pruned() {
         let allowances = Allowances::new(Database::memory());
-        let take = |kind, allowance, units| {
+        let take = |kind, allowance| {
             allowances
-                .take("p", "v", kind, allowance, units, |_| Ok(()))
+                .take("p", "v", kind, allowance, |_| Ok(()))
                 .unwrap()
         };
-        assert_eq!(take("song", 3, 2), Ok(1));
-        assert_eq!(take("song", 3, 2), Err(1));
-        assert_eq!(take("spin", 1, 1), Ok(0));
-        assert_eq!(take("spin", 1, 1), Err(0));
+        assert_eq!(take("song", 2), Some(1));
+        assert_eq!(take("song", 2), Some(0));
+        assert_eq!(take("song", 2), None);
+        assert_eq!(take("spin", 1), Some(0));
+        assert_eq!(take("spin", 1), None);
         assert_eq!(allowances.left("p", "v", "song", 3).unwrap(), 1);
         assert_eq!(allowances.left("p", "other", "song", 3).unwrap(), 3);
         assert_eq!(allowances.left("other", "v", "song", 3).unwrap(), 3);
         allowances.last_month();
-        assert_eq!(take("song", 3, 1), Ok(2));
+        assert_eq!(take("song", 3), Some(2));
         allowances.prune();
         let rows: u32 = allowances
             .database
@@ -134,9 +134,7 @@ mod tests {
         let allowances = Allowances::new(Database::memory());
         assert!(
             allowances
-                .take("p", "v", "song", 2, 1, |_| Err(
-                    rusqlite::Error::InvalidQuery
-                ))
+                .take("p", "v", "song", 2, |_| Err(rusqlite::Error::InvalidQuery))
                 .is_err()
         );
         assert_eq!(allowances.left("p", "v", "song", 2).unwrap(), 2);

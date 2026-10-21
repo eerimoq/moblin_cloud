@@ -78,7 +78,7 @@ class SubscribersSignIn(SubscribersTestCase):
 
 
 class SubscribersRequestSongs(SubscribersTestCase):
-    """Let subscribers add songs to Moblin's queue without paying, within their tier's minutes."""
+    """Let subscribers add songs to Moblin's queue without paying, within their tier's songs."""
 
     def run(self):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
@@ -112,7 +112,7 @@ class SubscribersRequestSongs(SubscribersTestCase):
             "the song to be in the queue on the page",
         )
         self.assert_backend_error(
-            409, lambda: tier1.request_song(SONG), "You have used all your minutes this month."
+            409, lambda: tier1.request_song(SONG), "You have used all your songs this month."
         )
         self.assert_backend_error(
             403,

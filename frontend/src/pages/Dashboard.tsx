@@ -880,17 +880,11 @@ function SongSettings(props: {
       <Show when={enabled()}>
         <label class="flex flex-col gap-2">
           <span class="text-[15px] font-semibold text-ink-2">
-            {t("Tip per 5 minutes of song ({currency})", { currency: props.currency })}
+            {t("Tip per song ({currency})", { currency: props.currency })}
           </span>
-          <span class="flex items-center gap-3">
-            <MoneyInput value={price()} onValue={setPrice} required />
-            <span class="text-ink-2">{t("per started 5 minutes")}</span>
-          </span>
+          <MoneyInput value={price()} onValue={setPrice} required />
           <span class="text-[15px] text-muted">
-            {t(
-              "A song up to 5 minutes long costs this once, a song of 5 to 10 minutes twice, and so on. " +
-                "Songs always play in full.",
-            )}
+            {t("Every song costs the same, whatever its length. Songs always play in full.")}
           </span>
         </label>
       </Show>
@@ -906,26 +900,23 @@ function SubscriberSettings(props: {
   onSave: (tiers: Feature<Tiers>) => Promise<void>;
 }) {
   const song = props.kind === "song";
-  const unit = song ? 5 : 1;
   const [enabled, setEnabled] = createSignal(isOn(props.tiers));
   const [amounts, setAmounts] = createSignal(
     tierNumbers.map((tier) =>
-      String((props.tiers ? tierCount(props.tiers, tier) : [1, 5, 10][tier - 1]) * unit),
+      String(props.tiers ? tierCount(props.tiers, tier) : [1, 5, 10][tier - 1]),
     ),
   );
   const save = createSave(
     () => props.busy,
     () => {
-      const [tier1, tier2, tier3] = amounts().map((count) =>
-        Math.round((Number.parseInt(count, 10) || 0) / unit),
-      );
+      const [tier1, tier2, tier3] = amounts().map((count) => Number.parseInt(count, 10) || 0);
       return props.onSave({ enabled: enabled(), tier1, tier2, tier3 });
     },
     (error) =>
       paymentErrorText(
         error,
         song
-          ? t("Enter 0 to 500 minutes per tier, and more than 0 for at least one tier.")
+          ? t("Enter 0 to 100 songs per tier, and more than 0 for at least one tier.")
           : t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier."),
       ),
   );
@@ -938,10 +929,9 @@ function SubscriberSettings(props: {
       <p class="text-ink-2">
         {song
           ? t(
-              "Give your Twitch subscribers minutes of song requests every month, without a tip. Like paid " +
-                "song requests, every started 5 minutes of a song counts. Subscribers sign in with " +
-                "Twitch on your tip page, and their minutes come back on the 1st of every month. " +
-                "This works with or without paid song requests.",
+              "Give your Twitch subscribers song requests every month, without a tip. Subscribers sign " +
+                "in with Twitch on your tip page, and their songs come back on the 1st of every " +
+                "month. This works with or without paid song requests.",
             )
           : t(
               "Give your Twitch subscribers spins of the wheel every month, without a tip. Subscribers sign " +
@@ -972,8 +962,7 @@ function SubscriberSettings(props: {
                   type="number"
                   required
                   min={0}
-                  max={100 * unit}
-                  step={unit}
+                  max={100}
                   inputmode="numeric"
                   value={amounts()[index()]}
                   onInput={(event) => {
@@ -987,9 +976,7 @@ function SubscriberSettings(props: {
           </For>
         </div>
         <span class="text-[15px] text-muted">
-          {song
-            ? t("Minutes per month for each tier, in steps of 5.")
-            : t("Spins per month for each tier.")}
+          {song ? t("Songs per month for each tier.") : t("Spins per month for each tier.")}
         </span>
       </Show>
       <SaveFooter save={save} />
