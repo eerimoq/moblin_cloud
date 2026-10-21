@@ -42,12 +42,6 @@ export function Latest(props: {
       : props.kind === "tip"
         ? t("No tips yet.")
         : t("No spins yet.");
-  const status = (item: Recent) =>
-    item.status === "delivered"
-      ? { text: t("In Moblin"), class: "text-leaf" }
-      : item.status === "waiting"
-        ? { text: t("Waiting for Moblin"), class: "text-muted" }
-        : { text: t("Not added by Moblin"), class: "text-amber-ink" };
   const more = async () => {
     setLoading(true);
     try {
@@ -112,7 +106,7 @@ export function Latest(props: {
                       <Show when={item.message}>
                         {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
                       </Show>
-                      <Show when={item.devices && item.devices.length > 1 && item.devices}>
+                      <Show when={item.devices && item.devices.length > 0 && item.devices}>
                         {(devices) => (
                           <ul class="flex flex-wrap gap-x-3 gap-y-0.5 text-[15px]">
                             <For each={devices()}>
@@ -138,9 +132,11 @@ export function Latest(props: {
                     <div class="flex flex-col items-end gap-1 text-[15px]">
                       <div class="flex items-baseline gap-3">
                         <span class="text-muted">{timeAgo(item.at)}</span>
-                        <span class={`font-semibold ${status(item).class}`}>
-                          {status(item).text}
-                        </span>
+                        <Show when={item.status === "notAdded"}>
+                          <span class="font-semibold text-amber-ink">
+                            {t("Not added by Moblin")}
+                          </span>
+                        </Show>
                       </div>
                       <button
                         type="button"

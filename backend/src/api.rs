@@ -1045,12 +1045,9 @@ fn recent(
         .into_iter()
         .map(|(id, at, order)| {
             let delivery = api.deliveries.get(&id);
-            let devices = match &order.item {
-                Item::Tip { .. } => delivery
-                    .as_ref()
-                    .map(|delivery| recent_devices(&page, delivery)),
-                _ => None,
-            };
+            let devices = delivery
+                .as_ref()
+                .map(|delivery| recent_devices(&page, &order.item, delivery));
             let tier = match order.payee {
                 Payee::Twitch(tier) => Some(tier),
                 _ => None,
@@ -1097,12 +1094,22 @@ fn recent(
     Ok(Json(RecentResponse { items, more }))
 }
 
-fn recent_devices(page: &Page, delivery: &deliveries::Delivery) -> Vec<RecentDevice> {
+fn recent_devices(page: &Page, item: &Item, delivery: &deliveries::Delivery) -> Vec<RecentDevice> {
+    let target = match item {
+        Item::Song { .. } => page.music_device(),
+        Item::Spin { .. } => page.wheel_device(),
+        Item::Tip { .. } => None,
+    }
+    .map(|device| device.id.clone());
     page.devices
         .iter()
         .filter_map(|device| {
             let received = delivery.delivered.contains(&device.id);
-            (received || (device.enabled && !delivery.finished)).then(|| RecentDevice {
+            let waiting = match item {
+                Item::Tip { .. } => device.enabled,
+                _ => target.as_ref() == Some(&device.id),
+            };
+            (received || (waiting && !delivery.finished)).then(|| RecentDevice {
                 name: device.name.clone(),
                 received,
             })
@@ -5330,12 +5337,23 @@ mod tests {
         assert_eq!(song["message"], "Play it loud!");
         assert_eq!(song["amount"], 250);
         assert_eq!(song["status"], "notAdded");
+        let device = api.accounts.of_page(&id).unwrap().page.devices[0]
+            .name
+            .clone();
+        assert_eq!(
+            song["devices"],
+            json!([{"name": device, "received": false}])
+        );
         let listed: Value = recent("kind=spin".to_string()).await.json().await.unwrap();
         assert_eq!(listed["items"].as_array().unwrap().len(), 1);
         let spin = &listed["items"][0];
         assert_eq!(spin["spins"], 2);
         assert_eq!(spin["message"], "Go!");
         assert_eq!(spin["status"], "waiting");
+        assert_eq!(
+            spin["devices"],
+            json!([{"name": device, "received": false}])
+        );
         api.orders
             .insert(
                 "OTHER",
