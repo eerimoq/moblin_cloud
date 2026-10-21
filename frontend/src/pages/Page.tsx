@@ -954,19 +954,12 @@ function TwitchLink(props: { profile: Profile }) {
 
 function Greeting(props: { profile: Profile }) {
   return (
-    <Show when={props.profile.title || props.profile.message}>
-      <div class="mt-2 flex flex-col gap-4">
-        <Show when={props.profile.title}>
-          {(title) => <p class="text-[23px] font-semibold text-balance">{title()}</p>}
-        </Show>
-        <Show when={props.profile.message}>
-          {(message) => (
-            <p class="text-lg whitespace-pre-line text-ink-2 text-pretty sm:text-[21px]">
-              {message()}
-            </p>
-          )}
-        </Show>
-      </div>
+    <Show when={props.profile.message}>
+      {(message) => (
+        <p class="mx-auto max-w-[560px] text-center text-lg leading-relaxed whitespace-pre-line text-ink-2 text-pretty sm:text-xl">
+          {message()}
+        </p>
+      )}
     </Show>
   );
 }
@@ -1041,7 +1034,7 @@ function StreamerHeader(props: {
       <Show
         when={banner()}
         fallback={
-          <div class="mx-auto flex max-w-[720px] flex-col items-center gap-4 px-5 pt-8 pb-6 text-center sm:px-8 lg:pt-12">
+          <div class="mx-auto flex max-w-[720px] flex-col items-center gap-4 px-5 pt-8 pb-4 text-center sm:px-8 lg:pt-12">
             <Show
               when={props.profile}
               fallback={
@@ -1080,9 +1073,11 @@ function StreamerHeader(props: {
                 <TwitchLink profile={banner().profile} />
               </div>
             </div>
-            <div class="px-4 sm:px-6">
-              <Greeting profile={banner().profile} />
-            </div>
+            <Show when={banner().profile.message}>
+              <div class="mt-2 px-4 sm:px-6">
+                <Greeting profile={banner().profile} />
+              </div>
+            </Show>
           </div>
         )}
       </Show>

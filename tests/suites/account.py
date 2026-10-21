@@ -286,7 +286,7 @@ class AccountDelete(AccountTestCase):
         second = self.sign_in("delete")
         page_id = first.page_id()
         key = first.moblin_cloud_key()
-        first.save_settings(title="Hello!")
+        first.save_settings(message="Hello!")
         port = self.backend.port
         self.assert_true(streamer_connects(port, key))
         first.delete_account()
@@ -299,7 +299,7 @@ class AccountDelete(AccountTestCase):
         third = self.sign_in("delete")
         account = third.account()
         self.assert_not_equal(account["settings"]["id"], page_id)
-        self.assert_equal(account["settings"].get("title"), None)
+        self.assert_equal(account["settings"].get("message"), None)
         self.assert_equal(self.website.id_of_twitch_login("delete"), account["settings"]["id"])
 
 
@@ -309,34 +309,26 @@ class AccountPageLook(AccountTestCase):
     def run(self):
         dashboard = self.sign_in("pagelook")
         page_id = dashboard.page_id()
-        settings = dashboard.save_settings(
-            title="  Hello!  ", message="Thanks for watching.", accent="purple", font="serif"
-        )
-        self.assert_equal(settings["title"], "Hello!")
+        settings = dashboard.save_settings(message="  Thanks for watching.  ", accent="purple", font="serif")
         self.assert_equal(settings["message"], "Thanks for watching.")
         self.assert_equal(settings["accent"], "purple")
         self.assert_equal(settings["font"], "serif")
         profile = self.website.viewer(page_id).profile()
-        self.assert_equal(profile["title"], "Hello!")
         self.assert_equal(profile["message"], "Thanks for watching.")
         self.assert_equal(profile["accent"], "purple")
         self.assert_equal(profile["font"], "serif")
-        settings = dashboard.save_settings(title="   ", message="", accent="green", font="rounded")
+        settings = dashboard.save_settings(message="   ", accent="green", font="rounded")
         self.assert_equal(
-            [settings["title"], settings["message"], settings["accent"], settings["font"]],
-            [None, None, None, None],
+            [settings["message"], settings["accent"], settings["font"]],
+            [None, None, None],
         )
-        settings = dashboard.save_settings(title=60 * "å", message=300 * "x")
-        self.assert_equal(settings["title"], 60 * "å")
-        invalid = (
-            "the title can be at most 60 characters, the message at most 300 and the accent and font "
-            "among the supported ones"
-        )
-        self.assert_backend_error(400, lambda: dashboard.save_settings(title=61 * "x"), invalid)
+        settings = dashboard.save_settings(message=300 * "å")
+        self.assert_equal(settings["message"], 300 * "å")
+        invalid = "the message can be at most 300 characters and the accent and font among the supported ones"
         self.assert_backend_error(400, lambda: dashboard.save_settings(message=301 * "x"), invalid)
         self.assert_backend_error(400, lambda: dashboard.save_settings(accent="black"), invalid)
         self.assert_backend_error(400, lambda: dashboard.save_settings(font="comic"), invalid)
-        self.assert_equal(dashboard.account()["settings"]["title"], 60 * "å")
+        self.assert_equal(dashboard.account()["settings"]["message"], 300 * "å")
         normal = self.sign_in("normallook")
         self.assert_backend_error(
             403, lambda: normal.save_settings(font="serif"), "fonts are only for premium accounts"

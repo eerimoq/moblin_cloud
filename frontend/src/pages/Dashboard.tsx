@@ -62,7 +62,6 @@ import {
   accentAttributes,
   accents,
   currencies,
-  defaultTitle,
   fonts,
   hundredths,
   isColor,
@@ -678,7 +677,6 @@ function YourPage(props: {
   onSave: (changes: Page) => Promise<void>;
   onImage: (image: File | null) => Promise<void>;
 }) {
-  const [title, setTitle] = createSignal(props.page.title ?? "");
   const [message, setMessage] = createSignal(props.page.message ?? "");
   const [accent, setAccent] = createSignal(props.page.accent ?? accents[0]);
   const [color, setColor] = createSignal(
@@ -688,7 +686,7 @@ function YourPage(props: {
   onMount(() => loadFonts(fonts));
   const save = createSave(
     () => props.busy,
-    () => props.onSave({ title: title(), message: message(), accent: accent(), font: font() }),
+    () => props.onSave({ message: message(), accent: accent(), font: font() }),
     () => t("Something went wrong. Try again."),
   );
 
@@ -720,17 +718,6 @@ function YourPage(props: {
       <Show when={props.account.premium}>
         <BannerImage settings={props.page} busy={props.busy} onImage={props.onImage} />
       </Show>
-      <label class="flex flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">{t("Headline (optional)")}</span>
-        <input
-          type="text"
-          maxLength={60}
-          value={title()}
-          onInput={(event) => setTitle(event.currentTarget.value)}
-          placeholder={defaultTitle}
-          class={inputClass}
-        />
-      </label>
       <label class="flex flex-col gap-2">
         <span class="text-[15px] font-semibold text-ink-2">
           {t("Message to your viewers (optional)")}
@@ -2571,7 +2558,6 @@ function Preview(props: { failed: boolean }) {
               wheelDevice: null,
               settings: {
                 id: "",
-                title: null,
                 message: null,
                 accent: null,
                 font: null,

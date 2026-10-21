@@ -57,7 +57,6 @@ export const tierCount = (tiers: Tiers, tier: number) =>
   tier === 1 ? tiers.tier1 : tier === 2 ? tiers.tier2 : tiers.tier3;
 
 export type Page = {
-  title: string | null;
   message: string | null;
   accent: string | null;
   font: string | null;
@@ -123,8 +122,6 @@ export const loadFonts = (names: string[]) => {
   link.href = `https://fonts.googleapis.com/css2?${families.map((family) => `family=${family}`).join("&")}&display=swap`;
   document.head.append(link);
 };
-
-export const defaultTitle = t("Thanks for watching!");
 
 export type Price = {
   price: number;

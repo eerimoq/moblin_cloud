@@ -104,7 +104,7 @@ class SubscribersRequestSongs(SubscribersTestCase):
         self.assert_equal(tier1.request_song(SONG, " For the drive "), {"left": 0})
         add = self.moblin.wait_for_new_backend_request("add", start)
         self.assert_equal(
-            [add.body["title"], add.body["user"], add.body.get("message")],
+            [add.body["message"], add.body["user"], add.body.get("message")],
             [SONG_LINK, "songfan1", "For the drive"],
         )
         self.wait_until(
@@ -191,10 +191,10 @@ class SubscribersTurnedOff(SubscribersTestCase):
         )
         subscriber = self.subscriber("offfan1")
         self.assert_equal(subscriber.songs()["allowance"], 1)
-        self.dashboard.update_settings(title="Kept", sub_songs=None, sub_spins=None)
+        self.dashboard.update_settings(message="Kept", sub_songs=None, sub_spins=None)
         settings = self.dashboard.account()["settings"]
         self.assert_equal(
-            [settings["subSongs"], settings["subSpins"], settings["title"]], [None, None, "Kept"]
+            [settings["subSongs"], settings["subSpins"], settings["message"]], [None, None, "Kept"]
         )
         self.assert_equal(self.viewer.get(f"/pages/{self.page_id}/songs")["subSongs"], None)
         self.assert_equal(self.viewer.spin()["subSpins"], None)
@@ -217,7 +217,7 @@ class SubscribersTurnedOff(SubscribersTestCase):
             400,
             lambda: self.dashboard.update_settings(sub_songs={"tier1": 101, "tier2": 0, "tier3": 0}),
         )
-        self.dashboard.update_settings(title=None)
+        self.dashboard.update_settings(message=None)
 
 
 class SubscribersKeptOnRestart(SubscribersTestCase):

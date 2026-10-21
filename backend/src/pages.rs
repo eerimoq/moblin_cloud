@@ -24,8 +24,6 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_song_minutes: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
@@ -146,7 +144,6 @@ impl Settings {
             sub_songs,
             sub_spins,
             max_song_minutes: self.max_song_minutes,
-            title: text(self.title, 60)?,
             message: text(self.message, 300)?,
             accent,
             font,
@@ -351,7 +348,7 @@ mod tests {
         let settings = Settings {
             currency: Some("SEK".to_string()),
             paywall: Some(paywall.clone()),
-            title: Some("Hi".to_string()),
+            message: Some("Hi".to_string()),
             ..Settings::default()
         };
         pages.set("a", settings.clone()).unwrap();
@@ -360,7 +357,7 @@ mod tests {
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
         assert_eq!(pages.get("a").paywall, Some(paywall));
         assert_eq!(pages.get("a").currency(), "SEK");
-        assert_eq!(pages.get("a").title.as_deref(), Some("Hi"));
+        assert_eq!(pages.get("a").message.as_deref(), Some("Hi"));
         assert_eq!(pages.get("b"), Settings::default());
         let count: u32 = pages
             .database
@@ -539,50 +536,48 @@ mod tests {
     #[test]
     fn pages_are_validated() {
         let pages = Pages::new(Database::memory());
-        let page = |title: &str, message: &str, accent: &str, font: &str| Settings {
-            title: Some(title.to_string()),
+        let page = |message: &str, accent: &str, font: &str| Settings {
             message: Some(message.to_string()),
             accent: Some(accent.to_string()),
             font: Some(font.to_string()),
             ..Settings::default()
         };
         assert_eq!(
-            pages.set("a", page(" Hi! ", "  ", "purple", "serif")),
+            pages.set("a", page(" Hi! ", "purple", "serif")),
             Ok(Settings {
-                title: Some("Hi!".to_string()),
+                message: Some("Hi!".to_string()),
                 accent: Some("purple".to_string()),
                 font: Some("serif".to_string()),
                 ..Settings::default()
             })
         );
         assert_eq!(
-            pages.set("a", page("", "", "#A1B2c3", "rounded")),
+            pages.set("a", page("", "#A1B2c3", "rounded")),
             Ok(Settings {
                 accent: Some("#a1b2c3".to_string()),
                 ..Settings::default()
             })
         );
         assert_eq!(
-            pages.set("a", page("", "", "green", "rounded")),
+            pages.set("a", page("  ", "green", "rounded")),
             Ok(Settings::default())
         );
         assert_eq!(pages.get("a"), Settings::default());
         assert!(
             pages
-                .set("a", page(&"å".repeat(60), &"å".repeat(300), "red", "pixel"))
+                .set("a", page(&"å".repeat(300), "red", "pixel"))
                 .is_ok()
         );
-        for (title, message, accent, font) in [
-            ("a".repeat(61), String::new(), "red", "mono"),
-            (String::new(), "a".repeat(301), "red", "mono"),
-            (String::new(), String::new(), "teal", "mono"),
-            (String::new(), String::new(), "#12345", "mono"),
-            (String::new(), String::new(), "#12345g", "mono"),
-            (String::new(), String::new(), "123456", "mono"),
-            (String::new(), String::new(), "red", "comic"),
+        for (message, accent, font) in [
+            ("a".repeat(301), "red", "mono"),
+            (String::new(), "teal", "mono"),
+            (String::new(), "#12345", "mono"),
+            (String::new(), "#12345g", "mono"),
+            (String::new(), "123456", "mono"),
+            (String::new(), "red", "comic"),
         ] {
             assert_eq!(
-                pages.set("a", page(&title, &message, accent, font)),
+                pages.set("a", page(&message, accent, font)),
                 Err(SettingsError::InvalidPage)
             );
         }

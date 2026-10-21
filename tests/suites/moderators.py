@@ -186,10 +186,10 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
     login = "moddash"
 
     def run(self):
-        self.dashboard.update_settings(title="Mine", sub_spins=None)
+        self.dashboard.update_settings(message="Mine", sub_spins=None)
         for call in [
             lambda: self.moderator.moderated_account(self.page_id),
-            lambda: self.moderator.moderated_settings(self.page_id, title="Theirs"),
+            lambda: self.moderator.moderated_settings(self.page_id, message="Theirs"),
             lambda: self.moderator.moderated_test_tip(self.page_id),
             lambda: self.moderator.moderated_test_spin(self.page_id),
             lambda: self.moderator.moderated_remove_image(self.page_id),
@@ -211,7 +211,7 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
         self.assert_equal([account["admin"], account["premium"]], [False, own["premium"]])
         settings = account["settings"]
         self.assert_equal(settings["id"], self.page_id)
-        self.assert_equal(settings["title"], "Mine")
+        self.assert_equal(settings["message"], "Mine")
         self.assert_equal(settings["currency"], own["settings"]["currency"])
         self.assert_equal(
             [
@@ -236,24 +236,24 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
         ]:
             self.assert_backend_error(
                 status,
-                lambda paid=paid: self.moderator.moderated_settings(self.page_id, title="Theirs", **paid),
+                lambda paid=paid: self.moderator.moderated_settings(self.page_id, message="Theirs", **paid),
                 text,
             )
         settings = self.moderator.moderated_settings(
             self.page_id,
-            title="Theirs",
+            message="Theirs",
             currency="EUR" if own["settings"]["currency"] != "EUR" else "USD",
             sub_spins={"tier1": 1, "tier2": 2, "tier3": 3},
         )
-        self.assert_equal(settings["title"], "Theirs")
+        self.assert_equal(settings["message"], "Theirs")
         self.assert_equal(settings["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
         self.assert_equal(settings["merchantId"], None)
         self.assert_equal(
             settings["currency"], own["settings"]["currency"], "currency unchanged by a moderator"
         )
         own = self.dashboard.account()
-        self.assert_equal(own["settings"]["title"], "Theirs")
-        self.assert_equal(own["settings"]["title"], "Theirs")
+        self.assert_equal(own["settings"]["message"], "Theirs")
+        self.assert_equal(own["settings"]["message"], "Theirs")
         self.assert_equal(own["settings"]["subSpins"], {"tier1": 1, "tier2": 2, "tier3": 3})
         self.assert_backend_error(
             409, lambda: self.moderator.moderated_test_spin(self.page_id), "Connect Moblin first."
@@ -272,7 +272,7 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
     def teardown(self):
         super().teardown()
         if hasattr(self, "dashboard"):
-            self.dashboard.update_settings(title=None, sub_spins=None)
+            self.dashboard.update_settings(message=None, sub_spins=None)
 
 
 class ModeratorsChangePaidFeatures(ModeratorsTestCase):
@@ -371,7 +371,7 @@ class ModeratorsAddSongsForFree(ModeratorsTestCase):
         self.moderator.add_free_song(self.page_id, SONG, " For the drive ")
         add = self.moblin.wait_for_new_backend_request("add", start)
         self.assert_equal(
-            [add.body["title"], add.body["user"], add.body.get("message")],
+            [add.body["message"], add.body["user"], add.body.get("message")],
             [SONG_LINK, self.moderator_login, "For the drive"],
         )
         self.wait_for_queue([self.moderator_login])

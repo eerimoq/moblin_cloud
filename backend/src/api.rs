@@ -352,7 +352,6 @@ struct SettingsResponse {
     #[serde(rename = "stripeTest")]
     stripe_test: bool,
     payable: bool,
-    title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
     font: Option<String>,
@@ -389,7 +388,6 @@ fn settings_response(api: &Api, id: String, settings: Settings) -> Json<Settings
         stripe_account_id: account.stripe_account_id.filter(|_| account.stripe_ready),
         stripe_test: api.stripe.as_ref().is_some_and(Stripe::is_test),
         payable: merchant_of(api, &id).is_some() || stripe_of(api, &id).is_some(),
-        title: settings.title,
         message: settings.message,
         accent: settings.accent,
         font: settings.font,
@@ -423,8 +421,6 @@ struct SettingsRequest {
     sub_spins: Option<Tiers>,
     #[serde(default, rename = "maxSongMinutes")]
     max_song_minutes: Option<u32>,
-    #[serde(default)]
-    title: Option<String>,
     #[serde(default)]
     message: Option<String>,
     #[serde(default)]
@@ -539,7 +535,6 @@ async fn update_settings(
                 sub_songs: request.sub_songs,
                 sub_spins: request.sub_spins,
                 max_song_minutes: request.max_song_minutes,
-                title: request.title,
                 message: request.message,
                 accent,
                 font,
@@ -561,7 +556,7 @@ async fn update_settings(
             ),
             SettingsError::InvalidPage => (
                 StatusCode::BAD_REQUEST,
-                "the title can be at most 60 characters, the message at most 300 and the accent and font among the supported ones".to_string(),
+                "the message can be at most 300 characters and the accent and font among the supported ones".to_string(),
             ),
             SettingsError::Full => (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -573,7 +568,7 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song minutes {:?}, title {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {id} set currency {}, paywall {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song minutes {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.paywall,
         settings.tips,
@@ -581,7 +576,6 @@ async fn update_settings(
         settings.sub_songs,
         settings.sub_spins,
         settings.max_song_minutes,
-        settings.title,
         settings.message,
         settings.accent,
         settings.font
@@ -1760,7 +1754,6 @@ struct ProfileResponse {
     name: String,
     login: String,
     avatar: Option<String>,
-    title: Option<String>,
     message: Option<String>,
     accent: Option<String>,
     font: Option<String>,
@@ -1777,7 +1770,6 @@ async fn handle_page(
         name: account.name,
         login: account.login,
         avatar: account.avatar,
-        title: settings.title,
         message: settings.message,
         accent: settings.accent,
         font: settings.font,
@@ -7664,7 +7656,6 @@ mod tests {
             .bearer_auth(&session)
             .json(&json!({
                 "paywall": null,
-                "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
             }))
@@ -7674,7 +7665,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(settings["title"], "Pick a banger");
+        assert_eq!(settings["message"], "Thanks for hanging out!");
         assert_eq!(settings["accent"], "pink");
         assert_eq!(settings["font"], Value::Null);
         let response = client
@@ -7711,7 +7702,6 @@ mod tests {
                 "name": "Erik",
                 "login": "erik",
                 "avatar": "https://static-cdn.jtvnw.net/erik.png",
-                "title": "Pick a banger",
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
                 "font": null,
@@ -7833,7 +7823,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"title": "Hi"}))
+            .json(&json!({"message": "Hi"}))
             .send()
             .await
             .unwrap();
@@ -8698,7 +8688,7 @@ mod tests {
         ] {
             assert_eq!(get(session, "").await.status(), status);
             assert_eq!(
-                post(session, "/settings", json!({"title": "Hi"}))
+                post(session, "/settings", json!({"message": "Hi"}))
                     .await
                     .status(),
                 status
@@ -8753,7 +8743,7 @@ mod tests {
                 "paywall": null,
                 "tips": {"amounts": [300, 700]},
                 "spin": {"options": [{"spins": 1, "price": 100}]},
-                "title": " Hi ",
+                "message": " Hi ",
                 "maxSongMinutes": 7,
                 "subSongs": {"tier1": 1, "tier2": 2, "tier3": 3},
             }),
@@ -8761,7 +8751,7 @@ mod tests {
         .await;
         assert_eq!(response.status(), StatusCode::OK);
         let settings: Value = response.json().await.unwrap();
-        assert_eq!(settings["title"], "Hi");
+        assert_eq!(settings["message"], "Hi");
         assert_eq!(settings["maxSongMinutes"], 7);
         assert_eq!(
             settings["subSongs"],
@@ -8778,7 +8768,7 @@ mod tests {
         assert_eq!(settings["paypal"], false);
         assert_eq!(settings["payable"], true);
         let saved = api.pages.get(&id);
-        assert_eq!(saved.title.as_deref(), Some("Hi"));
+        assert_eq!(saved.message.as_deref(), Some("Hi"));
         assert_eq!(saved.currency(), "SEK");
         assert_eq!(saved.paywall, None);
         assert_eq!(
@@ -8811,7 +8801,7 @@ mod tests {
         assert_eq!(api.pages.get(&id).paywall, Some(Paywall { price: 100 }));
         let response = post(&mod1, "/settings", json!({"paywall": {"price": 100}})).await;
         assert_eq!(response.status(), StatusCode::OK);
-        let response = post(&mod1, "/settings", json!({"title": "Hi"})).await;
+        let response = post(&mod1, "/settings", json!({"message": "Hi"})).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(api.pages.get(&id).paywall, None);
         connect_paypal(&api);
