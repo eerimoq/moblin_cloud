@@ -11,7 +11,7 @@ use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::accounts::{ChannelModerator, Identity, Platform};
+use crate::accounts::{ChannelModerator, Identity, KickModerator, Platform};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
@@ -64,16 +64,19 @@ pub struct KickApp {
     pub token_url: String,
     pub users_url: String,
     pub channels_url: String,
+    pub channel_users_url: String,
 }
 
 impl KickApp {
     pub fn kick(client_id: String, client_secret: String) -> Self {
-        Self::at(
+        let mut app = Self::at(
             "https://id.kick.com",
             "https://api.kick.com",
             client_id,
             client_secret,
-        )
+        );
+        app.channel_users_url = "https://kick.com/api/v2/channels".to_string();
+        app
     }
 
     pub fn at(id_url: &str, api_url: &str, client_id: String, client_secret: String) -> Self {
@@ -86,6 +89,7 @@ impl KickApp {
             token_url: format!("{id_url}/oauth/token"),
             users_url: format!("{api_url}/public/v1/users"),
             channels_url: format!("{api_url}/public/v1/channels"),
+            channel_users_url: format!("{api_url}/api/v2/channels"),
         }
     }
 }
@@ -123,11 +127,26 @@ pub struct StateError {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Viewer {
+    #[serde(default = "twitch")]
+    pub platform: Platform,
     pub id: String,
     pub name: String,
     pub page: String,
     pub tier: Option<u8>,
     pub issued: u64,
+}
+
+fn twitch() -> Platform {
+    Platform::Twitch
+}
+
+impl Viewer {
+    pub fn key(&self) -> String {
+        match self.platform {
+            Platform::Twitch => self.id.clone(),
+            Platform::Kick => format!("kick:{}", self.id),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -209,12 +228,12 @@ impl Auth {
         .map(|url| (url.into(), state))
     }
 
-    pub fn kick_login_url(&self, link: bool) -> Option<(String, String)> {
+    pub fn kick_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
         let app = self.kick.as_ref()?;
         let verifier = self.random_token()?;
         let challenge = BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()));
         let state = self.new_state(SignInState {
-            page: None,
+            page: page.map(str::to_string),
             link,
             verifier: Some(verifier),
         })?;
@@ -509,6 +528,89 @@ impl Auth {
             }))
     }
 
+    pub async fn kick_subscriber(&self, streamer: &str, viewer: &str) -> Result<bool> {
+        let app = self.kick.as_ref().context("Kick not configured")?;
+        #[derive(Deserialize)]
+        struct ChannelUser {
+            #[serde(default)]
+            badges: Vec<Badge>,
+        }
+        #[derive(Deserialize)]
+        struct Badge {
+            #[serde(rename = "type")]
+            kind: String,
+            #[serde(default = "yes")]
+            active: bool,
+        }
+        fn yes() -> bool {
+            true
+        }
+        let user: ChannelUser = self
+            .client
+            .get(format!(
+                "{}/{streamer}/users/{viewer}",
+                app.channel_users_url
+            ))
+            .send()
+            .await
+            .context("failed to get the channel user")?
+            .error_for_status()
+            .context("the channel user was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the channel user request")?;
+        Ok(user
+            .badges
+            .iter()
+            .any(|badge| badge.kind == "subscriber" && badge.active))
+    }
+
+    pub async fn kick_user(&self, username: &str) -> Result<Option<KickModerator>> {
+        let app = self.kick.as_ref().context("Kick not configured")?;
+        let token = self
+            .access_token(
+                &app.token_url,
+                &[
+                    ("client_id", app.client_id.as_str()),
+                    ("client_secret", app.client_secret.as_str()),
+                    ("grant_type", "client_credentials"),
+                ],
+            )
+            .await?;
+        #[derive(Deserialize)]
+        struct Channels {
+            data: Vec<Channel>,
+        }
+        #[derive(Deserialize)]
+        struct Channel {
+            #[serde(deserialize_with = "id_text")]
+            broadcaster_user_id: String,
+            slug: String,
+        }
+        let channels: Channels = self
+            .client
+            .get(&app.channels_url)
+            .query(&[("slug", username)])
+            .bearer_auth(&token)
+            .send()
+            .await
+            .context("failed to get the channel")?
+            .error_for_status()
+            .context("the channel was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the channel request")?;
+        Ok(channels
+            .data
+            .into_iter()
+            .find(|channel| !channel.broadcaster_user_id.is_empty() && !channel.slug.is_empty())
+            .map(|channel| KickModerator {
+                id: channel.broadcaster_user_id,
+                name: channel.slug.clone(),
+                login: channel.slug.to_lowercase(),
+            }))
+    }
+
     pub async fn channel_moderators(&self, sign_in: &SignIn) -> Result<Vec<ChannelModerator>> {
         let app = self.twitch.as_ref().context("Twitch not configured")?;
         let token = sign_in.token.as_deref().context("no access token")?;
@@ -596,12 +698,14 @@ impl Auth {
 
     pub fn viewer_session(
         &self,
+        platform: Platform,
         id: String,
         name: String,
         page: String,
         tier: Option<u8>,
     ) -> String {
         let viewer = Viewer {
+            platform,
             id,
             name,
             page,
@@ -672,6 +776,8 @@ fn now() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     fn new_auth(secret: &str) -> Auth {
@@ -765,7 +871,7 @@ mod tests {
     #[test]
     fn kick_signs_in_with_pkce() {
         let auth = new_auth("secret");
-        let (url, state) = auth.kick_login_url(true).unwrap();
+        let (url, state) = auth.kick_login_url(None, true).unwrap();
         let parsed = Url::parse(&url).unwrap();
         assert_eq!(parsed.host_str(), Some("id.kick.com"));
         assert_eq!(parsed.path(), "/oauth/authorize");
@@ -788,8 +894,12 @@ mod tests {
             query["code_challenge"],
             BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()))
         );
-        let (other, _) = auth.kick_login_url(false).unwrap();
+        let (other, _) = auth.kick_login_url(None, false).unwrap();
         assert_ne!(query_of(&other)["code_challenge"], query["code_challenge"]);
+        let (_, state) = auth.kick_login_url(Some("page"), false).unwrap();
+        let pending = auth.consume_state(&state, Some(&state)).unwrap();
+        assert_eq!(pending.page.as_deref(), Some("page"));
+        assert!(!pending.link);
         let without = Auth::new(
             Client::new(),
             "https://api.example.com".to_string(),
@@ -799,7 +909,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(without.kick_login_url(false).is_none());
+        assert!(without.kick_login_url(None, false).is_none());
         assert!(without.twitch_login_url(None, false).is_none());
     }
 
@@ -807,6 +917,7 @@ mod tests {
     fn viewer_sessions_are_not_streamer_sessions() {
         let auth = new_auth("secret");
         let session = auth.viewer_session(
+            Platform::Twitch,
             "7".to_string(),
             "Viewer".to_string(),
             "page".to_string(),
@@ -815,13 +926,30 @@ mod tests {
         let viewer = auth.viewer_of(&session).unwrap();
         assert_eq!(
             (
+                viewer.platform,
                 viewer.id.as_str(),
                 viewer.name.as_str(),
                 viewer.page.as_str(),
                 viewer.tier
             ),
-            ("7", "Viewer", "page", Some(2))
+            (Platform::Twitch, "7", "Viewer", "page", Some(2))
         );
+        assert_eq!(viewer.key(), "7");
+        let kick = auth.viewer_session(
+            Platform::Kick,
+            "7".to_string(),
+            "Viewer".to_string(),
+            "page".to_string(),
+            Some(1),
+        );
+        let kick = auth.viewer_of(&kick).unwrap();
+        assert_eq!(kick.platform, Platform::Kick);
+        assert_eq!(kick.key(), "kick:7");
+        let old = auth.sign(&format!(
+            "{VIEWER_PREFIX}{}",
+            json!({"id": "7", "name": "Viewer", "page": "page", "tier": null, "issued": now()})
+        ));
+        assert_eq!(auth.viewer_of(&old).unwrap().platform, Platform::Twitch);
         assert_eq!(auth.session_of(&session), None);
         assert_eq!(new_auth("other").viewer_of(&session), None);
         assert_eq!(auth.viewer_of(&auth.session("1", 0)), None);
@@ -921,10 +1049,15 @@ mod tests {
         assert_eq!(app.token_url, "http://localhost:8082/oauth/token");
         assert_eq!(app.users_url, "http://localhost:8082/public/v1/users");
         assert_eq!(app.channels_url, "http://localhost:8082/public/v1/channels");
+        assert_eq!(
+            app.channel_users_url,
+            "http://localhost:8082/api/v2/channels"
+        );
         let app = KickApp::kick("id".to_string(), "secret".to_string());
         assert_eq!(app.authorize_url, "https://id.kick.com/oauth/authorize");
         assert_eq!(app.token_url, "https://id.kick.com/oauth/token");
         assert_eq!(app.users_url, "https://api.kick.com/public/v1/users");
         assert_eq!(app.channels_url, "https://api.kick.com/public/v1/channels");
+        assert_eq!(app.channel_users_url, "https://kick.com/api/v2/channels");
     }
 }

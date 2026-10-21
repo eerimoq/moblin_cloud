@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Pretends to be Kick's sign in (OAuth with PKCE) and the public API endpoints it needs, for signing in
-as made-up users.
+"""Pretends to be Kick's sign in (OAuth with PKCE), the public API endpoints it needs and the website
+API's channel user lookup, for signing in as made-up users.
 
-Any login signs in. Its Kick user id is fake-<login> and its channel slug is the login.
+Any login signs in. Its Kick user id is fake-<login> and its channel slug is the login. A login ending
+in 1, 2 or 3 is a subscriber of everyone, like on the fake Twitch. Any login can be added as a Kick
+moderator.
 """
 
 import argparse
@@ -25,7 +27,9 @@ USERS = [
     ("admin", "an admin, and so premium"),
     ("premium", "a premium account"),
     ("normal", "neither admin nor premium"),
+    ("sub1", "a subscriber"),
 ]
+APP_TOKEN = "app-token"
 
 PAGE = """<!doctype html>
 <html lang="en">
@@ -63,7 +67,7 @@ a {{ color: #a8b0b3; }}
 <button type="submit">Sign in</button>
 </div>
 </form>
-<p>The same login on the fake Twitch is another user until linked. <a href="{cancel}">Cancel</a></p>
+<p>The same login on the fake Twitch is another user until linked. A login ending in 1, 2 or 3 subscribes to everyone. <a href="{cancel}">Cancel</a></p>
 </main>
 </body>
 </html>
@@ -86,6 +90,12 @@ def channel_of(login: str) -> dict:
         "channel_description": "",
         "stream": {"is_live": False},
     }
+
+
+def badges_of(login: str) -> list[dict]:
+    if login[-1:] in ["1", "2", "3"]:
+        return [{"type": "subscriber", "text": "Subscriber", "count": 1, "active": True}]
+    return []
 
 
 def challenge_of(verifier: str) -> str:
@@ -130,20 +140,31 @@ class FakeKick:
             def do_GET(self):  # pylint: disable=invalid-name
                 parts = urlsplit(self.path)
                 query = {key: values[0] for key, values in parse_qs(parts.query).items()}
+                channel_user = re.match(r"^/api/v2/channels/([^/]+)/users/([^/]+)$", parts.path)
                 if parts.path == "/oauth/authorize":
                     self.authorize(query)
                 elif parts.path == "/public/v1/users":
                     self.answer(user_of)
+                elif parts.path == "/public/v1/channels" and "slug" in query:
+                    self.channel_by_slug(query["slug"].lower())
                 elif parts.path == "/public/v1/channels":
                     self.answer(channel_of)
+                elif channel_user:
+                    self.channel_user(channel_user[1].lower(), channel_user[2].lower())
                 else:
                     self.json({"message": "Not Found"}, 404)
 
             def do_POST(self):  # pylint: disable=invalid-name
                 length = int(self.headers.get("content-length", "0"))
                 form = {key: values[0] for key, values in parse_qs(self.rfile.read(length).decode()).items()}
+                if urlsplit(self.path).path != "/oauth/token":
+                    self.json({"error": "invalid_request", "error_description": "bad path"}, 400)
+                    return
+                if form.get("grant_type") == "client_credentials":
+                    self.json({"access_token": APP_TOKEN, "token_type": "Bearer", "expires_in": 3600})
+                    return
                 code = form.get("code", "")
-                if urlsplit(self.path).path != "/oauth/token" or not LOGIN_RE.match(code):
+                if not LOGIN_RE.match(code):
                     self.json({"error": "invalid_request", "error_description": "bad code"}, 400)
                     return
                 with fake._lock:  # pylint: disable=protected-access
@@ -167,6 +188,27 @@ class FakeKick:
                     self.json({"message": "Unauthorized"}, 401)
                     return
                 self.json({"data": [body_of(token)], "message": "OK"})
+
+            def channel_by_slug(self, slug: str):
+                if self.headers.get("authorization", "") != f"Bearer {APP_TOKEN}":
+                    self.json({"message": "Unauthorized"}, 401)
+                    return
+                data = [channel_of(slug)] if LOGIN_RE.match(slug) and slug != "nobody" else []
+                self.json({"data": data, "message": "OK"})
+
+            def channel_user(self, streamer: str, viewer: str):
+                if not LOGIN_RE.match(streamer) or not LOGIN_RE.match(viewer):
+                    self.json({"message": "Not Found"}, 404)
+                    return
+                self.json(
+                    {
+                        "id": 1,
+                        "username": viewer,
+                        "slug": viewer,
+                        "is_moderator": False,
+                        "badges": badges_of(viewer),
+                    }
+                )
 
             def authorize(self, query: dict[str, str]):
                 redirect_uri = query.get("redirect_uri")

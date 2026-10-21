@@ -276,14 +276,15 @@ export const streamerSongs = (id: string) =>
   );
 
 export type Allowance = {
+  platform: Platform;
   name: string;
   tier: number | null;
   allowance: number;
   left: number;
 };
 
-export const viewerSignInUrl = (id: string) =>
-  `${backendUrl}/auth/twitch/login?${new URLSearchParams({ page: id })}`;
+export const viewerSignInUrl = (platform: Platform, id: string) =>
+  `${backendUrl}/auth/${platform}/login?${new URLSearchParams({ page: id })}`;
 
 export const fetchAllowance = (kind: "song" | "spin", id: string, viewer: string) =>
   call<Allowance>(pagePath(id, `/${segments[kind]}/subscriber`), undefined, viewer);

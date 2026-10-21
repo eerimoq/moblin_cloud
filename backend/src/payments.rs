@@ -41,6 +41,7 @@ pub enum Payee {
     PayPal(String),
     Stripe(String),
     Twitch(u8),
+    Kick,
     Moderator,
 }
 
@@ -50,6 +51,7 @@ impl Payee {
             Payee::PayPal(_) => "PayPal",
             Payee::Stripe(_) => "Stripe",
             Payee::Twitch(_) => "Twitch",
+            Payee::Kick => "Kick",
             Payee::Moderator => "Moderator",
         }
     }
@@ -59,6 +61,7 @@ impl Payee {
             Payee::PayPal(_) => "paypal",
             Payee::Stripe(_) => "stripe",
             Payee::Twitch(_) => "twitch",
+            Payee::Kick => "kick",
             Payee::Moderator => "moderator",
         }
     }

@@ -20,7 +20,8 @@ use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{
-    Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, Page, Platform,
+    Account, AccountError, AccountStats, Accounts, ChannelModerator, Device, KickModerator, Page,
+    Platform,
 };
 use crate::app_attest::AppAttest;
 use crate::auth::{Auth, STATE_COOKIE, SignIn, StateError, Viewer};
@@ -143,6 +144,14 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/test/song", post(handle_account_test_song))
         .route("/account/test/tip", post(handle_account_test_tip))
         .route("/account/test/spin", post(handle_account_test_spin))
+        .route(
+            "/account/moderators/kick",
+            post(handle_account_kick_moderator_add),
+        )
+        .route(
+            "/account/moderators/kick/{moderator}/remove",
+            post(handle_account_kick_moderator_remove),
+        )
         .route(
             "/account/moderators/{moderator}",
             post(handle_account_moderator),
@@ -623,9 +632,17 @@ async fn handle_kick_login(
     State(api): State<Arc<Api>>,
     Query(query): Query<LoginQuery>,
 ) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
+    if let Some(page) = &query.page
+        && api
+            .accounts
+            .of_page(page)
+            .is_none_or(|account| account.kick().is_none())
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
     let (url, state) = api
         .auth
-        .kick_login_url(query.link.is_some())
+        .kick_login_url(query.page.as_deref(), query.link.is_some())
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     Ok((
         [(SET_COOKIE, api.auth.state_cookie(&state))],
@@ -700,7 +717,7 @@ async fn signed_in_redirect(
         Err(StateError {
             page: Some(page),
             error,
-        }) => return viewer_redirect(api, &page, Err(error)).await,
+        }) => return viewer_redirect(api, platform, &page, Err(error)).await,
         Err(StateError { error, .. }) => {
             warn!("signing in with {} failed: {error:#}", platform.title());
             return failed(false);
@@ -722,7 +739,7 @@ async fn signed_in_redirect(
         )),
     };
     if let Some(page) = state.page {
-        return viewer_redirect(api, &page, sign_in).await;
+        return viewer_redirect(api, platform, &page, sign_in).await;
     }
     let sign_in = match sign_in {
         Ok(sign_in) => sign_in,
@@ -803,41 +820,84 @@ async fn signed_in_redirect(
     ))
 }
 
-async fn viewer_redirect(api: &Api, page: &str, sign_in: Result<SignIn>) -> Redirect {
-    let twitch = api
-        .accounts
-        .of_page(page)
-        .and_then(|account| account.twitch().cloned());
-    let url = match &twitch {
-        Some(twitch) if !twitch.login.is_empty() => {
-            format!("{}/twitch/{}", api.auth.frontend_url, twitch.login)
-        }
-        _ => format!("{}/page/?streamer={page}", api.auth.frontend_url),
+enum ViewerSignInError {
+    Failed(anyhow::Error),
+    Unchecked(anyhow::Error),
+}
+
+async fn viewer_redirect(
+    api: &Api,
+    platform: Platform,
+    page: &str,
+    sign_in: Result<SignIn>,
+) -> Redirect {
+    let account = api.accounts.of_page(page);
+    let streamer = account
+        .as_ref()
+        .and_then(|account| account.identity(platform).cloned());
+    let address = streamer
+        .iter()
+        .map(|identity| (platform, identity))
+        .chain(account.iter().flat_map(|account| {
+            account
+                .identities
+                .iter()
+                .map(|identity| (identity.platform, identity))
+        }))
+        .find(|(_, identity)| !identity.login.is_empty());
+    let url = match address {
+        Some((platform, identity)) => format!(
+            "{}/{}/{}",
+            api.auth.frontend_url,
+            platform.name(),
+            identity.login
+        ),
+        None => format!("{}/page/?streamer={page}", api.auth.frontend_url),
     };
     let tier = async {
-        let sign_in = sign_in?;
-        let twitch = twitch.context("the page has no Twitch streamer")?;
-        let tier = api
-            .auth
-            .subscription_tier(&sign_in, &twitch.user_id)
-            .await?;
-        anyhow::Ok((sign_in.identity, tier))
+        let sign_in = sign_in.map_err(ViewerSignInError::Failed)?;
+        let streamer = streamer
+            .with_context(|| format!("the page has no {} streamer", platform.title()))
+            .map_err(ViewerSignInError::Failed)?;
+        let tier = match platform {
+            Platform::Twitch => api
+                .auth
+                .subscription_tier(&sign_in, &streamer.user_id)
+                .await
+                .map_err(ViewerSignInError::Failed)?,
+            Platform::Kick => api
+                .auth
+                .kick_subscriber(&streamer.login, &sign_in.identity.login)
+                .await
+                .map_err(ViewerSignInError::Unchecked)?
+                .then_some(1),
+        };
+        Ok((sign_in.identity, tier))
     };
     match tier.await {
         Ok((user, tier)) => {
             info!(
-                "Twitch user {} ({}) signed in as a viewer of page {page} with subscription tier {tier:?}",
-                user.user_id, user.login
+                "{} user {} ({}) signed in as a viewer of page {page} with subscription tier {tier:?}",
+                platform.title(),
+                user.user_id,
+                user.login
             );
             Redirect::to(&format!(
                 "{url}#viewer={}",
                 api.auth
-                    .viewer_session(user.user_id, user.name, page.to_string(), tier)
+                    .viewer_session(platform, user.user_id, user.name, page.to_string(), tier)
             ))
         }
-        Err(error) => {
-            warn!("signing in as a viewer of page {page} failed: {error:#}");
-            Redirect::to(&format!("{url}#viewerSignInFailed"))
+        Err(ViewerSignInError::Unchecked(error)) => {
+            warn!("checking the Kick subscription of a viewer of page {page} failed: {error:#}");
+            Redirect::to(&format!("{url}#viewerCheckFailed"))
+        }
+        Err(ViewerSignInError::Failed(error)) => {
+            warn!(
+                "signing in with {} as a viewer of page {page} failed: {error:#}",
+                platform.title()
+            );
+            Redirect::to(&format!("{url}#viewerSignInFailed={}", platform.name()))
         }
     }
 }
@@ -895,6 +955,7 @@ struct AccountResponse {
     premium: bool,
     moderating: Vec<ModeratingResponse>,
     moderators: Vec<ChannelModerator>,
+    kick_moderators: Vec<KickModerator>,
 }
 
 #[derive(Serialize)]
@@ -915,9 +976,42 @@ fn public_identity(account: &Account, platform: Platform) -> Option<PublicIdenti
 #[derive(Serialize)]
 struct ModeratingResponse {
     id: String,
+    platform: Platform,
     name: String,
     login: String,
     avatar: Option<String>,
+}
+
+fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse> {
+    let twitch = account
+        .twitch_id()
+        .map(|twitch| api.accounts.moderated(twitch))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|streamer| (Platform::Twitch, streamer));
+    let kick = account
+        .kick_id()
+        .map(|kick| api.accounts.kick_moderated(kick))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|streamer| (Platform::Kick, streamer));
+    let mut moderating: Vec<ModeratingResponse> = Vec::new();
+    for (platform, streamer) in twitch.chain(kick) {
+        if moderating.iter().any(|known| known.id == streamer.page.id) {
+            continue;
+        }
+        let Some(channel) = streamer.identity(platform) else {
+            continue;
+        };
+        moderating.push(ModeratingResponse {
+            id: streamer.page.id.clone(),
+            platform,
+            name: channel.name.clone(),
+            login: channel.login.clone(),
+            avatar: channel.avatar.clone(),
+        });
+    }
+    moderating
 }
 
 #[derive(Serialize)]
@@ -981,6 +1075,10 @@ fn twitch_needed() -> (StatusCode, String) {
     (StatusCode::CONFLICT, "Link Twitch first.".to_string())
 }
 
+fn kick_needed() -> (StatusCode, String) {
+    (StatusCode::CONFLICT, "Link Kick first.".to_string())
+}
+
 fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
     let signed_in = signed_in(api, headers)?;
     if !is_admin(api, &signed_in.account) {
@@ -1018,22 +1116,87 @@ fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
             .as_deref()
             .map(|twitch| api.accounts.channel_moderators(twitch))
             .unwrap_or_default(),
-        moderating: twitch
-            .as_deref()
-            .map(|twitch| api.accounts.moderated(twitch))
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|streamer| {
-                let channel = streamer.twitch()?;
-                Some(ModeratingResponse {
-                    id: streamer.page.id.clone(),
-                    name: channel.name.clone(),
-                    login: channel.login.clone(),
-                    avatar: channel.avatar.clone(),
-                })
-            })
-            .collect(),
+        kick_moderators: account
+            .kick_id()
+            .map(|kick| api.accounts.kick_moderators(kick))
+            .unwrap_or_default(),
+        moderating: moderating(api, &account),
     })
+}
+
+#[derive(Deserialize)]
+struct KickModeratorRequest {
+    username: String,
+}
+
+async fn handle_account_kick_moderator_add(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<KickModeratorRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let kick = account.kick_id().ok_or_else(kick_needed)?;
+    let username = request
+        .username
+        .trim()
+        .trim_start_matches('@')
+        .to_lowercase();
+    let username = username.as_str();
+    if username.is_empty()
+        || username.len() > 50
+        || !username
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "_-".contains(character))
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Enter a Kick username.".to_string(),
+        ));
+    }
+    let moderator = match api.auth.kick_user(username).await {
+        Ok(Some(moderator)) => moderator,
+        Ok(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                format!("There is no Kick user named {username}."),
+            ));
+        }
+        Err(error) => {
+            warn!("looking up Kick user {username} for {id} failed: {error:#}");
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                "Couldn't look the Kick user up. Try again.".to_string(),
+            ));
+        }
+    };
+    if moderator.id == kick {
+        return Err((
+            StatusCode::CONFLICT,
+            "That is your own Kick account.".to_string(),
+        ));
+    }
+    api.accounts
+        .add_kick_moderator(kick, &moderator)
+        .map_err(account_error)?;
+    info!(
+        "{id} added Kick moderator {} ({})",
+        moderator.id, moderator.login
+    );
+    Ok(account_response(&api, account))
+}
+
+async fn handle_account_kick_moderator_remove(
+    State(api): State<Arc<Api>>,
+    Path(moderator): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let kick = account.kick_id().ok_or_else(kick_needed)?;
+    api.accounts
+        .remove_kick_moderator(kick, &moderator)
+        .map_err(account_error)?;
+    info!("{id} removed Kick moderator {moderator}");
+    Ok(account_response(&api, account))
 }
 
 #[derive(Deserialize)]
@@ -1072,6 +1235,10 @@ fn account_error(error: AccountError) -> (StatusCode, String) {
         AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
         AccountError::DeviceOff => (StatusCode::CONFLICT, "the device is off".to_string()),
         AccountError::UnknownModerator => (StatusCode::NOT_FOUND, "no such moderator".to_string()),
+        AccountError::TooManyModerators => (
+            StatusCode::CONFLICT,
+            "at most 50 Kick moderators".to_string(),
+        ),
         AccountError::IdentityTaken(platform) => (
             StatusCode::CONFLICT,
             format!(
@@ -1235,6 +1402,8 @@ struct Recent {
     tier: Option<u8>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     moderator: bool,
+    #[serde(rename = "kickSubscriber", skip_serializing_if = "std::ops::Not::not")]
+    kick_subscriber: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<&'static str>,
     status: &'static str,
@@ -1284,6 +1453,7 @@ fn recent(
                 _ => None,
             };
             let moderator = order.payee == Payee::Moderator;
+            let kick_subscriber = order.payee == Payee::Kick;
             let provider = match order.payee {
                 Payee::PayPal(_) | Payee::Stripe(_) if owner => Some(order.payee.slug()),
                 _ => None,
@@ -1309,6 +1479,7 @@ fn recent(
                 spins,
                 tier,
                 moderator,
+                kick_subscriber,
                 provider,
                 status: match &delivery {
                     None => "delivered",
@@ -1634,6 +1805,7 @@ async fn handle_moderator_account(
         admin: false,
         premium: streamer_is_premium(&api, &id),
         moderators: Vec::new(),
+        kick_moderators: Vec::new(),
         moderating: Vec::new(),
     }))
 }
@@ -2069,7 +2241,7 @@ fn sub_tiers(api: &Api, id: &str, tiers: Option<&Tiers>) -> Option<Tiers> {
         .filter(|_| {
             api.accounts
                 .of_page(id)
-                .is_some_and(|account| account.twitch().is_some())
+                .is_some_and(|account| account.twitch().is_some() || account.kick().is_some())
         })
         .cloned()
 }
@@ -2462,15 +2634,21 @@ fn viewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<Viewer, Failure> {
         .and_then(|value| value.strip_prefix("Bearer "))
         .and_then(|session| api.auth.viewer_of(session))
         .filter(|viewer| viewer.page == id)
+        .filter(|viewer| {
+            api.accounts
+                .of_page(id)
+                .is_some_and(|account| account.identity(viewer.platform).is_some())
+        })
         .ok_or(failure(
             "not-signed-in",
             StatusCode::UNAUTHORIZED,
-            "Sign in with Twitch again.",
+            "Sign in again.",
         ))
 }
 
 #[derive(Serialize)]
 struct AllowanceResponse {
+    platform: Platform,
     name: String,
     tier: Option<u8>,
     allowance: u32,
@@ -2489,8 +2667,9 @@ fn allowance_response(
     Ok(Json(AllowanceResponse {
         left: api
             .allowances
-            .left(id, &viewer.id, kind.name(), allowance)
+            .left(id, &viewer.key(), kind.name(), allowance)
             .map_err(not_saved)?,
+        platform: viewer.platform,
         name: viewer.name,
         tier: viewer.tier,
         allowance,
@@ -2608,6 +2787,15 @@ struct Subscriber {
     allowance: u32,
 }
 
+impl Subscriber {
+    fn payee(&self) -> Payee {
+        match self.viewer.platform {
+            Platform::Twitch => Payee::Twitch(self.tier),
+            Platform::Kick => Payee::Kick,
+        }
+    }
+}
+
 fn subscriber(
     api: &Api,
     headers: &HeaderMap,
@@ -2615,15 +2803,13 @@ fn subscriber(
     kind: SubscriberKind,
     tiers: Option<&Tiers>,
 ) -> Result<Subscriber, Failure> {
-    let (off, not_subscribed, excluded) = match kind {
+    let (off, excluded) = match kind {
         SubscriberKind::Song => (
             "The streamer no longer takes song requests from subscribers. Reload the page.",
-            "Only Twitch subscribers of this streamer can request songs.",
             "request songs",
         ),
         SubscriberKind::Spin => (
             "The streamer no longer lets subscribers spin the wheel. Reload the page.",
-            "Only Twitch subscribers of this streamer can spin the wheel.",
             "spin the wheel",
         ),
     };
@@ -2632,19 +2818,25 @@ fn subscriber(
     let tier = viewer.tier.ok_or(failure(
         "not-subscribed",
         StatusCode::FORBIDDEN,
-        not_subscribed,
+        &format!(
+            "Only {} subscribers of this streamer can {excluded}.",
+            viewer.platform.title()
+        ),
     ))?;
     let allowance = tiers.allowance(Some(tier));
     if allowance == 0 {
         return Err(failure(
             "tier-excluded",
             StatusCode::FORBIDDEN,
-            &format!("Tier {tier} subscribers can't {excluded} here."),
+            &match viewer.platform {
+                Platform::Twitch => format!("Tier {tier} subscribers can't {excluded} here."),
+                Platform::Kick => format!("Kick subscribers can't {excluded} here."),
+            },
         ));
     }
     let left = api
         .allowances
-        .left(id, &viewer.id, kind.name(), allowance)
+        .left(id, &viewer.key(), kind.name(), allowance)
         .map_err(not_saved)?;
     if left == 0 {
         return Err(kind.used_up());
@@ -2676,7 +2868,7 @@ fn queue_for_subscriber(
         .allowances
         .take(
             &order.streamer,
-            &subscriber.viewer.id,
+            &subscriber.viewer.key(),
             kind.name(),
             subscriber.allowance,
             |connection| {
@@ -2688,8 +2880,9 @@ fn queue_for_subscriber(
         .ok_or(kind.used_up())?;
     api.deliveries.notify();
     info!(
-        "queued {:?} for tier {} subscriber {:?} in request {request_id} for remote control streamer {}",
+        "queued {:?} for {} tier {} subscriber {:?} in request {request_id} for remote control streamer {}",
         order.description(),
+        subscriber.viewer.platform.title(),
         subscriber.tier,
         order.user,
         order.streamer
@@ -2724,7 +2917,7 @@ async fn subscriber_song(
             message,
         },
         user: song.user,
-        payee: Payee::Twitch(subscriber.tier),
+        payee: subscriber.payee(),
         price: 0,
         currency: settings.currency().to_string(),
     };
@@ -2749,7 +2942,7 @@ fn subscriber_spin(
             message: viewer_message(request.message)?,
         },
         user: user_name(Some(subscriber.viewer.name.clone()), "Someone"),
-        payee: Payee::Twitch(subscriber.tier),
+        payee: subscriber.payee(),
         price: 0,
         currency: settings.currency().to_string(),
     };
@@ -2759,12 +2952,17 @@ fn subscriber_spin(
 
 fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = signed_in(api, headers)?;
+    let streamer = || api.accounts.of_page(id);
     let allowed = signed_in.account.page.id == id
         || signed_in.account.twitch_id().is_some_and(|moderator| {
-            api.accounts
-                .of_page(id)
+            streamer()
                 .and_then(|streamer| streamer.twitch_id().map(str::to_string))
                 .is_some_and(|broadcaster| api.accounts.moderates(moderator, &broadcaster))
+        })
+        || signed_in.account.kick_id().is_some_and(|moderator| {
+            streamer()
+                .and_then(|streamer| streamer.kick_id().map(str::to_string))
+                .is_some_and(|broadcaster| api.accounts.kick_moderates(moderator, &broadcaster))
         });
     if !allowed {
         return Err(failure(
@@ -3008,7 +3206,9 @@ async fn create_order(api: &Api, order: Order) -> Result<OrderResponse, Failure>
                     }),
                 ))
             }
-            Payee::Twitch(_) | Payee::Moderator => anyhow::bail!("free requests are not paid"),
+            Payee::Twitch(_) | Payee::Kick | Payee::Moderator => {
+                anyhow::bail!("free requests are not paid")
+            }
         }
     };
     let (order_id, stripe) = created.await.map_err(|error| {
@@ -3153,7 +3353,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
     let available = match &order.payee {
         Payee::PayPal(_) => api.paypal.is_some(),
         Payee::Stripe(_) => api.stripe.is_some(),
-        Payee::Twitch(_) | Payee::Moderator => false,
+        Payee::Twitch(_) | Payee::Kick | Payee::Moderator => false,
     };
     if !available {
         return Err(payment_unavailable());
@@ -3188,7 +3388,7 @@ async fn capture_at_provider(
             let stripe = api.stripe.as_ref().ok_or_else(payment_unavailable)?;
             stripe.capture(order_id, order, account).await
         }
-        Payee::Twitch(_) | Payee::Moderator => return Err(payment_unavailable()),
+        Payee::Twitch(_) | Payee::Kick | Payee::Moderator => return Err(payment_unavailable()),
     };
     let result = match captured {
         Ok(()) | Err(CaptureError::AlreadyCaptured) => {
@@ -3271,7 +3471,7 @@ async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentS
                 .await
         }
         Payee::Stripe(account) => api.stripe.as_ref()?.status(order_id, order, account).await,
-        Payee::Twitch(_) | Payee::Moderator => return None,
+        Payee::Twitch(_) | Payee::Kick | Payee::Moderator => return None,
     };
     let status = match status {
         Ok(status) => status,
@@ -7218,7 +7418,7 @@ mod tests {
         let third = third.as_str();
         assert_eq!(
             sign_in(third).await,
-            "https://moblin.app/twitch/third#viewerSignInFailed"
+            "https://moblin.app/twitch/third#viewerSignInFailed=twitch"
         );
         let response = client
             .get(format!("http://{address}/auth/twitch/login?page={id}"))
@@ -7243,7 +7443,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/twitch/erik#viewerSignInFailed"
+            "https://moblin.app/twitch/erik#viewerSignInFailed=twitch"
         );
         let response = client
             .get(format!("http://{address}/auth/twitch/login?page={id}"))
@@ -7268,7 +7468,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/twitch/erik#viewerSignInFailed"
+            "https://moblin.app/twitch/erik#viewerSignInFailed=twitch"
         );
         assert_eq!(
             location(
@@ -7346,6 +7546,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let tier3 = api.auth.viewer_session(
+            Platform::Twitch,
             "31".to_string(),
             "Viewer 31".to_string(),
             id.clone(),
@@ -7387,6 +7588,7 @@ mod tests {
         };
         let viewer = |viewer: &str, page: &str, tier: Option<u8>| {
             api.auth.viewer_session(
+                Platform::Twitch,
                 viewer.to_string(),
                 format!("Viewer {viewer}"),
                 page.to_string(),
@@ -7439,7 +7641,7 @@ mod tests {
             status(&tier1).await,
             (
                 StatusCode::OK,
-                json!({"name": "Viewer 11", "tier": 1, "allowance": 1, "left": 1})
+                json!({"platform": "twitch", "name": "Viewer 11", "tier": 1, "allowance": 1, "left": 1})
             )
         );
         assert_eq!(status("garbage").await.0, StatusCode::UNAUTHORIZED);
@@ -7553,6 +7755,7 @@ mod tests {
         let (session, key, id) = streamer(&address, &api).await;
         let viewer = |viewer: &str, tier: Option<u8>| {
             api.auth.viewer_session(
+                Platform::Twitch,
                 viewer.to_string(),
                 format!("Viewer {viewer}"),
                 id.clone(),
@@ -7639,7 +7842,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             upgraded,
-            json!({"name": "Viewer 11", "tier": 3, "allowance": 2, "left": 1})
+            json!({"platform": "twitch", "name": "Viewer 11", "tier": 3, "allowance": 2, "left": 1})
         );
         let status: Value = client
             .get(format!("http://{address}/pages/{id}/spin/subscriber"))
@@ -7652,7 +7855,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             status,
-            json!({"name": "Viewer 31", "tier": 3, "allowance": 2, "left": 2})
+            json!({"platform": "twitch", "name": "Viewer 31", "tier": 3, "allowance": 2, "left": 2})
         );
         let recent: Value = client
             .get(format!("http://{address}/account/recent?kind=spin"))
@@ -8029,6 +8232,25 @@ mod tests {
                 "name": "",
                 "profile_picture": "http://files.kick.com/other.png",
             })),
+            "kick-sub" => Some(json!({"user_id": 777, "name": "Sub"})),
+            "kick-lapsed" => Some(json!({"user_id": 778, "name": "Lapsed"})),
+            "kick-broken" => Some(json!({"user_id": 779, "name": "Broken"})),
+            "kick-mod" => Some(json!({"user_id": 9, "name": "Robert"})),
+            _ => None,
+        };
+        let channel_of = |token: &str| match token {
+            "kick-a" => Some((json!(123), "KickErik")),
+            "kick-b" => Some((json!(456), "other-kick")),
+            "kick-sub" => Some((json!(777), "subbed")),
+            "kick-lapsed" => Some((json!(778), "lapsed")),
+            "kick-broken" => Some((json!(779), "broken")),
+            "kick-mod" => Some((json!(9), "robert")),
+            _ => None,
+        };
+        let slug_of = |slug: &str| match slug {
+            "bob" => Some((json!(9), "bob")),
+            "robert" => Some((json!(9), "robert")),
+            "kickerik" => Some((json!(123), "KickErik")),
             _ => None,
         };
         let bearer = |headers: &HeaderMap| {
@@ -8039,6 +8261,14 @@ mod tests {
                 .unwrap()
                 .to_string()
         };
+        let channel_json = |(id, slug): (Value, &str)| {
+            json!({
+                "broadcaster_user_id": id,
+                "slug": slug,
+                "channel_description": "",
+                "stream": {"is_live": false},
+            })
+        };
         let router = Router::new()
             .route(
                 "/token",
@@ -8046,9 +8276,25 @@ mod tests {
                     let challenge = fake.challenge.clone();
                     let tokens = fake.tokens.clone();
                     move |axum::Form(form): axum::Form<HashMap<String, String>>| async move {
+                        tokens.lock().unwrap().push(json!(form));
+                        if form["grant_type"] == "client_credentials" {
+                            if form["client_id"] != "kid" || form["client_secret"] != "ksecret" {
+                                return (
+                                    StatusCode::UNAUTHORIZED,
+                                    Json(json!({"error": "invalid_client"})),
+                                );
+                            }
+                            return (
+                                StatusCode::OK,
+                                Json(json!({
+                                    "access_token": "app",
+                                    "token_type": "Bearer",
+                                    "expires_in": 3600,
+                                })),
+                            );
+                        }
                         let expected = challenge.lock().unwrap().clone().unwrap();
                         let verifier = &form["code_verifier"];
-                        tokens.lock().unwrap().push(json!(form));
                         if BASE64_URL_SAFE_NO_PAD.encode(ring::digest::digest(
                             &ring::digest::SHA256,
                             verifier.as_bytes(),
@@ -8089,20 +8335,57 @@ mod tests {
             )
             .route(
                 "/channels",
-                get(move |headers: HeaderMap| async move {
-                    let (id, slug) = match bearer(&headers).as_str() {
-                        "kick-a" => (json!(123), "KickErik"),
-                        "kick-b" => (json!(456), "other-kick"),
-                        _ => return StatusCode::UNAUTHORIZED.into_response(),
-                    };
-                    Json(json!({"data": [{
-                        "broadcaster_user_id": id,
-                        "slug": slug,
-                        "channel_description": "",
-                        "stream": {"is_live": false},
-                    }], "message": "OK"}))
-                    .into_response()
-                }),
+                get(
+                    move |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
+                        let token = bearer(&headers);
+                        if let Some(slug) = query.get("slug") {
+                            if token != "app" {
+                                return StatusCode::UNAUTHORIZED.into_response();
+                            }
+                            if slug == "broken" {
+                                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                            }
+                            let data: Vec<Value> =
+                                slug_of(slug).map(channel_json).into_iter().collect();
+                            return Json(json!({"data": data, "message": "OK"})).into_response();
+                        }
+                        let Some(channel) = channel_of(&token) else {
+                            return StatusCode::UNAUTHORIZED.into_response();
+                        };
+                        Json(json!({"data": [channel_json(channel)], "message": "OK"}))
+                            .into_response()
+                    },
+                ),
+            )
+            .route(
+                "/api/v2/channels/{streamer}/users/{viewer}",
+                get(
+                    |Path((streamer, viewer)): Path<(String, String)>| async move {
+                        if streamer != "kickerik" {
+                            return StatusCode::NOT_FOUND.into_response();
+                        }
+                        let badges = match viewer.as_str() {
+                            "subbed" => json!([
+                                {"type": "vip", "text": "VIP", "active": true},
+                                {"type": "subscriber", "text": "Subscriber", "count": 3, "active": true},
+                            ]),
+                            "lapsed" => json!([
+                                {"type": "subscriber", "text": "Subscriber", "count": 1, "active": false},
+                            ]),
+                            "other-kick" => json!([]),
+                            "broken" => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                            _ => return StatusCode::NOT_FOUND.into_response(),
+                        };
+                        Json(json!({
+                            "id": 1,
+                            "username": viewer,
+                            "slug": viewer,
+                            "is_moderator": false,
+                            "badges": badges,
+                        }))
+                        .into_response()
+                    },
+                ),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -8118,6 +8401,7 @@ mod tests {
             token_url: format!("{kick}/token"),
             users_url: format!("{kick}/users"),
             channels_url: format!("{kick}/channels"),
+            channel_users_url: format!("{kick}/api/v2/channels"),
         }
     }
 
@@ -8227,6 +8511,344 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn kick_subscribers_get_the_tier_1_allowance() {
+        let (kick, fake) = start_kick().await;
+        let (address, api) = start_api_with(None, None, None, Some(kick_app(&kick)), None).await;
+        let flow = SignInFlow::new(&address, fake.clone());
+        let client = reqwest::Client::new();
+        let session = session_of(&flow.sign_in("kick", "kick-a").await);
+        let account = account_of(&address, &session).await;
+        let id = account["settings"]["id"].as_str().unwrap().to_string();
+        let key = key_of(&account);
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({
+                "subSongs": {"tier1": 2, "tier2": 5, "tier3": 5},
+                "subSpins": {"tier1": 0, "tier2": 1, "tier3": 1},
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let twitch_only = create_account(&api, "2", "Other", "other").page.id;
+        for page in ["unknown", twitch_only.as_str()] {
+            let response = client
+                .get(format!("http://{address}/auth/kick/login?page={page}"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+        let response = client
+            .get(format!("http://{address}/auth/twitch/login?page={id}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let viewer_sign_in = async |code: &str| {
+            let (query, cookie) = flow.start(&format!("/auth/kick/login?page={id}")).await;
+            assert_eq!(query["scope"], "user:read channel:read");
+            flow.finish("kick", code, &query["state"], &cookie).await
+        };
+        let viewer_of = |page: &str| {
+            page.strip_prefix("https://moblin.app/kick/kickerik#viewer=")
+                .unwrap_or_else(|| panic!("{page}"))
+                .to_string()
+        };
+        let subscriber = viewer_of(&viewer_sign_in("kick-sub").await);
+        let viewer = api.auth.viewer_of(&subscriber).unwrap();
+        assert_eq!(
+            (
+                viewer.platform,
+                viewer.id.as_str(),
+                viewer.name.as_str(),
+                viewer.page.as_str(),
+                viewer.tier
+            ),
+            (Platform::Kick, "777", "Sub", id.as_str(), Some(1))
+        );
+        assert_eq!(
+            api.accounts.account_of_identity(Platform::Kick, "777"),
+            None
+        );
+        assert_eq!(api.auth.session_of(&subscriber), None);
+        let allowance = async |session: &str, kind: &str| {
+            let response = client
+                .get(format!("http://{address}/pages/{id}/{kind}/subscriber"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap();
+            (
+                response.status(),
+                response.json::<Value>().await.unwrap_or_default(),
+            )
+        };
+        assert_eq!(
+            allowance(&subscriber, "songs").await,
+            (
+                StatusCode::OK,
+                json!({"platform": "kick", "name": "Sub", "tier": 1, "allowance": 2, "left": 2})
+            )
+        );
+        assert_eq!(
+            allowance(&subscriber, "spin").await,
+            (
+                StatusCode::OK,
+                json!({"platform": "kick", "name": "Sub", "tier": 1, "allowance": 0, "left": 0})
+            )
+        );
+        let not_subscribed = viewer_of(&viewer_sign_in("kick-b").await);
+        assert_eq!(api.auth.viewer_of(&not_subscribed).unwrap().tier, None);
+        let lapsed = viewer_of(&viewer_sign_in("kick-lapsed").await);
+        assert_eq!(api.auth.viewer_of(&lapsed).unwrap().tier, None);
+        assert_eq!(
+            viewer_sign_in("kick-broken").await,
+            "https://moblin.app/kick/kickerik#viewerCheckFailed"
+        );
+        assert_eq!(
+            viewer_sign_in("unknown").await,
+            "https://moblin.app/kick/kickerik#viewerSignInFailed=kick"
+        );
+        let (query, _) = flow.start(&format!("/auth/kick/login?page={id}")).await;
+        assert_eq!(
+            flow.finish(
+                "kick",
+                "kick-sub",
+                &query["state"],
+                "moblin_sign_in_state=other"
+            )
+            .await,
+            "https://moblin.app/kick/kickerik#viewerSignInFailed=kick"
+        );
+        let response = send_subscriber_song(&address, &id, &not_subscribed, LINK).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Only Kick subscribers of this streamer can request songs."
+        );
+        let response = client
+            .post(format!("http://{address}/pages/{id}/spin/subscriber"))
+            .bearer_auth(&subscriber)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Kick subscribers can't spin the wheel here."
+        );
+        let mut socket = connect(&address, &key).await;
+        let response =
+            subscriber_song_found(&mut socket, &address, &id, &subscriber, Some(200)).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 1}));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"]["music"]["command"]["add"]["user"],
+            "Sub"
+        );
+        answer(&mut socket, &request, music(json!([]))).await;
+        wait_until_added(&api).await;
+        assert_eq!(allowance(&subscriber, "songs").await.1["left"], 1);
+        let recent: Value = client
+            .get(format!("http://{address}/account/recent?kind=song"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(recent["items"][0]["user"], "Sub");
+        assert_eq!(recent["items"][0]["kickSubscriber"], true);
+        assert_eq!(recent["items"][0]["amount"], 0);
+        assert!(recent["items"][0].get("tier").is_none());
+        assert!(recent["items"][0].get("provider").is_none());
+        assert_eq!(api.allowances.left(&id, "777", "song", 2).unwrap(), 2);
+        assert_eq!(api.allowances.left(&id, "kick:777", "song", 2).unwrap(), 1);
+        let twitch_viewer = api.auth.viewer_session(
+            Platform::Twitch,
+            "777".to_string(),
+            "Sub".to_string(),
+            id.clone(),
+            Some(1),
+        );
+        assert_eq!(
+            allowance(&twitch_viewer, "songs").await.0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert!(
+            api.counters
+                .all()
+                .iter()
+                .any(|counter| counter.name == "subSongs" && counter.total == 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn kick_moderators_are_an_allow_list() {
+        let (kick, fake) = start_kick().await;
+        let (address, api) = start_api_with(None, None, None, Some(kick_app(&kick)), None).await;
+        let flow = SignInFlow::new(&address, fake.clone());
+        let client = reqwest::Client::new();
+        let session = session_of(&flow.sign_in("kick", "kick-a").await);
+        let id = account_of(&address, &session).await["settings"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let add = async |session: &str, username: &str| {
+            client
+                .post(format!("http://{address}/account/moderators/kick"))
+                .bearer_auth(session)
+                .json(&json!({"username": username}))
+                .send()
+                .await
+                .unwrap()
+        };
+        let remove = async |session: &str, moderator: &str| {
+            client
+                .post(format!(
+                    "http://{address}/account/moderators/kick/{moderator}/remove"
+                ))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+        };
+        let dashboard = async |session: &str| {
+            client
+                .get(format!("http://{address}/account/pages/{id}"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+        };
+        create_account(&api, "2", "Other", "other");
+        let twitch_only = api.auth.session("2", 0);
+        let response = add(&twitch_only, "bob").await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.text().await.unwrap(), "Link Kick first.");
+        let response = remove(&twitch_only, "9").await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let response = add("", "bob").await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        for (username, status, text) in [
+            ("", StatusCode::BAD_REQUEST, "Enter a Kick username."),
+            (
+                "bad name!",
+                StatusCode::BAD_REQUEST,
+                "Enter a Kick username.",
+            ),
+            (
+                "nobody",
+                StatusCode::NOT_FOUND,
+                "There is no Kick user named nobody.",
+            ),
+            (
+                "broken",
+                StatusCode::BAD_GATEWAY,
+                "Couldn't look the Kick user up. Try again.",
+            ),
+            (
+                "KickErik",
+                StatusCode::CONFLICT,
+                "That is your own Kick account.",
+            ),
+        ] {
+            let response = add(&session, username).await;
+            assert_eq!(response.status(), status, "{username}");
+            assert_eq!(response.text().await.unwrap(), text);
+        }
+        assert_eq!(
+            account_of(&address, &session).await["kickModerators"],
+            json!([])
+        );
+        let response = add(&session, " @Bob ").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let account: Value = response.json().await.unwrap();
+        assert_eq!(
+            account["kickModerators"],
+            json!([{"id": "9", "login": "bob", "name": "bob"}])
+        );
+        let token = fake.tokens.lock().unwrap().last().unwrap().clone();
+        assert_eq!(token["grant_type"], "client_credentials");
+        assert_eq!(token["client_id"], "kid");
+        assert_eq!(token["client_secret"], "ksecret");
+        let response = add(&session, "bob").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["kickModerators"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let other = session_of(&flow.sign_in("kick", "kick-b").await);
+        assert_eq!(dashboard(&other).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(account_of(&address, &other).await["moderating"], json!([]));
+        let moderator = session_of(&flow.sign_in("kick", "kick-mod").await);
+        let account = account_of(&address, &moderator).await;
+        assert_eq!(account["kick"]["login"], "robert");
+        assert_eq!(
+            account["moderating"],
+            json!([{
+                "id": id,
+                "platform": "kick",
+                "name": "KickErik",
+                "login": "kickerik",
+                "avatar": "https://files.kick.com/erik.png",
+            }])
+        );
+        assert_eq!(
+            account_of(&address, &session).await["kickModerators"],
+            json!([{"id": "9", "login": "robert", "name": "Robert"}])
+        );
+        let response = dashboard(&moderator).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let streamer: Value = response.json().await.unwrap();
+        assert_eq!(streamer["kick"]["login"], "kickerik");
+        assert_eq!(streamer["twitch"], Value::Null);
+        assert_eq!(streamer["kickModerators"], json!([]));
+        assert_eq!(streamer["moderators"], json!([]));
+        let response = client
+            .get(format!(
+                "http://{address}/account/pages/{id}/recent?kind=song"
+            ))
+            .bearer_auth(&moderator)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = client
+            .post(format!("http://{address}/account/pages/{id}/settings"))
+            .bearer_auth(&moderator)
+            .json(&json!({"message": "Hi from the mod"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
+        assert_eq!(profile["message"], "Hi from the mod");
+        let response = remove(&session, "9").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["kickModerators"],
+            json!([])
+        );
+        assert_eq!(dashboard(&moderator).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            account_of(&address, &moderator).await["moderating"],
+            json!([])
+        );
+        let response = remove(&session, "9").await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.text().await.unwrap(), "no such moderator");
+    }
+
+    #[tokio::test]
     async fn kick_streamers_sign_in_with_pkce() {
         let (kick, fake) = start_kick().await;
         let (address, api) = start_api_with(None, None, None, Some(kick_app(&kick)), None).await;
@@ -8298,9 +8920,15 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
-        assert_eq!(songs["subSongs"], Value::Null);
+        assert_eq!(
+            songs["subSongs"],
+            json!({"tier1": 1, "tier2": 2, "tier3": 3})
+        );
         let (_, spin) = get_json(&address, &format!("/pages/{id}/spin")).await;
-        assert_eq!(spin["subSpins"], Value::Null);
+        assert_eq!(
+            spin["subSpins"],
+            json!({"tier1": 1, "tier2": 2, "tier3": 3})
+        );
         let response = client
             .get(format!("http://{address}/auth/twitch/login?page={id}"))
             .send()
@@ -8478,7 +9106,7 @@ mod tests {
         let (status, _) = get_json(&address, "/pages/twitch/erik").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
-        assert_eq!(songs["subSongs"], Value::Null);
+        assert_eq!(songs["subSongs"]["tier1"], 1);
         assert_eq!(account_of(&address, &session).await["settings"]["id"], id);
         let fresh = session_of(&flow.sign_in("twitch", "c").await);
         let fresh_account = api.auth.session_of(&fresh).unwrap().account;
@@ -9362,7 +9990,7 @@ mod tests {
         settings(true).await;
         assert_eq!(
             moderating(&mod1).await,
-            json!([{"id": id, "name": "Erik", "login": "erik", "avatar": null}])
+            json!([{"id": id, "platform": "twitch", "name": "Erik", "login": "erik", "avatar": null}])
         );
         assert_eq!(moderating(&viewer1).await, json!([]));
         let response = command(&viewer1, json!({"command": "clear"})).await;

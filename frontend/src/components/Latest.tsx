@@ -84,9 +84,11 @@ export function Latest(props: {
                         <span class="text-ink-2">
                           {item.moderator
                             ? t("Moderator")
-                            : item.tier
-                              ? t("Tier {tier} subscriber", { tier: item.tier })
-                              : formatPrice({ price: item.amount, currency: item.currency })}
+                            : item.kickSubscriber
+                              ? t("Kick subscriber")
+                              : item.tier
+                                ? t("Tier {tier} subscriber", { tier: item.tier })
+                                : formatPrice({ price: item.amount, currency: item.currency })}
                           <Show when={item.provider}>
                             {(provider) => (
                               <span class="text-muted">

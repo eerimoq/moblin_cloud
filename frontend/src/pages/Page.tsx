@@ -39,6 +39,8 @@ import {
   orderSpin,
   orderTip,
   pageImageUrl,
+  platformNames,
+  platforms,
   providerName,
   spinsText,
   requestSubscriberSong,
@@ -115,10 +117,18 @@ function takeSection(): Section {
   }
 }
 
-function takeViewerSignIn(): { viewer: string | null; failed: boolean; section: Section } {
+function takeViewerSignIn(): { viewer: string | null; failed: string | null; section: Section } {
   const hash = location.hash.slice(1);
-  const viewer = new URLSearchParams(hash).get("viewer");
-  const failed = hash === "viewerSignInFailed";
+  const params = new URLSearchParams(hash);
+  const viewer = params.get("viewer");
+  const failedWith = params.get("viewerSignInFailed");
+  const failed = params.has("viewerSignInFailed")
+    ? t("Signing in with {platform} failed. Try again.", {
+        platform: platformNames[failedWith === "kick" ? "kick" : "twitch"],
+      })
+    : hash === "viewerCheckFailed"
+      ? t("Couldn't check your Kick subscription, try again.")
+      : null;
   const section = viewer || failed ? takeSection() : "songs";
   if (viewer || failed) {
     history.replaceState(null, "", `${location.pathname}${location.search}#${section}`);
@@ -126,12 +136,15 @@ function takeViewerSignIn(): { viewer: string | null; failed: boolean; section: 
   return { viewer, failed, section };
 }
 
-function signInAsViewer(id: string, section: Section) {
+function signInAsViewer(platform: Platform, id: string, section: Section) {
   try {
     sessionStorage.setItem(sectionKey, section);
   } catch {}
-  location.href = viewerSignInUrl(id);
+  location.href = viewerSignInUrl(platform, id);
 }
+
+const platformIconClass = (platform: Platform) =>
+  platform === "twitch" ? "size-5 text-twitch" : "size-5 text-kick";
 
 function errorText(error: unknown) {
   return error instanceof BackendError && error.message
@@ -549,15 +562,16 @@ function CheerCard(props: { title: string; text: string; onClose: () => void }) 
   );
 }
 
-function TwitchBox(props: {
+function SubscriberBox(props: {
   kind: "song" | "spin";
   tiers: Tiers;
+  platforms: Platform[];
   allowance: Allowance | null;
   signedIn: boolean;
   paid: boolean;
   disabled: boolean;
   result: Result | null;
-  onSignIn: () => void;
+  onSignIn: (platform: Platform) => void;
   onSignOut: () => void;
   onRequest: () => void;
 }) {
@@ -572,17 +586,42 @@ function TwitchBox(props: {
     </button>
   );
   const offer = () => {
-    const values = {
-      counts: tiers()
-        .map((tier) => tier.count)
-        .join(" / "),
-      tiers: tiers()
-        .map((tier) => tier.tier)
-        .join(" / "),
-    };
-    return song()
-      ? t("{counts} songs a month for tier {tiers}", values)
-      : t("{counts} spins a month for tier {tiers}", values);
+    const lines: string[] = [];
+    if (props.platforms.includes("twitch")) {
+      const values = {
+        counts: tiers()
+          .map((tier) => tier.count)
+          .join(" / "),
+        tiers: tiers()
+          .map((tier) => tier.tier)
+          .join(" / "),
+      };
+      lines.push(
+        song()
+          ? t("{counts} songs a month for tier {tiers}", values)
+          : t("{counts} spins a month for tier {tiers}", values),
+      );
+    }
+    if (props.platforms.includes("kick") && props.tiers.tier1 > 0) {
+      const values = { count: props.tiers.tier1 };
+      lines.push(
+        song()
+          ? t("{count} songs a month for Kick subscribers", values)
+          : t("{count} spins a month for Kick subscribers", values),
+      );
+    }
+    return (
+      <For each={lines}>
+        {(line, index) => (
+          <>
+            <Show when={index() > 0}>
+              <br />
+            </Show>
+            {line}
+          </>
+        )}
+      </For>
+    );
   };
 
   return (
@@ -593,7 +632,14 @@ function TwitchBox(props: {
             {(current) => (
               <Switch fallback={offer()}>
                 <Match when={current().tier === null}>
-                  {t("You are not subscribed to this streamer on Twitch.")}
+                  {current().platform === "kick"
+                    ? t("You are not subscribed to this streamer on Kick.")
+                    : t("You are not subscribed to this streamer on Twitch.")}
+                </Match>
+                <Match when={current().allowance === 0 && current().platform === "kick"}>
+                  {song()
+                    ? t("Kick subscribers can't request songs here.")
+                    : t("Kick subscribers can't spin the wheel here.")}
                 </Match>
                 <Match when={current().allowance === 0}>
                   {song()
@@ -636,14 +682,20 @@ function TwitchBox(props: {
         <ResultLine result={props.result} />
       </Show>
       <Show when={!props.signedIn}>
-        <button
-          type="button"
-          class={`${ghostButtonClass} self-center`}
-          onClick={() => props.onSignIn()}
-        >
-          <Icon name="twitch" class="size-5 text-twitch" />
-          {t("Sign in with Twitch")}
-        </button>
+        <div class="flex flex-wrap justify-center gap-3">
+          <For each={props.platforms}>
+            {(platform) => (
+              <button
+                type="button"
+                class={ghostButtonClass}
+                onClick={() => props.onSignIn(platform)}
+              >
+                <Icon name={platform} class={platformIconClass(platform)} />
+                {t("Sign in with {platform}", { platform: platformNames[platform] })}
+              </button>
+            )}
+          </For>
+        </div>
       </Show>
       <Show when={props.allowance}>
         {(current) => (
@@ -655,7 +707,7 @@ function TwitchBox(props: {
                 disabled={props.disabled}
                 onClick={() => props.onRequest()}
               >
-                <Icon name="twitch" class="size-5 text-twitch" />
+                <Icon name={current().platform} class={platformIconClass(current().platform)} />
                 {song() ? t("Request song") : t("Spin the wheel")}
               </button>
             </Show>
@@ -665,10 +717,15 @@ function TwitchBox(props: {
                     name: current().name,
                     signOut: signOut(),
                   })
-                : tRich(
-                    "Signed in as {name}, tier {tier}. {signOut} and in again if your sub changed.",
-                    { name: current().name, tier: String(current().tier), signOut: signOut() },
-                  )}
+                : current().platform === "kick"
+                  ? tRich(
+                      "Signed in as {name}, a Kick subscriber. {signOut} and in again if your sub changed.",
+                      { name: current().name, signOut: signOut() },
+                    )
+                  : tRich(
+                      "Signed in as {name}, tier {tier}. {signOut} and in again if your sub changed.",
+                      { name: current().name, tier: String(current().tier), signOut: signOut() },
+                    )}
             </p>
           </>
         )}
@@ -1180,6 +1237,7 @@ function SpinWheel(props: {
   id: string;
   spin: (PublicSpin & { payment: Payment }) | null;
   subSpins: Tiers | null;
+  platforms: Platform[];
   allowance: Allowance | null;
   viewer: string | null;
   wheel: Wheel | null;
@@ -1188,16 +1246,16 @@ function SpinWheel(props: {
   onName: (name: string) => void;
   onError: (error: unknown) => void;
   onPaid: (text: string, title?: string) => void;
-  onSignIn: () => void;
+  onSignIn: (platform: Platform) => void;
   onSignOut: () => void;
   onAllowance: () => void;
-  signInFailed: boolean;
+  signInFailed: string | null;
 }) {
   const [choice, setChoice] = createSignal(props.spin?.options[0] ?? { spins: 1, price: 0 });
   const [message, setMessage] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(
-    props.signInFailed ? { text: t("Signing in with Twitch failed. Try again.") } : null,
+    props.signInFailed ? { text: props.signInFailed } : null,
   );
 
   const showError = (error: unknown) => {
@@ -1334,9 +1392,10 @@ function SpinWheel(props: {
       </Show>
       <Show when={props.subSpins} keyed>
         {(tiers) => (
-          <TwitchBox
+          <SubscriberBox
             kind="spin"
             tiers={tiers}
+            platforms={props.platforms}
             allowance={props.allowance}
             signedIn={props.viewer !== null}
             paid={props.spin !== null}
@@ -1448,7 +1507,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const [viewer, setViewer] = createSignal<string | null>(null);
   const [songAllowance, setSongAllowance] = createSignal<Allowance | null>(null);
   const [spinAllowance, setSpinAllowance] = createSignal<Allowance | null>(null);
-  const [spinSignInFailed, setSpinSignInFailed] = createSignal(false);
+  const [spinSignInFailed, setSpinSignInFailed] = createSignal<string | null>(null);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
   const [spin, setSpin] = createSignal<PublicSpin | null>(null);
   const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, { equals: sameData });
@@ -1457,6 +1516,26 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const streamerName = () => {
     const current = profile();
     return current ? identityOf(current, props.platform)?.name : undefined;
+  };
+  const subPlatforms = () => {
+    const current = profile();
+    return current ? platforms.filter((platform) => current[platform] !== null) : [];
+  };
+  const subscribersText = (song: boolean) => {
+    const linked = subPlatforms();
+    if (linked.includes("kick") && !linked.includes("twitch")) {
+      return song
+        ? t("Kick subscribers add songs to the queue.")
+        : t("Kick subscribers spin the wheel live on stream.");
+    }
+    if (linked.includes("kick")) {
+      return song
+        ? t("Twitch and Kick subscribers add songs to the queue.")
+        : t("Twitch and Kick subscribers spin the wheel live on stream.");
+    }
+    return song
+      ? t("Twitch subscribers add songs to the queue.")
+      : t("Twitch subscribers spin the wheel live on stream.");
   };
   const [dashboard, setDashboard] = createSignal<DashboardLink | null>(null);
   const [styled, setStyled] = createSignal(false);
@@ -1491,18 +1570,14 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         section: "spin",
         icon: "wheel",
         title: t("Spin the wheel"),
-        text: wheel()
-          ? t("Your tip spins the wheel live on stream.")
-          : t("Twitch subscribers spin the wheel live on stream."),
+        text: wheel() ? t("Your tip spins the wheel live on stream.") : subscribersText(false),
         enabled: spinnable(),
       },
       {
         section: "songs",
         icon: "music",
         title: t("Request a song"),
-        text: payable()
-          ? t("Your tip puts a song in the queue.")
-          : t("Twitch subscribers add songs to the queue."),
+        text: payable() ? t("Your tip puts a song in the queue.") : subscribersText(true),
         enabled: songs(),
       },
     ];
@@ -1704,9 +1779,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         setSection(signIn.section);
       }
       if (signIn.failed && signIn.section === "spin") {
-        setSpinSignInFailed(true);
+        setSpinSignInFailed(signIn.failed);
       } else if (signIn.failed) {
-        setResult({ text: t("Signing in with Twitch failed. Try again.") });
+        setResult({ text: signIn.failed });
       }
       Promise.all([streamerProfile(current), signedInAccount()])
         .then(([found, account]) => {
@@ -1863,9 +1938,10 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                 </Show>
                 <Show when={subSongs()} keyed>
                   {(current) => (
-                    <TwitchBox
+                    <SubscriberBox
                       kind="song"
                       tiers={current}
+                      platforms={subPlatforms()}
                       allowance={songAllowance()}
                       signedIn={viewer() !== null}
                       paid={payable() !== null}
@@ -1873,7 +1949,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                         busy() || typeof status() === "string" || closed() || !song().trim()
                       }
                       result={result()}
-                      onSignIn={() => signInAsViewer(id() ?? "", "songs")}
+                      onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "songs")}
                       onSignOut={signOutViewer}
                       onRequest={() => void requestAsSubscriber()}
                     />
@@ -1902,6 +1978,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                     id={id() ?? ""}
                     spin={wheel()}
                     subSpins={subSpins()}
+                    platforms={subPlatforms()}
                     allowance={spinAllowance()}
                     viewer={viewer()}
                     wheel={wheelOfLuck()}
@@ -1910,7 +1987,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                     onName={setName}
                     onError={spinError}
                     onPaid={celebrate}
-                    onSignIn={() => signInAsViewer(id() ?? "", "spin")}
+                    onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "spin")}
                     onSignOut={signOutViewer}
                     onAllowance={() => void refreshAllowances()}
                     signInFailed={spinSignInFailed()}

@@ -30,6 +30,7 @@ export type Account = {
   premium: boolean;
   moderating: Moderating[];
   moderators: ChannelModerator[];
+  kickModerators: KickModerator[];
 };
 
 export type ChannelModerator = {
@@ -39,8 +40,15 @@ export type ChannelModerator = {
   enabled: boolean;
 };
 
+export type KickModerator = {
+  id: string;
+  login: string;
+  name: string;
+};
+
 export type Moderating = {
   id: string;
+  platform: Platform;
   name: string;
   login: string;
   avatar: string | null;
@@ -57,6 +65,7 @@ export type Recent = {
   spins?: number;
   tier?: number;
   moderator?: boolean;
+  kickSubscriber?: boolean;
   provider?: "paypal" | "stripe";
   status: "delivered" | "waiting" | "notAdded";
   devices?: { name: string; received: boolean }[];
@@ -218,6 +227,16 @@ export const resendRecent = (session: string, id: string, page?: string) =>
 
 export const enableModerator = (session: string, moderator: string, enabled: boolean) =>
   call<Account>(`/account/moderators/${encodeURIComponent(moderator)}`, session, post({ enabled }));
+
+export const addKickModerator = (session: string, username: string) =>
+  call<Account>("/account/moderators/kick", session, post({ username }));
+
+export const removeKickModerator = (session: string, moderator: string) =>
+  call<Account>(
+    `/account/moderators/kick/${encodeURIComponent(moderator)}/remove`,
+    session,
+    post(),
+  );
 
 export const moderateMusic = (
   session: string,

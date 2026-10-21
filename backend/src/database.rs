@@ -121,6 +121,14 @@ impl Database {
                  );
                  CREATE INDEX IF NOT EXISTS identities_account ON identities (account);
                  CREATE INDEX IF NOT EXISTS identities_login ON identities (platform, login);
+                 CREATE TABLE IF NOT EXISTS kick_moderators (
+                     broadcaster TEXT NOT NULL,
+                     moderator TEXT NOT NULL,
+                     login TEXT NOT NULL,
+                     name TEXT NOT NULL,
+                     PRIMARY KEY (broadcaster, moderator)
+                 );
+                 CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);
                  INSERT OR IGNORE INTO identities (platform, user_id, account, login, name, avatar)
                      SELECT 'twitch', id, id, login, name, avatar FROM accounts
                      WHERE id NOT IN (SELECT account FROM identities);

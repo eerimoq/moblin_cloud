@@ -40,8 +40,10 @@ http://localhost:5173/dashboard/ and the fake asks which made-up user to
 sign in as (the same login on Twitch and Kick is two different users until
 linked in the dashboard's Linked accounts section): `admin` is an admin,
 `premium` a premium account, `normal` neither, a login ending in 1, 2 or 3
-is a subscriber of that tier, and `mod_normal` moderates `normal` (listed in
-the dashboard when `normal` signs in, to be turned on there). Each login has
+is a subscriber (of that tier on Twitch), and `mod_normal` moderates `normal`
+on Twitch (listed in the dashboard when `normal` signs in, to be turned on
+there); Kick moderators are any logins the streamer adds in the dashboard's
+Moderators section. Each login has
 its own account, so sign out and sign in as another to switch; to have two
 signed in at once, use a private window or another browser profile, as a
 browser holds one session. To try a streamer page, copy the Moblin Cloud key

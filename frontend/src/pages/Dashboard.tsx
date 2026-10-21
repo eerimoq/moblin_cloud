@@ -25,10 +25,13 @@ import {
 } from "../components/PageParts";
 import {
   addDevice,
+  addKickModerator,
   createAccountSession,
   addModeratorSong,
   enableModerator,
   type ChannelModerator,
+  type KickModerator,
+  removeKickModerator,
   moderateMusic,
   type Moderating,
   checkPayPal,
@@ -948,10 +951,13 @@ function SongSettings(props: {
 function SubscriberSettings(props: {
   kind: "song" | "spin";
   tiers: Feature<Tiers> | null;
+  twitch: boolean;
+  kick: boolean;
   busy: boolean;
   onSave: (tiers: Feature<Tiers>) => Promise<void>;
 }) {
   const song = props.kind === "song";
+  const shownTiers = () => (props.twitch ? tierNumbers : ([1] as const));
   const initial = () => ({
     enabled: isOn(props.tiers),
     amounts: tierNumbers.map((tier) =>
@@ -981,20 +987,30 @@ function SubscriberSettings(props: {
   return (
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">
-        {song ? t("Songs for Twitch subscribers") : t("Spins for Twitch subscribers")}
+        {props.twitch && !props.kick
+          ? song
+            ? t("Songs for Twitch subscribers")
+            : t("Spins for Twitch subscribers")
+          : song
+            ? t("Songs for subscribers")
+            : t("Spins for subscribers")}
       </h2>
       <p class="text-ink-2">
         {song
           ? t(
-              "Give your Twitch subscribers song requests every month, without a tip. Subscribers sign " +
-                "in with Twitch on your tip page, and their songs come back on the 1st of every " +
+              "Give your subscribers song requests every month, without a tip. Subscribers sign " +
+                "in on your tip page, and their songs come back on the 1st of every " +
                 "month. This works with or without paid song requests.",
             )
           : t(
-              "Give your Twitch subscribers spins of the wheel every month, without a tip. Subscribers sign " +
-                "in with Twitch on your tip page, and their spins come back on the 1st of every " +
+              "Give your subscribers spins of the wheel every month, without a tip. Subscribers sign " +
+                "in on your tip page, and their spins come back on the 1st of every " +
                 "month. This works with or without paid wheel spins.",
             )}
+        <Show when={props.twitch && props.kick}>
+          {" "}
+          {t("Kick subscribers get the tier 1 amount.")}
+        </Show>
       </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
@@ -1009,11 +1025,11 @@ function SubscriberSettings(props: {
       </label>
       <Show when={enabled()}>
         <div class="flex flex-wrap gap-4">
-          <For each={tierNumbers}>
-            {(tier, index) => (
+          <For each={shownTiers()}>
+            {(tier) => (
               <label class="flex flex-col gap-2">
                 <span class="text-[15px] font-semibold text-ink-2">
-                  {t("Tier {tier}", { tier })}
+                  {props.twitch ? t("Tier {tier}", { tier }) : t("Kick subscribers")}
                 </span>
                 <input
                   type="number"
@@ -1021,10 +1037,10 @@ function SubscriberSettings(props: {
                   min={0}
                   max={100}
                   inputmode="numeric"
-                  value={amounts()[index()]}
+                  value={amounts()[tier - 1]}
                   onInput={(event) => {
                     const value = event.currentTarget.value;
-                    setAmounts(amounts().map((old, at) => (at === index() ? value : old)));
+                    setAmounts(amounts().map((old, at) => (at === tier - 1 ? value : old)));
                   }}
                   class={`${inputClass} max-w-28`}
                 />
@@ -1104,12 +1120,57 @@ function SongLengthSettings(props: {
 
 function ModeratorSettings(props: {
   session: string;
+  twitch: boolean;
+  kick: boolean;
   moderators: ChannelModerator[];
+  kickModerators: KickModerator[];
   onAccount: (account: Account) => void;
   onSignOut: () => void;
 }) {
   const [pending, setPending] = createSignal<Record<string, boolean>>({});
   const [error, setError] = createSignal<string | null>(null);
+  const [username, setUsername] = createSignal("");
+  const [kickBusy, setKickBusy] = createSignal(false);
+  const [kickError, setKickError] = createSignal<string | null>(null);
+
+  const addKick = async (event: Event) => {
+    event.preventDefault();
+    const name = username().trim();
+    if (kickBusy() || !name) {
+      return;
+    }
+    setKickBusy(true);
+    setKickError(null);
+    try {
+      props.onAccount(await addKickModerator(props.session, name));
+      setUsername("");
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setKickError(moderationErrorText(error));
+    } finally {
+      setKickBusy(false);
+    }
+  };
+
+  const removeKick = async (moderator: KickModerator) => {
+    if (kickBusy()) {
+      return;
+    }
+    setKickBusy(true);
+    setKickError(null);
+    try {
+      props.onAccount(await removeKickModerator(props.session, moderator.id));
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setKickError(moderationErrorText(error));
+    } finally {
+      setKickBusy(false);
+    }
+  };
 
   const change = async (moderator: ChannelModerator, enabled: boolean) => {
     setError(null);
@@ -1140,17 +1201,86 @@ function ModeratorSettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
       <p class="text-ink-2">
         {t(
-          "Turn on the Twitch moderators who may manage your song queue, add songs for free and " +
-            "see recent song requests, tips and spins. They sign in to Moblin Cloud with Twitch, " +
-            "like you, and pick your channel at the top of their dashboard.",
+          "Moderators may manage your song queue, add songs for free and see recent song " +
+            "requests, tips and spins. They sign in to Moblin Cloud like you and pick your " +
+            "channel at the top of their dashboard.",
         )}
       </p>
+      <Show when={props.kick}>
+        <h3 class="flex items-center gap-2 text-lg font-semibold">
+          <Icon name="kick" class="size-5 text-kick" />
+          {t("Kick")}
+        </h3>
+        <p class="text-ink-2">
+          {t(
+            "Add the Kick usernames of your moderators. They sign in to Moblin Cloud with Kick. " +
+              "Removing one takes effect at once.",
+          )}
+        </p>
+        <Show when={props.kickModerators.length > 0}>
+          <ul class="flex flex-col gap-3">
+            <For each={props.kickModerators}>
+              {(moderator) => (
+                <li class="flex items-center justify-between gap-3">
+                  <span class="flex min-w-0 flex-col">
+                    <span class="truncate font-semibold">{moderator.name}</span>
+                    <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
+                      <span class="truncate text-[15px] text-muted">{moderator.login}</span>
+                    </Show>
+                  </span>
+                  <button
+                    type="button"
+                    class={ghostButtonClass}
+                    disabled={kickBusy()}
+                    onClick={() => void removeKick(moderator)}
+                  >
+                    {t("Remove")}
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+        <form class="flex flex-wrap gap-3" onSubmit={(event) => void addKick(event)}>
+          <input
+            type="text"
+            value={username()}
+            onInput={(event) => setUsername(event.currentTarget.value)}
+            placeholder={t("Kick username")}
+            aria-label={t("Kick username")}
+            maxLength={50}
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck={false}
+            class={`${inputClass} min-w-0 flex-1`}
+          />
+          <button type="submit" class={buttonClass} disabled={kickBusy() || !username().trim()}>
+            {t("Add")}
+          </button>
+        </form>
+        <Show when={kickError()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      </Show>
+      <Show when={props.twitch && props.kick}>
+        <h3 class="flex items-center gap-2 text-lg font-semibold">
+          <Icon name="twitch" class="size-5 text-twitch" />
+          {t("Twitch")}
+        </h3>
+      </Show>
+      <Show when={props.twitch}>
+        <p class="text-ink-2">
+          {t(
+            "Turn on the Twitch moderators who may moderate here. They sign in to Moblin Cloud with Twitch.",
+          )}
+        </p>
+      </Show>
       <Show
         when={props.moderators.length > 0}
         fallback={
-          <p class="text-ink-2">
-            {t("No moderators yet. Add them on Twitch, then sign in here again.")}
-          </p>
+          <Show when={props.twitch}>
+            <p class="text-ink-2">
+              {t("No moderators yet. Add them on Twitch, then sign in here again.")}
+            </p>
+          </Show>
         }
       >
         <ul class="flex flex-col gap-3">
@@ -1177,7 +1307,11 @@ function ModeratorSettings(props: {
           </For>
         </ul>
       </Show>
-      <p class="text-[15px] text-muted">{t("The list is updated from Twitch when you sign in.")}</p>
+      <Show when={props.twitch}>
+        <p class="text-[15px] text-muted">
+          {t("The list is updated from Twitch when you sign in.")}
+        </p>
+      </Show>
       <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
     </section>
   );
@@ -1273,7 +1407,7 @@ function LinkedAccounts(props: {
       </ul>
       <p class="text-[15px] text-muted">
         {t(
-          "Songs and spins for subscribers and moderators need a linked Twitch account. An account that already has its own page can't be linked. Delete that page first.",
+          "Songs and spins for subscribers and moderators need a linked Twitch or Kick account. An account that already has its own page can't be linked. Delete that page first.",
         )}
       </p>
     </section>
@@ -1830,8 +1964,12 @@ function Admin(props: {
       id: "moderators",
       label: t("Moderators"),
       icon: "shield",
-      shown: () => !moderating() && account().twitch !== null,
-      status: () => onOff(account().moderators.some((moderator) => moderator.enabled)),
+      shown: () => !moderating() && (account().twitch !== null || account().kick !== null),
+      status: () =>
+        onOff(
+          account().moderators.some((moderator) => moderator.enabled) ||
+            account().kickModerators.length > 0,
+        ),
     },
     {
       id: "payments",
@@ -2003,10 +2141,12 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
-          <Show when={account().twitch}>
+          <Show when={account().twitch || account().kick}>
             <SubscriberSettings
               kind="spin"
               tiers={settings().subSpins}
+              twitch={account().twitch !== null}
+              kick={account().kick !== null}
               busy={busy()}
               onSave={(subSpins) => save({ subSpins })}
             />
@@ -2044,10 +2184,12 @@ function Admin(props: {
               onSave={save}
             />
           </Show>
-          <Show when={account().twitch}>
+          <Show when={account().twitch || account().kick}>
             <SubscriberSettings
               kind="song"
               tiers={settings().subSongs}
+              twitch={account().twitch !== null}
+              kick={account().kick !== null}
               busy={busy()}
               onSave={(subSongs) => save({ subSongs })}
             />
@@ -2104,11 +2246,14 @@ function Admin(props: {
             </Show>
           </div>
         </Show>
-        <Show when={!moderating() && account().twitch}>
+        <Show when={!moderating() && (account().twitch || account().kick)}>
           <div hidden={active() !== "moderators"}>
             <ModeratorSettings
               session={props.session}
+              twitch={account().twitch !== null}
+              kick={account().kick !== null}
               moderators={account().moderators}
+              kickModerators={account().kickModerators}
               onAccount={setAccount}
               onSignOut={props.onSignOut}
             />
@@ -2313,15 +2458,18 @@ function Moderated(props: { session: string; channel: Moderating; onSignOut: () 
 
 const moderatedChannelKey = "moderatedChannel";
 
+const channelKey = (channel: Moderating) => `${channel.platform}/${channel.login}`;
+
 function readModeratedChannel() {
   const fromUrl = location.pathname
     .slice(import.meta.env.BASE_URL.length)
-    .match(/^dashboard\/twitch\/([^/]+)\/?$/)?.[1];
-  if (fromUrl !== undefined) {
-    return decodeURIComponent(fromUrl);
+    .match(/^dashboard\/(twitch|kick)\/([^/]+)\/?$/);
+  if (fromUrl) {
+    return `${fromUrl[1]}/${decodeURIComponent(fromUrl[2])}`;
   }
   try {
-    return sessionStorage.getItem(moderatedChannelKey) ?? "";
+    const stored = sessionStorage.getItem(moderatedChannelKey) ?? "";
+    return stored && !stored.includes("/") ? `twitch/${stored}` : stored;
   } catch {
     return "";
   }
@@ -2811,6 +2959,7 @@ function Preview(props: { failed: boolean }) {
               premium: false,
               moderating: [],
               moderators: [],
+              kickModerators: [],
             }}
             onSignOut={() => {}}
           />
@@ -2838,16 +2987,19 @@ export default function Dashboard() {
     createAccountSession();
 
   const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
-  const chooseChannel = (login: string) => {
-    setChosenChannel(login);
-    const path = login ? `${pages.dashboard}twitch/${encodeURIComponent(login)}` : pages.dashboard;
+  const chooseChannel = (key: string) => {
+    setChosenChannel(key);
+    const [platform, login] = key.split("/", 2);
+    const path = login
+      ? `${pages.dashboard}${platform}/${encodeURIComponent(login)}`
+      : pages.dashboard;
     history.replaceState(null, "", `${asset(path)}${location.search}${location.hash}`);
     try {
-      sessionStorage.setItem(moderatedChannelKey, login);
+      sessionStorage.setItem(moderatedChannelKey, key);
     } catch {}
   };
   const channel = (account: Account) =>
-    account.moderating.find((channel) => channel.login === chosenChannel()) ?? null;
+    account.moderating.find((channel) => channelKey(channel) === chosenChannel()) ?? null;
 
   return (
     <>
@@ -2882,12 +3034,21 @@ export default function Dashboard() {
                     <select
                       aria-label={t("Streamer")}
                       class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base! max-sm:w-11 max-sm:px-0! max-sm:text-transparent max-sm:[&>option]:text-ink`}
-                      value={channel(current().account)?.login ?? ""}
+                      value={(() => {
+                        const picked = channel(current().account);
+                        return picked ? channelKey(picked) : "";
+                      })()}
                       onChange={(event) => chooseChannel(event.currentTarget.value)}
                     >
                       <option value="">{t("You")}</option>
                       <For each={current().account.moderating}>
-                        {(channel) => <option value={channel.login}>{channel.name}</option>}
+                        {(channel) => (
+                          <option value={channelKey(channel)}>
+                            {channel.platform === "kick"
+                              ? t("{name} on Kick", { name: channel.name })
+                              : channel.name}
+                          </option>
+                        )}
                       </For>
                     </select>
                     <Icon
