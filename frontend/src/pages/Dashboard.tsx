@@ -1196,11 +1196,6 @@ function ModeratorList(props: {
           {platformNames[props.platform]}
         </h3>
       </Show>
-      <p class="text-ink-2">
-        {t("They sign in to Moblin Cloud with {platform}.", {
-          platform: platformNames[props.platform],
-        })}
-      </p>
       <Show when={props.moderators.length > 0}>
         <ul class="flex flex-col gap-3">
           <For each={props.moderators}>
@@ -1214,13 +1209,15 @@ function ModeratorList(props: {
                 </span>
                 <button
                   type="button"
-                  class={ghostButtonClass}
+                  class="flex size-10 shrink-0 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
                   disabled={busy()}
+                  aria-label={t("Remove {name}", { name: moderator.name })}
+                  title={t("Remove")}
                   onClick={() =>
                     void run(() => removeModerator(props.session, props.platform, moderator.id))
                   }
                 >
-                  {t("Remove")}
+                  <Icon name="trash" class="size-5" />
                 </button>
               </li>
             )}
