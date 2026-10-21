@@ -6,7 +6,7 @@ export type BrandName = "twitch" | "youtube" | "kick" | "facebook" | "obs";
 const brandColors: Record<BrandName, { background: string; color: string }> = {
   twitch: { background: "#9146ff", color: "#ffffff" },
   youtube: { background: "#ff0033", color: "#ffffff" },
-  kick: { background: "#000000", color: "#00e701" },
+  kick: { background: "#000000", color: "#53fc18" },
   facebook: { background: "#0866ff", color: "#ffffff" },
   obs: { background: "#302e31", color: "#ffffff" },
 };
