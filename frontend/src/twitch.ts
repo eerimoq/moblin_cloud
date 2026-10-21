@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { backendUrl } from "./data/backend";
+import { poll } from "./poll";
 
 /**
  * Whether the Twitch channel the backend keeps an eye on (Erik's) is live
@@ -22,8 +23,7 @@ export function createTwitchLive(refreshMs = 5 * 60 * 1000) {
 
   onMount(() => {
     void check();
-    const timer = setInterval(() => void check(), refreshMs);
-    onCleanup(() => clearInterval(timer));
+    onCleanup(poll(() => void check(), refreshMs));
   });
 
   return live;

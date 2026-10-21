@@ -2,6 +2,7 @@ import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
+import { poll } from "../poll";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
 import { createRecent, Latest } from "../components/Latest";
@@ -1259,8 +1260,7 @@ function MusicQueue(props: { session: string; page: string; onSignOut: () => voi
 
   onMount(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 10_000);
-    onCleanup(() => clearInterval(timer));
+    onCleanup(poll(() => void refresh(), 30_000));
   });
 
   return (
@@ -1789,19 +1789,20 @@ function Admin(props: {
       return;
     }
     void loadRecent();
-    const timer = setInterval(async () => {
-      void loadRecent();
-      try {
-        const account = await fetchAccount(props.session, props.page);
-        setAccount(account);
-        setSettings(account.settings);
-      } catch (error) {
-        if (signedOut(error)) {
-          props.onSignOut();
+    onCleanup(
+      poll(async () => {
+        void loadRecent();
+        try {
+          const account = await fetchAccount(props.session, props.page);
+          setAccount(account);
+          setSettings(account.settings);
+        } catch (error) {
+          if (signedOut(error)) {
+            props.onSignOut();
+          }
         }
-      }
-    }, 10_000);
-    onCleanup(() => clearInterval(timer));
+      }, 30_000),
+    );
   });
 
   const save = async (changes: Partial<SettingsChanges>) => {

@@ -23,6 +23,7 @@ import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
 import Queue, { type Status } from "../components/Queue";
 import { fireConfetti } from "../confetti";
+import { poll } from "../poll";
 import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
@@ -1757,14 +1758,15 @@ function Viewer(props: { id: string | null; twitch: string | null }) {
     void refreshPaywall().then(refresh);
     void refreshTips();
     void refreshSpin();
-    const timer = setInterval(() => {
-      void refresh();
-      void refreshSpin();
-      if (viewer() && allowancesMissing()) {
-        void refreshAllowances();
-      }
-    }, 30_000);
-    onCleanup(() => clearInterval(timer));
+    onCleanup(
+      poll(() => {
+        void refresh();
+        void refreshSpin();
+        if (viewer() && allowancesMissing()) {
+          void refreshAllowances();
+        }
+      }, 30_000),
+    );
   });
 
   return (

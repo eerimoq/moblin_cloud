@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import Icon, { type IconName } from "../components/Icon";
+import { poll } from "../poll";
 import {
   Band,
   cardClass,
@@ -903,8 +904,7 @@ function Stats(props: { session: string; onSignOut: () => void }) {
 
   onMount(() => {
     refresh();
-    const timer = setInterval(refresh, 10_000);
-    onCleanup(() => clearInterval(timer));
+    onCleanup(poll(refresh, 30_000));
   });
 
   return (
