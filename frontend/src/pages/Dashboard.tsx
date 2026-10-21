@@ -3001,7 +3001,7 @@ export default function Dashboard() {
   const channel = (account: Account) => {
     const [platform, login] = chosenChannel().split("/", 2) as [Platform, string | undefined];
     return (
-      account.moderating.find((channel) => channel[platform]?.login === login) ??
+      (login ? account.moderating.find((channel) => channel[platform]?.login === login) : null) ??
       account.moderating.find((channel) => channelKey(channel) === chosenChannel()) ??
       null
     );
