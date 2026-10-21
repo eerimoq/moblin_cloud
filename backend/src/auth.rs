@@ -11,7 +11,7 @@ use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::accounts::{Identity, KickModerator, Platform, TwitchModerator};
+use crate::accounts::{Identity, Moderator, Platform};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
@@ -29,7 +29,6 @@ pub struct OAuthApp {
     pub token_url: String,
     pub users_url: String,
     pub subscriptions_url: String,
-    pub moderators_url: String,
 }
 
 impl OAuthApp {
@@ -52,7 +51,6 @@ impl OAuthApp {
             token_url: format!("{id_url}/oauth2/token"),
             users_url: format!("{api_url}/helix/users"),
             subscriptions_url: format!("{api_url}/helix/subscriptions/user"),
-            moderators_url: format!("{api_url}/helix/moderation/moderators"),
         }
     }
 }
@@ -212,7 +210,7 @@ impl Auth {
         let scope = if page.is_some() {
             "user:read:subscriptions"
         } else {
-            "openid moderation:read"
+            "openid"
         };
         Url::parse_with_params(
             &app.authorize_url,
@@ -565,7 +563,7 @@ impl Auth {
             .any(|badge| badge.kind == "subscriber" && badge.active))
     }
 
-    pub async fn kick_user(&self, username: &str) -> Result<Option<KickModerator>> {
+    pub async fn kick_user(&self, username: &str) -> Result<Option<Moderator>> {
         let app = self.kick.as_ref().context("Kick not configured")?;
         let token = self
             .access_token(
@@ -604,72 +602,68 @@ impl Auth {
             .data
             .into_iter()
             .find(|channel| !channel.broadcaster_user_id.is_empty() && !channel.slug.is_empty())
-            .map(|channel| KickModerator {
+            .map(|channel| Moderator {
                 id: channel.broadcaster_user_id,
                 name: channel.slug.clone(),
                 login: channel.slug.to_lowercase(),
             }))
     }
 
-    pub async fn twitch_moderators(&self, sign_in: &SignIn) -> Result<Vec<TwitchModerator>> {
+    pub async fn twitch_user(&self, username: &str) -> Result<Option<Moderator>> {
         let app = self.twitch.as_ref().context("Twitch not configured")?;
-        let token = sign_in.token.as_deref().context("no access token")?;
+        let token = self
+            .access_token(
+                &app.token_url,
+                &[
+                    ("client_id", app.client_id.as_str()),
+                    ("client_secret", app.client_secret.as_str()),
+                    ("grant_type", "client_credentials"),
+                ],
+            )
+            .await?;
         #[derive(Deserialize)]
-        struct Moderators {
-            data: Vec<Moderator>,
-            #[serde(default)]
-            pagination: Pagination,
+        struct Users {
+            data: Vec<User>,
         }
         #[derive(Deserialize)]
-        struct Moderator {
-            user_id: String,
-            user_login: String,
-            user_name: String,
+        struct User {
+            id: String,
+            login: String,
+            display_name: Option<String>,
         }
-        #[derive(Default, Deserialize)]
-        struct Pagination {
-            cursor: Option<String>,
+        let users: Users = self
+            .client
+            .get(&app.users_url)
+            .query(&[("login", username)])
+            .bearer_auth(&token)
+            .header("Client-Id", &app.client_id)
+            .send()
+            .await
+            .context("failed to get the user")?
+            .error_for_status()
+            .context("the user was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the user request")?;
+        Ok(users
+            .data
+            .into_iter()
+            .find(|user| !user.id.is_empty() && !user.login.is_empty())
+            .map(|user| Moderator {
+                id: user.id,
+                name: user
+                    .display_name
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| user.login.clone()),
+                login: user.login.to_lowercase(),
+            }))
+    }
+
+    pub async fn user(&self, platform: Platform, username: &str) -> Result<Option<Moderator>> {
+        match platform {
+            Platform::Twitch => self.twitch_user(username).await,
+            Platform::Kick => self.kick_user(username).await,
         }
-        let mut moderators = Vec::new();
-        let mut after = None;
-        for _ in 0..20 {
-            let mut query = vec![
-                ("broadcaster_id", sign_in.identity.user_id.clone()),
-                ("first", "100".to_string()),
-            ];
-            if let Some(cursor) = after {
-                query.push(("after", cursor));
-            }
-            let page: Moderators = self
-                .client
-                .get(&app.moderators_url)
-                .query(&query)
-                .bearer_auth(token)
-                .header("Client-Id", &app.client_id)
-                .send()
-                .await
-                .context("failed to get the moderators")?
-                .error_for_status()
-                .context("the moderators were refused")?
-                .json()
-                .await
-                .context("unexpected answer to the moderators request")?;
-            moderators.extend(page.data.into_iter().map(|moderator| TwitchModerator {
-                name: if moderator.user_name.is_empty() {
-                    moderator.user_login.clone()
-                } else {
-                    moderator.user_name
-                },
-                login: moderator.user_login.to_lowercase(),
-                id: moderator.user_id,
-                enabled: false,
-            }));
-            match page.pagination.cursor.filter(|cursor| !cursor.is_empty()) {
-                Some(cursor) => after = Some(cursor),
-                None => break,
-            }
-        }
-        Ok(moderators)
     }
 
     pub fn session(&self, account: &str, generation: u64) -> String {
@@ -832,7 +826,7 @@ mod tests {
             query["redirect_uri"],
             "https://api.example.com/auth/twitch/callback"
         );
-        assert_eq!(query["scope"], "openid moderation:read");
+        assert_eq!(query["scope"], "openid");
         assert_eq!(query["state"], state);
         let state = Some(state.as_str());
         assert_eq!(
@@ -1026,10 +1020,6 @@ mod tests {
         assert_eq!(
             app.subscriptions_url,
             "http://localhost:8081/helix/subscriptions/user"
-        );
-        assert_eq!(
-            app.moderators_url,
-            "http://localhost:8081/helix/moderation/moderators"
         );
         assert_eq!(
             OAuthApp::twitch("id".to_string(), "secret".to_string()).authorize_url,

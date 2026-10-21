@@ -25,13 +25,11 @@ import {
 } from "../components/PageParts";
 import {
   addDevice,
-  addKickModerator,
+  addModerator,
   createAccountSession,
   addModeratorSong,
-  enableTwitchModerator,
-  type TwitchModerator,
-  type KickModerator,
-  removeKickModerator,
+  type Moderator,
+  removeModerator,
   moderateMusic,
   type Moderating,
   checkPayPal,
@@ -1120,82 +1118,11 @@ function SongLengthSettings(props: {
 
 function ModeratorSettings(props: {
   session: string;
-  twitch: boolean;
-  kick: boolean;
-  twitchModerators: TwitchModerator[];
-  kickModerators: KickModerator[];
+  account: Account;
   onAccount: (account: Account) => void;
   onSignOut: () => void;
 }) {
-  const [pending, setPending] = createSignal<Record<string, boolean>>({});
-  const [error, setError] = createSignal<string | null>(null);
-  const [username, setUsername] = createSignal("");
-  const [kickBusy, setKickBusy] = createSignal(false);
-  const [kickError, setKickError] = createSignal<string | null>(null);
-
-  const addKick = async (event: Event) => {
-    event.preventDefault();
-    const name = username().trim();
-    if (kickBusy() || !name) {
-      return;
-    }
-    setKickBusy(true);
-    setKickError(null);
-    try {
-      props.onAccount(await addKickModerator(props.session, name));
-      setUsername("");
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      setKickError(moderationErrorText(error));
-    } finally {
-      setKickBusy(false);
-    }
-  };
-
-  const removeKick = async (moderator: KickModerator) => {
-    if (kickBusy()) {
-      return;
-    }
-    setKickBusy(true);
-    setKickError(null);
-    try {
-      props.onAccount(await removeKickModerator(props.session, moderator.id));
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      setKickError(moderationErrorText(error));
-    } finally {
-      setKickBusy(false);
-    }
-  };
-
-  const change = async (moderator: TwitchModerator, enabled: boolean) => {
-    setError(null);
-    setPending((pending) => ({ ...pending, [moderator.id]: enabled }));
-    try {
-      const account = await enableTwitchModerator(props.session, moderator.id, enabled);
-      const shown = { ...pending(), [moderator.id]: enabled };
-      props.onAccount({
-        ...account,
-        twitchModerators: account.twitchModerators.map((known) =>
-          known.id in shown ? { ...known, enabled: shown[known.id] } : known,
-        ),
-      });
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      setError(t("Something went wrong. Try again."));
-    } finally {
-      setPending((pending) =>
-        Object.fromEntries(Object.entries(pending).filter(([id]) => id !== moderator.id)),
-      );
-    }
-  };
-
+  const linked = () => platforms.filter((platform) => props.account[platform] !== null);
   return (
     <section class={cardClass}>
       <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
@@ -1203,117 +1130,131 @@ function ModeratorSettings(props: {
         {t(
           "Moderators may manage your song queue, add songs for free and see recent song " +
             "requests, tips and spins. They sign in to Moblin Cloud like you and pick your " +
-            "channel at the top of their dashboard.",
+            "channel at the top of their dashboard. Add their usernames below. Removing " +
+            "one takes effect at once.",
         )}
       </p>
-      <Show when={props.twitch && props.kick}>
+      <For each={linked()}>
+        {(platform) => (
+          <ModeratorList
+            session={props.session}
+            platform={platform}
+            titled={linked().length > 1}
+            moderators={
+              platform === "twitch" ? props.account.twitchModerators : props.account.kickModerators
+            }
+            onAccount={props.onAccount}
+            onSignOut={props.onSignOut}
+          />
+        )}
+      </For>
+    </section>
+  );
+}
+
+function ModeratorList(props: {
+  session: string;
+  platform: Platform;
+  titled: boolean;
+  moderators: Moderator[];
+  onAccount: (account: Account) => void;
+  onSignOut: () => void;
+}) {
+  const [username, setUsername] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const run = async (action: () => Promise<Account>) => {
+    if (busy()) {
+      return false;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      props.onAccount(await action());
+      return true;
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+      setError(moderationErrorText(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const add = async (event: Event) => {
+    event.preventDefault();
+    const name = username().trim();
+    if (!name) {
+      return;
+    }
+    if (await run(() => addModerator(props.session, props.platform, name))) {
+      setUsername("");
+    }
+  };
+  const placeholder = () =>
+    props.platform === "twitch" ? t("Twitch username") : t("Kick username");
+  return (
+    <>
+      <Show when={props.titled}>
         <h3 class="flex items-center gap-2 text-lg font-semibold">
-          <Icon name="twitch" class="size-5 text-twitch" />
-          {t("Twitch")}
+          <Icon
+            name={props.platform}
+            class={props.platform === "twitch" ? "size-5 text-twitch" : "size-5 text-kick"}
+          />
+          {platformNames[props.platform]}
         </h3>
       </Show>
-      <Show when={props.twitch}>
-        <p class="text-ink-2">
-          {t(
-            "Turn on the Twitch moderators who may moderate here. They sign in to Moblin Cloud with Twitch.",
-          )}
-        </p>
-      </Show>
-      <Show
-        when={props.twitchModerators.length > 0}
-        fallback={
-          <Show when={props.twitch}>
-            <p class="text-ink-2">
-              {t("No moderators yet. Add them on Twitch, then sign in here again.")}
-            </p>
-          </Show>
-        }
-      >
+      <p class="text-ink-2">
+        {t("They sign in to Moblin Cloud with {platform}.", {
+          platform: platformNames[props.platform],
+        })}
+      </p>
+      <Show when={props.moderators.length > 0}>
         <ul class="flex flex-col gap-3">
-          <For each={props.twitchModerators}>
+          <For each={props.moderators}>
             {(moderator) => (
-              <li>
-                <label class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={pending()[moderator.id] ?? moderator.enabled}
-                    disabled={moderator.id in pending()}
-                    onChange={(event) => void change(moderator, event.currentTarget.checked)}
-                    class="size-5 shrink-0 accent-moss"
-                  />
-                  <span class="flex min-w-0 flex-col">
-                    <span class="truncate font-semibold">{moderator.name}</span>
-                    <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
-                      <span class="truncate text-[15px] text-muted">{moderator.login}</span>
-                    </Show>
-                  </span>
-                </label>
+              <li class="flex items-center justify-between gap-3">
+                <span class="flex min-w-0 flex-col">
+                  <span class="truncate font-semibold">{moderator.name}</span>
+                  <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
+                    <span class="truncate text-[15px] text-muted">{moderator.login}</span>
+                  </Show>
+                </span>
+                <button
+                  type="button"
+                  class={ghostButtonClass}
+                  disabled={busy()}
+                  onClick={() =>
+                    void run(() => removeModerator(props.session, props.platform, moderator.id))
+                  }
+                >
+                  {t("Remove")}
+                </button>
               </li>
             )}
           </For>
         </ul>
       </Show>
-      <Show when={props.twitch}>
-        <p class="text-[15px] text-muted">
-          {t("The list is updated from Twitch when you sign in.")}
-        </p>
-      </Show>
+      <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
+        <input
+          type="text"
+          value={username()}
+          onInput={(event) => setUsername(event.currentTarget.value)}
+          placeholder={placeholder()}
+          aria-label={placeholder()}
+          maxLength={50}
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck={false}
+          class={`${inputClass} min-w-0 flex-1`}
+        />
+        <button type="submit" class={buttonClass} disabled={busy() || !username().trim()}>
+          {t("Add")}
+        </button>
+      </form>
       <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      <Show when={props.kick}>
-        <h3 class="flex items-center gap-2 text-lg font-semibold">
-          <Icon name="kick" class="size-5 text-kick" />
-          {t("Kick")}
-        </h3>
-        <p class="text-ink-2">
-          {t(
-            "Add the Kick usernames of your moderators. They sign in to Moblin Cloud with Kick. " +
-              "Removing one takes effect at once.",
-          )}
-        </p>
-        <Show when={props.kickModerators.length > 0}>
-          <ul class="flex flex-col gap-3">
-            <For each={props.kickModerators}>
-              {(moderator) => (
-                <li class="flex items-center justify-between gap-3">
-                  <span class="flex min-w-0 flex-col">
-                    <span class="truncate font-semibold">{moderator.name}</span>
-                    <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
-                      <span class="truncate text-[15px] text-muted">{moderator.login}</span>
-                    </Show>
-                  </span>
-                  <button
-                    type="button"
-                    class={ghostButtonClass}
-                    disabled={kickBusy()}
-                    onClick={() => void removeKick(moderator)}
-                  >
-                    {t("Remove")}
-                  </button>
-                </li>
-              )}
-            </For>
-          </ul>
-        </Show>
-        <form class="flex flex-wrap gap-3" onSubmit={(event) => void addKick(event)}>
-          <input
-            type="text"
-            value={username()}
-            onInput={(event) => setUsername(event.currentTarget.value)}
-            placeholder={t("Kick username")}
-            aria-label={t("Kick username")}
-            maxLength={50}
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck={false}
-            class={`${inputClass} min-w-0 flex-1`}
-          />
-          <button type="submit" class={buttonClass} disabled={kickBusy() || !username().trim()}>
-            {t("Add")}
-          </button>
-        </form>
-        <Show when={kickError()}>{(error) => <Notice status>{error()}</Notice>}</Show>
-      </Show>
-    </section>
+    </>
   );
 }
 
@@ -1966,10 +1907,7 @@ function Admin(props: {
       icon: "shield",
       shown: () => !moderating() && (account().twitch !== null || account().kick !== null),
       status: () =>
-        onOff(
-          account().twitchModerators.some((moderator) => moderator.enabled) ||
-            account().kickModerators.length > 0,
-        ),
+        onOff(account().twitchModerators.length > 0 || account().kickModerators.length > 0),
     },
     {
       id: "payments",
@@ -2250,10 +2188,7 @@ function Admin(props: {
           <div hidden={active() !== "moderators"}>
             <ModeratorSettings
               session={props.session}
-              twitch={account().twitch !== null}
-              kick={account().kick !== null}
-              twitchModerators={account().twitchModerators}
-              kickModerators={account().kickModerators}
+              account={account()}
               onAccount={setAccount}
               onSignOut={props.onSignOut}
             />
@@ -2429,7 +2364,7 @@ function Moderated(props: { session: string; channel: Moderating; onSignOut: () 
       }
       setError(
         error instanceof BackendError && error.status === 403
-          ? t("{name} has turned you off as a moderator.", { name: props.channel.name })
+          ? t("{name} has removed you as a moderator.", { name: props.channel.name })
           : t("Something went wrong. Try again."),
       );
     }

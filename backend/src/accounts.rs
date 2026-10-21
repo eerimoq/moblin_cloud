@@ -170,16 +170,15 @@ pub enum AccountError {
     NotSaved,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct TwitchModerator {
-    pub id: String,
-    pub login: String,
-    pub name: String,
-    pub enabled: bool,
+fn moderators_table(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Twitch => "twitch_moderators",
+        Platform::Kick => "kick_moderators",
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct KickModerator {
+pub struct Moderator {
     pub id: String,
     pub login: String,
     pub name: String,
@@ -614,148 +613,18 @@ impl Accounts {
         })
     }
 
-    pub fn set_twitch_moderators(&self, broadcaster: &str, moderators: &[TwitchModerator]) {
-        let result = (|| {
-            let mut database = self.database.lock();
-            let transaction = database.transaction()?;
-            transaction.execute(
-                "DELETE FROM twitch_moderators WHERE broadcaster = ?1",
-                [broadcaster],
-            )?;
-            for moderator in moderators
-                .iter()
-                .filter(|moderator| moderator.id != broadcaster)
-            {
-                transaction.execute(
-                    "INSERT OR IGNORE INTO twitch_moderators (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)",
-                    [broadcaster, &moderator.id, &moderator.login, &moderator.name],
-                )?;
-            }
-            transaction.execute(
-                "DELETE FROM enabled_twitch_moderators WHERE broadcaster = ?1 AND moderator NOT IN (
-                     SELECT moderator FROM twitch_moderators WHERE broadcaster = ?1
-                 )",
-                [broadcaster],
-            )?;
-            transaction.commit()
-        })();
-        if let Err(error) = result {
-            warn!("failed to save the moderators of {broadcaster}: {error:#}");
-        }
-    }
-
-    pub fn twitch_moderators(&self, broadcaster: &str) -> Vec<TwitchModerator> {
-        let database = self.database.lock();
-        let result = database
-            .prepare_cached(
-                "SELECT moderator, login, name, EXISTS (
-                     SELECT 1 FROM enabled_twitch_moderators
-                     WHERE enabled_twitch_moderators.broadcaster = ?1
-                     AND enabled_twitch_moderators.moderator = twitch_moderators.moderator
-                 )
-                 FROM twitch_moderators WHERE broadcaster = ?1
-                 ORDER BY name COLLATE NOCASE",
-            )
-            .and_then(|mut statement| {
-                statement
-                    .query_map([broadcaster], |row| {
-                        Ok(TwitchModerator {
-                            id: row.get(0)?,
-                            login: row.get(1)?,
-                            name: row.get(2)?,
-                            enabled: row.get(3)?,
-                        })
-                    })?
-                    .collect::<rusqlite::Result<_>>()
-            });
-        result.unwrap_or_else(|error| {
-            warn!("failed to read the moderators of {broadcaster}: {error:#}");
-            Vec::new()
-        })
-    }
-
-    pub fn enable_twitch_moderator(
+    pub fn add_moderator(
         &self,
+        platform: Platform,
         broadcaster: &str,
-        moderator: &str,
-        enabled: bool,
+        moderator: &Moderator,
     ) -> Result<(), AccountError> {
-        if !self
-            .twitch_moderators(broadcaster)
-            .iter()
-            .any(|known| known.id == moderator)
-        {
-            return Err(AccountError::UnknownModerator);
-        }
-        let database = self.database.lock();
-        if enabled {
-            database.execute(
-                "INSERT OR IGNORE INTO enabled_twitch_moderators (broadcaster, moderator) VALUES (?1, ?2)",
-                [broadcaster, moderator],
-            )
-        } else {
-            database.execute(
-                "DELETE FROM enabled_twitch_moderators WHERE broadcaster = ?1 AND moderator = ?2",
-                [broadcaster, moderator],
-            )
-        }
-        .map_err(not_saved)?;
-        Ok(())
-    }
-
-    pub fn twitch_moderates(&self, moderator: &str, broadcaster: &str) -> bool {
-        self.database
-            .lock()
-            .query_row(
-                "SELECT 1 FROM twitch_moderators JOIN enabled_twitch_moderators USING (moderator, broadcaster)
-                 WHERE moderator = ?1 AND broadcaster = ?2",
-                [moderator, broadcaster],
-                |_| Ok(()),
-            )
-            .optional()
-            .unwrap_or_else(|error| {
-                warn!("failed to read moderators: {error:#}");
-                None
-            })
-            .is_some()
-    }
-
-    pub fn twitch_moderated(&self, moderator: &str) -> Vec<Account> {
-        let broadcasters: Vec<String> = {
-            let database = self.database.lock();
-            let result = database
-                .prepare_cached(
-                    "SELECT identities.account FROM twitch_moderators
-                     JOIN enabled_twitch_moderators USING (moderator, broadcaster)
-                     JOIN identities ON identities.platform = 'twitch' AND identities.user_id = broadcaster
-                     WHERE moderator = ?1 ORDER BY identities.name COLLATE NOCASE",
-                )
-                .and_then(|mut statement| {
-                    statement
-                        .query_map([moderator], |row| row.get(0))?
-                        .collect::<rusqlite::Result<_>>()
-                });
-            result.unwrap_or_else(|error| {
-                warn!("failed to read moderators: {error:#}");
-                Vec::new()
-            })
-        };
-        broadcasters
-            .iter()
-            .filter_map(|broadcaster| self.get(broadcaster))
-            .collect()
-    }
-
-    pub fn add_kick_moderator(
-        &self,
-        broadcaster: &str,
-        moderator: &KickModerator,
-    ) -> Result<(), AccountError> {
+        let table = moderators_table(platform);
         let mut database = self.database.lock();
         let transaction = database.transaction().map_err(not_saved)?;
         let listed: u32 = transaction
             .query_row(
-                "SELECT count(*) FROM kick_moderators WHERE broadcaster = ?1 AND moderator != ?2",
+                &format!("SELECT count(*) FROM {table} WHERE broadcaster = ?1 AND moderator != ?2"),
                 [broadcaster, &moderator.id],
                 |row| row.get(0),
             )
@@ -765,24 +634,28 @@ impl Accounts {
         }
         transaction
             .execute(
-                "INSERT INTO kick_moderators (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT (broadcaster, moderator) DO UPDATE SET login = excluded.login, name = excluded.name",
+                &format!(
+                    "INSERT INTO {table} (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (broadcaster, moderator) DO UPDATE SET login = excluded.login, name = excluded.name"
+                ),
                 [broadcaster, &moderator.id, &moderator.login, &moderator.name],
             )
             .map_err(not_saved)?;
         transaction.commit().map_err(not_saved)
     }
 
-    pub fn remove_kick_moderator(
+    pub fn remove_moderator(
         &self,
+        platform: Platform,
         broadcaster: &str,
         moderator: &str,
     ) -> Result<(), AccountError> {
+        let table = moderators_table(platform);
         let removed = self
             .database
             .lock()
             .execute(
-                "DELETE FROM kick_moderators WHERE broadcaster = ?1 AND moderator = ?2",
+                &format!("DELETE FROM {table} WHERE broadcaster = ?1 AND moderator = ?2"),
                 [broadcaster, moderator],
             )
             .map_err(not_saved)?;
@@ -792,20 +665,21 @@ impl Accounts {
         Ok(())
     }
 
-    pub fn kick_moderators(&self, broadcaster: &str) -> Vec<KickModerator> {
+    pub fn moderators(&self, platform: Platform, broadcaster: &str) -> Vec<Moderator> {
+        let table = moderators_table(platform);
         let database = self.database.lock();
         let result = database
-            .prepare_cached(
-                "SELECT moderator, coalesce(identities.login, kick_moderators.login), coalesce(identities.name, kick_moderators.name)
-                 FROM kick_moderators
-                 LEFT JOIN identities ON identities.platform = 'kick' AND identities.user_id = moderator
-                 WHERE broadcaster = ?1
-                 ORDER BY 3 COLLATE NOCASE",
-            )
+            .prepare_cached(&format!(
+                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name)
+                 FROM {table}
+                 LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = moderator
+                 WHERE broadcaster = ?2
+                 ORDER BY 3 COLLATE NOCASE"
+            ))
             .and_then(|mut statement| {
                 statement
-                    .query_map([broadcaster], |row| {
-                        Ok(KickModerator {
+                    .query_map([platform.name(), broadcaster], |row| {
+                        Ok(Moderator {
                             id: row.get(0)?,
                             login: row.get(1)?,
                             name: row.get(2)?,
@@ -814,43 +688,48 @@ impl Accounts {
                     .collect::<rusqlite::Result<_>>()
             });
         result.unwrap_or_else(|error| {
-            warn!("failed to read the Kick moderators of {broadcaster}: {error:#}");
+            warn!(
+                "failed to read the {} moderators of {broadcaster}: {error:#}",
+                platform.title()
+            );
             Vec::new()
         })
     }
 
-    pub fn kick_moderates(&self, moderator: &str, broadcaster: &str) -> bool {
+    pub fn moderates(&self, platform: Platform, moderator: &str, broadcaster: &str) -> bool {
+        let table = moderators_table(platform);
         self.database
             .lock()
             .query_row(
-                "SELECT 1 FROM kick_moderators WHERE moderator = ?1 AND broadcaster = ?2",
+                &format!("SELECT 1 FROM {table} WHERE moderator = ?1 AND broadcaster = ?2"),
                 [moderator, broadcaster],
                 |_| Ok(()),
             )
             .optional()
             .unwrap_or_else(|error| {
-                warn!("failed to read Kick moderators: {error:#}");
+                warn!("failed to read {} moderators: {error:#}", platform.title());
                 None
             })
             .is_some()
     }
 
-    pub fn kick_moderated(&self, moderator: &str) -> Vec<Account> {
+    pub fn moderated(&self, platform: Platform, moderator: &str) -> Vec<Account> {
+        let table = moderators_table(platform);
         let broadcasters: Vec<String> = {
             let database = self.database.lock();
             let result = database
-                .prepare_cached(
-                    "SELECT identities.account FROM kick_moderators
-                     JOIN identities ON identities.platform = 'kick' AND identities.user_id = broadcaster
-                     WHERE moderator = ?1 ORDER BY identities.name COLLATE NOCASE",
-                )
+                .prepare_cached(&format!(
+                    "SELECT identities.account FROM {table}
+                     JOIN identities ON identities.platform = ?1 AND identities.user_id = broadcaster
+                     WHERE moderator = ?2 ORDER BY identities.name COLLATE NOCASE"
+                ))
                 .and_then(|mut statement| {
                     statement
-                        .query_map([moderator], |row| row.get(0))?
+                        .query_map([platform.name(), moderator], |row| row.get(0))?
                         .collect::<rusqlite::Result<_>>()
                 });
             result.unwrap_or_else(|error| {
-                warn!("failed to read Kick moderators: {error:#}");
+                warn!("failed to read {} moderators: {error:#}", platform.title());
                 Vec::new()
             })
         };
@@ -874,7 +753,7 @@ impl Accounts {
             .map_err(not_saved)?
             .ok_or(AccountError::Unknown)?;
         let page = account.page.id.as_str();
-        let mut statements = vec![
+        let statements = [
             ("DELETE FROM accounts WHERE id = ?1", id),
             ("DELETE FROM devices WHERE account = ?1", id),
             ("DELETE FROM identities WHERE account = ?1", id),
@@ -884,26 +763,19 @@ impl Accounts {
             ("DELETE FROM deliveries WHERE streamer = ?1", page),
             ("DELETE FROM subscriber_allowances WHERE page = ?1", page),
         ];
-        if let Some(twitch) = account.twitch_id() {
-            statements.extend([
-                (
-                    "DELETE FROM twitch_moderators WHERE broadcaster = ?1 OR moderator = ?1",
-                    twitch,
-                ),
-                (
-                    "DELETE FROM enabled_twitch_moderators WHERE broadcaster = ?1 OR moderator = ?1",
-                    twitch,
-                ),
-            ]);
-        }
-        if let Some(kick) = account.kick_id() {
-            statements.push((
-                "DELETE FROM kick_moderators WHERE broadcaster = ?1 OR moderator = ?1",
-                kick,
-            ));
-        }
         for (statement, key) in statements {
             transaction.execute(statement, [key]).map_err(not_saved)?;
+        }
+        for identity in &account.identities {
+            transaction
+                .execute(
+                    &format!(
+                        "DELETE FROM {} WHERE broadcaster = ?1 OR moderator = ?1",
+                        moderators_table(identity.platform)
+                    ),
+                    [&identity.user_id],
+                )
+                .map_err(not_saved)?;
         }
         transaction.commit().map_err(not_saved)?;
         Ok(account)
@@ -1157,76 +1029,7 @@ mod tests {
     }
 
     #[test]
-    fn moderators_need_the_streamer_to_turn_them_on() {
-        let accounts = Accounts::new(Database::memory());
-        for (id, name, key) in [("1", "Erik", "k"), ("2", "Bob", "l"), ("3", "Alice", "m")] {
-            sign_in(&accounts, id, name, &name.to_lowercase(), page(id, key)).unwrap();
-        }
-        let names = |id| {
-            accounts
-                .twitch_moderated(id)
-                .into_iter()
-                .map(|account| account.name)
-                .collect::<Vec<_>>()
-        };
-        let moderator = |id: &str, name: &str, enabled| TwitchModerator {
-            id: id.to_string(),
-            login: name.to_lowercase(),
-            name: name.to_string(),
-            enabled,
-        };
-        accounts.set_twitch_moderators(
-            "2",
-            &[
-                moderator("4", "Zed", false),
-                moderator("2", "Bob", false),
-                moderator("1", "Erik", false),
-            ],
-        );
-        assert_eq!(
-            accounts.twitch_moderators("2"),
-            [moderator("1", "Erik", false), moderator("4", "Zed", false)]
-        );
-        assert!(names("1").is_empty());
-        assert!(!accounts.twitch_moderates("1", "2"));
-        assert_eq!(
-            accounts.enable_twitch_moderator("2", "5", true),
-            Err(AccountError::UnknownModerator)
-        );
-        accounts.enable_twitch_moderator("2", "1", true).unwrap();
-        accounts.set_twitch_moderators("3", &[moderator("1", "Erik", false)]);
-        accounts.enable_twitch_moderator("3", "1", true).unwrap();
-        accounts.enable_twitch_moderator("2", "4", true).unwrap();
-        assert_eq!(names("1"), ["Alice", "Bob"]);
-        assert!(accounts.twitch_moderates("1", "2"));
-        assert!(accounts.twitch_moderates("4", "2"));
-        assert!(!accounts.twitch_moderates("4", "3"));
-        assert_eq!(
-            accounts.twitch_moderators("2"),
-            [moderator("1", "Erik", true), moderator("4", "Zed", true)]
-        );
-        accounts.enable_twitch_moderator("3", "1", false).unwrap();
-        assert_eq!(names("1"), ["Bob"]);
-        accounts.set_twitch_moderators("2", &[moderator("4", "Zed", false)]);
-        assert!(names("1").is_empty());
-        assert!(!accounts.twitch_moderates("1", "2"));
-        assert_eq!(
-            accounts.twitch_moderators("2"),
-            [moderator("4", "Zed", true)]
-        );
-        accounts.set_twitch_moderators(
-            "2",
-            &[moderator("1", "Erik", false), moderator("4", "Zed", false)],
-        );
-        assert!(!accounts.twitch_moderates("1", "2"));
-        assert_eq!(
-            accounts.twitch_moderators("2"),
-            [moderator("1", "Erik", false), moderator("4", "Zed", true)]
-        );
-    }
-
-    #[test]
-    fn moderated_channels_are_found_by_twitch_identity() {
+    fn moderators_are_kept_per_platform() {
         let accounts = Accounts::new(Database::memory());
         let (streamer, _) = accounts
             .signed_in(
@@ -1235,80 +1038,100 @@ mod tests {
             )
             .unwrap();
         sign_in(&accounts, "1", "Mod", "mod", page("q", "l")).unwrap();
-        accounts.set_twitch_moderators(
-            "42",
-            &[TwitchModerator {
-                id: "1".to_string(),
-                login: "mod".to_string(),
-                name: "Mod".to_string(),
-                enabled: false,
-            }],
+        let moderator = Moderator {
+            id: "1".to_string(),
+            login: "mod".to_string(),
+            name: "Mod".to_string(),
+        };
+        accounts
+            .add_moderator(Platform::Twitch, "42", &moderator)
+            .unwrap();
+        assert_eq!(accounts.moderated(Platform::Twitch, "1")[0].page.id, "p");
+        assert!(accounts.moderates(Platform::Twitch, "1", "42"));
+        assert!(!accounts.moderates(Platform::Kick, "1", "42"));
+        assert!(accounts.moderated(Platform::Kick, "1").is_empty());
+        assert_eq!(accounts.moderators(Platform::Twitch, "42"), [moderator]);
+        assert!(accounts.moderators(Platform::Kick, "42").is_empty());
+        assert_eq!(
+            accounts.remove_moderator(Platform::Kick, "42", "1"),
+            Err(AccountError::UnknownModerator)
         );
-        accounts.enable_twitch_moderator("42", "1", true).unwrap();
-        assert_eq!(accounts.twitch_moderated("1")[0].page.id, "p");
-        assert!(accounts.twitch_moderates("1", "42"));
         accounts
             .link("s", &kick("9", "Streamer", "streamer"))
             .unwrap();
         accounts.unlink("s", Platform::Twitch).unwrap();
-        assert!(accounts.twitch_moderated("1").is_empty());
+        assert!(accounts.moderated(Platform::Twitch, "1").is_empty());
         assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
         accounts
             .link("s", &twitch("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.twitch_moderated("1")[0].page.id, "p");
+        assert_eq!(accounts.moderated(Platform::Twitch, "1")[0].page.id, "p");
+        accounts
+            .remove_moderator(Platform::Twitch, "42", "1")
+            .unwrap();
+        assert!(!accounts.moderates(Platform::Twitch, "1", "42"));
+        assert!(accounts.moderated(Platform::Twitch, "1").is_empty());
     }
 
     #[test]
-    fn kick_moderators_are_an_allow_list() {
+    fn moderators_are_an_allow_list() {
         let accounts = Accounts::new(Database::memory());
-        let moderator = |id: &str, login: &str| KickModerator {
+        let moderator = |id: &str, login: &str| Moderator {
             id: id.to_string(),
             login: login.to_string(),
             name: login.to_string(),
         };
         accounts
-            .add_kick_moderator("42", &moderator("1", "erik"))
+            .add_moderator(Platform::Kick, "42", &moderator("1", "erik"))
             .unwrap();
         accounts
-            .add_kick_moderator("42", &moderator("2", "bob"))
+            .add_moderator(Platform::Kick, "42", &moderator("2", "bob"))
             .unwrap();
         accounts
-            .add_kick_moderator("43", &moderator("1", "erik"))
+            .add_moderator(Platform::Kick, "43", &moderator("1", "erik"))
             .unwrap();
         assert_eq!(
-            accounts.kick_moderators("42"),
+            accounts.moderators(Platform::Kick, "42"),
             [moderator("2", "bob"), moderator("1", "erik")]
         );
-        assert!(accounts.kick_moderates("1", "42"));
-        assert!(accounts.kick_moderates("1", "43"));
-        assert!(!accounts.kick_moderates("2", "43"));
-        assert!(!accounts.kick_moderates("42", "1"));
+        assert!(accounts.moderates(Platform::Kick, "1", "42"));
+        assert!(accounts.moderates(Platform::Kick, "1", "43"));
+        assert!(!accounts.moderates(Platform::Kick, "2", "43"));
+        assert!(!accounts.moderates(Platform::Kick, "42", "1"));
         assert_eq!(
-            accounts.remove_kick_moderator("42", "3"),
+            accounts.remove_moderator(Platform::Kick, "42", "3"),
             Err(AccountError::UnknownModerator)
         );
-        accounts.remove_kick_moderator("42", "1").unwrap();
-        assert!(!accounts.kick_moderates("1", "42"));
-        assert!(accounts.kick_moderates("1", "43"));
-        assert_eq!(accounts.kick_moderators("42"), [moderator("2", "bob")]);
+        accounts
+            .remove_moderator(Platform::Kick, "42", "1")
+            .unwrap();
+        assert!(!accounts.moderates(Platform::Kick, "1", "42"));
+        assert!(accounts.moderates(Platform::Kick, "1", "43"));
+        assert_eq!(
+            accounts.moderators(Platform::Kick, "42"),
+            [moderator("2", "bob")]
+        );
         for n in 0..49 {
             accounts
-                .add_kick_moderator("42", &moderator(&format!("{}", 100 + n), "m"))
+                .add_moderator(
+                    Platform::Kick,
+                    "42",
+                    &moderator(&format!("{}", 100 + n), "m"),
+                )
                 .unwrap();
         }
-        assert_eq!(accounts.kick_moderators("42").len(), 50);
+        assert_eq!(accounts.moderators(Platform::Kick, "42").len(), 50);
         assert_eq!(
-            accounts.add_kick_moderator("42", &moderator("200", "late")),
+            accounts.add_moderator(Platform::Kick, "42", &moderator("200", "late")),
             Err(AccountError::TooManyModerators)
         );
         accounts
-            .add_kick_moderator("42", &moderator("2", "robert"))
+            .add_moderator(Platform::Kick, "42", &moderator("2", "robert"))
             .unwrap();
-        assert_eq!(accounts.kick_moderators("42").len(), 50);
+        assert_eq!(accounts.moderators(Platform::Kick, "42").len(), 50);
         assert!(
             accounts
-                .kick_moderators("42")
+                .moderators(Platform::Kick, "42")
                 .contains(&moderator("2", "robert"))
         );
     }
@@ -1323,50 +1146,52 @@ mod tests {
             )
             .unwrap();
         accounts
-            .add_kick_moderator(
+            .add_moderator(
+                Platform::Kick,
                 "42",
-                &KickModerator {
+                &Moderator {
                     id: "1".to_string(),
                     login: "bob".to_string(),
                     name: "bob".to_string(),
                 },
             )
             .unwrap();
-        assert_eq!(accounts.kick_moderated("1")[0].page.id, "p");
-        assert!(accounts.kick_moderates("1", "42"));
+        assert_eq!(accounts.moderated(Platform::Kick, "1")[0].page.id, "p");
+        assert!(accounts.moderates(Platform::Kick, "1", "42"));
         accounts
             .signed_in(
                 &kick("1", "Robert", "robert"),
                 ("m".to_string(), page("q", "l")),
             )
             .unwrap();
-        assert!(accounts.kick_moderates("1", "42"));
-        assert_eq!(accounts.kick_moderated("1")[0].page.id, "p");
+        assert!(accounts.moderates(Platform::Kick, "1", "42"));
+        assert_eq!(accounts.moderated(Platform::Kick, "1")[0].page.id, "p");
         assert_eq!(
-            accounts.kick_moderators("42"),
-            [KickModerator {
+            accounts.moderators(Platform::Kick, "42"),
+            [Moderator {
                 id: "1".to_string(),
                 login: "robert".to_string(),
                 name: "Robert".to_string(),
             }]
         );
-        assert!(accounts.kick_moderated("2").is_empty());
+        assert!(accounts.moderated(Platform::Kick, "2").is_empty());
         accounts
             .link("s", &twitch("7", "Streamer", "streamer"))
             .unwrap();
         accounts.unlink("s", Platform::Kick).unwrap();
-        assert!(accounts.kick_moderated("1").is_empty());
+        assert!(accounts.moderated(Platform::Kick, "1").is_empty());
         assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
         accounts
             .link("s", &kick("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.kick_moderated("1")[0].page.id, "p");
+        assert_eq!(accounts.moderated(Platform::Kick, "1")[0].page.id, "p");
         accounts.delete("m").unwrap();
-        assert!(accounts.kick_moderators("42").is_empty());
+        assert!(accounts.moderators(Platform::Kick, "42").is_empty());
         accounts
-            .add_kick_moderator(
+            .add_moderator(
+                Platform::Kick,
                 "42",
-                &KickModerator {
+                &Moderator {
                     id: "1".to_string(),
                     login: "robert".to_string(),
                     name: "Robert".to_string(),
@@ -1374,8 +1199,8 @@ mod tests {
             )
             .unwrap();
         accounts.delete("s").unwrap();
-        assert!(accounts.kick_moderators("42").is_empty());
-        assert!(!accounts.kick_moderates("1", "42"));
+        assert!(accounts.moderators(Platform::Kick, "42").is_empty());
+        assert!(!accounts.moderates(Platform::Kick, "1", "42"));
     }
 
     #[test]

@@ -2,8 +2,8 @@
 """Pretends to be Twitch's sign in (OAuth) and the Helix endpoints it needs, for signing in as made-up users.
 
 Any login signs in. Its Twitch user id is fake-<login>. A login ending in 1, 2 or 3 is a subscriber
-of that tier to everyone, mod_<login> moderates <login>, and mod_<a>_<b>... moderates each of them
-once it has signed in.
+of that tier to everyone, and any login (except nobody) resolves to a Twitch user, so a streamer can
+add it as a moderator.
 """
 
 import argparse
@@ -20,11 +20,11 @@ from urllib.parse import urlsplit
 
 LOGGER = logging.getLogger(__name__)
 LOGIN_RE = re.compile(r"^[a-z0-9_]{1,25}$")
+APP_TOKEN = "app-token"
 USERS = [
     ("admin", "an admin, and so premium"),
     ("premium", "a premium account"),
     ("normal", "neither admin nor premium"),
-    ("mod_normal", "moderates normal"),
     ("sub1", "a tier 1 subscriber"),
     ("sub2", "a tier 2 subscriber"),
     ("sub3", "a tier 3 subscriber"),
@@ -66,7 +66,7 @@ a {{ color: #adadb8; }}
 <button type="submit">Sign in</button>
 </div>
 </form>
-<p>A login ending in 1, 2 or 3 subscribes at that tier. mod_&lt;login&gt; moderates &lt;login&gt;. <a href="{cancel}">Cancel</a></p>
+<p>A login ending in 1, 2 or 3 subscribes at that tier. <a href="{cancel}">Cancel</a></p>
 </main>
 </body>
 </html>
@@ -79,12 +79,6 @@ def user_of(login: str) -> dict:
 
 def tier_of(login: str) -> str | None:
     return {"1": "1000", "2": "2000", "3": "3000"}.get(login[-1])
-
-
-def moderated_logins(login: str) -> list[str]:
-    if not login.startswith("mod_"):
-        return []
-    return login.removeprefix("mod_").split("_")
 
 
 class FakeTwitch:
@@ -113,15 +107,6 @@ class FakeTwitch:
             self._server.server_close()
             self._server = None
 
-    def moderators_of(self, broadcaster_id: str) -> list[dict]:
-        broadcaster = broadcaster_id.removeprefix("fake-")
-        moderators = {f"mod_{broadcaster}"}
-        moderators.update(login for login in self.signed_in if broadcaster in moderated_logins(login))
-        return [
-            {"user_id": f"fake-{login}", "user_login": login, "user_name": login}
-            for login in sorted(moderators)
-        ]
-
     def _handler(self):
         fake = self
 
@@ -134,6 +119,14 @@ class FakeTwitch:
                 query = {key: values[0] for key, values in parse_qs(parts.query).items()}
                 if parts.path == "/oauth2/authorize":
                     self.authorize(query)
+                elif parts.path == "/helix/users" and "login" in query:
+                    login = query["login"].lower()
+                    if self.headers.get("authorization") != f"Bearer {APP_TOKEN}":
+                        self.json({"error": "Unauthorized", "status": 401, "message": "bad token"}, 401)
+                    elif LOGIN_RE.match(login) and login != "nobody":
+                        self.json({"data": [user_of(login)]})
+                    else:
+                        self.json({"data": []})
                 elif parts.path == "/helix/users":
                     self.json({"data": [user_of(login) for login in [self.login()] if login]})
                 elif parts.path == "/helix/subscriptions/user":
@@ -152,15 +145,19 @@ class FakeTwitch:
                                 ]
                             }
                         )
-                elif parts.path == "/helix/moderation/moderators":
-                    self.json({"data": fake.moderators_of(query.get("broadcaster_id", "")), "pagination": {}})
                 else:
                     self.json({"error": "Not Found", "status": 404}, 404)
 
             def do_POST(self):  # pylint: disable=invalid-name
                 length = int(self.headers.get("content-length", "0"))
                 form = {key: values[0] for key, values in parse_qs(self.rfile.read(length).decode()).items()}
-                if urlsplit(self.path).path != "/oauth2/token" or not LOGIN_RE.match(form.get("code", "")):
+                if urlsplit(self.path).path != "/oauth2/token":
+                    self.json({"error": "Bad Request", "status": 400, "message": "bad path"}, 400)
+                    return
+                if form.get("grant_type") == "client_credentials":
+                    self.json({"access_token": APP_TOKEN, "token_type": "bearer", "expires_in": 3600})
+                    return
+                if not LOGIN_RE.match(form.get("code", "")):
                     self.json({"error": "Bad Request", "status": 400, "message": "bad code"}, 400)
                     return
                 login = form["code"]

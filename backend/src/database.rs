@@ -16,23 +16,23 @@ impl Database {
                 .with_context(|| format!("failed to open {}", path.display()))?,
             None => Connection::open_in_memory()?,
         };
-        for (old, new) in [
-            ("channel_moderators", "twitch_moderators"),
-            ("enabled_moderators", "enabled_twitch_moderators"),
-        ] {
-            let only_old: u32 = connection
-                .query_row(
-                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1
-                     AND NOT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?2)",
-                    [old, new],
-                    |row| row.get(0),
+        let old_moderators: u32 = connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table'
+                 AND name IN ('enabled_twitch_moderators', 'enabled_moderators', 'channel_moderators')",
+                [],
+                |row| row.get(0),
+            )
+            .context("failed to read the database tables")?;
+        if old_moderators > 0 {
+            connection
+                .execute_batch(
+                    "DROP TABLE IF EXISTS twitch_moderators;
+                     DROP TABLE IF EXISTS enabled_twitch_moderators;
+                     DROP TABLE IF EXISTS channel_moderators;
+                     DROP TABLE IF EXISTS enabled_moderators;",
                 )
-                .context("failed to read the database tables")?;
-            if only_old > 0 {
-                connection
-                    .execute_batch(&format!("ALTER TABLE {old} RENAME TO {new}"))
-                    .with_context(|| format!("failed to rename {old} to {new}"))?;
-            }
+                .context("failed to drop the old moderator tables")?;
         }
         connection
             .execute_batch(
@@ -70,13 +70,7 @@ impl Database {
                      name TEXT NOT NULL,
                      PRIMARY KEY (broadcaster, moderator)
                  );
-                 DROP INDEX IF EXISTS channel_moderators_moderator;
                  CREATE INDEX IF NOT EXISTS twitch_moderators_moderator ON twitch_moderators (moderator);
-                 CREATE TABLE IF NOT EXISTS enabled_twitch_moderators (
-                     broadcaster TEXT NOT NULL,
-                     moderator TEXT NOT NULL,
-                     PRIMARY KEY (broadcaster, moderator)
-                 );
                  CREATE TABLE IF NOT EXISTS pages (
                      id TEXT PRIMARY KEY,
                      settings TEXT NOT NULL
@@ -215,7 +209,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn moderator_tables_are_renamed_on_start() {
+    fn old_twitch_moderator_tables_are_dropped_on_start() {
         let path = temporary_path("moderator-tables");
         let connection = Connection::open(&path).unwrap();
         connection
@@ -223,54 +217,48 @@ mod tests {
                 "CREATE TABLE channel_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
                  CREATE INDEX channel_moderators_moderator ON channel_moderators (moderator);
                  CREATE TABLE enabled_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
+                 CREATE TABLE twitch_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
+                 CREATE INDEX twitch_moderators_moderator ON twitch_moderators (moderator);
+                 CREATE TABLE enabled_twitch_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
+                 CREATE TABLE kick_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
                  INSERT INTO channel_moderators VALUES ('1', '2', 'mod', 'Mod');
-                 INSERT INTO enabled_moderators VALUES ('1', '2');",
+                 INSERT INTO enabled_moderators VALUES ('1', '2');
+                 INSERT INTO twitch_moderators VALUES ('1', '3', 'other', 'Other');
+                 INSERT INTO enabled_twitch_moderators VALUES ('1', '3');
+                 INSERT INTO kick_moderators VALUES ('4', '5', 'kickmod', 'KickMod');",
             )
             .unwrap();
         drop(connection);
-        for _ in 0..2 {
+        let count = |connection: &Connection, sql: &str| -> u32 {
+            connection.query_row(sql, [], |row| row.get(0)).unwrap()
+        };
+        {
             let database = Database::open(Some(&path)).unwrap();
             let connection = database.lock();
-            let login: String = connection
-                .query_row(
-                    "SELECT login FROM twitch_moderators WHERE broadcaster = '1' AND moderator = '2'",
-                    [],
-                    |row| row.get(0),
-                )
+            assert_eq!(
+                count(&connection, "SELECT count(*) FROM twitch_moderators"),
+                0
+            );
+            assert_eq!(
+                count(&connection, "SELECT count(*) FROM kick_moderators"),
+                1
+            );
+            assert_eq!(
+                count(
+                    &connection,
+                    "SELECT count(*) FROM sqlite_master WHERE name IN ('channel_moderators', 'enabled_moderators', 'channel_moderators_moderator', 'enabled_twitch_moderators')"
+                ),
+                0
+            );
+            connection
+                .execute_batch("INSERT INTO twitch_moderators VALUES ('1', '6', 'new', 'New')")
                 .unwrap();
-            assert_eq!(login, "mod");
-            let enabled: u32 = connection
-                .query_row(
-                    "SELECT count(*) FROM enabled_twitch_moderators",
-                    [],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(enabled, 1);
-            let old: u32 = connection
-                .query_row(
-                    "SELECT count(*) FROM sqlite_master WHERE name IN ('channel_moderators', 'enabled_moderators', 'channel_moderators_moderator')",
-                    [],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(old, 0);
         }
-        Connection::open(&path)
-            .unwrap()
-            .execute_batch(
-                "CREATE TABLE channel_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
-                 CREATE TABLE enabled_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));",
-            )
-            .unwrap();
         let database = Database::open(Some(&path)).unwrap();
-        let rows: u32 = database
-            .lock()
-            .query_row("SELECT count(*) FROM twitch_moderators", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(rows, 1);
+        assert_eq!(
+            count(&database.lock(), "SELECT count(*) FROM twitch_moderators"),
+            1
+        );
         drop(database);
         remove(&path);
     }

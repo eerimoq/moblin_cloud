@@ -11,11 +11,10 @@ NOT_MODERATOR = "Only the streamer and the moderators they turned on can do this
 
 
 class ModeratorsTestCase(TestCase):
-    """A streamer and a made-up Twitch user who moderates their channel.
+    """A streamer and a made-up Twitch user they add as a moderator by username.
 
-    The fake Twitch lists mod_<login> among the made-up user <login>'s moderators, standing in for
-    what Twitch would list for the streamer. The streamer still has to turn them on in the dashboard. Each test has its own streamer, since song lookups are limited
-    per page and minute.
+    The fake Twitch resolves any login to a user, standing in for Twitch's user lookup. Each test has
+    its own streamer, since song lookups are limited per page and minute.
     """
 
     login = "streamer"
@@ -27,25 +26,27 @@ class ModeratorsTestCase(TestCase):
         self.viewer = self.website.viewer(self.page_id)
         self.moderator_login = f"mod_{self.login}"
         self.moderator = self.sign_in(self.moderator_login)
-        self.moderator_id = self.listed_moderator()["id"]
+        self.moderator_id = f"fake-{self.moderator_login}"
 
     def teardown(self):
-        if hasattr(self, "moderator_id"):
-            self.dashboard.enable_twitch_moderator(self.moderator_id, False)
+        if hasattr(self, "moderator_id") and self.listed_moderators():
+            self.dashboard.remove_moderator("twitch", self.moderator_id)
+
+    def add_moderator(self):
+        account = self.dashboard.add_moderator("twitch", self.moderator_login)
+        self.assert_equal([moderator["id"] for moderator in account["twitchModerators"]], [self.moderator_id])
 
     @property
     def moblin(self) -> Moblin:
         assert self.context.moblin is not None
         return self.context.moblin
 
-    def listed_moderator(self) -> dict:
-        moderators = [
+    def listed_moderators(self) -> list[dict]:
+        return [
             moderator
             for moderator in self.dashboard.account()["twitchModerators"]
             if moderator["login"] == self.moderator_login
         ]
-        self.assert_equal(len(moderators), 1, f"{self.moderator_login} in the streamer's moderators")
-        return moderators[0]
 
     def moderating(self) -> list[dict]:
         return [
@@ -63,13 +64,13 @@ class ModeratorsTestCase(TestCase):
         )
 
 
-class ModeratorsTurnedOn(ModeratorsTestCase):
-    """Let a moderator help only once the streamer turned them on, and not once turned off again."""
+class ModeratorsAdded(ModeratorsTestCase):
+    """Let a moderator help only once the streamer added them by username, and not once removed."""
 
     login = "modon"
 
     def run(self):
-        self.assert_equal(self.listed_moderator()["enabled"], False)
+        self.assert_equal(self.listed_moderators(), [])
         self.assert_equal(self.moderating(), [])
         self.assert_backend_error(
             403, lambda: self.moderator.moderate_music(self.page_id, "play"), NOT_MODERATOR
@@ -81,16 +82,28 @@ class ModeratorsTurnedOn(ModeratorsTestCase):
             403, lambda: self.moderator.moderated_recent(self.page_id, "song"), NOT_MODERATOR
         )
         self.assert_backend_error(
-            404, lambda: self.dashboard.enable_twitch_moderator("fake-nobody", True), "no such moderator"
+            404,
+            lambda: self.dashboard.add_moderator("twitch", "nobody"),
+            "There is no Twitch user named nobody.",
         )
-        account = self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.assert_backend_error(
+            400, lambda: self.dashboard.add_moderator("twitch", "bad name"), "Enter a Twitch username."
+        )
+        self.assert_backend_error(
+            409,
+            lambda: self.dashboard.add_moderator("twitch", self.login),
+            "That is your own Twitch account.",
+        )
+        self.assert_backend_error(
+            404, lambda: self.dashboard.remove_moderator("twitch", "fake-nobody"), "no such moderator"
+        )
+        self.assert_backend_error(
+            409, lambda: self.dashboard.add_moderator("kick", "someone"), "Link Kick first."
+        )
+        self.add_moderator()
         self.assert_equal(
-            [
-                moderator["enabled"]
-                for moderator in account["twitchModerators"]
-                if moderator["id"] == self.moderator_id
-            ],
-            [True],
+            self.listed_moderators(),
+            [{"id": self.moderator_id, "login": self.moderator_login, "name": self.moderator_login}],
         )
         streamer = self.dashboard.account()
         self.assert_equal(
@@ -114,8 +127,9 @@ class ModeratorsTurnedOn(ModeratorsTestCase):
         other = self.sign_in("otherstreamer")
         self.assert_backend_error(403, lambda: other.moderate_music(self.page_id, "play"), NOT_MODERATOR)
         self.assert_backend_error(403, lambda: other.moderated_recent(self.page_id, "song"), NOT_MODERATOR)
-        self.dashboard.enable_twitch_moderator(self.moderator_id, False)
-        self.assert_equal(self.listed_moderator()["enabled"], False)
+        account = self.dashboard.remove_moderator("twitch", self.moderator_id)
+        self.assert_equal(account["twitchModerators"], [])
+        self.assert_equal(self.listed_moderators(), [])
         self.assert_equal(self.moderating(), [])
         self.assert_backend_error(
             403, lambda: self.moderator.moderate_music(self.page_id, "play"), NOT_MODERATOR
@@ -129,7 +143,7 @@ class ModeratorsManageTheQueue(ModeratorsTestCase):
 
     def run(self):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
-        self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.add_moderator()
         self.moblin.disconnect_from_backend()
         self.wait_until(lambda: not self.viewer.spin()["connected"], "Moblin to be disconnected")
         self.assert_backend_error(
@@ -198,7 +212,7 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
             lambda: self.moderator.moderated_remove_image(self.page_id),
         ]:
             self.assert_backend_error(403, call, NOT_MODERATOR)
-        self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.add_moderator()
         own = self.dashboard.account()
         account = self.moderator.moderated_account(self.page_id)
         self.assert_equal(
@@ -294,7 +308,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         self.dashboard.update_settings(currency="USD", songs=None, tips=None, spin=None)
 
     def run(self):
-        self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.add_moderator()
         settings = self.moderator.moderated_account(self.page_id)["settings"]
         self.assert_equal(
             [settings["payable"], settings["merchantId"], settings["paypal"]], [True, None, False]
@@ -340,7 +354,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
         tips = self.viewer.tips()
         assert tips is not None
         self.assert_equal(tips["amounts"], [500])
-        self.dashboard.enable_twitch_moderator(self.moderator_id, False)
+        self.dashboard.remove_moderator("twitch", self.moderator_id)
         self.assert_backend_error(
             403, lambda: self.moderator.moderated_settings(self.page_id, tips=None), NOT_MODERATOR
         )
@@ -359,7 +373,7 @@ class ModeratorsAddSongsForFree(ModeratorsTestCase):
 
     def run(self):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
-        self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.add_moderator()
         self.dashboard.update_settings(max_song_length={"minutes": 1})
         self.assert_equal(self.viewer.get(f"/pages/{self.page_id}/songs")["maxSongMinutes"], 1)
         self.connect_moblin()
@@ -425,7 +439,7 @@ class ModeratorsSongRequestsOff(ModeratorsTestCase):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
         if not self.moblin.is_fake():
             self.skip_if_not_interactive()
-        self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.add_moderator()
         self.connect_moblin()
         self.moblin.clear_music()
         self.moblin.change_song_requests(False)
@@ -450,14 +464,14 @@ class ModeratorsSongRequestsOff(ModeratorsTestCase):
 
 
 class ModeratorsKeptOnRestart(ModeratorsTestCase):
-    """Keep who moderates whom, and who is turned on, when the backend restarts."""
+    """Keep who moderates whom when the backend restarts."""
 
     login = "modrestart"
 
     def run(self):
-        self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.add_moderator()
         self.backend.restart()
-        self.assert_equal(self.listed_moderator()["enabled"], True)
+        self.assert_equal([moderator["id"] for moderator in self.listed_moderators()], [self.moderator_id])
         self.assert_equal([channel["id"] for channel in self.moderating()], [self.page_id])
         self.assert_equal(self.moderator.moderated_recent(self.page_id, "song")["more"], False)
 
@@ -474,7 +488,7 @@ class ModeratorsCounted(ModeratorsTestCase):
         def totals() -> dict[str, int]:
             return {counter["name"]: counter["total"] for counter in admin.admin_stats()["counters"]}
 
-        self.dashboard.enable_twitch_moderator(self.moderator_id, True)
+        self.add_moderator()
         self.connect_moblin()
         self.moblin.clear_music()
         before = totals()
@@ -482,7 +496,7 @@ class ModeratorsCounted(ModeratorsTestCase):
         self.assert_backend_error(400, lambda: self.moderator.moderate_music(self.page_id, "shuffle"))
         self.moderator.add_free_song(self.page_id, SONG)
         self.assert_backend_error(422, lambda: self.moderator.add_free_song(self.page_id, MISSING_SONG))
-        self.dashboard.enable_twitch_moderator(self.moderator_id, False)
+        self.dashboard.remove_moderator("twitch", self.moderator_id)
         self.assert_backend_error(403, lambda: self.moderator.moderate_music(self.page_id, "play"))
         self.assert_backend_error(403, lambda: self.moderator.add_free_song(self.page_id, SONG))
         after = totals()
@@ -504,7 +518,7 @@ class ModeratorsCounted(ModeratorsTestCase):
 
 def tests(context: Context):
     return [
-        ModeratorsTurnedOn(context),
+        ModeratorsAdded(context),
         ModeratorsManageTheQueue(context),
         ModeratorsUseTheStreamersDashboard(context),
         ModeratorsAddSongsForFree(context),

@@ -232,8 +232,11 @@ class Dashboard(Client):
     def admin_stats(self) -> dict:
         return self.get("/admin/stats")
 
-    def enable_twitch_moderator(self, moderator: str, enabled: bool) -> dict:
-        return self.post(f"/account/moderators/twitch/{quote(moderator, safe='')}", {"enabled": enabled})
+    def add_moderator(self, platform: str, username: str) -> dict:
+        return self.post(f"/account/moderators/{platform}", {"username": username})
+
+    def remove_moderator(self, platform: str, moderator: str) -> dict:
+        return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/remove")
 
     def moderate_music(self, page_id: str, command: str, song: str | None = None) -> dict:
         return self.post(f"/account/pages/{quote(page_id, safe='')}/music", {"command": command, "id": song})

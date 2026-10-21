@@ -68,8 +68,9 @@ class AccountSignIn(AccountTestCase):
             {key: account[key] for key in account if key != "settings"},
             {
                 "name": "signin",
-                "login": "signin",
                 "avatar": None,
+                "twitch": {"login": "signin", "name": "signin", "avatar": None},
+                "kick": None,
                 "devices": [
                     {
                         "id": page_id,
@@ -84,9 +85,7 @@ class AccountSignIn(AccountTestCase):
                 "admin": False,
                 "premium": False,
                 "moderating": [],
-                "twitchModerators": [
-                    {"id": "fake-mod_signin", "login": "mod_signin", "name": "mod_signin", "enabled": False}
-                ],
+                "twitchModerators": [],
                 "kickModerators": [],
             },
         )
@@ -100,7 +99,7 @@ class AccountSignInWithTwitch(TestCase):
         if self.context.config.twitch_sign_in() != "real":
             self.skip_if_not_interactive()
         account = self.sign_in().account()
-        self.assert_not_equal(account["login"], "")
+        self.assert_not_equal(account["twitch"]["login"], "")
         self.assert_not_equal(account["name"], "")
 
 
@@ -173,11 +172,11 @@ class AccountPageAtSignIn(AccountTestCase):
         if self.context.config.twitch_sign_in() == "fake":
             self.assert_equal(self.sign_in("createpage").account(), account)
         page_id = settings["id"]
-        self.assert_equal(self.website.id_of_twitch_login(account["login"]), page_id)
-        self.assert_equal(self.website.id_of_twitch_login(account["login"].upper()), page_id)
+        self.assert_equal(self.website.id_of_twitch_login(account["twitch"]["login"]), page_id)
+        self.assert_equal(self.website.id_of_twitch_login(account["twitch"]["login"].upper()), page_id)
         profile = self.website.viewer(page_id).profile()
-        self.assert_equal(profile["name"], account["name"])
-        self.assert_equal(profile["login"], account["login"])
+        self.assert_equal(profile["twitch"], account["twitch"])
+        self.assert_equal(profile["kick"], None)
 
     def assert_regex(self, text: str, regex: re.Pattern):
         self.assert_true(regex.match(text) is not None, f"{text!r} matches {regex.pattern!r}")
@@ -402,7 +401,7 @@ class AccountAdmin(AccountTestCase):
         server = stats["server"]
         self.assert_equal(sorted(server), ["integrations", "memory", "now", "started", "version"])
         self.assert_true(0 < server["started"] <= server["now"])
-        self.assert_equal(sorted(server["integrations"]), ["appAttest", "paypal", "stripe", "twitch"])
+        self.assert_equal(sorted(server["integrations"]), ["appAttest", "kick", "paypal", "stripe", "twitch"])
         self.assert_equal(sorted(stats["accounts"]), ["paypal", "premium", "stripe", "total"])
         self.assert_true(stats["accounts"]["total"] >= 2)
         self.assert_true(stats["accounts"]["premium"] >= 1)

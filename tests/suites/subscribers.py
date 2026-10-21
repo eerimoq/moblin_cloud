@@ -56,24 +56,27 @@ class SubscribersSignIn(SubscribersTestCase):
     """Sign viewers in with Twitch on the page, with their tier, back to the page also when it fails."""
 
     def run(self):
-        login = self.dashboard.account()["login"]
+        login = self.dashboard.account()["twitch"]["login"]
         self.assert_backend_error(404, lambda: self.website.start_viewer_sign_in("no-such-page"))
         page_url = self.website.fake_viewer_sign_in(self.page_id, "signin2")
         self.assert_true(page_url.startswith(f"{FRONTEND_URL}/twitch/{login}#viewer="), page_url)
         subscriber = self.subscriber("signin2")
-        self.assert_equal(subscriber.songs(), {"name": "signin2", "tier": 2, "allowance": 0, "left": 0})
+        self.assert_equal(
+            subscriber.songs(),
+            {"platform": "twitch", "name": "signin2", "tier": 2, "allowance": 0, "left": 0},
+        )
         self.assert_equal(self.subscriber("signinviewer").songs()["tier"], None)
         response = Client(self.website.url, subscriber.token).request("GET", "/account")
         self.assert_equal(response.status_code, 401)
         other = self.website.fake_sign_in("otherstreamer")
         stranger = Subscriber(self.website.url, other.page_id(), subscriber.token)
-        self.assert_backend_error(401, stranger.songs, "Sign in with Twitch again.")
+        self.assert_backend_error(401, stranger.songs, "Sign in again.")
         callback_url, browser = self.website.start_viewer_sign_in(self.page_id, "signin3")
         state = parse_qs(urlsplit(callback_url).query)["state"][0]
         cancelled = self.website.finish_sign_in(
             f"{self.website.url}/auth/twitch/callback?error=access_denied&state={state}", browser
         )
-        self.assert_equal(cancelled, f"{FRONTEND_URL}/twitch/{login}#viewerSignInFailed")
+        self.assert_equal(cancelled, f"{FRONTEND_URL}/twitch/{login}#viewerSignInFailed=twitch")
         self.assert_equal(viewer_of(cancelled), None)
 
 
@@ -90,7 +93,9 @@ class SubscribersRequestSongs(SubscribersTestCase):
         self.connect_moblin()
         self.moblin.clear_music()
         tier1 = self.subscriber("songfan1")
-        self.assert_equal(tier1.songs(), {"name": "songfan1", "tier": 1, "allowance": 1, "left": 1})
+        self.assert_equal(
+            tier1.songs(), {"platform": "twitch", "name": "songfan1", "tier": 1, "allowance": 1, "left": 1}
+        )
         self.assert_backend_error(
             400, lambda: tier1.request_song("Take on me"), "Paste the Apple Music share link of a song."
         )
@@ -235,7 +240,10 @@ class SubscribersKeptOnRestart(SubscribersTestCase):
             self.dashboard.account()["settings"]["subSpins"],
             {"enabled": True, "tier1": 2, "tier2": 2, "tier3": 2},
         )
-        self.assert_equal(subscriber.spins(), {"name": "restartfan1", "tier": 1, "allowance": 2, "left": 1})
+        self.assert_equal(
+            subscriber.spins(),
+            {"platform": "twitch", "name": "restartfan1", "tier": 1, "allowance": 2, "left": 1},
+        )
         self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "Moblin to reconnect with its wheel")
         self.assert_equal(subscriber.spin_wheel(), {"left": 0})
 

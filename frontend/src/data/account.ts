@@ -29,18 +29,11 @@ export type Account = {
   admin: boolean;
   premium: boolean;
   moderating: Moderating[];
-  twitchModerators: TwitchModerator[];
-  kickModerators: KickModerator[];
+  twitchModerators: Moderator[];
+  kickModerators: Moderator[];
 };
 
-export type TwitchModerator = {
-  id: string;
-  login: string;
-  name: string;
-  enabled: boolean;
-};
-
-export type KickModerator = {
+export type Moderator = {
   id: string;
   login: string;
   name: string;
@@ -227,19 +220,12 @@ export const fetchRecent = (
 export const resendRecent = (session: string, id: string, page?: string) =>
   call<object>(`${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, session, post());
 
-export const enableTwitchModerator = (session: string, moderator: string, enabled: boolean) =>
-  call<Account>(
-    `/account/moderators/twitch/${encodeURIComponent(moderator)}`,
-    session,
-    post({ enabled }),
-  );
+export const addModerator = (session: string, platform: Platform, username: string) =>
+  call<Account>(`/account/moderators/${platform}`, session, post({ username }));
 
-export const addKickModerator = (session: string, username: string) =>
-  call<Account>("/account/moderators/kick", session, post({ username }));
-
-export const removeKickModerator = (session: string, moderator: string) =>
+export const removeModerator = (session: string, platform: Platform, moderator: string) =>
   call<Account>(
-    `/account/moderators/kick/${encodeURIComponent(moderator)}/remove`,
+    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/remove`,
     session,
     post(),
   );
