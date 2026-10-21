@@ -8,6 +8,7 @@ import Icon, { type IconName } from "../components/Icon";
 import { createRecent, Latest } from "../components/Latest";
 import Queue, { type Moderate, type Status } from "../components/Queue";
 import {
+  AccountMenu,
   Band,
   buttonClass,
   cardClass,
@@ -2675,27 +2676,6 @@ function PickedAvatar(props: { picked: { name: string; avatar: string | null } }
   );
 }
 
-function Avatar(props: { account: Account }) {
-  return (
-    <Show
-      when={props.account.avatar}
-      fallback={
-        <span class="flex size-17 shrink-0 items-center justify-center rounded-full bg-moss font-display text-3xl font-semibold text-white sm:size-20">
-          {props.account.name.slice(0, 1).toUpperCase()}
-        </span>
-      }
-    >
-      {(avatar) => (
-        <img
-          src={avatar()}
-          alt=""
-          class="size-17 shrink-0 rounded-full bg-ghost object-cover sm:size-20"
-        />
-      )}
-    </Show>
-  );
-}
-
 function Preview(props: { failed: boolean }) {
   return (
     <div class="flex flex-col gap-6">
@@ -2891,48 +2871,30 @@ export default function Dashboard() {
                   <span class="max-sm:sr-only">{t("Admin")}</span>
                 </a>
               </Show>
-              <button
-                type="button"
-                class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
-                title={t("Sign out")}
-                onClick={async () => {
+              <AccountMenu
+                name={current().account.name}
+                avatar={current().account.avatar}
+                onSignOut={async () => {
                   try {
                     await signOutEverywhere(current().session);
                   } catch {}
                   signOut();
                 }}
-              >
-                <Icon name="sign-out" class="size-5 sm:hidden" />
-                <span class="max-sm:sr-only">{t("Sign out")}</span>
-              </button>
+              />
             </div>
           )}
         </Show>
       </CloudHeader>
       <main>
-        <Show
-          when={session()}
-          fallback={
-            <Show when={!loading()}>
-              <Hero title={t("Let viewers tip you.")}>
-                <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-                  {t(
-                    "Tips go straight to your PayPal or Stripe account. Moblin takes nothing, PayPal and " +
-                      "Stripe charge their usual fees.",
-                  )}
-                </p>
-              </Hero>
-            </Show>
-          }
-        >
-          {(current) => (
-            <section class="mx-auto flex max-w-[1120px] flex-col items-start gap-4 px-5 pt-10 pb-8 sm:flex-row sm:items-center sm:px-8">
-              <Avatar account={current().account} />
-              <h1 class="min-w-0 max-w-full text-[32px] leading-[1.1] font-bold break-words text-balance sm:text-[40px]">
-                {t("Hi, {name}", { name: current().account.name })}
-              </h1>
-            </section>
-          )}
+        <Show when={!loading() && !session()}>
+          <Hero title={t("Let viewers tip you.")}>
+            <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
+              {t(
+                "Tips go straight to your PayPal or Stripe account. Moblin takes nothing, PayPal and " +
+                  "Stripe charge their usual fees.",
+              )}
+            </p>
+          </Hero>
         </Show>
         <Band tight={session() !== null}>
           <Show when={!loading()} fallback={<Spinner />}>

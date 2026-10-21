@@ -2,10 +2,10 @@ import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
 import Icon, { type IconName } from "../components/Icon";
 import { poll } from "../poll";
 import {
+  AccountMenu,
   Band,
   cardClass,
   CloudHeader,
-  ghostButtonClass,
   Hero,
   Notice,
   Spinner,
@@ -968,20 +968,16 @@ export default function Admin() {
           }
         >
           {(current) => (
-            <button
-              type="button"
-              class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
-              title="Sign out"
-              onClick={async () => {
+            <AccountMenu
+              name={current().account.name}
+              avatar={current().account.avatar}
+              onSignOut={async () => {
                 try {
                   await signOutEverywhere(current().session);
                 } catch {}
                 signOut();
               }}
-            >
-              <Icon name="sign-out" class="size-5 sm:hidden" />
-              <span class="max-sm:sr-only">Sign out</span>
-            </button>
+            />
           )}
         </Show>
       </CloudHeader>

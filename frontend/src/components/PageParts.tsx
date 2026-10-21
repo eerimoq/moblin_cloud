@@ -1,4 +1,4 @@
-import { createSignal, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show, type JSX } from "solid-js";
 import { asset } from "../asset";
 import { pages } from "../data/links";
 import CopyButton from "./CopyButton";
@@ -74,6 +74,90 @@ export function CloudHeader(props: { children?: JSX.Element }) {
         {props.children}
       </div>
     </header>
+  );
+}
+
+export function AccountMenu(props: {
+  name: string;
+  avatar: string | null;
+  onSignOut: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = createSignal(false);
+  let menu: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    if (!open()) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!menu?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    });
+  });
+
+  return (
+    <div ref={(element) => (menu = element)} class="relative ml-auto shrink-0">
+      <button
+        type="button"
+        aria-label={t("Account")}
+        aria-haspopup="menu"
+        aria-expanded={open()}
+        class="flex size-11 items-center justify-center rounded-full transition-colors hover:bg-ghost aria-expanded:bg-ghost"
+        onClick={() => setOpen(!open())}
+      >
+        <Show
+          when={props.avatar}
+          fallback={
+            <span class="flex size-9 items-center justify-center rounded-full bg-moss font-display text-base font-semibold text-white">
+              {props.name.slice(0, 1).toUpperCase()}
+            </span>
+          }
+        >
+          {(avatar) => (
+            <img
+              src={avatar()}
+              alt=""
+              referrerpolicy="no-referrer"
+              class="size-9 rounded-full bg-ghost object-cover"
+            />
+          )}
+        </Show>
+      </button>
+      <Show when={open()}>
+        <div
+          role="menu"
+          class="absolute top-full right-0 z-10 mt-2 w-max min-w-48 max-w-[calc(100vw-2.5rem)] overflow-hidden rounded-2xl border-[1.5px] border-line bg-card py-2 shadow-xl"
+        >
+          <p class="truncate border-b border-line px-4 pt-1.5 pb-3 font-display text-base font-semibold">
+            {props.name}
+          </p>
+          <button
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[17px] text-ink transition-colors hover:bg-ghost"
+            onClick={() => {
+              setOpen(false);
+              void props.onSignOut();
+            }}
+          >
+            <Icon name="sign-out" class="size-5 text-ink-2" />
+            {t("Sign out")}
+          </button>
+        </div>
+      </Show>
+    </div>
   );
 }
 
