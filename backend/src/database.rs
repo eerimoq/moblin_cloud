@@ -16,24 +16,6 @@ impl Database {
                 .with_context(|| format!("failed to open {}", path.display()))?,
             None => Connection::open_in_memory()?,
         };
-        let old_moderators: u32 = connection
-            .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type = 'table'
-                 AND name IN ('enabled_twitch_moderators', 'enabled_moderators', 'channel_moderators')",
-                [],
-                |row| row.get(0),
-            )
-            .context("failed to read the database tables")?;
-        if old_moderators > 0 {
-            connection
-                .execute_batch(
-                    "DROP TABLE IF EXISTS twitch_moderators;
-                     DROP TABLE IF EXISTS enabled_twitch_moderators;
-                     DROP TABLE IF EXISTS channel_moderators;
-                     DROP TABLE IF EXISTS enabled_moderators;",
-                )
-                .context("failed to drop the old moderator tables")?;
-        }
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
@@ -53,7 +35,6 @@ impl Database {
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
-                 DROP INDEX IF EXISTS accounts_login;
                  CREATE TABLE IF NOT EXISTS devices (
                      key TEXT PRIMARY KEY,
                      account TEXT NOT NULL,
@@ -141,22 +122,7 @@ impl Database {
                      name TEXT NOT NULL,
                      PRIMARY KEY (broadcaster, moderator)
                  );
-                 CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);
-                 INSERT OR IGNORE INTO identities (platform, user_id, account, login, name, avatar)
-                     SELECT 'twitch', id, id, login, name, avatar FROM accounts
-                     WHERE id NOT IN (SELECT account FROM identities);
-                 BEGIN;
-                 CREATE TEMP TABLE renamed_accounts AS
-                     SELECT id AS old, lower(hex(randomblob(16))) AS new FROM accounts
-                     WHERE length(id) != 32 OR id IS NOT lower(hex(unhex(id)));
-                 UPDATE accounts SET id = (SELECT new FROM renamed_accounts WHERE old = accounts.id)
-                     WHERE id IN (SELECT old FROM renamed_accounts);
-                 UPDATE devices SET account = (SELECT new FROM renamed_accounts WHERE old = devices.account)
-                     WHERE account IN (SELECT old FROM renamed_accounts);
-                 UPDATE identities SET account = (SELECT new FROM renamed_accounts WHERE old = identities.account)
-                     WHERE account IN (SELECT old FROM renamed_accounts);
-                 DROP TABLE renamed_accounts;
-                 COMMIT;",
+                 CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
             )
             .context("failed to create the database tables")?;
         connection.set_prepared_statement_cache_capacity(64);
@@ -207,61 +173,6 @@ pub fn remove(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn old_twitch_moderator_tables_are_dropped_on_start() {
-        let path = temporary_path("moderator-tables");
-        let connection = Connection::open(&path).unwrap();
-        connection
-            .execute_batch(
-                "CREATE TABLE channel_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
-                 CREATE INDEX channel_moderators_moderator ON channel_moderators (moderator);
-                 CREATE TABLE enabled_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
-                 CREATE TABLE twitch_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
-                 CREATE INDEX twitch_moderators_moderator ON twitch_moderators (moderator);
-                 CREATE TABLE enabled_twitch_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
-                 CREATE TABLE kick_moderators (broadcaster TEXT NOT NULL, moderator TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (broadcaster, moderator));
-                 INSERT INTO channel_moderators VALUES ('1', '2', 'mod', 'Mod');
-                 INSERT INTO enabled_moderators VALUES ('1', '2');
-                 INSERT INTO twitch_moderators VALUES ('1', '3', 'other', 'Other');
-                 INSERT INTO enabled_twitch_moderators VALUES ('1', '3');
-                 INSERT INTO kick_moderators VALUES ('4', '5', 'kickmod', 'KickMod');",
-            )
-            .unwrap();
-        drop(connection);
-        let count = |connection: &Connection, sql: &str| -> u32 {
-            connection.query_row(sql, [], |row| row.get(0)).unwrap()
-        };
-        {
-            let database = Database::open(Some(&path)).unwrap();
-            let connection = database.lock();
-            assert_eq!(
-                count(&connection, "SELECT count(*) FROM twitch_moderators"),
-                0
-            );
-            assert_eq!(
-                count(&connection, "SELECT count(*) FROM kick_moderators"),
-                1
-            );
-            assert_eq!(
-                count(
-                    &connection,
-                    "SELECT count(*) FROM sqlite_master WHERE name IN ('channel_moderators', 'enabled_moderators', 'channel_moderators_moderator', 'enabled_twitch_moderators')"
-                ),
-                0
-            );
-            connection
-                .execute_batch("INSERT INTO twitch_moderators VALUES ('1', '6', 'new', 'New')")
-                .unwrap();
-        }
-        let database = Database::open(Some(&path)).unwrap();
-        assert_eq!(
-            count(&database.lock(), "SELECT count(*) FROM twitch_moderators"),
-            1
-        );
-        drop(database);
-        remove(&path);
-    }
 
     #[test]
     fn size_is_the_files_on_disk() {

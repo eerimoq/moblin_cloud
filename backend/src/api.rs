@@ -9200,19 +9200,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn old_twitch_accounts_get_new_ids_and_keep_their_page_and_sessions() {
+    async fn sessions_of_twitch_user_ids_keep_working() {
         let twitch = start_twitch().await;
-        let path = crate::database::temporary_path("old-twitch-accounts");
+        let path = crate::database::temporary_path("twitch-user-id-sessions");
         let database = Database::open(Some(&path)).unwrap();
         database
             .lock()
             .execute_batch(
                 "INSERT INTO accounts (id, name, login, avatar, page_id, sessions) VALUES
-                     ('42', 'Old Erik', 'erik', NULL, 'oldpage', 3);
-                 INSERT INTO devices (key, account, id, name, position) VALUES ('k', '42', 'oldpage', 'Moblin', 0);
+                     ('0123456789abcdef0123456789abcdef', 'Old Erik', 'erik', NULL, 'oldpage', 3);
+                 INSERT INTO identities (platform, user_id, account, login, name) VALUES
+                     ('twitch', '42', '0123456789abcdef0123456789abcdef', 'erik', 'Old Erik');
+                 INSERT INTO devices (key, account, id, name, position) VALUES ('k', '0123456789abcdef0123456789abcdef', 'oldpage', 'Moblin', 0);
                  INSERT INTO pages (id, settings) VALUES ('oldpage', '{\"message\":\"Old\"}');
-                 INSERT INTO twitch_moderators (broadcaster, moderator, login, name) VALUES ('7', '42', 'erik', 'Erik');
-                 DELETE FROM identities;",
+                 INSERT INTO twitch_moderators (broadcaster, moderator, login, name) VALUES ('7', '42', 'erik', 'Erik');",
             )
             .unwrap();
         drop(database);
