@@ -1206,6 +1206,59 @@ function ModeratorSettings(props: {
             "channel at the top of their dashboard.",
         )}
       </p>
+      <Show when={props.twitch && props.kick}>
+        <h3 class="flex items-center gap-2 text-lg font-semibold">
+          <Icon name="twitch" class="size-5 text-twitch" />
+          {t("Twitch")}
+        </h3>
+      </Show>
+      <Show when={props.twitch}>
+        <p class="text-ink-2">
+          {t(
+            "Turn on the Twitch moderators who may moderate here. They sign in to Moblin Cloud with Twitch.",
+          )}
+        </p>
+      </Show>
+      <Show
+        when={props.twitchModerators.length > 0}
+        fallback={
+          <Show when={props.twitch}>
+            <p class="text-ink-2">
+              {t("No moderators yet. Add them on Twitch, then sign in here again.")}
+            </p>
+          </Show>
+        }
+      >
+        <ul class="flex flex-col gap-3">
+          <For each={props.twitchModerators}>
+            {(moderator) => (
+              <li>
+                <label class="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={pending()[moderator.id] ?? moderator.enabled}
+                    disabled={moderator.id in pending()}
+                    onChange={(event) => void change(moderator, event.currentTarget.checked)}
+                    class="size-5 shrink-0 accent-moss"
+                  />
+                  <span class="flex min-w-0 flex-col">
+                    <span class="truncate font-semibold">{moderator.name}</span>
+                    <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
+                      <span class="truncate text-[15px] text-muted">{moderator.login}</span>
+                    </Show>
+                  </span>
+                </label>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <Show when={props.twitch}>
+        <p class="text-[15px] text-muted">
+          {t("The list is updated from Twitch when you sign in.")}
+        </p>
+      </Show>
+      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       <Show when={props.kick}>
         <h3 class="flex items-center gap-2 text-lg font-semibold">
           <Icon name="kick" class="size-5 text-kick" />
@@ -1260,59 +1313,6 @@ function ModeratorSettings(props: {
         </form>
         <Show when={kickError()}>{(error) => <Notice status>{error()}</Notice>}</Show>
       </Show>
-      <Show when={props.twitch && props.kick}>
-        <h3 class="flex items-center gap-2 text-lg font-semibold">
-          <Icon name="twitch" class="size-5 text-twitch" />
-          {t("Twitch")}
-        </h3>
-      </Show>
-      <Show when={props.twitch}>
-        <p class="text-ink-2">
-          {t(
-            "Turn on the Twitch moderators who may moderate here. They sign in to Moblin Cloud with Twitch.",
-          )}
-        </p>
-      </Show>
-      <Show
-        when={props.twitchModerators.length > 0}
-        fallback={
-          <Show when={props.twitch}>
-            <p class="text-ink-2">
-              {t("No moderators yet. Add them on Twitch, then sign in here again.")}
-            </p>
-          </Show>
-        }
-      >
-        <ul class="flex flex-col gap-3">
-          <For each={props.twitchModerators}>
-            {(moderator) => (
-              <li>
-                <label class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={pending()[moderator.id] ?? moderator.enabled}
-                    disabled={moderator.id in pending()}
-                    onChange={(event) => void change(moderator, event.currentTarget.checked)}
-                    class="size-5 shrink-0 accent-moss"
-                  />
-                  <span class="flex min-w-0 flex-col">
-                    <span class="truncate font-semibold">{moderator.name}</span>
-                    <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
-                      <span class="truncate text-[15px] text-muted">{moderator.login}</span>
-                    </Show>
-                  </span>
-                </label>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-      <Show when={props.twitch}>
-        <p class="text-[15px] text-muted">
-          {t("The list is updated from Twitch when you sign in.")}
-        </p>
-      </Show>
-      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
     </section>
   );
 }
