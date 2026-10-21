@@ -72,7 +72,8 @@ pub fn router(api: Arc<Api>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(HeaderValue::from_static("https://moblin.app"))
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers(Any);
+        .allow_headers(Any)
+        .max_age(Duration::from_secs(7200));
     Router::new()
         .route("/streamers", get(handle_streamers))
         .route("/streamers/live/challenge", post(handle_challenge))
