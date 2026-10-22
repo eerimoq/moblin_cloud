@@ -1215,32 +1215,49 @@ function ModeratorList(props: {
         </h3>
       </Show>
       <Show when={props.moderators.length > 0}>
-        <ul class="flex flex-col gap-3">
-          <For each={props.moderators}>
-            {(moderator) => (
-              <li class="flex items-center gap-3">
-                <span class="flex min-w-0 flex-col">
-                  <span class="truncate font-semibold">{moderator.name}</span>
-                  <Show when={moderator.login.toLowerCase() !== moderator.name.toLowerCase()}>
-                    <span class="truncate text-[15px] text-muted">{moderator.login}</span>
-                  </Show>
-                </span>
-                <button
-                  type="button"
-                  class="flex size-10 shrink-0 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
-                  disabled={busy()}
-                  aria-label={t("Remove {name}", { name: moderator.name })}
-                  title={t("Remove")}
-                  onClick={() =>
-                    void run(() => removeModerator(props.session, props.platform, moderator.id))
-                  }
-                >
-                  <Icon name="trash" class="size-5" />
-                </button>
-              </li>
-            )}
-          </For>
-        </ul>
+        <div class="overflow-hidden rounded-2xl border-[1.5px] border-line">
+          <table class="w-full table-fixed">
+            <thead class="bg-band">
+              <tr class="text-left text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+                <th scope="col" class="px-4 py-2.5">
+                  {t("Name")}
+                </th>
+                <th scope="col" class="px-4 py-2.5">
+                  {t("Username")}
+                </th>
+                <th scope="col" class="w-14">
+                  <span class="sr-only">{t("Remove")}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={props.moderators}>
+                {(moderator) => (
+                  <tr class="border-t-[1.5px] border-line odd:bg-well even:bg-card">
+                    <td class="truncate px-4 py-2 font-semibold">{moderator.name}</td>
+                    <td class="truncate px-4 py-2 text-ink-2">{moderator.login}</td>
+                    <td class="py-1 pr-2">
+                      <button
+                        type="button"
+                        class="ml-auto flex size-10 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
+                        disabled={busy()}
+                        aria-label={t("Remove {name}", { name: moderator.name })}
+                        title={t("Remove")}
+                        onClick={() =>
+                          void run(() =>
+                            removeModerator(props.session, props.platform, moderator.id),
+                          )
+                        }
+                      >
+                        <Icon name="trash" class="size-5" />
+                      </button>
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
       </Show>
       <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
         <input
