@@ -40,6 +40,20 @@ pub(super) struct QueueResponse {
     #[serde(flatten)]
     pub(super) status: MusicStatus,
     pub(super) song_requests: bool,
+    pub(super) queue_full: bool,
+    pub(super) seconds_left: Option<u64>,
+}
+
+impl QueueResponse {
+    pub(super) fn new(api: &Api, id: &str, status: MusicStatus) -> Self {
+        let now = deliveries::now();
+        Self {
+            queue_full: status.full(now),
+            seconds_left: status.time_left(now),
+            status,
+            song_requests: api.remote_control.takes_song_requests(id),
+        }
+    }
 }
 
 pub(super) async fn handle_queue(
@@ -52,10 +66,7 @@ pub(super) async fn handle_queue(
         .music((&id, &device), MusicCommand::Status {})
         .await
         .map_err(music_error)?;
-    Ok(Json(QueueResponse {
-        status,
-        song_requests: api.remote_control.takes_song_requests(&id),
-    }))
+    Ok(Json(QueueResponse::new(&api, &id, status)))
 }
 
 #[derive(Deserialize)]
@@ -93,6 +104,13 @@ pub(super) async fn requested_song(
             "requests-off",
             StatusCode::CONFLICT,
             "The streamer is not taking song requests right now.",
+        ));
+    }
+    if api.remote_control.queue_full(id, deliveries::now()) {
+        return Err(failure(
+            "queue-full",
+            StatusCode::CONFLICT,
+            "The streamer's playlist is full, so no more songs can be added right now.",
         ));
     }
     let song = api
@@ -664,6 +682,7 @@ mod tests {
         .await;
         let status = status.await.unwrap();
         assert_eq!(status["songRequests"], true);
+        assert_eq!(status["secondsLeft"], Value::Null);
         assert_eq!(
             status["songs"],
             json!([{"id": "q1", "title": "Song", "artist": null, "duration": 213, "user": "Viewer"}])
@@ -806,6 +825,49 @@ mod tests {
         let status = status.await.unwrap();
         assert_eq!(status["songRequests"], false);
         assert_eq!(status["songs"][0]["title"], "Song");
+    }
+
+    #[tokio::test]
+    async fn songs_are_refused_while_the_queue_reaches_the_time_limit() {
+        let (address, api, _) = start_paid().await;
+        let (key, id) = paid_streamer(&address, &api).await;
+        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
+        let mut socket = connect(&address, &key).await;
+        let status = tokio::spawn({
+            let music_url = format!("http://{address}/pages/{id}/songs/queue");
+            async move {
+                reqwest::get(music_url)
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()
+            }
+        });
+        let request = receive(&mut socket).await;
+        let mut music = music(json!([
+            {"id": "q1", "title": "Played", "duration": 600},
+            {"id": "q2", "title": "Playing", "duration": 200},
+            {"id": "q3", "title": "Next", "duration": 200},
+        ]));
+        music["music"]["status"]["currentSongIndex"] = json!(1);
+        music["music"]["status"]["timeLimitEnd"] = json!(deliveries::now() + 300);
+        answer(&mut socket, &request, music).await;
+        let status = status.await.unwrap();
+        assert_eq!(status["queueFull"], true);
+        assert_eq!(status["secondsLeft"], 0);
+        assert_eq!(status["songRequests"], true);
+        let response = reqwest::Client::new()
+            .post(&orders_url)
+            .json(&json!({"song": LINK}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer's playlist is full, so no more songs can be added right now."
+        );
     }
 
     #[tokio::test]

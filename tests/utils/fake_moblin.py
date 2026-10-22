@@ -47,6 +47,7 @@ class FakeMoblin:
         self.device_id = device_id or str(uuid.uuid4()).upper()
         self.wheel: dict | None = None
         self.song_requests = True
+        self.time_limit_end: int | None = None
         self.refuse_tips = False
         self.songs: list[dict] = [
             {
@@ -228,6 +229,8 @@ class FakeMoblin:
             status["currentSongIndex"] = min(self.current_song_index, len(songs) - 1)
         if song_not_found is not None:
             status["songNotFound"] = song_not_found
+        if self.time_limit_end is not None:
+            status["timeLimitEnd"] = self.time_limit_end
         return status
 
 

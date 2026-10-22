@@ -197,10 +197,7 @@ async fn moderator_music(
         .music_uncached((id, &device), command)
         .await
         .map_err(music_error)?;
-    Ok(Json(QueueResponse {
-        status,
-        song_requests: api.remote_control.takes_song_requests(id),
-    }))
+    Ok(Json(QueueResponse::new(api, id, status)))
 }
 
 pub(super) async fn handle_moderator_song(

@@ -452,6 +452,11 @@ class Moblin:
                 f"In Moblin's Moblin Cloud settings, turn Song requests {'on' if enabled else 'off'}."
             )
 
+    def change_song_requests_time_limit(self, end: int | None):
+        """Sets when the last song of the time limit in Moblin's song requests ends, only on the fake."""
+        assert self._fake is not None
+        self._fake.time_limit_end = end
+
     def disconnect_from_backend(self):
         if self.connected_key() is None:
             return

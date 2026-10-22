@@ -1573,6 +1573,17 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     const current = status();
     return typeof current !== "string" && !current.songRequests;
   };
+  const full = () => {
+    const current = status();
+    return typeof current !== "string" && current.songRequests && current.queueFull;
+  };
+  const secondsLeft = () => {
+    const current = status();
+    if (typeof current === "string" || !current.songRequests || current.queueFull) {
+      return null;
+    }
+    return current.secondsLeft;
+  };
   const shown = () => {
     const current = section();
     return current && sections().includes(current) ? current : sections()[0];
@@ -1879,6 +1890,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
               <Show when={closed()}>
                 <Notice>{t("The streamer is not taking song requests right now.")}</Notice>
               </Show>
+              <Show when={full()}>
+                <Notice>
+                  {t("The streamer's playlist is full, so no more songs can be added right now.")}
+                </Notice>
+              </Show>
               <label class="flex flex-col gap-2">
                 <span class="text-[15px] font-semibold text-ink-2">
                   {t("Apple Music song link")}
@@ -1915,6 +1931,17 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                     </span>
                   )}
                 </Show>
+                <Show when={secondsLeft()}>
+                  {(seconds) => (
+                    <span class="text-[15px] text-muted">
+                      {seconds() < 60
+                        ? t("Less than a minute of songs can still be added.")
+                        : t("About {minutes} minutes of songs can still be added.", {
+                            minutes: Math.floor(seconds() / 60),
+                          })}
+                    </span>
+                  )}
+                </Show>
               </label>
               <NameField
                 name={name()}
@@ -1944,7 +1971,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                         payment={current.payment}
                         options={songPayOptions}
                         disabled={
-                          busy() || typeof status() === "string" || closed() || !song().trim()
+                          busy() ||
+                          typeof status() === "string" ||
+                          closed() ||
+                          full() ||
+                          !song().trim()
                         }
                         resetKey={`${song()}\n${name()}\n${message()}`}
                       />
@@ -1967,7 +1998,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                       signedIn={viewer() !== null}
                       paid={payable() !== null}
                       disabled={
-                        busy() || typeof status() === "string" || closed() || !song().trim()
+                        busy() ||
+                        typeof status() === "string" ||
+                        closed() ||
+                        full() ||
+                        !song().trim()
                       }
                       result={result()}
                       onCloseResult={() => setResult(null)}
