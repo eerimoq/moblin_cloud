@@ -1017,7 +1017,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moderators_add_songs_for_free() {
+    async fn moderators_add_songs() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;

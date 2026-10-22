@@ -1657,7 +1657,7 @@ function TestSend(props: {
 function FreeSong(props: { session: string; page: string; onSignOut: () => void }) {
   return (
     <SendForm
-      title={t("Add a song for free")}
+      title={t("Add a song")}
       label={t("Add song")}
       songField
       onSignOut={props.onSignOut}

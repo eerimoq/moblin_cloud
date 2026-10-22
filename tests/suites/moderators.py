@@ -362,7 +362,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
             self.dashboard.update_settings(currency="USD", songs=None, tips=None, spin=None)
 
 
-class ModeratorsAddSongsForFree(ModeratorsTestCase):
+class ModeratorsAddSongs(ModeratorsTestCase):
     """Let a moderator add songs up to the longest song without paying, listed as theirs for both of them."""
 
     login = "modsongs"
@@ -523,7 +523,7 @@ def tests(context: Context):
         ModeratorsAdded(context),
         ModeratorsManageTheQueue(context),
         ModeratorsUseTheStreamersDashboard(context),
-        ModeratorsAddSongsForFree(context),
+        ModeratorsAddSongs(context),
         ModeratorsSongRequestsOff(context),
         ModeratorsKeptOnRestart(context),
         ModeratorsCounted(context),
