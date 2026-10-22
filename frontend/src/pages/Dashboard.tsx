@@ -2485,21 +2485,17 @@ function MoblinSettings(props: {
   );
 }
 
-function GoPremium() {
+function GoPremium(props: { ref: (dialog: HTMLDialogElement) => void }) {
   let dialog: HTMLDialogElement | undefined;
 
   return (
     <>
-      <button
-        type="button"
-        class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold whitespace-nowrap text-leaf transition-colors hover:bg-ghost-hover max-sm:w-11 max-sm:justify-center sm:px-4"
-        title={t("Go premium")}
-        onClick={() => dialog?.showModal()}
+      <Modal
+        ref={(element) => {
+          dialog = element;
+          props.ref(element);
+        }}
       >
-        <Icon name="star" class="size-4" />
-        <span class="max-sm:sr-only">{t("Go premium")}</span>
-      </button>
-      <Modal ref={(element) => (dialog = element)}>
         <div class="flex flex-col gap-5">
           <h2 class="font-display text-2xl font-bold">{t("Go premium")}</h2>
           <p class="text-[17px] text-ink-2">
@@ -2682,9 +2678,11 @@ export default function Dashboard() {
     );
   };
 
+  let premiumDialog: HTMLDialogElement | undefined;
+
   return (
     <>
-      <CloudHeader>
+      <CloudHeader premium={session()?.account.premium}>
         <Show
           when={session()}
           fallback={
@@ -2698,14 +2696,8 @@ export default function Dashboard() {
         >
           {(current) => (
             <div class="ml-auto flex min-w-0 items-center gap-3">
-              <Show when={current().account.premium} fallback={<GoPremium />}>
-                <span
-                  title={t("Premium")}
-                  class="inline-flex h-11 items-center gap-2 rounded-full border-[1.5px] border-leaf font-display text-base font-semibold text-leaf max-sm:w-11 max-sm:justify-center sm:px-4"
-                >
-                  <Icon name="star" class="size-4" />
-                  <span class="max-sm:sr-only">{t("Premium")}</span>
-                </span>
+              <Show when={!current().account.premium}>
+                <GoPremium ref={(element) => (premiumDialog = element)} />
               </Show>
               <Show when={current().account.moderating.length > 0}>
                 <div class="relative min-w-0">
@@ -2749,7 +2741,18 @@ export default function Dashboard() {
               <AccountMenu
                 name={current().account.name}
                 avatar={current().account.avatar}
-                items={[{ label: t("Account"), icon: "user", href: asset(pages.account) }]}
+                items={[
+                  ...(current().account.premium
+                    ? []
+                    : [
+                        {
+                          label: t("Go premium"),
+                          icon: "star" as const,
+                          onClick: () => premiumDialog?.showModal(),
+                        },
+                      ]),
+                  { label: t("Account"), icon: "user", href: asset(pages.account) },
+                ]}
                 onSignOut={signOut}
               />
             </div>

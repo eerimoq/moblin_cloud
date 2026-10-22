@@ -227,7 +227,7 @@ export default function AccountPage() {
 
   return (
     <>
-      <CloudHeader>
+      <CloudHeader premium={session()?.account.premium}>
         <Show when={session()}>
           {(current) => (
             <AccountMenu
