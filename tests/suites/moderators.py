@@ -301,7 +301,8 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
     def setup(self):
         super().setup()
         self.context.page_with_paypal(self.dashboard)
-        self.dashboard.update_settings(currency="USD", songs=None, tips=None, spin=None)
+        self.dashboard.update_settings(songs=None, tips=None, spin=None)
+        self.dashboard.update_settings(currency="USD")
 
     def run(self):
         self.add_moderator()
@@ -359,19 +360,23 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
     def teardown(self):
         super().teardown()
         if hasattr(self, "dashboard"):
-            self.dashboard.update_settings(currency="USD", songs=None, tips=None, spin=None)
+            self.dashboard.update_settings(songs=None, tips=None, spin=None)
+            self.dashboard.update_settings(currency="USD")
 
 
 class ModeratorsAddSongs(ModeratorsTestCase):
-    """Let a moderator add songs up to the longest song without paying, listed as theirs for both of them."""
+    """Let a moderator add songs up to the longest song without paying, listed as theirs for both of them.
+
+    The song is 200 seconds long with the fake Moblin and 225 with Apple Music, so between the limits of 3 and 4 minutes.
+    """
 
     login = "modsongs"
 
     def run(self):
         self.skip_if_missing_capability(Capability.APPLE_MUSIC)
         self.add_moderator()
-        self.dashboard.update_settings(max_song_length={"minutes": 1})
-        self.assert_equal(self.viewer.get(f"/pages/{self.page_id}/songs")["maxSongMinutes"], 1)
+        self.dashboard.update_settings(max_song_length={"minutes": 3})
+        self.assert_equal(self.viewer.get(f"/pages/{self.page_id}/songs")["maxSongMinutes"], 3)
         self.connect_moblin()
         self.moblin.clear_music()
         self.assert_backend_error(
@@ -387,9 +392,9 @@ class ModeratorsAddSongs(ModeratorsTestCase):
         self.assert_backend_error(
             422,
             lambda: self.moderator.add_free_song(self.page_id, SONG),
-            "The streamer only takes songs up to 1 minutes long.",
+            "The streamer only takes songs up to 3 minutes long.",
         )
-        self.dashboard.update_settings(max_song_length={"minutes": 60})
+        self.dashboard.update_settings(max_song_length={"minutes": 4})
         start = self.moblin.backend_requests_position()
         self.moderator.add_free_song(self.page_id, SONG, " For the drive ")
         add = self.moblin.wait_for_new_backend_request("add", start)

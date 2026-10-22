@@ -241,6 +241,7 @@ function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: 
 
 function CurrencySettings(props: {
   currency: string;
+  locked: boolean;
   busy: boolean;
   onSave: (changes: { currency: string }) => Promise<void>;
 }) {
@@ -249,7 +250,10 @@ function CurrencySettings(props: {
     () => props.busy,
     () => currency() !== props.currency,
     () => props.onSave({ currency: currency() }),
-    (error) => paymentErrorText(error, t("Pick one of the currencies.")),
+    (error) =>
+      error instanceof BackendError && error.status === 409
+        ? t("Turn paid songs, tips and the wheel off to change the currency.")
+        : paymentErrorText(error, t("Pick one of the currencies.")),
   );
 
   return (
@@ -258,8 +262,14 @@ function CurrencySettings(props: {
       <p class="text-ink-2">
         {t("Viewers pay all tips, song requests and wheel spins in this currency.")}
       </p>
+      <Show when={props.locked}>
+        <p class="text-ink-2">
+          {t("Turn paid songs, tips and the wheel off to change the currency.")}
+        </p>
+      </Show>
       <select
         aria-label={t("Currency")}
+        disabled={props.locked}
         value={currency()}
         onChange={(event) => setCurrency(event.currentTarget.value)}
         class={`${inputClass} max-w-32`}
@@ -2091,7 +2101,12 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
               />
             </Show>
             <Show when={settings().payable}>
-              <CurrencySettings currency={settings().currency} busy={busy()} onSave={save} />
+              <CurrencySettings
+                currency={settings().currency}
+                locked={isOn(settings().songs) || isOn(settings().tips) || isOn(settings().spin)}
+                busy={busy()}
+                onSave={save}
+              />
             </Show>
           </div>
         </Show>

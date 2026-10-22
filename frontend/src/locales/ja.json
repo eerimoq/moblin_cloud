@@ -700,6 +700,7 @@
   "Turn on chat text to speech.": "チャットの読み上げをオンにします。",
   "Turn on the Bonding and Bonding RTTs local overlays (Settings → Display → Local overlays, with Show all settings on) to see how each connection performs.": "ローカルオーバーレイの「ボンディング」と「ボンディングRTT」をオンにする(「すべての設定を表示」をオンにして、「設定」→「ディスプレイ」→「ローカルオーバーレイ」)と、各接続の状態を確認できます。",
   "Turn on the {name} filter.": "{name}フィルターをオンにします。",
+  "Turn paid songs, tips and the wheel off to change the currency.": "通貨を変更するには、有料リクエスト曲、チップ、ホイールをオフにしてください。",
   "Turn the torch off.": "ライトをオフにします。",
   "Turn the torch on.": "ライトをオンにします。",
   "Twitch and Kick subscribers add songs to the queue.": "TwitchとKickのサブスクライバーが曲をキューに追加できます。",

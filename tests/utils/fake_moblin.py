@@ -47,6 +47,7 @@ class FakeMoblin:
         self.device_id = device_id or str(uuid.uuid4()).upper()
         self.wheel: dict | None = None
         self.song_requests = True
+        self.refuse_tips = False
         self.songs: list[dict] = [
             {
                 "id": str(number),
@@ -154,6 +155,9 @@ class FakeMoblin:
             self.import_settings(body["data"])
         elif kind == "music":
             return self.music(body["command"])
+        elif kind == "tip" and self.refuse_tips:
+            LOGGER.debug("Refusing tip %s", body)
+            return {"error": {}}, None
         elif kind in ["tip", "spinWheelOfLuck"]:
             request_id = body.get("requestId")
             if request_id in self.handled_request_ids:

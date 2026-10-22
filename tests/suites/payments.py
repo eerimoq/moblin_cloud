@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from ..utils.config import Capability
 from ..utils.context import Context
+from ..utils.fake_moblin import FakeMoblin
 from ..utils.moblin import Moblin
 from ..utils.moblin import wheel_option
 from ..utils.test_case import TestCase
@@ -38,10 +39,12 @@ class PaymentTestCase(TestCase):
             self.settings = self.context.page_with_paypal(self.dashboard)
             self.merchant_id = self.settings["merchantId"]
         self.viewer = self.website.viewer(self.settings["id"])
+        self.dashboard.save_settings()
         self.dashboard.save_settings(currency="USD")
 
     def teardown(self):
         if hasattr(self, "dashboard"):
+            self.dashboard.save_settings()
             self.dashboard.save_settings(currency="USD")
 
     @property
@@ -230,6 +233,78 @@ class PaymentsTipDeliveredAfterBackendRestart(PaymentTestCase):
         self.moblin.wait_for_backend_request("tip", order_id)
 
 
+class PaymentsTipToEveryDevice(PaymentTestCase):
+    """Keep sending a tip to a connected device that has not got it, after another device got it."""
+
+    def run(self):
+        self.skip_if_no_moblin()
+        self.connect_moblin()
+        self.dashboard.save_settings(tips=TIPS)
+        self.second = FakeMoblin(
+            None, self.backend.url, key=self.dashboard.moblin_cloud_key(), device_id="REFUSING"
+        )
+        self.second.refuse_tips = True
+        self.second.start()
+        self.wait_until(
+            lambda: sum(device["connected"] for device in self.dashboard.account()["devices"]) == 2,
+            "the second device to connect",
+        )
+        order_id = self.order_tip(100, "Everyone")
+        self.pay(order_id)
+        self.capture(self.viewer.capture_tip, order_id)
+        self.moblin.wait_for_backend_request("tip", order_id)
+
+        def tip() -> dict:
+            return self.dashboard.recent("tip")["items"][0]
+
+        self.wait_until(
+            lambda: any(device["received"] for device in tip()["devices"]), "the first device to get the tip"
+        )
+        self.assert_equal(tip()["status"], "waiting")
+        self.assert_equal(sorted(device["received"] for device in tip()["devices"]), [False, True])
+        self.second.refuse_tips = False
+        self.wait_until(
+            lambda: order_id in self.second.handled_request_ids, "the second device to get the tip"
+        )
+        self.wait_until(lambda: tip()["status"] == "delivered", "the tip to be delivered")
+        self.assert_equal([device["received"] for device in tip()["devices"]], [True, True])
+
+    def teardown(self):
+        if hasattr(self, "second"):
+            self.second.stop()
+        super().teardown()
+
+
+class PaymentsTipSentAgain(PaymentTestCase):
+    """Send a delivered tip to Moblin again from the dashboard, under a new request id so Moblin shows it again."""
+
+    def run(self):
+        self.skip_if_no_moblin()
+        self.connect_moblin()
+        self.dashboard.save_settings(tips=TIPS)
+        order_id = self.order_tip(700, "Again", "Once more")
+        self.pay(order_id)
+        self.capture(self.viewer.capture_tip, order_id)
+        first = self.moblin.wait_for_backend_request("tip", order_id)
+        self.wait_until(
+            lambda: self.dashboard.recent("tip")["items"][0]["status"] == "delivered",
+            "the tip to be delivered",
+        )
+        for resends in [1, 2]:
+            self.assert_equal(self.dashboard.resend(order_id), {})
+            again = self.moblin.wait_for_backend_request("tip", f"{order_id}-{resends}")
+            self.assert_equal(
+                {**again.body, "requestId": order_id},
+                first.body,
+            )
+            self.wait_until(
+                lambda: self.dashboard.recent("tip")["items"][0]["status"] == "delivered",
+                "the tip to be delivered again",
+            )
+        self.assert_equal([item["id"] for item in self.dashboard.recent("tip")["items"]].count(order_id), 1)
+        self.assert_backend_error(404, lambda: self.dashboard.resend("UNKNOWN123"))
+
+
 class PaymentsSpinNeedsWheel(PaymentTestCase):
     """Refuse wheel spins when the wheel is off in the dashboard or Moblin has no wheel."""
 
@@ -409,6 +484,8 @@ def tests(context: Context):
             PaymentsAnonymousTipPaid,
             PaymentsTipDeliveredWhenMoblinConnects,
             PaymentsTipDeliveredAfterBackendRestart,
+            PaymentsTipToEveryDevice,
+            PaymentsTipSentAgain,
             PaymentsSpinNeedsWheel,
             PaymentsSpinPaid,
             PaymentsSpinWhenWheelIsGone,

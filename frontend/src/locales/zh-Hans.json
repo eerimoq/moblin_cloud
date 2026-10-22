@@ -700,6 +700,7 @@
   "Turn on chat text to speech.": "开启聊天文字转语音。",
   "Turn on the Bonding and Bonding RTTs local overlays (Settings → Display → Local overlays, with Show all settings on) to see how each connection performs.": "开启“绑定”和“绑定 RTT”本地叠加层(开启“显示所有设置”后,在 设置 → 显示 → 本地叠加层),即可查看每条连接的表现。",
   "Turn on the {name} filter.": "开启 {name} 滤镜。",
+  "Turn paid songs, tips and the wheel off to change the currency.": "关闭付费点歌、打赏和转盘后才能更改货币。",
   "Turn the torch off.": "关闭手电筒。",
   "Turn the torch on.": "打开手电筒。",
   "Twitch and Kick subscribers add songs to the queue.": "Twitch 和 Kick 订阅者可以将歌曲添加到队列。",

@@ -220,6 +220,9 @@ class Dashboard(Client):
     def recent(self, kind: str) -> dict:
         return self.get(f"/account/recent?kind={kind}")
 
+    def resend(self, order_id: str) -> dict:
+        return self.post(f"/account/recent/{quote(order_id, safe='')}/resend")
+
     def test_song(self, song: str) -> dict:
         return self.post("/account/test/song", {"song": song})
 

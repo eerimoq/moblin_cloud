@@ -183,13 +183,12 @@ async fn update_settings(
     if !CURRENCIES.contains(&currency.as_str()) {
         return Err(invalid_currency());
     }
-    let paid = currency != current.currency();
     let songs = match request.songs {
         Some(songs) => {
             let songs = songs
                 .normalize(Songs::normalize)
                 .ok_or_else(invalid_songs)?;
-            if songs.enabled && (paid || current.songs.as_ref() != Some(&songs)) {
+            if songs.enabled && current.songs.as_ref() != Some(&songs) {
                 check_payable(api, &id)?;
             }
             Some(songs)
@@ -199,7 +198,7 @@ async fn update_settings(
     let tips = match request.tips {
         Some(tips) => {
             let tips = tips.normalize(Tips::normalize).ok_or_else(invalid_tips)?;
-            if tips.enabled && (paid || current.tips.as_ref() != Some(&tips)) {
+            if tips.enabled && current.tips.as_ref() != Some(&tips) {
                 check_payable(api, &id)?;
             }
             Some(tips)
@@ -209,13 +208,21 @@ async fn update_settings(
     let spin = match request.spin {
         Some(spin) => {
             let spin = spin.normalize(Spin::normalize).ok_or_else(invalid_spin)?;
-            if spin.enabled && (paid || current.spin.as_ref() != Some(&spin)) {
+            if spin.enabled && current.spin.as_ref() != Some(&spin) {
                 check_payable(api, &id)?;
             }
             Some(spin)
         }
         None => None,
     };
+    if currency != current.currency()
+        && (current.songs().is_some() || current.tips().is_some() || current.spin().is_some())
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "turn paid songs, tips and the wheel off before changing the currency".to_string(),
+        ));
+    }
     let settings = api
         .pages
         .set(
@@ -405,5 +412,54 @@ mod tests {
         assert_eq!(settings["font"], "handwritten");
         let response = save_font(premium, "comic").await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_currency_only_changes_while_paid_features_are_off() {
+        let (address, api, _) = start_paid().await;
+        let (session, _, _) = streamer(&address, &api).await;
+        connect_paypal(&api);
+        let client = reqwest::Client::new();
+        for (request, status) in [
+            (
+                json!({"currency": "SEK", "tips": {"amounts": [500]}}),
+                StatusCode::OK,
+            ),
+            (
+                json!({"currency": "EUR", "tips": {"amounts": [500]}}),
+                StatusCode::CONFLICT,
+            ),
+            (
+                json!({"currency": "EUR", "tips": null}),
+                StatusCode::CONFLICT,
+            ),
+            (
+                json!({"currency": "SEK", "tips": {"amounts": [700]}}),
+                StatusCode::OK,
+            ),
+            (
+                json!({"currency": "SEK", "tips": {"enabled": false, "amounts": [700]}}),
+                StatusCode::OK,
+            ),
+            (
+                json!({"currency": "EUR", "songs": {"price": 250}, "spin": {"options": [{"spins": 1, "price": 100}]}}),
+                StatusCode::OK,
+            ),
+            (
+                json!({"currency": "USD", "songs": {"enabled": false, "price": 250}}),
+                StatusCode::CONFLICT,
+            ),
+            (json!({"currency": "EUR"}), StatusCode::OK),
+            (json!({"currency": "USD"}), StatusCode::OK),
+        ] {
+            let response = client
+                .post(format!("http://{address}/account/settings"))
+                .bearer_auth(&session)
+                .json(&request)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status, "{request}");
+        }
     }
 }

@@ -112,6 +112,7 @@ class StripePaidSettings(TestCase):
             [500, "sek", "manual", "requires_payment_method"],
         )
         self.assert_equal(payment["description"], "Tip from Viewer: Hej!")
+        dashboard.save_settings()
         dashboard.save_settings(currency="USD")
 
 

@@ -53,7 +53,7 @@ class PayPalConnectNeedsFreshSignIn(TestCase):
 
 
 class PayPalPaidSettings(TestCase):
-    """Turn song requests, tips and the wheel on, which viewers see with what they need to pay with PayPal."""
+    """Turn song requests, tips and the wheel on, which viewers see with what they need to pay with PayPal, and change the currency only while they are off."""
 
     def run(self):
         dashboard = self.sign_in()
@@ -92,6 +92,15 @@ class PayPalPaidSettings(TestCase):
             },
         )
         self.assert_equal(viewer.spin()["spin"]["options"], settings["spin"]["options"])
+        self.assert_backend_error(
+            409,
+            lambda: dashboard.update_settings(currency="USD"),
+            "turn paid songs, tips and the wheel off before changing the currency",
+        )
+        tips = viewer.tips()
+        assert tips is not None
+        self.assert_equal(tips["currency"], "EUR")
+        self.assert_equal(dashboard.save_settings()["currency"], "EUR")
         settings = dashboard.save_settings(currency="USD")
         self.assert_equal([settings["songs"], settings["tips"], settings["spin"]], [None, None, None])
         self.assert_equal(viewer.paid_songs(), None)
