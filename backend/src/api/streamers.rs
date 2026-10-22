@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::app_attest::AppAttest;
 use crate::challenges::Challenges;
 use crate::remote_control;
-use crate::store::{Channel, Streamer};
+use crate::store::{self, Channel, Streamer};
 
 use super::*;
 
@@ -22,12 +22,51 @@ const ASSERTION_HEADER: &str = "moblin-assertion";
 
 #[derive(Serialize)]
 pub(super) struct StreamersResponse {
-    streamers: Vec<Streamer>,
+    streamers: Vec<ListedStreamer>,
+}
+
+#[derive(Serialize)]
+pub(super) struct ListedStreamer {
+    #[serde(flatten)]
+    streamer: Streamer,
+    page: Option<PageAddress>,
+}
+
+#[derive(Serialize)]
+pub(super) struct PageAddress {
+    platform: &'static str,
+    login: String,
 }
 
 pub(super) async fn handle_streamers(State(api): State<Arc<Api>>) -> Json<StreamersResponse> {
     Json(StreamersResponse {
-        streamers: api.store.streamers(),
+        streamers: api
+            .store
+            .streamers()
+            .into_iter()
+            .map(|streamer| ListedStreamer {
+                page: page_address(&api, &streamer),
+                streamer,
+            })
+            .collect(),
+    })
+}
+
+fn page_address(api: &Api, streamer: &Streamer) -> Option<PageAddress> {
+    streamer.channels.iter().find_map(|listed| {
+        let (platform, login) = match listed.channel.platform {
+            store::Platform::Twitch => (Platform::Twitch, listed.channel.name.to_lowercase()),
+            store::Platform::Kick => (
+                Platform::Kick,
+                listed.channel.name.to_lowercase().replace('_', "-"),
+            ),
+            store::Platform::YouTube => return None,
+        };
+        api.accounts.page_of_login(platform, &login)?;
+        Some(PageAddress {
+            platform: platform.name(),
+            login,
+        })
     })
 }
 
@@ -201,6 +240,7 @@ mod tests {
 
     use crate::api::test_utils::*;
     use crate::deliveries;
+    use crate::store::{Channel, Platform};
 
     async fn refused(address: &str, key: &str, identify: Value) {
         let (mut socket, _) = tokio_tungstenite::connect_async(format!(
@@ -221,6 +261,49 @@ mod tests {
             socket.next().await,
             None | Some(Err(_)) | Some(Ok(Message::Close(_)))
         ));
+    }
+
+    #[tokio::test]
+    async fn streamers_with_an_account_link_to_their_page() {
+        let (address, api) = start_api(None).await;
+        streamer(&address, &api).await;
+        create_account(&api, "2", "Anna", "anna");
+        api.store.streamer_live(vec![Channel {
+            platform: Platform::Kick,
+            name: "nobody".to_string(),
+        }]);
+        api.store.streamer_live(vec![Channel {
+            platform: Platform::Twitch,
+            name: "Erik".to_string(),
+        }]);
+        api.store.streamer_live(vec![
+            Channel {
+                platform: Platform::YouTube,
+                name: "Anna".to_string(),
+            },
+            Channel {
+                platform: Platform::Twitch,
+                name: "anna".to_string(),
+            },
+        ]);
+        let pages = async || {
+            let (status, body) = get_json(&address, "/streamers").await;
+            assert_eq!(status, StatusCode::OK);
+            body["streamers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|streamer| streamer["page"].clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            pages().await,
+            vec![
+                json!({"platform": "twitch", "login": "anna"}),
+                json!({"platform": "twitch", "login": "erik"}),
+                Value::Null
+            ]
+        );
     }
 
     #[tokio::test]

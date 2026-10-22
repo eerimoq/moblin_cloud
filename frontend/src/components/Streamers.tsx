@@ -9,6 +9,8 @@ import {
   type StreamerPlatform,
 } from "../data/streamers";
 import BrandIcon from "./BrandIcon";
+import Icon from "./Icon";
+import { asset } from "../asset";
 import { t } from "../i18n";
 
 const platformName: Record<StreamerPlatform, string> = {
@@ -138,6 +140,17 @@ function StreamerCard(props: { streamer: Streamer }) {
       <ul class="flex flex-col gap-3">
         <For each={props.streamer.channels}>{(channel) => <ChannelRow channel={channel} />}</For>
       </ul>
+      <Show when={props.streamer.page}>
+        {(page) => (
+          <a
+            href={asset(`/${page().platform}/${encodeURIComponent(page().login)}`)}
+            class="mt-auto inline-flex items-center gap-2 self-start rounded-full border-[1.5px] border-line px-4 py-2 font-bold text-ink hover:border-leaf hover:text-leaf"
+          >
+            <Icon name="heart" class="size-4" />
+            {t("Tip page")}
+          </a>
+        )}
+      </Show>
     </li>
   );
 }

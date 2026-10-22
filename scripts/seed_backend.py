@@ -15,6 +15,9 @@ STREAMERS = [
     [("youtube", "BjornPaTur"), ("twitch", "bjorn_pa_tur")],
     [("twitch", "tokyotom")],
     [("twitch", "eerimoq"), ("kick", "eerimoq"), ("youtube", "erimo144")],
+    [("twitch", "normal"), ("kick", "normal")],
+    [("twitch", "premium"), ("kick", "premium")],
+    [("twitch", "admin"), ("kick", "admin")],
 ]
 
 

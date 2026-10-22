@@ -38,6 +38,8 @@ export const channelUrl = ({ platform, name }: StreamerChannel) => {
 export type Streamer = {
   /** Every platform they stream to, at least one. */
   channels: StreamerChannel[];
+  /** Their Moblin Cloud page, when they have an account. */
+  page: { platform: "twitch" | "kick"; login: string } | null;
 };
 
 export const snapshotUrl = ({ channels }: Streamer) =>
