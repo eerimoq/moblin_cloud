@@ -1139,10 +1139,8 @@ function ModeratorSettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
       <p class="text-ink-2">
         {t(
-          "Moderators may manage your song queue, add songs for free and see recent song " +
-            "requests, tips and spins. They sign in to Moblin Cloud like you and pick your " +
-            "channel at the top of their dashboard. Add their usernames below. Removing " +
-            "one takes effect at once.",
+          "Moderators can manage your song queue, add songs and see recent requests. " +
+            "They sign in to Moblin Cloud and pick your channel on their dashboard.",
         )}
       </p>
       <For each={linked()}>
