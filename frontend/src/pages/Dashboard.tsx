@@ -1619,15 +1619,15 @@ function SendForm(props: {
 
 const testTexts: Record<RecentKind, { description: string; label: string }> = {
   song: {
-    description: t("Add a song to Moblin's queue for free, to check that song requests work."),
+    description: t("Add a song to Moblin's queue, to check that song requests work."),
     label: t("Send test song"),
   },
   tip: {
-    description: t("Send yourself a tip for free, to check that tips show up in Moblin."),
+    description: t("Send yourself a tip, to check that tips show up in Moblin."),
     label: t("Send test tip"),
   },
   spin: {
-    description: t("Spin your wheel in Moblin for free, to check that it works."),
+    description: t("Spin your wheel in Moblin, to check that it works."),
     label: t("Send test spin"),
   },
 };
