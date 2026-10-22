@@ -327,10 +327,8 @@ impl Pages {
         let settings: rusqlite::Result<Option<String>> = self
             .database
             .lock()
-            .query_row("SELECT settings FROM pages WHERE id = ?1", [id], |row| {
-                row.get(0)
-            })
-            .optional();
+            .prepare_cached("SELECT settings FROM pages WHERE id = ?1")
+            .and_then(|mut statement| statement.query_row([id], |row| row.get(0)).optional());
         match settings {
             Ok(Some(settings)) => serde_json::from_str(&settings).unwrap_or_else(|error| {
                 warn!("failed to parse the settings of page {id}: {error}");
@@ -375,12 +373,8 @@ impl Pages {
     pub fn image_version(&self, id: &str) -> Option<String> {
         self.database
             .lock()
-            .query_row(
-                "SELECT version FROM page_images WHERE id = ?1",
-                [id],
-                |row| row.get(0),
-            )
-            .optional()
+            .prepare_cached("SELECT version FROM page_images WHERE id = ?1")
+            .and_then(|mut statement| statement.query_row([id], |row| row.get(0)).optional())
             .unwrap_or_else(|error| {
                 warn!("failed to read the image version of page {id}: {error:#}");
                 None

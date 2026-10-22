@@ -89,13 +89,19 @@ fn page_of_login(
 }
 
 pub(super) fn sub_tiers(api: &Api, id: &str, tiers: Option<&Tiers>) -> Option<Tiers> {
+    linked_tiers(api.accounts.of_page(id).as_ref(), tiers)
+}
+
+fn linked_tiers(account: Option<&Account>, tiers: Option<&Tiers>) -> Option<Tiers> {
     tiers
         .filter(|_| {
-            api.accounts
-                .of_page(id)
-                .is_some_and(|account| account.twitch().is_some() || account.kick().is_some())
+            account.is_some_and(|account| account.twitch().is_some() || account.kick().is_some())
         })
         .cloned()
+}
+
+fn merchant(account: Option<&Account>) -> Option<String> {
+    account.and_then(|account| account.merchant_id.clone())
 }
 
 fn client_id(api: &Api, merchant_id: &Option<String>) -> Option<String> {
@@ -112,10 +118,11 @@ pub(super) struct PublicStripe {
     account_id: String,
 }
 
-fn public_stripe(api: &Api, id: &str) -> Option<PublicStripe> {
+fn public_stripe(api: &Api, account: Option<&Account>) -> Option<PublicStripe> {
+    let account = account.filter(|account| account.stripe_ready)?;
     Some(PublicStripe {
         publishable_key: api.stripe.as_ref()?.publishable_key().to_string(),
-        account_id: stripe_of(api, id)?,
+        account_id: account.stripe_account_id.clone()?,
     })
 }
 
@@ -142,11 +149,12 @@ pub(super) async fn handle_songs(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<SongsResponse> {
-    let merchant_id = merchant_of(&api, &id);
+    let account = api.accounts.of_page(&id);
+    let merchant_id = merchant(account.as_ref());
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
     Json(SongsResponse {
-        sub_songs: sub_tiers(&api, &id, settings.sub_songs()),
+        sub_songs: linked_tiers(account.as_ref(), settings.sub_songs()),
         max_song_minutes: settings.max_song_minutes(),
         songs: settings.songs().map(|songs| PublicSongs {
             price: songs.price,
@@ -154,7 +162,7 @@ pub(super) async fn handle_songs(
             client_id: client_id(&api, &merchant_id),
             merchant_id,
             environment: api.paypal.as_ref().map(PayPal::environment),
-            stripe: public_stripe(&api, &id),
+            stripe: public_stripe(&api, account.as_ref()),
         }),
     })
 }
@@ -179,10 +187,11 @@ pub(super) async fn handle_tips(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<TipsResponse> {
+    let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let merchant_id = merchant_of(&api, &id);
-    let stripe = public_stripe(&api, &id);
+    let merchant_id = merchant(account.as_ref());
+    let stripe = public_stripe(&api, account.as_ref());
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(TipsResponse {
         tips: settings.tips().filter(|_| payable).map(|tips| PublicTips {
@@ -220,13 +229,14 @@ pub(super) async fn handle_spin(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<SpinResponse> {
+    let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let merchant_id = merchant_of(&api, &id);
-    let stripe = public_stripe(&api, &id);
+    let merchant_id = merchant(account.as_ref());
+    let stripe = public_stripe(&api, account.as_ref());
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(SpinResponse {
-        sub_spins: sub_tiers(&api, &id, settings.sub_spins()),
+        sub_spins: linked_tiers(account.as_ref(), settings.sub_spins()),
         spin: settings.spin().filter(|_| payable).map(|spin| PublicSpin {
             options: spin.options.clone(),
             currency,
