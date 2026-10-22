@@ -14,7 +14,6 @@ import {
   cardClass,
   CloudHeader,
   ghostButtonClass,
-  Hero,
   inputClass,
   Notice,
   PlatformSignIn,
@@ -79,6 +78,7 @@ import {
   type Tips,
 } from "../data/remoteControl";
 import { language, t, tRich } from "../i18n";
+import CloudLanding from "../components/CloudLanding";
 
 const accentNames: Record<string, string> = {
   green: t("Green"),
@@ -1576,7 +1576,6 @@ function SendForm(props: {
   description?: string;
   songField: boolean;
   label: string;
-  preview?: boolean;
   send: (song: string, message: string) => Promise<unknown>;
   onSignOut: () => void;
 }) {
@@ -1588,7 +1587,7 @@ function SendForm(props: {
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
-    if (props.preview || sending()) {
+    if (sending()) {
       return;
     }
     setError(null);
@@ -1683,7 +1682,6 @@ function TestSend(props: {
   kind: RecentKind;
   session: string;
   page?: string;
-  preview?: boolean;
   onSignOut: () => void;
 }) {
   return (
@@ -1692,7 +1690,6 @@ function TestSend(props: {
       description={testTexts[props.kind].description}
       label={testTexts[props.kind].label}
       songField={props.kind === "song"}
-      preview={props.preview}
       onSignOut={props.onSignOut}
       send={(song, message) =>
         sendTest(
@@ -1720,13 +1717,7 @@ function FreeSong(props: { session: string; page: string; onSignOut: () => void 
   );
 }
 
-function Admin(props: {
-  session: string;
-  account: Account;
-  page?: string;
-  onSignOut: () => void;
-  preview?: boolean;
-}) {
+function Admin(props: { session: string; account: Account; page?: string; onSignOut: () => void }) {
   const [account, setAccount] = createSignal(props.account);
   const [settings, setSettings] = createSignal(props.account.settings);
   const [busy, setBusy] = createSignal(false);
@@ -1738,7 +1729,6 @@ function Admin(props: {
         props.onSignOut();
       }
     },
-    props.preview,
   );
 
   const guard = async <T,>(promise: Promise<T>) => {
@@ -1762,9 +1752,6 @@ function Admin(props: {
   };
 
   const resend = async (item: Recent) => {
-    if (props.preview) {
-      return;
-    }
     await guard(resendRecent(props.session, item.id, props.page));
     await loadRecent();
   };
@@ -1779,9 +1766,6 @@ function Admin(props: {
     );
 
   onMount(() => {
-    if (props.preview) {
-      return;
-    }
     void loadRecent();
     onCleanup(
       poll(async () => {
@@ -1986,7 +1970,6 @@ function Admin(props: {
             kind="tip"
             session={props.session}
             page={props.page}
-            preview={props.preview}
             onSignOut={props.onSignOut}
           />
           <Latest
@@ -2029,7 +2012,6 @@ function Admin(props: {
             kind="spin"
             session={props.session}
             page={props.page}
-            preview={props.preview}
             onSignOut={props.onSignOut}
           />
           <Latest
@@ -2073,20 +2055,13 @@ function Admin(props: {
             busy={busy()}
             onSave={(maxSongLength) => save({ maxSongLength })}
           />
-          <Show when={!props.preview && active() === "songs"}>
+          <Show when={active() === "songs"}>
             <MusicQueue session={props.session} page={settings().id} onSignOut={props.onSignOut} />
           </Show>
           <Show
             when={props.page}
             keyed
-            fallback={
-              <TestSend
-                kind="song"
-                session={props.session}
-                preview={props.preview}
-                onSignOut={props.onSignOut}
-              />
-            }
+            fallback={<TestSend kind="song" session={props.session} onSignOut={props.onSignOut} />}
           >
             {(page) => <FreeSong session={props.session} page={page} onSignOut={props.onSignOut} />}
           </Show>
@@ -2560,100 +2535,6 @@ function PickedAvatar(props: { picked: { name: string; avatar: string | null } }
   );
 }
 
-function Preview(props: { failed: boolean }) {
-  const [dismissed, setDismissed] = createSignal(false);
-  return (
-    <div class="flex flex-col gap-6">
-      <Show when={props.failed && !dismissed()}>
-        <Notice status onClose={() => setDismissed(true)}>
-          {t("Signing in did not work. Try again.")}
-        </Notice>
-      </Show>
-      <div class="relative rounded-3xl border-[1.5px] border-dashed border-line p-4 sm:p-6">
-        <span class="absolute -top-3.5 left-6 rounded-full border-[1.5px] border-line bg-band px-3 py-0.5 font-display text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">
-          {t("Preview")}
-        </span>
-        <div
-          inert
-          aria-hidden="true"
-          class="max-h-[520px] overflow-hidden opacity-50 select-none [&_nav]:static [mask-image:linear-gradient(to_bottom,black_30%,transparent_80%)]"
-        >
-          <Admin
-            preview
-            session=""
-            account={{
-              name: "",
-              avatar: null,
-              twitch: { login: "", name: "", avatar: null },
-              kick: null,
-              key: "moblin-cloud-key-preview",
-              devices: [
-                {
-                  id: "",
-                  name: "Moblin 1",
-                  connected: true,
-                  music: true,
-                  wheel: true,
-                  lastSeen: null,
-                },
-              ],
-              settings: {
-                id: "",
-                message: null,
-                accent: null,
-                font: null,
-                image: null,
-                connected: true,
-                currency: "USD",
-                songs: { enabled: true, price: 100 },
-                subSongs: { enabled: true, tier1: 1, tier2: 5, tier3: 10 },
-                subSpins: { enabled: true, tier1: 1, tier2: 5, tier3: 10 },
-                maxSongLength: { enabled: true, minutes: 7 },
-                tips: { enabled: true, amounts: [300, 500, 1000] },
-                spin: {
-                  enabled: true,
-                  options: [
-                    { spins: 1, price: 200 },
-                    { spins: 5, price: 800 },
-                  ],
-                },
-                paypal: true,
-                merchantId: "preview",
-                paypalPending: false,
-                paypalSandbox: false,
-                stripe: true,
-                stripeAccountId: null,
-                stripePending: false,
-                stripeTest: false,
-                payable: true,
-              },
-              admin: false,
-              premium: false,
-              moderating: [],
-              twitchModerators: [],
-              kickModerators: [],
-            }}
-            onSignOut={() => {}}
-          />
-        </div>
-        <div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 px-6 pb-10 text-center">
-          <p class="text-lg font-semibold text-balance">
-            {t("Sign in to create or manage your tip page.")}
-          </p>
-          <div class="flex flex-wrap justify-center gap-3">
-            <PlatformSignIn platform="twitch" large>
-              {t("Sign in with Twitch")}
-            </PlatformSignIn>
-            <PlatformSignIn platform="kick" large>
-              {t("Sign in with Kick")}
-            </PlatformSignIn>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const { session, loading, signInFailed, signOut } = createAccountSession();
 
@@ -2760,39 +2641,31 @@ export default function Dashboard() {
         </Show>
       </CloudHeader>
       <main>
-        <Show when={!loading() && !session()}>
-          <Hero title={t("Let viewers tip you.")}>
-            <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-              {t(
-                "Tips go straight to your PayPal or Stripe account. Moblin takes nothing, PayPal and " +
-                  "Stripe charge their usual fees.",
-              )}
-            </p>
-          </Hero>
-        </Show>
-        <Band tight={session() !== null}>
-          <Show when={!loading()} fallback={<Spinner />}>
-            <Show when={session()} keyed fallback={<Preview failed={signInFailed()} />}>
-              {(current) => (
-                <Show
-                  when={channel(current.account)}
-                  keyed
-                  fallback={
-                    <Admin
-                      session={current.session}
-                      account={current.account}
-                      onSignOut={signOut}
-                    />
-                  }
-                >
-                  {(channel) => (
-                    <Moderated session={current.session} channel={channel} onSignOut={signOut} />
-                  )}
-                </Show>
-              )}
+        <Show when={loading() || session()} fallback={<CloudLanding failed={signInFailed()} />}>
+          <Band tight={session() !== null}>
+            <Show when={!loading()} fallback={<Spinner />}>
+              <Show when={session()} keyed>
+                {(current) => (
+                  <Show
+                    when={channel(current.account)}
+                    keyed
+                    fallback={
+                      <Admin
+                        session={current.session}
+                        account={current.account}
+                        onSignOut={signOut}
+                      />
+                    }
+                  >
+                    {(channel) => (
+                      <Moderated session={current.session} channel={channel} onSignOut={signOut} />
+                    )}
+                  </Show>
+                )}
+              </Show>
             </Show>
-          </Show>
-        </Band>
+          </Band>
+        </Show>
       </main>
     </>
   );

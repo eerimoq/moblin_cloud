@@ -179,12 +179,8 @@ export function Latest(props: {
 export function createRecent(
   fetchList: (kind: RecentKind, limit: number, before?: string) => Promise<RecentList>,
   onError: (error: unknown) => void,
-  preview?: boolean,
 ) {
-  const empty = { items: [], more: false };
-  const [recent, setRecent] = createSignal<Record<RecentKind, RecentList> | null>(
-    preview ? { song: empty, tip: empty, spin: empty } : null,
-  );
+  const [recent, setRecent] = createSignal<Record<RecentKind, RecentList> | null>(null);
 
   const loadRecent = async () => {
     const shown = recent();

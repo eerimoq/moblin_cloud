@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 500">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14324a" />
+      <stop offset="0.55" stop-color="#3f7a6a" />
+      <stop offset="1" stop-color="#f4b860" />
+    </linearGradient>
+    <radialGradient id="glow" cx="1080" cy="330" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe08a" stop-opacity="0.7" />
+      <stop offset="1" stop-color="#ffe08a" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1500" height="500" fill="url(#sky)" />
+  <rect width="1500" height="500" fill="url(#glow)" />
+  <circle cx="1080" cy="330" r="95" fill="#ffe7a3" />
+  <path d="M0 340 L160 250 L270 310 L420 200 L560 300 L700 230 L860 320 L1000 260 L1150 330 L1300 240 L1500 320 L1500 500 L0 500 Z" fill="#2d5a4a" />
+  <path d="M0 400 L130 330 L250 380 L390 300 L540 390 L690 330 L820 400 L980 340 L1120 410 L1270 350 L1400 395 L1500 360 L1500 500 L0 500 Z" fill="#1c3d33" />
+  <path d="M0 450 C250 420 450 470 750 440 C1050 410 1250 465 1500 435 L1500 500 L0 500 Z" fill="#102a22" />
+  <path d="M640 500 L735 440 L765 440 L860 500 Z" fill="#3a4a44" />
+  <path d="M748 452 L752 452 L754 470 L746 470 Z M745 482 L755 482 L757 500 L743 500 Z" fill="#ffe7a3" opacity="0.8" />
+  <path d="M300 120 q12 -10 24 0 q12 -10 24 0 M380 90 q9 -8 18 0 q9 -8 18 0" fill="none" stroke="#0e2233" stroke-width="4" stroke-linecap="round" />
+</svg>
