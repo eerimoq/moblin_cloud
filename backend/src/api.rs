@@ -248,18 +248,20 @@ pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (Sta
         .and_then(|session| api.auth.session_of(session))
         .ok_or_else(not_signed_in)?;
     let fresh = session.is_fresh();
-    let id = match api.accounts.get(&session.account) {
-        Some(_) => session.account,
-        None => api
-            .accounts
-            .account_of_identity(Platform::Twitch, &session.account)
-            .ok_or_else(not_signed_in)?,
+    let (id, account) = match api.accounts.get(&session.account) {
+        Some(account) => (session.account, account),
+        None => {
+            let id = api
+                .accounts
+                .account_of_identity(Platform::Twitch, &session.account)
+                .ok_or_else(not_signed_in)?;
+            let account = api.accounts.get(&id).ok_or_else(not_signed_in)?;
+            (id, account)
+        }
     };
-    let account = api
-        .accounts
-        .get(&id)
-        .filter(|account| account.sessions == session.generation)
-        .ok_or_else(not_signed_in)?;
+    if account.sessions != session.generation {
+        return Err(not_signed_in());
+    }
     Ok(SignedIn { fresh, id, account })
 }
 
@@ -352,16 +354,17 @@ pub(super) fn new_request_id(api: &Api) -> Result<String, Failure> {
 
 pub(super) fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = signed_in(api, headers)?;
-    let streamer = || api.accounts.of_page(id);
-    let allowed = signed_in.account.page.id == id
-        || [Platform::Twitch, Platform::Kick]
+    let allowed = signed_in.account.page.id == id || {
+        let streamer = api.accounts.of_page(id);
+        [Platform::Twitch, Platform::Kick]
             .into_iter()
             .any(|platform| {
                 signed_in
                     .account
                     .identity(platform)
                     .is_some_and(|moderator| {
-                        streamer()
+                        streamer
+                            .as_ref()
                             .and_then(|streamer| {
                                 streamer
                                     .identity(platform)
@@ -372,7 +375,8 @@ pub(super) fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<Sign
                                     .moderates(platform, &moderator.user_id, &broadcaster)
                             })
                     })
-            });
+            })
+    };
     if !allowed {
         return Err(failure(
             "not-moderator",

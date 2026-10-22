@@ -56,6 +56,8 @@ pub(super) fn settings_response(
     settings: Settings,
 ) -> Json<SettingsResponse> {
     let account = api.accounts.of_page(&id).unwrap_or_default();
+    let payable = account.merchant_id.is_some()
+        || (api.stripe.is_some() && account.stripe_ready && account.stripe_account_id.is_some());
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
         currency: settings.currency().to_string(),
@@ -76,7 +78,7 @@ pub(super) fn settings_response(
         stripe_pending: account.stripe_account_id.is_some() && !account.stripe_ready,
         stripe_account_id: account.stripe_account_id.filter(|_| account.stripe_ready),
         stripe_test: api.stripe.as_ref().is_some_and(Stripe::is_test),
-        payable: merchant_of(api, &id).is_some() || stripe_of(api, &id).is_some(),
+        payable,
         message: settings.message,
         accent: settings.accent,
         font: settings.font,
