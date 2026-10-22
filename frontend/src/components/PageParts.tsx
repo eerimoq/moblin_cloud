@@ -111,7 +111,7 @@ export function CloudHeader(props: { premium?: boolean; children?: JSX.Element }
           class="flex shrink-0 items-center gap-3"
           aria-label="Moblin Cloud"
         >
-          <img src={asset("logos/logo-default.png")} alt="" class="h-9 w-auto" />
+          <img src={asset("logos/logo-cloud.png")} alt="" class="h-9 w-auto" />
           <span class="flex flex-col">
             <span class="font-display text-2xl leading-tight font-bold" aria-hidden="true">
               <span class="max-sm:hidden">Moblin Cloud</span>

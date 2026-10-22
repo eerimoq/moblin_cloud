@@ -1050,7 +1050,7 @@ function DashboardLink(props: { link: DashboardLink }) {
       href={props.link.href}
       class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
     >
-      <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto shrink-0" />
+      <img src={asset("logos/logo-cloud.png")} alt="" class="h-5 w-auto shrink-0" />
       <span class="truncate">
         {props.link.own ? t("Open your dashboard") : t("Moderate on the dashboard")}
       </span>
@@ -1181,7 +1181,7 @@ function PoweredBy() {
         href={asset(pages.dashboard)}
         class="mx-auto flex w-fit items-center gap-2 text-[15px] font-semibold text-muted transition-colors hover:text-ink"
       >
-        <img src={asset("logos/logo-default.png")} alt="" class="h-5 w-auto" />
+        <img src={asset("logos/logo-cloud.png")} alt="" class="h-5 w-auto" />
         Moblin Cloud
       </a>
     </footer>
