@@ -194,7 +194,7 @@ pub struct Song {
     pub user: Option<String>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RequestError {
     Offline,
     Timeout,
@@ -207,7 +207,8 @@ struct Session {
     sender: mpsc::UnboundedSender<MessageToStreamer>,
     next_request_id: u64,
     pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
-    status: Option<(Instant, MusicStatus)>,
+    status: Option<(Instant, Result<MusicStatus, RequestError>)>,
+    status_waiting: Option<Vec<oneshot::Sender<Result<MusicStatus, RequestError>>>>,
     wheel: Option<Wheel>,
     song_requests: bool,
 }
@@ -438,6 +439,7 @@ impl Streamers {
             next_request_id: 0,
             pending: HashMap::new(),
             status: None,
+            status_waiting: None,
             wheel: None,
             song_requests: true,
         });
@@ -570,21 +572,53 @@ impl Streamers {
         (page, device): (&str, &str),
         command: MusicCommand,
     ) -> Result<MusicStatus, RequestError> {
-        if matches!(command, MusicCommand::Status {}) {
-            let sessions = self.sessions.lock().unwrap();
-            if let Some(session) = sessions
-                .by_page
-                .get(page)
-                .into_iter()
-                .flatten()
-                .find(|session| session.device == device)
-                && let Some((fetched, status)) = &session.status
-                && fetched.elapsed() < Duration::from_secs(10)
-            {
-                return Ok(status.clone());
-            }
+        if !matches!(command, MusicCommand::Status {}) {
+            return self.music_uncached((page, device), command).await;
         }
-        self.music_uncached((page, device), command).await
+        let number = loop {
+            let fetching = {
+                let mut sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get_mut(page, device, None)
+                    .ok_or(RequestError::Offline)?;
+                if let Some((fetched, status)) = &session.status
+                    && fetched.elapsed() < Duration::from_secs(10)
+                {
+                    return status.clone();
+                }
+                match &mut session.status_waiting {
+                    Some(waiting) => {
+                        let (sender, receiver) = oneshot::channel();
+                        waiting.push(sender);
+                        Err(receiver)
+                    }
+                    None => {
+                        session.status_waiting = Some(Vec::new());
+                        Ok(session.number)
+                    }
+                }
+            };
+            match fetching {
+                Ok(number) => break number,
+                Err(receiver) => {
+                    if let Ok(result) = receiver.await {
+                        return result;
+                    }
+                }
+            }
+        };
+        let mut fetch = StatusFetch {
+            streamers: self,
+            page,
+            device,
+            number,
+            result: None,
+        };
+        let result = self
+            .music_uncached((page, device), MusicCommand::Status {})
+            .await;
+        fetch.result = Some(result.clone());
+        result
     }
 
     pub async fn music_uncached(
@@ -606,7 +640,7 @@ impl Streamers {
         if let Some(session) = sessions.get_mut(page, device, Some(number)) {
             let mut cached = status.clone();
             cached.song_not_found = None;
-            session.status = Some((Instant::now(), cached));
+            session.status = Some((Instant::now(), Ok(cached)));
         }
         Ok(status)
     }
@@ -716,6 +750,35 @@ impl Streamers {
             return Err(RequestError::Failed);
         }
         Ok((number, data))
+    }
+}
+
+struct StatusFetch<'a> {
+    streamers: &'a Streamers,
+    page: &'a str,
+    device: &'a str,
+    number: u64,
+    result: Option<Result<MusicStatus, RequestError>>,
+}
+
+impl Drop for StatusFetch<'_> {
+    fn drop(&mut self) {
+        let mut sessions = self.streamers.sessions.lock().unwrap();
+        let Some(session) = sessions.get_mut(self.page, self.device, Some(self.number)) else {
+            return;
+        };
+        let waiting = session.status_waiting.take().unwrap_or_default();
+        let Some(result) = self.result.take() else {
+            return;
+        };
+        let result = result.map(|mut status| {
+            status.song_not_found = None;
+            status
+        });
+        session.status = Some((Instant::now(), result.clone()));
+        for sender in waiting {
+            let _ = sender.send(result.clone());
+        }
     }
 }
 

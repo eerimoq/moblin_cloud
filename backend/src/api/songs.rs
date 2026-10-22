@@ -675,6 +675,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn viewers_share_one_music_status_request() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (_, key, id) = streamer(&address, &api).await;
+        let music_url = format!("http://{address}/pages/{id}/songs/queue");
+        let mut socket = connect(&address, &key).await;
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let viewers: Vec<_> = (0..20)
+            .map(|_| {
+                let client = client.clone();
+                let music_url = music_url.clone();
+                tokio::spawn(async move {
+                    client
+                        .get(music_url)
+                        .send()
+                        .await
+                        .unwrap()
+                        .json::<Value>()
+                        .await
+                        .unwrap()
+                })
+            })
+            .collect();
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"music": {"command": {"status": {}}}})
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        answer(
+            &mut socket,
+            &request,
+            music(json!([{"id": "q1", "title": "Song"}])),
+        )
+        .await;
+        for viewer in viewers {
+            assert_eq!(viewer.await.unwrap()["songs"][0]["id"], "q1");
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), receive(&mut socket))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn songs_need_a_price() {
         let (address, api) = start_api(None).await;
         let (_, key, id) = streamer(&address, &api).await;
