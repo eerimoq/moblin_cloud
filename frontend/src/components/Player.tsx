@@ -243,7 +243,13 @@ export default function Player(props: {
     }
   };
   const errorFor = (at: string) => (
-    <Show when={props.error && target() === at}>{(error) => <Notice error>{error()}</Notice>}</Show>
+    <Show when={props.error && target() === at}>
+      {(error) => (
+        <Notice error onClose={() => setTarget(null)}>
+          {error()}
+        </Notice>
+      )}
+    </Show>
   );
 
   return (

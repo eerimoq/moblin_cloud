@@ -21,7 +21,13 @@ import Icon from "../components/Icon";
 import Player, { type Status } from "../components/Player";
 import { fireConfetti } from "../confetti";
 import { poll } from "../poll";
-import { cardClass, ghostButtonClass, inputClass, Notice } from "../components/PageParts";
+import {
+  cardClass,
+  CloseNotice,
+  ghostButtonClass,
+  inputClass,
+  Notice,
+} from "../components/PageParts";
 import { links, pages } from "../data/links";
 import {
   accentAttributes,
@@ -441,7 +447,13 @@ function StripeCard(props: {
       <Show when={payment()}>
         {(current) => (
           <>
-            <Show when={cardError()}>{(error) => <Notice error>{error()}</Notice>}</Show>
+            <Show when={cardError()}>
+              {(error) => (
+                <Notice error onClose={() => setCardError(null)}>
+                  {error()}
+                </Notice>
+              )}
+            </Show>
             <div class="flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -571,6 +583,7 @@ function SubscriberBox(props: {
   paid: boolean;
   disabled: boolean;
   result: Result | null;
+  onCloseResult: () => void;
   onSignIn: (platform: Platform) => void;
   onSignOut: () => void;
   onRequest: () => void;
@@ -679,7 +692,7 @@ function SubscriberBox(props: {
         </Show>
       </p>
       <Show when={!props.paid}>
-        <ResultLine result={props.result} />
+        <ResultLine result={props.result} onClose={props.onCloseResult} />
       </Show>
       <Show when={!props.signedIn}>
         <div class="flex flex-wrap justify-center gap-3">
@@ -734,7 +747,7 @@ function SubscriberBox(props: {
   );
 }
 
-function ResultLine(props: { result: Result | null }) {
+function ResultLine(props: { result: Result | null; onClose: () => void }) {
   return (
     <Show when={props.result}>
       {(result) => (
@@ -743,7 +756,8 @@ function ResultLine(props: { result: Result | null }) {
           class="flex items-start gap-3 rounded-2xl border-[1.5px] border-danger-line bg-danger-bg px-4 py-3 text-[17px] font-semibold text-danger-ink"
         >
           <Icon name="warning" class="mt-0.5 size-5 shrink-0" />
-          {result().text}
+          <span>{result().text}</span>
+          <CloseNotice onClose={props.onClose} />
         </p>
       )}
     </Show>
@@ -957,7 +971,7 @@ function TipJar(props: {
               : formatPrice({ price: amount()!, currency: props.tips.currency })}
           </span>
         </p>
-        <ResultLine result={result()} />
+        <ResultLine result={result()} onClose={() => setResult(null)} />
         <PayButtons
           payment={props.tips.payment}
           options={options}
@@ -1383,7 +1397,7 @@ function SpinWheel(props: {
                 {formatPrice({ price: choice().price, currency: spin.currency })}
               </span>
             </p>
-            <ResultLine result={result()} />
+            <ResultLine result={result()} onClose={() => setResult(null)} />
             <PayButtons
               payment={spin.payment}
               options={options}
@@ -1407,6 +1421,7 @@ function SpinWheel(props: {
             paid={props.spin !== null}
             disabled={busy() || !props.wheel}
             result={result()}
+            onCloseResult={() => setResult(null)}
             onSignIn={props.onSignIn}
             onSignOut={props.onSignOut}
             onRequest={() => void spinAsSubscriber()}
@@ -1924,7 +1939,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                           {formatPrice(current)}
                         </span>
                       </p>
-                      <ResultLine result={result()} />
+                      <ResultLine result={result()} onClose={() => setResult(null)} />
                       <PayButtons
                         payment={current.payment}
                         options={songPayOptions}
@@ -1955,6 +1970,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                         busy() || typeof status() === "string" || closed() || !song().trim()
                       }
                       result={result()}
+                      onCloseResult={() => setResult(null)}
                       onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "songs")}
                       onSignOut={signOutViewer}
                       onRequest={() => void requestAsSubscriber()}

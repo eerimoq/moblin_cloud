@@ -46,6 +46,7 @@ function LinkedAccounts(props: {
 }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [resultDismissed, setResultDismissed] = createSignal(false);
   const linked = () => platforms.filter((platform) => props.account[platform] !== null);
   const unlink = async (platform: Platform) => {
     setBusy(true);
@@ -70,14 +71,24 @@ function LinkedAccounts(props: {
           "Sign in with any linked account to get this dashboard. Your tip page gets an address for each of them.",
         )}
       </p>
-      <Show when={props.result}>
+      <Show when={!resultDismissed() && props.result}>
         {(result) => (
-          <Notice status={result().linked} error={!result().linked}>
+          <Notice
+            status={result().linked}
+            error={!result().linked}
+            onClose={() => setResultDismissed(true)}
+          >
             {linkResultText(result())}
           </Notice>
         )}
       </Show>
-      <Show when={error()}>{(error) => <Notice error>{error()}</Notice>}</Show>
+      <Show when={error()}>
+        {(error) => (
+          <Notice error onClose={() => setError(null)}>
+            {error()}
+          </Notice>
+        )}
+      </Show>
       <ul class="flex flex-col gap-3">
         <For each={platforms}>
           {(platform) => (
@@ -192,7 +203,13 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
         >
           {t("Delete account")}
         </button>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+        <Show when={error()}>
+          {(error) => (
+            <Notice status onClose={() => setError(null)}>
+              {error()}
+            </Notice>
+          )}
+        </Show>
       </div>
     </div>
   );

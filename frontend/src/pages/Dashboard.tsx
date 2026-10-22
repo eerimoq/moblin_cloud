@@ -213,7 +213,8 @@ function createSave(
       setSaving(false);
     }
   };
-  return { busy, changed, saving, saved, failure, errorText, submit };
+  const dismiss = () => setFailure(null);
+  return { busy, changed, saving, saved, failure, errorText, submit, dismiss };
 }
 
 function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: boolean }) {
@@ -225,7 +226,11 @@ function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: 
         disabled={props.save.busy() || !props.save.changed()}
       />
       <Show when={props.save.failure()}>
-        {(failure) => <Notice status>{props.save.errorText(failure().error)}</Notice>}
+        {(failure) => (
+          <Notice status onClose={props.save.dismiss}>
+            {props.save.errorText(failure().error)}
+          </Notice>
+        )}
       </Show>
       <Show when={props.signInAgain && forbidden(props.save.failure()?.error)}>
         <SignInAgain />
@@ -326,7 +331,7 @@ function createProviderActions(
     }
   };
 
-  return { working, error, signInAgain, connect, check, disconnect };
+  return { working, error, setError, signInAgain, connect, check, disconnect };
 }
 
 function PayPalAccount(props: {
@@ -335,13 +340,14 @@ function PayPalAccount(props: {
   onSettings: (settings: Settings) => void;
   onSignOut: () => void;
 }) {
-  const { working, error, signInAgain, connect, check, disconnect } = createProviderActions(props, {
-    errorText: payPalErrorText,
-    connect: () => connectPayPal(props.session),
-    check: checkPayPal,
-    disconnect: disconnectPayPal,
-    confirmText: t("Viewers can't pay you with PayPal until you connect a PayPal account again."),
-  });
+  const { working, error, setError, signInAgain, connect, check, disconnect } =
+    createProviderActions(props, {
+      errorText: payPalErrorText,
+      connect: () => connectPayPal(props.session),
+      check: checkPayPal,
+      disconnect: disconnectPayPal,
+      confirmText: t("Viewers can't pay you with PayPal until you connect a PayPal account again."),
+    });
 
   onMount(() => {
     const search = new URLSearchParams(location.search);
@@ -411,7 +417,13 @@ function PayPalAccount(props: {
             {t("Disconnect")}
           </button>
         </Show>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+        <Show when={error()}>
+          {(error) => (
+            <Notice status onClose={() => setError(null)}>
+              {error()}
+            </Notice>
+          )}
+        </Show>
         <Show when={signInAgain()}>
           <SignInAgain />
         </Show>
@@ -445,13 +457,14 @@ function StripeAccount(props: {
   onSignOut: () => void;
 }) {
   const [country, setCountry] = createSignal(guessStripeCountry());
-  const { working, error, signInAgain, connect, check, disconnect } = createProviderActions(props, {
-    errorText: stripeErrorText,
-    connect: () => connectStripe(props.session, country()),
-    check: checkStripe,
-    disconnect: disconnectStripe,
-    confirmText: t("Viewers can't pay you with Stripe until you connect a Stripe account again."),
-  });
+  const { working, error, setError, signInAgain, connect, check, disconnect } =
+    createProviderActions(props, {
+      errorText: stripeErrorText,
+      connect: () => connectStripe(props.session, country()),
+      check: checkStripe,
+      disconnect: disconnectStripe,
+      confirmText: t("Viewers can't pay you with Stripe until you connect a Stripe account again."),
+    });
   const [waiting, setWaiting] = createSignal(false);
   let stopped = false;
   onCleanup(() => (stopped = true));
@@ -582,7 +595,13 @@ function StripeAccount(props: {
             {t("Disconnect")}
           </button>
         </Show>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+        <Show when={error()}>
+          {(error) => (
+            <Notice status onClose={() => setError(null)}>
+              {error()}
+            </Notice>
+          )}
+        </Show>
         <Show when={signInAgain()}>
           <SignInAgain />
         </Show>
@@ -680,7 +699,13 @@ function BannerImage(props: {
             {t("Remove")}
           </button>
         </Show>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+        <Show when={error()}>
+          {(error) => (
+            <Notice status onClose={() => setError(null)}>
+              {error()}
+            </Notice>
+          )}
+        </Show>
       </div>
     </div>
   );
@@ -1236,7 +1261,13 @@ function ModeratorList(props: {
           {t("Add")}
         </button>
       </form>
-      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      <Show when={error()}>
+        {(error) => (
+          <Notice status onClose={() => setError(null)}>
+            {error()}
+          </Notice>
+        )}
+      </Show>
     </>
   );
 }
@@ -1606,7 +1637,13 @@ function SendForm(props: {
             {sending() ? t("Sending…") : sent() ? t("Queued for Moblin") : props.label}
           </span>
         </button>
-        <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+        <Show when={error()}>
+          {(error) => (
+            <Notice status onClose={() => setError(null)}>
+              {error()}
+            </Notice>
+          )}
+        </Show>
       </div>
     </form>
   );
@@ -2336,7 +2373,13 @@ function MoblinSettings(props: {
           {copied() ? t("Copied") : t("Copy deep link")}
         </button>
       </div>
-      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      <Show when={error()}>
+        {(error) => (
+          <Notice status onClose={() => setError(null)}>
+            {error()}
+          </Notice>
+        )}
+      </Show>
       <div class="flex flex-col gap-2">
         <h3 class="text-[15px] font-semibold text-ink-2">{t("Devices")}</h3>
         <Show
@@ -2504,10 +2547,13 @@ function PickedAvatar(props: { picked: { name: string; avatar: string | null } }
 }
 
 function Preview(props: { failed: boolean }) {
+  const [dismissed, setDismissed] = createSignal(false);
   return (
     <div class="flex flex-col gap-6">
-      <Show when={props.failed}>
-        <Notice status>{t("Signing in did not work. Try again.")}</Notice>
+      <Show when={props.failed && !dismissed()}>
+        <Notice status onClose={() => setDismissed(true)}>
+          {t("Signing in did not work. Try again.")}
+        </Notice>
       </Show>
       <div class="relative rounded-3xl border-[1.5px] border-dashed border-line p-4 sm:p-6">
         <span class="absolute -top-3.5 left-6 rounded-full border-[1.5px] border-line bg-band px-3 py-0.5 font-display text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">

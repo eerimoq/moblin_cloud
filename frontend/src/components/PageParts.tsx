@@ -19,17 +19,36 @@ export const ghostButtonClass =
 export const cardClass =
   "flex flex-col gap-5 rounded-3xl border-[1.5px] border-line bg-card p-6 sm:p-8";
 
-export function Notice(props: { status?: boolean; error?: boolean; children: JSX.Element }) {
+export function CloseNotice(props: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={t("Close")}
+      onClick={() => props.onClose()}
+      class="-my-1 -mr-2 ml-auto grid size-8 shrink-0 place-items-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100"
+    >
+      <Icon name="close" class="size-4" />
+    </button>
+  );
+}
+
+export function Notice(props: {
+  status?: boolean;
+  error?: boolean;
+  onClose?: () => void;
+  children: JSX.Element;
+}) {
   return (
     <p
       role={props.error ? "alert" : props.status ? "status" : undefined}
-      class={`rounded-2xl border-[1.5px] px-4 py-3 text-[15px] font-semibold ${
+      class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[15px] font-semibold ${
         props.error
           ? "border-danger-line bg-danger-bg text-danger-ink"
           : "border-amber-line bg-amber-bg text-amber-ink"
       }`}
     >
-      {props.children}
+      <span>{props.children}</span>
+      <Show when={props.onClose}>{(onClose) => <CloseNotice onClose={onClose()} />}</Show>
     </p>
   );
 }
