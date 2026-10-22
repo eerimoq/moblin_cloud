@@ -280,7 +280,6 @@ async fn subscriber_song(
     })?;
     limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
-    check_song_length(settings.max_song_minutes(), &song)?;
     let order = Order {
         streamer: id,
         item: Item::Song {

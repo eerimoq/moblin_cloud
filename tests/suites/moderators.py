@@ -363,7 +363,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
 
 
 class ModeratorsAddSongsForFree(ModeratorsTestCase):
-    """Let a moderator add songs of any length without paying, listed as theirs for both of them."""
+    """Let a moderator add songs up to the longest song without paying, listed as theirs for both of them."""
 
     login = "modsongs"
 
@@ -384,6 +384,12 @@ class ModeratorsAddSongsForFree(ModeratorsTestCase):
             lambda: self.moderator.add_free_song(self.page_id, MISSING_SONG),
             "That song is not available on the streamer's Apple Music.",
         )
+        self.assert_backend_error(
+            422,
+            lambda: self.moderator.add_free_song(self.page_id, SONG),
+            "The streamer only takes songs up to 1 minutes long.",
+        )
+        self.dashboard.update_settings(max_song_length={"minutes": 60})
         start = self.moblin.backend_requests_position()
         self.moderator.add_free_song(self.page_id, SONG, " For the drive ")
         add = self.moblin.wait_for_new_backend_request("add", start)

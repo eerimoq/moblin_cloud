@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "錄影、重播和快照",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "錄影檔會以可變幀率的分段 MP4 儲存,即使當機也不會遺失。設定 → 錄影 提供了轉換成標準 MP4 的 ffmpeg 指令。",
   "Red": "紅色",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "拒絕觀眾和訂閱者點播超過此長度的歌曲。你的管理員和你自己的測試歌曲不受長度限制。",
+  "Refuse song requests for songs longer than this.": "拒絕超過此長度的點歌請求。",
   "Related settings": "相關設定",
   "Remote control": "遠端控制",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "遠端控制助理會讓手錶充當遠端控制助理,但這樣聊天、跳過目前的 TTS 和其他一些功能將不受支援。",

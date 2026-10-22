@@ -1072,12 +1072,7 @@ function SongLengthSettings(props: {
   return (
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Longest song")}</h2>
-      <p class="text-ink-2">
-        {t(
-          "Refuse song requests from viewers and subscribers for songs longer than this. " +
-            "Your moderators and your own test songs can be any length.",
-        )}
-      </p>
+      <p class="text-ink-2">{t("Refuse song requests for songs longer than this.")}</p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
           type="checkbox"

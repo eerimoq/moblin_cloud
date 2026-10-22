@@ -724,7 +724,7 @@ mod tests {
         answer(
             &mut socket,
             &request,
-            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": 900}}}),
+            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": 240}}}),
         )
         .await;
         assert_eq!(sent.await.unwrap().status(), StatusCode::ACCEPTED);
@@ -1017,7 +1017,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moderators_add_songs_of_any_length_for_free() {
+    async fn moderators_add_songs_for_free() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
@@ -1075,13 +1075,25 @@ mod tests {
             sent.await.unwrap().status(),
             StatusCode::UNPROCESSABLE_ENTITY
         );
+        let sent = send(mod1.clone(), json!({"song": LINK}));
+        let request = receive(&mut socket).await;
+        answer(
+            &mut socket,
+            &request,
+            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": 61}}}),
+        )
+        .await;
+        assert_eq!(
+            sent.await.unwrap().status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
         for (who, name) in [(&mod1, "Mod 21"), (&session, "Erik")] {
-            let sent = send(who.clone(), json!({"song": LINK, "message": " Long one "}));
+            let sent = send(who.clone(), json!({"song": LINK, "message": " Short one "}));
             let request = receive(&mut socket).await;
             answer(
                 &mut socket,
                 &request,
-                json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": 900}}}),
+                json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band", "duration": 60}}}),
             )
             .await;
             assert_eq!(sent.await.unwrap().status(), StatusCode::ACCEPTED);
@@ -1089,7 +1101,7 @@ mod tests {
             let add = &request["request"]["data"]["music"]["command"]["add"];
             assert_eq!(add["title"], LINK);
             assert_eq!(add["user"], name);
-            assert_eq!(add["message"], "Long one");
+            assert_eq!(add["message"], "Short one");
             answer(&mut socket, &request, music(json!([]))).await;
             wait_until_added(&api).await;
         }
@@ -1111,7 +1123,7 @@ mod tests {
         for item in items {
             assert_eq!(item["moderator"], true);
             assert_eq!(item["amount"], 0);
-            assert_eq!(item["message"], "Long one");
+            assert_eq!(item["message"], "Short one");
             assert_eq!(item["status"], "delivered");
             assert!(item.get("provider").is_none());
         }
@@ -1135,7 +1147,7 @@ mod tests {
         assert!(own["items"][1].get("provider").is_none());
         socket.close(None).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
-        for _ in 0..5 {
+        for _ in 0..4 {
             let response = send(mod1.clone(), json!({"song": LINK})).await.unwrap();
             assert_eq!(response.status(), StatusCode::NOT_FOUND);
         }
@@ -1151,9 +1163,10 @@ mod tests {
         assert_eq!(count("modSongs"), 2);
         assert_eq!(count("modSongsFailed:not-moderator"), 2);
         assert_eq!(count("modSongsFailed:invalid-link"), 1);
-        assert_eq!(count("modSongsFailed:offline"), 6);
+        assert_eq!(count("modSongsFailed:offline"), 5);
         assert_eq!(count("modSongsFailed:requests-off"), 1);
         assert_eq!(count("modSongsFailed:song-not-found"), 1);
+        assert_eq!(count("modSongsFailed:over-max-length"), 1);
         assert_eq!(count("modSongsFailed:too-many-requests"), 1);
     }
 }

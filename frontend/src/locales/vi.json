@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Ghi hình, phát lại và ảnh chụp",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Bản ghi được lưu dưới dạng MP4 phân mảnh với tốc độ khung hình biến đổi để không bị mất khi gặp sự cố. Cài đặt → Bản ghi hiển thị các lệnh ffmpeg để chuyển chúng sang MP4 chuẩn.",
   "Red": "Đỏ",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Từ chối yêu cầu bài hát từ người xem và subscriber nếu bài dài hơn mức này. Moderator và bài hát thử của bạn có thể dài bao nhiêu cũng được.",
+  "Refuse song requests for songs longer than this.": "Từ chối yêu cầu bài hát dài hơn mức này.",
   "Related settings": "Cài đặt liên quan",
   "Remote control": "Điều khiển từ xa",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Trợ lý điều khiển từ xa khiến đồng hồ hoạt động như trợ lý điều khiển từ xa, nhưng khi đó chat, bỏ qua TTS hiện tại và một vài tính năng khác sẽ không được hỗ trợ.",

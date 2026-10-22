@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Запис, повтори та знімки",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Записи зберігаються як фрагментований MP4 зі змінною частотою кадрів, щоб пережити збої. У Налаштування → Записи є команди ffmpeg для конвертації в звичайний MP4.",
   "Red": "Червоний",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Відхиляти запити глядачів і підписників на пісні довші за це значення. Ваші модератори та ваші власні тестові пісні можуть мати будь-яку тривалість.",
+  "Refuse song requests for songs longer than this.": "Відхиляти запити на пісні, довші за це значення.",
   "Related settings": "Пов'язані налаштування",
   "Remote control": "Віддалене керування",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Асистент віддаленого керування змушує годинник працювати як асистент віддаленого керування, але тоді чат, пропуск поточного TTS та кілька інших функцій не підтримуються.",

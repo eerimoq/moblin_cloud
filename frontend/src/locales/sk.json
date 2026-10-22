@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Nahrávanie, replaye a snímky",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Nahrávky sa ukladajú ako fragmentované MP4 s premenlivou snímkovou frekvenciou, aby prežili pády. Nastavenia → Nahrávky zobrazujú príkazy ffmpeg na ich prevod na štandardné MP4.",
   "Red": "Červená",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Odmietni žiadosti divákov a odberateľov o skladby dlhšie než toto. Tvoji moderátori a tvoje vlastné testovacie skladby môžu mať akúkoľvek dĺžku.",
+  "Refuse song requests for songs longer than this.": "Odmietnuť žiadosti o skladby dlhšie ako toto.",
   "Related settings": "Súvisiace nastavenia",
   "Remote control": "Diaľkové ovládanie",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Asistent diaľkového ovládania necháva hodinky fungovať ako asistenta diaľkového ovládania, ale potom nie sú podporované chat, preskočenie aktuálneho TTS a niekoľko ďalších funkcií.",

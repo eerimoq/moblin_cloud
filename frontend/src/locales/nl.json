@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Opnemen, replays en snapshots",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Opnames worden opgeslagen als gefragmenteerde MP4 met variabele framerate, zodat ze crashes overleven. Instellingen → Opnames toont ffmpeg-commando's om ze om te zetten naar standaard MP4.",
   "Red": "Rood",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Weiger nummerverzoeken van kijkers en abonnees voor nummers die langer zijn dan dit. Je moderators en je eigen testnummers mogen elke lengte hebben.",
+  "Refuse song requests for songs longer than this.": "Weiger verzoeknummers die langer zijn dan dit.",
   "Related settings": "Gerelateerde instellingen",
   "Remote control": "Afstandsbediening",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Assistent voor afstandsbediening laat de watch als assistent voor afstandsbediening werken, maar dan worden chat, het huidige TTS overslaan en een paar andere functies niet ondersteund.",

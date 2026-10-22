@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Aufnahme, Replays und Snapshots",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Aufnahmen werden als fragmentiertes MP4 mit variabler Bildrate gespeichert, damit sie Abstürze überstehen. Unter Einstellungen → Aufnahmen findest du ffmpeg-Befehle, um sie in Standard-MP4 umzuwandeln.",
   "Red": "Rot",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Lehne Songwünsche von Zuschauern und Abonnenten für Songs ab, die länger sind als das. Deine Moderatoren und deine eigenen Testsongs dürfen beliebig lang sein.",
+  "Refuse song requests for songs longer than this.": "Songwünsche für Songs, die länger als das sind, ablehnen.",
   "Related settings": "Verwandte Einstellungen",
   "Remote control": "Fernsteuerung",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Fernsteuerungsassistent lässt die Watch als Fernsteuerungsassistent arbeiten, aber dann werden Chat, das Überspringen der aktuellen TTS und einige andere Funktionen nicht unterstützt.",

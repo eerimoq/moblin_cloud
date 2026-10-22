@@ -72,7 +72,6 @@ pub(super) struct RequestedSong {
     pub(super) link: String,
     pub(super) user: String,
     pub(super) name: String,
-    pub(super) duration: Option<u32>,
 }
 
 pub(super) fn song_and_user(request: SongRequest) -> Result<(String, String), Failure> {
@@ -106,19 +105,7 @@ pub(super) async fn requested_song(
             StatusCode::UNPROCESSABLE_ENTITY,
             "That song is not available on the streamer's Apple Music.",
         ))?;
-    Ok(RequestedSong {
-        link,
-        user,
-        name: song.name(),
-        duration: song.duration,
-    })
-}
-
-pub(super) fn check_song_length(
-    max_minutes: Option<u32>,
-    song: &RequestedSong,
-) -> Result<(), Failure> {
-    if let Some(minutes) = max_minutes
+    if let Some(minutes) = api.pages.get(id).max_song_minutes()
         && song
             .duration
             .is_some_and(|duration| duration > minutes * 60)
@@ -129,7 +116,11 @@ pub(super) fn check_song_length(
             &format!("The streamer only takes songs up to {minutes} minutes long."),
         ));
     }
-    Ok(())
+    Ok(RequestedSong {
+        link,
+        user,
+        name: song.name(),
+    })
 }
 
 pub(super) fn queue(
@@ -184,7 +175,6 @@ async fn song_order(
     let song_and_user = song_and_user(request)?;
     limit_song_finds(api, &id)?;
     let song = requested_song(api, &id, song_and_user).await?;
-    check_song_length(settings.max_song_minutes(), &song)?;
     let order = Order {
         streamer: id.clone(),
         item: Item::Song {

@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Kayıt, tekrarlar ve anlık görüntüler",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Kayıtlar, çökmelere karşı dayanıklı olması için değişken kare hızlı parçalı MP4 olarak kaydedilir. Ayarlar → Kayıtlar, bunları standart MP4'e dönüştürmek için ffmpeg komutlarını gösterir.",
   "Red": "Kırmızı",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "İzleyicilerin ve abonelerin bundan uzun şarkılar için yaptığı istekleri reddet. Moderatörlerin ve kendi test şarkıların istediği uzunlukta olabilir.",
+  "Refuse song requests for songs longer than this.": "Bundan uzun şarkı isteklerini reddet.",
   "Related settings": "İlgili ayarlar",
   "Remote control": "Uzaktan kontrol",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Uzaktan kumanda asistanı saati uzaktan kumanda asistanı olarak çalıştırır, ancak bu durumda sohbet, mevcut TTS'yi atlama ve birkaç başka özellik desteklenmez.",

@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "녹화, 리플레이, 스냅샷",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "녹화본은 앱이 비정상 종료돼도 살아남도록 가변 프레임 레이트의 프래그먼트 MP4로 저장됩니다. 설정 → 녹화에서 일반 MP4로 변환하는 ffmpeg 명령어를 볼 수 있습니다.",
   "Red": "빨강",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "이보다 긴 곡은 시청자와 구독자의 신청곡을 거절합니다. 모더레이터와 본인의 테스트 곡은 길이 제한이 없어요.",
+  "Refuse song requests for songs longer than this.": "이보다 긴 곡의 신청곡 요청은 거절합니다.",
   "Related settings": "관련 설정",
   "Remote control": "원격 제어",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "원격 제어 어시스턴트는 워치를 원격 제어 어시스턴트로 동작하게 하지만, 이 경우 채팅, 현재 TTS 건너뛰기 및 일부 다른 기능은 지원되지 않습니다.",

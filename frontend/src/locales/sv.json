@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Inspelning, repriser och snapshots",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Inspelningar sparas som fragmenterad MP4 med variabel bildfrekvens för att överleva krascher. Inställningar → Inspelningar visar ffmpeg-kommandon för att konvertera dem till vanlig MP4.",
   "Red": "Röd",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Avvisa låtönskemål från tittare och prenumeranter för låtar som är längre än detta. Dina moderatorer och dina egna testlåtar kan vara hur långa som helst.",
+  "Refuse song requests for songs longer than this.": "Avvisa låtönskningar för låtar som är längre än detta.",
   "Related settings": "Relaterade inställningar",
   "Remote control": "Fjärrstyrning",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Fjärrkontrollassistent låter klockan fungera som fjärrkontrollassistent, men då stöds inte chatt, att hoppa över aktuell TTS och några andra funktioner.",

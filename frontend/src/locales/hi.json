@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "रिकॉर्डिंग, रीप्ले और स्नैपशॉट",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "क्रैश से बचाने के लिए रिकॉर्डिंग वेरिएबल फ़्रेम रेट वाले फ़्रैगमेंटेड MP4 के रूप में सेव होती हैं। सेटिंग्स → रिकॉर्डिंग में उन्हें स्टैंडर्ड MP4 में बदलने के ffmpeg कमांड दिखते हैं।",
   "Red": "लाल",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "इससे लंबे गानों के लिए दर्शकों और सब्सक्राइबर्स के गाने के अनुरोध अस्वीकार करें। आपके मॉडरेटर और आपके अपने टेस्ट गाने किसी भी लंबाई के हो सकते हैं।",
+  "Refuse song requests for songs longer than this.": "इससे लंबे गानों के अनुरोध अस्वीकार करें।",
   "Related settings": "संबंधित सेटिंग्स",
   "Remote control": "रिमोट कंट्रोल",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "रिमोट कंट्रोल असिस्टेंट घड़ी को रिमोट कंट्रोल असिस्टेंट की तरह काम कराता है, लेकिन तब चैट, मौजूदा TTS स्किप और कुछ अन्य सुविधाएँ सपोर्ट नहीं होतीं।",

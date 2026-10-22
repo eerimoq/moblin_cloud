@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Rekaman, replay, dan snapshot",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Rekaman disimpan sebagai MP4 fragmented dengan frame rate variabel agar tahan terhadap crash. Pengaturan → Rekaman menampilkan perintah ffmpeg untuk mengonversinya ke MP4 standar.",
   "Red": "Merah",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Tolak permintaan lagu dari penonton dan subscriber untuk lagu yang lebih panjang dari ini. Moderator dan lagu tes milikmu bisa berdurasi berapa pun.",
+  "Refuse song requests for songs longer than this.": "Tolak permintaan lagu yang lebih panjang dari ini.",
   "Related settings": "Pengaturan terkait",
   "Remote control": "Kontrol jarak jauh",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Asisten kontrol jarak jauh membuat jam berfungsi sebagai asisten kontrol jarak jauh, tetapi chat, lewati TTS saat ini, dan beberapa fitur lain jadi tidak didukung.",

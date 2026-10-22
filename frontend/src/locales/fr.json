@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Enregistrement, replays et captures",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Les enregistrements sont sauvegardés en MP4 fragmenté à fréquence d'images variable pour survivre aux plantages. Réglages → Enregistrements affiche des commandes ffmpeg pour les convertir en MP4 standard.",
   "Red": "Rouge",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Refuse les demandes de chansons des viewers et des abonnés pour les chansons plus longues que ça. Tes modérateurs et tes propres chansons de test peuvent avoir n'importe quelle durée.",
+  "Refuse song requests for songs longer than this.": "Refuser les demandes de chansons plus longues que cette durée.",
   "Related settings": "Réglages associés",
   "Remote control": "Contrôle à distance",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Assistant de télécommande fait agir la montre comme assistant de télécommande, mais le chat, le saut du TTS en cours et quelques autres fonctions ne sont alors plus pris en charge.",

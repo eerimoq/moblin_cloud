@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "録画、リプレイ、スナップショット",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "録画はクラッシュに耐えられるよう、可変フレームレートのフラグメントMP4として保存されます。「設定」→「録画」に、標準のMP4へ変換するffmpegコマンドが表示されます。",
   "Red": "レッド",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "これより長い曲の視聴者やサブスクライバーからのリクエストを拒否します。モデレーターや自分のテスト曲は何分でもOKです。",
+  "Refuse song requests for songs longer than this.": "これより長い曲のリクエストは断ります。",
   "Related settings": "関連する設定",
   "Remote control": "リモートコントロール",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "リモコンアシスタントをオンにすると、ウォッチがリモコンアシスタントとして動作しますが、チャット、現在のTTSのスキップ、その他一部の機能は使えなくなります。",

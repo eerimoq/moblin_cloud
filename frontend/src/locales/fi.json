@@ -420,7 +420,7 @@
   "Recording, replays and snapshots": "Tallennus, uusinnat ja tilannekuvat",
   "Recordings are saved as variable frame rate fragmented MP4 to survive crashes. Settings → Recordings shows ffmpeg commands to convert them to standard MP4.": "Tallenteet tallennetaan vaihtuvan kuvataajuuden fragmentoituna MP4:nä, jotta ne säilyvät kaatumisissa. Asetukset → Tallenteet näyttää ffmpeg-komennot, joilla ne muunnetaan tavalliseksi MP4:ksi.",
   "Red": "Punainen",
-  "Refuse song requests from viewers and subscribers for songs longer than this. Your moderators and your own test songs can be any length.": "Hylkää katsojien ja tilaajien kappalepyynnöt, jos kappale on tätä pidempi. Moderaattorisi ja omat testikappaleesi voivat olla minkä pituisia tahansa.",
+  "Refuse song requests for songs longer than this.": "Hylkää kappetoiveet, jotka ovat tätä pidempiä.",
   "Related settings": "Liittyvät asetukset",
   "Remote control": "Etähallinta",
   "Remote control assistant makes the watch act as a remote control assistant, but then chat, skip current TTS and a few other features are not supported.": "Etäohjausavustaja saa kellon toimimaan etäohjausavustajana, mutta silloin chat, nykyisen TTS:n ohitus ja muutama muu ominaisuus eivät ole tuettuja.",
