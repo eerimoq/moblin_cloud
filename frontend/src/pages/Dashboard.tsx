@@ -1874,6 +1874,9 @@ function Admin(props: {
   const active = () =>
     visible().some((section) => section.id === chosen()) ? chosen() : visible()[0].id;
   const select = (id: string) => {
+    if (id !== active()) {
+      scrollTo({ top: 0, behavior: "instant" });
+    }
     setChosen(id);
     history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
   };
@@ -1885,7 +1888,7 @@ function Admin(props: {
     <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
       <nav
         aria-label={t("Dashboard")}
-        class="overflow-hidden rounded-2xl border border-line bg-card lg:sticky lg:top-24 lg:flex lg:flex-col lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent"
+        class="overflow-hidden rounded-2xl border border-line bg-card lg:sticky lg:top-[calc(4.5rem+1px+3rem)] lg:flex lg:max-h-[calc(100dvh-4.5rem-1px-6rem)] lg:flex-col lg:overflow-y-auto lg:rounded-none lg:border-0 lg:bg-transparent"
       >
         <button
           type="button"
