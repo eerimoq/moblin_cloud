@@ -306,7 +306,7 @@
   "Moderate on the dashboard": "ダッシュボードでモデレート",
   "Moderator": "モデレーター",
   "Moderators": "モデレーター",
-  "Moderators can manage your song queue, add songs and see recent requests. They sign in to Moblin Cloud and pick your channel on their dashboard.": "モデレーターは、リクエスト曲のキューの管理、曲の追加、最近のリクエストの確認ができます。Moblin Cloudにサインインして、自分のダッシュボードであなたのチャンネルを選びます。",
+  "Moderators can manage your dashboard, except payments, moderators and Moblin.": "モデレーターは、支払い、モデレーター、Moblin を除くダッシュボードの管理ができます。",
   "Modern": "モダン",
   "Monitor and control the streaming phone from another device or a web browser.": "配信中のスマホを、別のデバイスやウェブブラウザから監視・操作できます。",
   "Mono": "等幅",

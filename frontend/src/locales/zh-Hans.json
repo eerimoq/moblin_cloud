@@ -306,7 +306,7 @@
   "Moderate on the dashboard": "在仪表盘上管理聊天",
   "Moderator": "管理员",
   "Moderators": "管理员",
-  "Moderators can manage your song queue, add songs and see recent requests. They sign in to Moblin Cloud and pick your channel on their dashboard.": "管理员可以管理你的点歌队列、添加歌曲并查看最近的点歌请求。他们登录 Moblin Cloud 后，在自己的仪表盘上选择你的频道即可。",
+  "Moderators can manage your dashboard, except payments, moderators and Moblin.": "管理员可以管理你的控制面板，但不包括付款、管理员和 Moblin。",
   "Modern": "现代",
   "Monitor and control the streaming phone from another device or a web browser.": "通过其他设备或网页浏览器监控和控制正在直播的手机。",
   "Mono": "等宽",

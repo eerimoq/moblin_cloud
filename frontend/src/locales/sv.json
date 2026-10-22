@@ -306,7 +306,7 @@
   "Moderate on the dashboard": "Moderera i dashboarden",
   "Moderator": "Moderator",
   "Moderators": "Moderatorer",
-  "Moderators can manage your song queue, add songs and see recent requests. They sign in to Moblin Cloud and pick your channel on their dashboard.": "Moderatorer kan hantera din låtkö, lägga till låtar och se senaste önskemål. De loggar in på Moblin Cloud och väljer din kanal på sin dashboard.",
+  "Moderators can manage your dashboard, except payments, moderators and Moblin.": "Moderatorer kan hantera din dashboard, förutom betalningar, moderatorer och Moblin.",
   "Modern": "Modern",
   "Monitor and control the streaming phone from another device or a web browser.": "Övervaka och styr streamingtelefonen från en annan enhet eller en webbläsare.",
   "Mono": "Mono",

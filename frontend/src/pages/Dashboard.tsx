@@ -1148,10 +1148,7 @@ function ModeratorSettings(props: {
     <section class={cardClass}>
       <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
       <p class="text-ink-2">
-        {t(
-          "Moderators can manage your song queue, add songs and see recent requests. " +
-            "They sign in to Moblin Cloud and pick your channel on their dashboard.",
-        )}
+        {t("Moderators can manage your dashboard, except payments, moderators and Moblin.")}
       </p>
       <For each={linked()}>
         {(platform) => (

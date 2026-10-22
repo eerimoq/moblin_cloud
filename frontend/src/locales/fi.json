@@ -306,7 +306,7 @@
   "Moderate on the dashboard": "Moderoi hallintapaneelissa",
   "Moderator": "Moderaattori",
   "Moderators": "Moderaattorit",
-  "Moderators can manage your song queue, add songs and see recent requests. They sign in to Moblin Cloud and pick your channel on their dashboard.": "Moderaattorit voivat hallita kappelijonoasi, lisätä kappaleita ja nähdä viimeisimmät pyynnöt. He kirjautuvat Moblin Cloudiin ja valitsevat kanavasi omalla hallintapaneelillaan.",
+  "Moderators can manage your dashboard, except payments, moderators and Moblin.": "Moderaattorit voivat hallita hallintapaneeliasi paitsi maksuja, moderaattoreita ja Moblinia.",
   "Modern": "Moderni",
   "Monitor and control the streaming phone from another device or a web browser.": "Seuraa ja ohjaa striimaavaa puhelinta toiselta laitteelta tai verkkoselaimesta.",
   "Mono": "Mono",
