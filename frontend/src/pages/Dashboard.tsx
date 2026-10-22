@@ -1837,8 +1837,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
       label: t("Moderators"),
       icon: "shield",
       shown: () => !moderating() && (account().twitch !== null || account().kick !== null),
-      status: () =>
-        onOff(account().twitchModerators.length > 0 || account().kickModerators.length > 0),
+      status: () => null,
     },
     {
       id: "payments",
