@@ -16,10 +16,7 @@ export type MusicStatus = {
   currentSongIndex: number | null;
   songs: Song[];
   songNotFound: boolean | null;
-  timeLimitEnd: number | null;
   songRequests: boolean;
-  queueFull: boolean;
-  secondsLeft: number | null;
 };
 
 export const formatDuration = (duration: number) => {

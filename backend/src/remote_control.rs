@@ -183,24 +183,6 @@ pub struct MusicStatus {
     pub current_song_index: Option<usize>,
     pub songs: Vec<Song>,
     pub song_not_found: Option<bool>,
-    pub time_limit_end: Option<u64>,
-}
-
-impl MusicStatus {
-    pub fn time_left(&self, now: u64) -> Option<u64> {
-        let remaining: u64 = self
-            .songs
-            .iter()
-            .skip(self.current_song_index.unwrap_or(0))
-            .filter_map(|song| song.duration)
-            .map(u64::from)
-            .sum();
-        Some(self.time_limit_end?.saturating_sub(now + remaining))
-    }
-
-    pub fn full(&self, now: u64) -> bool {
-        self.time_left(now) == Some(0)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -585,15 +567,6 @@ impl Streamers {
             .is_some_and(|session| session.song_requests)
     }
 
-    pub fn queue_full(&self, page: &str, now: u64) -> bool {
-        self.sessions
-            .lock()
-            .unwrap()
-            .music(page)
-            .and_then(|session| session.status.as_ref())
-            .is_some_and(|(_, status)| status.as_ref().is_ok_and(|status| status.full(now)))
-    }
-
     pub async fn music(
         &self,
         (page, device): (&str, &str),
@@ -817,42 +790,6 @@ fn parse(data: Option<Value>) -> Option<ResponseData> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn queue_is_full_once_the_songs_left_reach_the_time_limit() {
-        let song = |duration| Song {
-            id: "q".to_string(),
-            title: "Song".to_string(),
-            artist: None,
-            duration,
-            user: None,
-        };
-        let mut status = MusicStatus {
-            playing: true,
-            current_song_index: Some(1),
-            songs: vec![
-                song(Some(600)),
-                song(Some(200)),
-                song(None),
-                song(Some(100)),
-            ],
-            song_not_found: None,
-            time_limit_end: None,
-        };
-        assert!(!status.full(1000));
-        assert_eq!(status.time_left(1000), None);
-        status.time_limit_end = Some(1301);
-        assert!(!status.full(1000));
-        assert_eq!(status.time_left(1000), Some(1));
-        status.time_limit_end = Some(1300);
-        assert!(status.full(1000));
-        status.time_limit_end = Some(1200);
-        assert_eq!(status.time_left(1000), Some(0));
-        status.current_song_index = None;
-        assert!(status.full(1000));
-        status.time_limit_end = Some(1901);
-        assert!(!status.full(1000));
-    }
-
     fn encode(message: &MessageToStreamer) -> String {
         serde_json::to_string(message).unwrap()
     }
@@ -1000,7 +937,6 @@ mod tests {
                     user: None,
                 }],
                 song_not_found: Some(false),
-                time_limit_end: None,
             }
         );
         let found = |text: &str| -> Option<FoundSong> {

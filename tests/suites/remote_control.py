@@ -1,7 +1,3 @@
-import time
-
-import systest
-
 from ..utils.config import Capability
 from ..utils.context import Context
 from ..utils.fake_moblin import FakeMoblin
@@ -199,35 +195,6 @@ class RemoteControlSongRequestsOff(RemoteControlTestCase):
             self.moblin.change_song_requests(True)
 
 
-class RemoteControlQueueFull(RemoteControlTestCase):
-    """Tell how much time is left for songs before Moblin's time limit, refuse songs once the queue reaches it, and take them again without it."""
-
-    def run(self):
-        if not self.moblin.is_fake():
-            raise systest.TestCaseSkippedError("Needs the fake Moblin.")
-        self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key())
-        self.moblin.change_song_requests_time_limit(int(time.time()) + 600)
-        self.wait_until(lambda: self.viewer.queue()["secondsLeft"] is not None, "time left for songs")
-        self.assert_true(0 < self.viewer.queue()["secondsLeft"] <= 600)
-        self.assert_equal(self.viewer.queue()["queueFull"], False)
-        self.moblin.change_song_requests_time_limit(int(time.time()))
-        self.wait_until(lambda: self.viewer.queue()["queueFull"], "the queue to be full")
-        self.assert_equal(self.viewer.queue()["songRequests"], True)
-        self.assert_backend_error(
-            409,
-            lambda: self.dashboard.test_song(SONG),
-            "The streamer's playlist is full, so no more songs can be added right now.",
-        )
-        self.moblin.change_song_requests_time_limit(None)
-        self.wait_until(lambda: not self.viewer.queue()["queueFull"], "the queue to have room again")
-        self.assert_equal(self.viewer.queue()["secondsLeft"], None)
-        self.dashboard.test_song(SONG)
-
-    def teardown(self):
-        if self.context.moblin is not None and self.moblin.is_fake():
-            self.moblin.change_song_requests_time_limit(None)
-
-
 class RemoteControlDevices(RemoteControlTestCase):
     """Send songs to the first device with song requests on, spins to the first with a wheel and tips to every device, all connected with the one Moblin Cloud key."""
 
@@ -284,6 +251,5 @@ def tests(context: Context):
         RemoteControlTestDeliveries(context),
         RemoteControlNoWheel(context),
         RemoteControlSongRequestsOff(context),
-        RemoteControlQueueFull(context),
         RemoteControlDevices(context),
     ]
