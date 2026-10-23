@@ -435,8 +435,8 @@ export const cardArt = {
   background() {
     return svgF(
       `<rect width="280" height="392" fill="url(#bgsky)"/>
-      <path d="M -10 250 Q 80 200 160 236 T 290 226 L 290 392 L -10 392 Z" fill="#4f8f4a"/>
-      <path d="M -10 290 Q 90 254 180 284 T 290 280 L 290 392 L -10 392 Z" fill="#3b7a3a"/>
+      <path d="M -20 255.6 L -10 250 Q 80 200 160 236 T 290 226 L 300 216.8 L 300 410 L -20 410 Z" fill="#4f8f4a"/>
+      <path d="M -20 293.6 L -10 290 Q 90 254 180 284 T 290 280 L 300 263 L 300 410 L -20 410 Z" fill="#3b7a3a"/>
       <g transform="translate(-6 0)">
       <path d="M 2 170 h 20 M 8 186 h 22 M 0 202 h 16" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".8"/>
       <circle cx="54" cy="214" r="26" fill="none" stroke="#1c1c1e" stroke-width="5"/><path d="M 30 214 h 48 M 54 190 v 48 M 37 197 l 34 34 M 71 197 l -34 34" stroke="#999" stroke-width="1"/><circle cx="54" cy="214" r="3" fill="#555"/><circle cx="150" cy="214" r="26" fill="none" stroke="#1c1c1e" stroke-width="5"/><path d="M 126 214 h 48 M 150 190 v 48 M 133 197 l 34 34 M 167 197 l -34 34" stroke="#999" stroke-width="1"/><circle cx="150" cy="214" r="3" fill="#555"/>
@@ -667,15 +667,15 @@ export const cardArt = {
       return `<path d="${d}" fill="none" stroke="${c}" stroke-width="9" stroke-linecap="round"/><path d="${d}" fill="none" stroke="#fff" stroke-width="1.5" opacity=".5" stroke-dasharray="4 8"/>`;
     };
     let braid = "";
-    for (let y = 200; y < 400; y += 22) {
+    for (let y = 200; y < 420; y += 22) {
       braid += `<path d="M 128 ${y} q 12 -11 24 0 q -12 11 -24 0 z" fill="#ff8c2a" stroke="#8a2a02"/>`;
     }
     return svgF(
       `<rect width="280" height="392" fill="url(#sky)"/>
       ${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => `<circle cx="${(i * 67 + 13) % 280}" cy="${(i * 41 + 9) % 180}" r="${1 + (i % 3) * 0.5}" fill="#fff" opacity="${0.35 + (i % 4) * 0.15}"/>`).join("")}
-      <path d="M 0 392 L 0 330 Q 60 300 100 340 L 100 392 Z M 280 392 L 280 320 Q 230 300 180 350 L 180 392 Z" fill="#0a1220"/>
+      <path d="M -20 410 L -20 340 L 0 330 Q 60 300 100 340 L 100 410 Z M 300 410 L 300 328 L 280 320 Q 230 300 180 350 L 180 410 Z" fill="#0a1220"/>
       ${rope(60, "#ff9f0a", 0)}${rope(140, "#2f7cf6", 2)}${rope(220, "#0d7a30", 4)}
-      <rect x="128" y="196" width="24" height="200" fill="#c44d00"/>${braid}
+      <rect x="128" y="196" width="24" height="220" fill="#c44d00"/>${braid}
       ${pill(60, 26, "Cellular", "#ff9f0a", "#000", 9, 60)}${pill(140, 26, "Wi-Fi", "#2f7cf6", "#fff", 9, 50)}${pill(220, 26, "Ethernet", "#0d7a30", "#fff", 9, 64)}
       <image href="${asset("logos/logo-looking.png")}" x="${244 - 13}" y="${226 - (26 * 573) / 500}" width="26" height="${(26 * 573) / 500}" transform="rotate(48 244 214) translate(488 0) scale(-1 1)"/>
       ${txt(140, 380, "one rope. zero fear.", { fs: 9, fill: "#ffe7a3" })}`,
