@@ -247,16 +247,16 @@ function CurrencySettings(props: {
     () => props.onSave({ currency: currency() }),
     (error) =>
       error instanceof BackendError && error.status === 409
-        ? t("Turn tips and the wheel off to change the currency.")
+        ? t("Turn messages and the wheel off to change the currency.")
         : paymentErrorText(error, t("Pick one of the currencies.")),
   );
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Currency")}</h2>
-      <p class="text-ink-2">{t("Tips and wheel spins are all in this currency.")}</p>
+      <p class="text-ink-2">{t("All tips are in this currency.")}</p>
       <Show when={props.locked}>
-        <p class="text-ink-2">{t("Turn tips and the wheel off to change the currency.")}</p>
+        <p class="text-ink-2">{t("Turn messages and the wheel off to change the currency.")}</p>
       </Show>
       <select
         aria-label={t("Currency")}
@@ -742,8 +742,8 @@ function GetStarted(props: {
         shown: true,
         done:
           isOn(props.settings.tips) || isOn(props.settings.spin) || isOn(props.settings.subSpins),
-        title: t("Turn on tips or the wheel"),
-        text: t("Set your amounts in Tips and Wheel of luck."),
+        title: t("Turn on messages or the wheel"),
+        text: t("Set your amounts in Message and Wheel of luck."),
         section: props.payments ? "tips" : "wheel",
       },
       {
@@ -1300,18 +1300,18 @@ function TipSettings(props: {
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
-      <h2 class="text-[23px] font-semibold">{t("Tips")}</h2>
+      <h2 class="text-[23px] font-semibold">{t("Message")}</h2>
       <p class="text-ink-2">
         {t(
-          "Let viewers send you just a tip. Viewers pick one of your amounts or enter their " +
-            "own, and can add a message. Tips show up in Moblin's chat, also those sent while Moblin is " +
-            "not connected.",
+          "Let viewers send you a tip with a message. Viewers pick one of your amounts or enter " +
+            "their own, and the message is optional. Messages show up in Moblin's chat, also those sent " +
+            "while Moblin is not connected.",
         )}
       </p>
       <p class="text-ink-2">
         {tRich(
           "To also show them as alerts on stream, pick an alerts widget in Moblin under " +
-            "Settings → Moblin Cloud → Tips. See the {guide}.",
+            "Settings → Moblin Cloud → Message. See the {guide}.",
           { guide: <GuideLink text={t("setup guide")} /> },
         )}
       </p>
@@ -1322,7 +1322,7 @@ function TipSettings(props: {
           onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        {t("Viewers can send tips")}
+        {t("Viewers can send messages")}
       </label>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
@@ -1563,8 +1563,8 @@ function SendForm(props: {
 
 const testTexts: Record<RecentKind, { description: string; label: string }> = {
   tip: {
-    description: t("Send yourself a tip, to check that tips show up in Moblin."),
-    label: t("Send test tip"),
+    description: t("Send yourself a message, to check that messages show up in Moblin."),
+    label: t("Send test message"),
   },
   spin: {
     description: t("Spin your wheel in Moblin, to check that it works."),
@@ -1678,7 +1678,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
     },
     {
       id: "tips",
-      label: t("Tips"),
+      label: t("Message"),
       icon: "heart",
       shown: () => moderating() || payments() || isOn(settings().tips),
       status: () => onOff(isOn(settings().tips)),
@@ -1824,7 +1824,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
             when={paid(isOn(settings().tips))}
             fallback={
               <NeedsPayments
-                title={t("Tips")}
+                title={t("Message")}
                 available={payments()}
                 streamer={moderating() ? account().name : null}
                 onConnect={() => select("payments")}
@@ -2165,7 +2165,7 @@ function MoblinSettings(props: {
   };
   const gets = (device: Device) =>
     device.connected
-      ? [device.wheel ? t("Wheel of luck") : null, t("Tips")]
+      ? [device.wheel ? t("Wheel of luck") : null, t("Message")]
           .filter((text) => text !== null)
           .join(" · ")
       : t("Last seen {time}", { time: timeAgo(device.lastSeen ?? 0) });

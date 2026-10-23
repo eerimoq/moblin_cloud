@@ -30,8 +30,8 @@ export function Latest(props: {
   const [loading, setLoading] = createSignal(false);
   const [resending, setResending] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal<string | null>(null);
-  const title = () => (props.kind === "tip" ? t("Received tips") : t("Received spins"));
-  const empty = () => (props.kind === "tip" ? t("No tips yet.") : t("No spins yet."));
+  const title = () => (props.kind === "tip" ? t("Received messages") : t("Received spins"));
+  const empty = () => (props.kind === "tip" ? t("No messages yet.") : t("No spins yet."));
   const more = async () => {
     setLoading(true);
     try {

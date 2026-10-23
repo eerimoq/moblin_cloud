@@ -1528,7 +1528,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       {
         section: "tip",
         icon: "heart",
-        title: t("Just a tip"),
+        title: t("Message"),
         text: t("Send a tip with a message if you like."),
         enabled: tipJar() !== null,
       },

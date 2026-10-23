@@ -680,7 +680,7 @@ export const guides: Guide[] = [
               "be changed later.",
           ),
           t(
-            "In Tips, turn on Viewers can send tips and set your suggested amounts. In Wheel of " +
+            "In Message, turn on Viewers can send messages and set your suggested amounts. In Wheel of " +
               "luck, turn on Viewers tip to spin the wheel and set the prices.",
           ),
         ],
@@ -704,11 +704,11 @@ export const guides: Guide[] = [
           ),
         ],
       },
-      { type: "h", text: t("Show tips on stream") },
+      { type: "h", text: t("Show messages on stream") },
       {
         type: "p",
         text: t(
-          "Tips always show up in Moblin's chat. To also show them as an alert on stream, " +
+          "Messages always show up in Moblin's chat. To also show them as an alert on stream, " +
             "Moblin needs an alerts widget.",
         ),
       },
@@ -720,10 +720,10 @@ export const guides: Guide[] = [
               "stream with. An alerts widget you already use for Twitch or Kick works too.",
           ),
           t(
-            "Optionally open the widget and change the tip alert's media, position, colors and " +
-              "text to speech under Moblin Cloud → Tips.",
+            "Optionally open the widget and change the message alert's media, position, colors and " +
+              "text to speech under Moblin Cloud → Message.",
           ),
-          t("In Settings → Moblin Cloud, pick the widget under Tips."),
+          t("In Settings → Moblin Cloud, pick the widget under Message."),
         ],
       },
       { type: "h", text: t("Let viewers tip to spin your wheel") },
@@ -745,7 +745,7 @@ export const guides: Guide[] = [
         type: "tip",
         text: t(
           "Viewers can only tip to spin the wheel while Moblin is connected with a wheel " +
-            "picked. Other tips work all the time: those sent while Moblin is offline show up " +
+            "picked. Messages work all the time: those sent while Moblin is offline show up " +
             "when it connects.",
         ),
       },
@@ -754,7 +754,7 @@ export const guides: Guide[] = [
         type: "steps",
         items: [
           t(
-            "In the dashboard's Tips and Wheel of luck sections, use Send test tip and Send " +
+            "In the dashboard's Message and Wheel of luck sections, use Send test message and Send " +
               "test spin. They are free and show up in Moblin like paid ones.",
           ),
           t(
@@ -776,7 +776,7 @@ export const guides: Guide[] = [
               "and wheel and send tests, but not your payment accounts or currency.",
           ),
           t(
-            "Tips with a spin go to the first connected device with a wheel picked. Other tips " +
+            "Spins go to the first connected device with a wheel picked. Messages " +
               "go to every connected device.",
           ),
           t(
@@ -790,8 +790,8 @@ export const guides: Guide[] = [
         type: "list",
         items: [
           t(
-            "Tips only show up in chat? Pick an alerts widget under Settings → Moblin Cloud → " +
-              "Tips, add it to the current scene and check that Moblin Cloud → Tips is on in " +
+            "Messages only show up in chat? Pick an alerts widget under Settings → Moblin Cloud → " +
+              "Message, add it to the current scene and check that Moblin Cloud → Message is on in " +
               "the widget.",
           ),
           t(

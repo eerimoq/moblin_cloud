@@ -134,7 +134,7 @@ const captureReasons = [
 const kinds: Kind[] = [
   {
     kind: "tip",
-    label: "Tips",
+    label: "Messages",
     orders: [
       "feature-off",
       "payments-unavailable",
@@ -684,7 +684,7 @@ function Loaded(props: { stats: AdminStats }) {
         <Tile
           label="Waiting for a device"
           value={format(props.stats.pending.deliveries)}
-          hint="Tips and spins no device has received yet. A tip one of several devices got is not counted. Kept for 7 days."
+          hint="Messages and spins no device has received yet. A message one of several devices got is not counted. Kept for 7 days."
           attention={props.stats.pending.deliveries > 0}
         />
         <Tile
@@ -699,7 +699,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="problems"
             title="Problems"
-            hint="Failures on our side or at PayPal, Stripe or Moblin, across tips and wheel spins. Viewer mistakes and streamers being offline are not counted here."
+            hint="Failures on our side or at PayPal, Stripe or Moblin, across messages and wheel spins. Viewer mistakes and streamers being offline are not counted here."
           >
             <StepTable
               steps={problems.map((problem) => ({
@@ -721,7 +721,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="providers"
             title="Providers"
-            hint="Payments by provider, across tips and wheel spins, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
+            hint="Payments by provider, across messages and wheel spins, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
           >
             <div class="flex flex-col gap-5">
               <For each={providers}>
@@ -748,7 +748,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="tests"
             title="Tests"
-            hint="Free tips and wheel spins streamers send themselves from the dashboard. Not counted as problems above."
+            hint="Free messages and wheel spins streamers send themselves from the dashboard. Not counted as problems above."
           >
             <div class="flex flex-col gap-5">
               <For each={kinds}>

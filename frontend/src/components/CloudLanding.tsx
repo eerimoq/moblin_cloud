@@ -39,7 +39,7 @@ function Toast(props: { icon: IconName; label: string; text: string; class: stri
 
 function PageMockup() {
   const ways: { icon: IconName; title: string }[] = [
-    { icon: "heart", title: t("Just a tip") },
+    { icon: "heart", title: t("Message") },
     { icon: "wheel", title: t("Spin the wheel") },
   ];
   return (
@@ -90,7 +90,7 @@ function PageMockup() {
       </div>
       <Toast
         icon="heart"
-        label={t("New tip")}
+        label={t("Message")}
         text={t("Great view up there!")}
         class="-top-6 -left-6 -rotate-3 max-sm:hidden lg:-left-20"
       />
