@@ -532,7 +532,12 @@ function TermsLink() {
 
 type Result = { text: string };
 
-function CheerCard(props: { title: string; text: string; onClose: () => void }) {
+function CheerCard(props: {
+  title: string;
+  text: string;
+  streamer: Streamer | null;
+  onClose: () => void;
+}) {
   let overlay: HTMLDivElement | undefined;
   let close: HTMLButtonElement | undefined;
   const onKey = (event: KeyboardEvent) => event.key === "Escape" && props.onClose();
@@ -563,11 +568,23 @@ function CheerCard(props: { title: string; text: string; onClose: () => void }) 
         <Icon name="close" class="size-5" />
       </button>
       <div class="cheer-pop relative z-10 flex max-w-md flex-col items-center gap-2 rounded-3xl border-[1.5px] border-moss bg-card px-10 pt-24 pb-8 text-center shadow-2xl">
-        <img
-          src={asset("logos/logo-party.png")}
-          alt=""
-          class="absolute -top-20 left-1/2 h-40 w-auto -translate-x-1/2 drop-shadow-xl"
-        />
+        <Show
+          when={props.streamer}
+          fallback={
+            <img
+              src={asset("logos/logo-party.png")}
+              alt=""
+              class="absolute -top-20 left-1/2 h-40 w-auto -translate-x-1/2 drop-shadow-xl"
+            />
+          }
+        >
+          {(streamer) => (
+            <Avatar
+              streamer={streamer()}
+              class="absolute -top-16 left-1/2 size-32 -translate-x-1/2 text-5xl shadow-xl"
+            />
+          )}
+        </Show>
         <span class="font-display text-3xl font-semibold text-ink">{props.title}</span>
         <span class="text-lg text-ink-2">{props.text}</span>
       </div>
@@ -1718,10 +1735,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, { equals: sameData });
   const [streamerConnected, setStreamerConnected] = createSignal(false);
   const [profile, setProfile] = createSignal<Profile | null>(null);
-  const streamerName = () => {
+  const streamerOf = () => {
     const current = profile();
-    return current ? identityOf(current, props.platform)?.name : undefined;
+    return current && identityOf(current, props.platform);
   };
+  const streamerName = () => streamerOf()?.name;
   const subPlatforms = () => {
     const current = profile();
     return current ? platforms.filter((platform) => current[platform] !== null) : [];
@@ -2043,7 +2061,12 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       </Show>
       <Show when={cheer()} keyed>
         {(current) => (
-          <CheerCard title={current.title} text={current.text} onClose={() => setCheer(null)} />
+          <CheerCard
+            title={current.title}
+            text={current.text}
+            streamer={streamerOf()}
+            onClose={() => setCheer(null)}
+          />
         )}
       </Show>
     </div>
