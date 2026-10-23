@@ -16,8 +16,6 @@ use super::*;
 #[derive(Deserialize)]
 pub(super) struct TestRequest {
     #[serde(default)]
-    song: Option<String>,
-    #[serde(default)]
     message: Option<String>,
 }
 
@@ -50,35 +48,6 @@ fn test_page(
 
 fn moblin_not_connected() -> Failure {
     failure("offline", StatusCode::CONFLICT, "Connect Moblin first.")
-}
-
-pub(super) async fn handle_account_test_song(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    Json(request): Json<TestRequest>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_song(&api, &headers, request).await;
-    counted(&api, "songTests", result)
-}
-
-async fn account_test_song(
-    api: &Api,
-    headers: &HeaderMap,
-    request: TestRequest,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(api, headers, None)?;
-    if !api.remote_control.is_connected(&id) {
-        return Err(moblin_not_connected());
-    }
-    let message = viewer_message(request.message)?;
-    let request = SongRequest {
-        song: request.song.unwrap_or_default(),
-        user: Some(account.name().to_string()),
-        message: None,
-        provider: None,
-    };
-    let song = requested_song(api, &id, song_and_user(request)?).await?;
-    Ok(queue(api, id, request_id, song, message))
 }
 
 pub(super) async fn handle_account_test_tip(
@@ -239,11 +208,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        for kind in ["song", "spin"] {
-            let response = test(kind, json!({"song": LINK})).await.unwrap();
-            assert_eq!(response.status(), StatusCode::CONFLICT);
-            assert_eq!(response.text().await.unwrap(), "Connect Moblin first.");
-        }
+        let response = test("spin", json!({})).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.text().await.unwrap(), "Connect Moblin first.");
         let response = test("tip", json!({"message": " Testing "})).await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let mut socket = connect(&address, &key).await;
@@ -287,28 +254,5 @@ mod tests {
         assert_eq!(spin["count"], 1);
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
-        let response = test("song", json!({"song": "nope"})).await.unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let created = tokio::spawn(test("song", json!({"song": LINK, "message": " Testing "})));
-        let request = receive(&mut socket).await;
-        assert_eq!(
-            request["request"]["data"],
-            json!({"music": {"command": {"find": {"title": LINK}}}})
-        );
-        answer(
-            &mut socket,
-            &request,
-            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band"}}}),
-        )
-        .await;
-        assert_eq!(
-            created.await.unwrap().unwrap().status(),
-            StatusCode::ACCEPTED
-        );
-        let request = receive(&mut socket).await;
-        let add = &request["request"]["data"]["music"]["command"]["add"];
-        assert_eq!(add["title"], LINK);
-        assert_eq!(add["user"], "Erik");
-        assert_eq!(add["message"], "Testing");
     }
 }

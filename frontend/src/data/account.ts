@@ -1,19 +1,11 @@
 import { createSignal, onMount } from "solid-js";
 import { BackendError, backendUrl, call, post } from "./backend";
-import {
-  type Identity,
-  type MusicCommand,
-  type MusicStatus,
-  type Page,
-  type Platform,
-  type Settings,
-} from "./remoteControl";
+import { type Identity, type Page, type Platform, type Settings } from "./remoteControl";
 
 export type Device = {
   id: string;
   name: string;
   connected: boolean;
-  music: boolean;
   wheel: boolean;
   lastSeen: number | null;
 };
@@ -55,18 +47,16 @@ export type Recent = {
   user: string;
   amount: number;
   currency: string;
-  name?: string;
   message?: string;
   spins?: number;
   tier?: number;
-  moderator?: boolean;
   kickSubscriber?: boolean;
   provider?: "paypal" | "stripe";
-  status: "delivered" | "waiting" | "notAdded";
+  status: "delivered" | "waiting";
   devices?: { name: string; received: boolean }[];
 };
 
-export type RecentKind = "song" | "tip" | "spin";
+export type RecentKind = "tip" | "spin";
 
 export type RecentList = { items: Recent[]; more: boolean };
 
@@ -230,16 +220,6 @@ export const removeModerator = (session: string, platform: Platform, moderator: 
     post(),
   );
 
-export const moderateMusic = (
-  session: string,
-  page: string,
-  command: MusicCommand,
-  song?: string,
-) => call<MusicStatus>(`${accountPath(page)}/music`, session, post({ command, id: song }));
-
-export const addModeratorSong = (session: string, page: string, song: string, message: string) =>
-  call<object>(`${accountPath(page)}/songs`, session, post({ song, message: message || null }));
-
 export const linkAccount = (session: string, token: string) =>
   call<Account>("/account/link", session, post({ token }));
 
@@ -331,16 +311,12 @@ export const uploadImage = (session: string, image: File, page?: string) =>
 export const removeImage = (session: string, page?: string) =>
   call<Settings>(`${accountPath(page)}/image/remove`, session, post());
 
-export type SettingsChanges = Page &
-  Pick<
-    Settings,
-    "currency" | "songs" | "tips" | "spin" | "subSongs" | "subSpins" | "maxSongLength"
-  >;
+export type SettingsChanges = Page & Pick<Settings, "currency" | "tips" | "spin" | "subSpins">;
 
 export const sendTest = (
   session: string,
   kind: RecentKind,
-  body: { song?: string; message?: string },
+  body: { message?: string },
   page?: string,
 ) => call<object>(`${accountPath(page)}/test/${kind}`, session, post(body));
 
@@ -350,12 +326,9 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges, 
     session,
     post({
       currency: settings.currency,
-      songs: settings.songs,
       tips: settings.tips,
       spin: settings.spin,
-      subSongs: settings.subSongs,
       subSpins: settings.subSpins,
-      maxSongLength: settings.maxSongLength,
       message: settings.message,
       accent: settings.accent,
       font: settings.font,

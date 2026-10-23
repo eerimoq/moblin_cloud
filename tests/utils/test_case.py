@@ -3,7 +3,6 @@ from collections.abc import Callable
 import systest
 from systest import wait_until
 
-from .config import Capability
 from .context import Context
 from .website import BackendError
 from .website import Dashboard
@@ -27,12 +26,6 @@ class TestCase(systest.TestCase):
     def skip_if_no_moblin(self):
         if self.context.moblin is None:
             raise systest.TestCaseSkippedError("No Moblin device given with --device.")
-
-    def skip_if_missing_capability(self, capability: Capability):
-        self.skip_if_no_moblin()
-        assert self.context.moblin is not None
-        if not self.context.moblin.has_capability(capability):
-            raise systest.TestCaseSkippedError(f"{capability} capability missing.")
 
     def skip_if_not_interactive(self):
         if not self.context.interactive:

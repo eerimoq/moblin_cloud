@@ -11,25 +11,13 @@ use crate::deliveries::now;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Item {
-    Song {
-        link: String,
-        name: String,
-        #[serde(default)]
-        message: Option<String>,
-    },
-    Tip {
-        message: Option<String>,
-    },
-    Spin {
-        spins: u32,
-        message: Option<String>,
-    },
+    Tip { message: Option<String> },
+    Spin { spins: u32, message: Option<String> },
 }
 
 impl Item {
     pub fn kind(&self) -> &'static str {
         match self {
-            Item::Song { .. } => "song",
             Item::Tip { .. } => "tip",
             Item::Spin { .. } => "spin",
         }
@@ -42,7 +30,6 @@ pub enum Payee {
     Stripe(String),
     Twitch(u8),
     Kick,
-    Moderator,
 }
 
 impl Payee {
@@ -52,7 +39,6 @@ impl Payee {
             Payee::Stripe(_) => "Stripe",
             Payee::Twitch(_) => "Twitch",
             Payee::Kick => "Kick",
-            Payee::Moderator => "Moderator",
         }
     }
 
@@ -62,7 +48,6 @@ impl Payee {
             Payee::Stripe(_) => "stripe",
             Payee::Twitch(_) => "twitch",
             Payee::Kick => "kick",
-            Payee::Moderator => "moderator",
         }
     }
 }
@@ -80,10 +65,6 @@ pub struct Order {
 impl Order {
     pub fn description(&self) -> String {
         let (description, message) = match &self.item {
-            Item::Song { name, message, .. } => (
-                format!("Tip from {} with a song: {name}", self.user),
-                message.as_ref(),
-            ),
             Item::Tip { message } => (format!("Tip from {}", self.user), message.as_ref()),
             Item::Spin { spins: 1, message } => {
                 (format!("Wheel spin by {}", self.user), message.as_ref())

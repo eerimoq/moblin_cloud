@@ -68,7 +68,7 @@ async fn create_order(api: &Api, order: Order) -> Result<OrderResponse, Failure>
                     }),
                 ))
             }
-            Payee::Twitch(_) | Payee::Kick | Payee::Moderator => {
+            Payee::Twitch(_) | Payee::Kick => {
                 anyhow::bail!("free requests are not paid")
             }
         }
@@ -144,9 +144,6 @@ fn provider_failed(provider: &str) -> Failure {
 
 pub(super) fn pending(provider: &str, kind: &str) -> Failure {
     let text = match kind {
-        "song" => format!(
-            "{provider} is still reviewing the payment, so no song was added yet. It will be added if {provider} approves the payment."
-        ),
         "tip" => format!(
             "{provider} is still reviewing the payment. If {provider} approves it, the tip will be shown and the money reaches the streamer."
         ),
@@ -171,19 +168,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         }
         Stage::Created => {}
     }
-    let refusal = if kind == "song" && !api.remote_control.is_connected(id) {
-        Some((
-            "offline",
-            StatusCode::NOT_FOUND,
-            "The streamer went offline, so your payment was not taken.",
-        ))
-    } else if kind == "song" && !api.remote_control.takes_song_requests(id) {
-        Some((
-            "requests-off",
-            StatusCode::CONFLICT,
-            "The streamer stopped taking song requests, so your payment was not taken.",
-        ))
-    } else if kind == "spin" && api.remote_control.wheel(id).is_none() {
+    let refusal = if kind == "spin" && api.remote_control.wheel(id).is_none() {
         Some((
             "no-wheel",
             StatusCode::NOT_FOUND,
@@ -206,7 +191,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
     let available = match &order.payee {
         Payee::PayPal(_) => api.paypal.is_some(),
         Payee::Stripe(_) => api.stripe.is_some(),
-        Payee::Twitch(_) | Payee::Kick | Payee::Moderator => false,
+        Payee::Twitch(_) | Payee::Kick => false,
     };
     if !available {
         return Err(payment_unavailable());
@@ -241,7 +226,7 @@ async fn capture_at_provider(
             let stripe = api.stripe.as_ref().ok_or_else(payment_unavailable)?;
             stripe.capture(order_id, order, account).await
         }
-        Payee::Twitch(_) | Payee::Kick | Payee::Moderator => return Err(payment_unavailable()),
+        Payee::Twitch(_) | Payee::Kick => return Err(payment_unavailable()),
     };
     let result = match captured {
         Ok(()) | Err(CaptureError::AlreadyCaptured) => {
@@ -267,11 +252,6 @@ async fn capture_at_provider(
                 warn!("{error:#}");
             }
             Err(match error {
-                CaptureError::NotApproved if kind == "song" => failure(
-                    "not-approved",
-                    StatusCode::PAYMENT_REQUIRED,
-                    "The payment was not completed. No song was added.",
-                ),
                 CaptureError::NotApproved => failure(
                     "not-approved",
                     StatusCode::PAYMENT_REQUIRED,
@@ -305,7 +285,6 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
             &format!(
                 "{provider} did not answer. If the money was taken, {}.",
                 match order.item.kind() {
-                    "song" => "the song will still be added",
                     "tip" => "the tip will still be shown",
                     _ => "the wheel will still be spun",
                 }
@@ -324,7 +303,7 @@ async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentS
                 .await
         }
         Payee::Stripe(account) => api.stripe.as_ref()?.status(order_id, order, account).await,
-        Payee::Twitch(_) | Payee::Kick | Payee::Moderator => return None,
+        Payee::Twitch(_) | Payee::Kick => return None,
     };
     let status = match status {
         Ok(status) => status,
@@ -397,11 +376,6 @@ pub async fn settle_orders(api: Arc<Api>) {
 
 pub(super) fn delivery_item(order: &Order) -> deliveries::Item {
     match &order.item {
-        Item::Song { link, message, .. } => deliveries::Item::Song {
-            link: link.clone(),
-            user: order.user.clone(),
-            message: message.clone().unwrap_or_default(),
-        },
         Item::Tip { message } => deliveries::Item::Tip {
             user: order.user.clone(),
             message: message.clone().unwrap_or_default(),
@@ -443,7 +417,9 @@ mod tests {
     use std::time::Duration;
 
     use axum::http::StatusCode;
+    use futures_util::SinkExt;
     use serde_json::{Value, json};
+    use tokio_tungstenite::tungstenite::Message;
 
     use super::*;
     use crate::api::test_utils::*;
@@ -484,7 +460,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stripe_holds_are_released_when_the_streamer_goes_offline() {
+    async fn stripe_holds_are_released_when_the_wheel_is_gone() {
         let (address, api, fake) = start_stripe_api().await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
@@ -492,35 +468,35 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "SEK", "songs": {"price": 250}}))
+            .json(&json!({"currency": "SEK", "spin": {"options": [{"spins": 1, "price": 250}]}}))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let mut socket = connect(&address, &key).await;
-        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
-        let created = tokio::spawn({
-            let orders_url = orders_url.clone();
-            async move {
-                reqwest::Client::new()
-                    .post(orders_url)
-                    .json(&json!({"song": LINK, "provider": "stripe"}))
-                    .send()
-                    .await
-                    .unwrap()
-                    .json::<Value>()
-                    .await
-                    .unwrap()
-            }
-        });
-        let request = receive(&mut socket).await;
-        answer(
-            &mut socket,
-            &request,
-            json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "duration": 400}}}),
-        )
-        .await;
-        assert_eq!(created.await.unwrap()["orderId"], "pi_1");
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        let orders_url = format!("http://{address}/pages/{id}/spin/orders");
+        let created: Value = client
+            .post(&orders_url)
+            .json(&json!({"user": "Viewer", "spins": 1, "provider": "stripe"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(created["orderId"], "pi_1");
         let payment = fake.payment.lock().unwrap().clone().unwrap();
         assert_eq!(payment["form"]["amount"], "250");
         assert_eq!(payment["form"]["currency"], "sek");
@@ -783,31 +759,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pending_captures_add_the_song_once_approved() {
+    async fn pending_captures_show_the_tip_once_approved() {
         let (address, api, fake) = start_paid_fake().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
-        connect_paypal(&api);
-        let response = client
-            .post(format!("http://{address}/account/settings"))
-            .bearer_auth(&session)
-            .json(&json!({"currency": "EUR", "songs": {"price": 250}}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let mut socket = connect(&address, &key).await;
-        let orders_url = format!("http://{address}/pages/{id}/songs/orders");
-        assert_eq!(
-            request_song(&mut socket, &orders_url).await,
-            json!({"orderId": "ORDER1"})
-        );
-        let capture_url = format!("{orders_url}/ORDER1/capture");
+        let (_, capture_url) = paypal_tip_order_in(&address, &api, "EUR").await;
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal is still reviewing the payment, so no song was added yet. It will be added if PayPal approves the payment."
+            "PayPal is still reviewing the payment. If PayPal approves it, the tip will be shown and the money reaches the streamer."
         );
         assert!(api.deliveries.pending().is_empty());
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
@@ -817,13 +777,10 @@ mod tests {
         assert!(api.deliveries.pending().is_empty());
         *fake.approved.lock().unwrap() = true;
         settle(&api, Duration::ZERO).await;
-        assert_eq!(api.deliveries.pending().len(), 1);
+        let pending = api.deliveries.pending();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].request_id, "ORDER1");
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
-        let request = receive(&mut socket).await;
-        assert_eq!(
-            request["request"]["data"]["music"]["command"]["add"]["requestId"],
-            "ORDER1"
-        );
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }

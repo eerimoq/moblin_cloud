@@ -82,7 +82,6 @@ pub(crate) async fn start_api_with(
         premium_accounts: vec!["premium".to_string()],
         started: 0,
         tests: Mutex::default(),
-        song_finds: Mutex::default(),
     });
     tokio::spawn({
         let api = api.clone();
@@ -129,8 +128,6 @@ where
     );
 }
 
-pub(crate) const LINK: &str = "https://music.apple.com/song/1440818839?i=1440818839";
-
 pub(crate) async fn answer<S>(socket: &mut S, request: &Value, data: Value)
 where
     S: SinkExt<Message> + Unpin,
@@ -147,15 +144,6 @@ where
         ))
         .await
         .unwrap();
-}
-
-pub(crate) fn music(songs: Value) -> Value {
-    json!({"music": {"status": {
-        "playing": false,
-        "currentSongIndex": null,
-        "songs": songs,
-        "songNotFound": false,
-    }}})
 }
 
 pub(crate) type Socket =
@@ -267,41 +255,6 @@ pub(crate) async fn streamer(_address: &str, api: &Api) -> (String, String, Stri
         account.page.key.clone(),
         account.page.id,
     )
-}
-
-pub(crate) async fn request_song<S>(socket: &mut S, url: &str) -> Value
-where
-    S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
-        + SinkExt<Message>
-        + Unpin,
-    <S as futures_util::Sink<Message>>::Error: std::fmt::Debug,
-{
-    let created = tokio::spawn({
-        let url = url.to_string();
-        async move {
-            reqwest::Client::new()
-                .post(url)
-                .json(&json!({"song": "https://music.apple.com/us/song/x/1440818839", "user": "Viewer", "message": " Play it loud! "}))
-                .send()
-                .await
-                .unwrap()
-                .json::<Value>()
-                .await
-                .unwrap()
-        }
-    });
-    let request = receive(socket).await;
-    assert_eq!(
-        request["request"]["data"],
-        json!({"music": {"command": {"find": {"title": LINK}}}})
-    );
-    answer(
-        socket,
-        &request,
-        json!({"musicFind": {"song": {"id": "1440818839", "title": "Song", "artist": "Band"}}}),
-    )
-    .await;
-    created.await.unwrap()
 }
 
 pub(crate) async fn wait_until_added(api: &Api) {

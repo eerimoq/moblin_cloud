@@ -6,7 +6,6 @@ import { poll } from "../poll";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
 import { createRecent, Latest, timeAgo } from "../components/Latest";
-import Player, { type Moderate, playerCardClass, type Status } from "../components/Player";
 import {
   AccountMenu,
   Band,
@@ -24,10 +23,8 @@ import {
 import {
   addModerator,
   createAccountSession,
-  addModeratorSong,
   type Moderator,
   removeModerator,
-  moderateMusic,
   type Moderating,
   checkPayPal,
   checkStripe,
@@ -62,7 +59,6 @@ import {
   isColor,
   isOn,
   loadFonts,
-  musicStatus,
   pageImageUrl,
   type Platform,
   platformNames,
@@ -71,7 +67,6 @@ import {
   tierNumbers,
   type Feature,
   type Page,
-  type Songs,
   type Settings,
   type Spin,
   type Tiers,
@@ -252,18 +247,16 @@ function CurrencySettings(props: {
     () => props.onSave({ currency: currency() }),
     (error) =>
       error instanceof BackendError && error.status === 409
-        ? t("Turn song requests, tips and the wheel off to change the currency.")
+        ? t("Turn tips and the wheel off to change the currency.")
         : paymentErrorText(error, t("Pick one of the currencies.")),
   );
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Currency")}</h2>
-      <p class="text-ink-2">{t("Tips, song requests and wheel spins are all in this currency.")}</p>
+      <p class="text-ink-2">{t("Tips and wheel spins are all in this currency.")}</p>
       <Show when={props.locked}>
-        <p class="text-ink-2">
-          {t("Turn song requests, tips and the wheel off to change the currency.")}
-        </p>
+        <p class="text-ink-2">{t("Turn tips and the wheel off to change the currency.")}</p>
       </Show>
       <select
         aria-label={t("Currency")}
@@ -383,8 +376,8 @@ function PayPalAccount(props: {
         fallback={
           <p class="text-ink-2">
             {tRich(
-              "Connect your PayPal account to let viewers send you tips, on their own or with a song " +
-                "request or wheel spin. You sign in or sign up on PayPal with a personal or business " +
+              "Connect your PayPal account to let viewers send you tips, on their own or with a " +
+                "wheel spin. You sign in or sign up on PayPal with a personal or business " +
                 "account (in some countries PayPal asks for a business account). By connecting PayPal you " +
                 "agree to the {terms}.",
               {
@@ -755,9 +748,7 @@ function YourPage(props: {
           : t("Your tip page")}
       </h2>
       <p class="text-ink-2">
-        {t(
-          "Share it with your viewers so they can send you tips, request songs and spin your wheel.",
-        )}
+        {t("Share it with your viewers so they can send you tips and spin your wheel.")}
       </p>
       <For each={pageUrls(props.account)}>
         {(address) => (
@@ -907,80 +898,13 @@ function YourPage(props: {
   );
 }
 
-function SongSettings(props: {
-  songs: Feature<Songs> | null;
-  currency: string;
-  busy: boolean;
-  onSave: (changes: { songs: Feature<Songs> }) => Promise<void>;
-}) {
-  const initial = () => ({
-    enabled: isOn(props.songs),
-    price: props.songs ? (props.songs.price / 100).toFixed(2) : "1.00",
-  });
-  const [enabled, setEnabled] = createSignal(initial().enabled);
-  const [price, setPrice] = createSignal(initial().price);
-  const songs = (form: ReturnType<typeof initial>): Feature<Songs> => ({
-    enabled: form.enabled,
-    price: hundredths(form.price),
-  });
-  const current = () => songs({ enabled: enabled(), price: price() });
-  const save = createSave(
-    () => props.busy,
-    () => !same(current(), songs(initial())),
-    () => props.onSave({ songs: current() }),
-    (error) => paymentErrorText(error, t("Enter a tip from 0.50 to 100000.")),
-  );
-
-  return (
-    <form class={cardClass} onSubmit={save.submit}>
-      <h2 class="text-[23px] font-semibold">{t("Song requests")}</h2>
-      <p class="text-ink-2">
-        {t(
-          "Let viewers add songs from Apple Music to the queue of Moblin's music player with a tip.",
-        )}
-      </p>
-      <p class="text-ink-2">
-        {t(
-          "Moblin plays the songs with Apple Music, so you need an Apple Music subscription and must " +
-            "allow Moblin to use Apple Music. Viewers do not need an Apple Music subscription.",
-        )}
-      </p>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={enabled()}
-          onChange={(event) => setEnabled(event.currentTarget.checked)}
-          class="size-5 accent-moss"
-        />
-        {t("Viewers can request songs")}
-      </label>
-      <Show when={enabled()}>
-        <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">
-            {t("Tip per song ({currency})", { currency: props.currency })}
-          </span>
-          <MoneyInput value={price()} onValue={setPrice} required />
-          <span class="text-[15px] text-muted">
-            {t(
-              "The tip is the same for every song, whatever its length. Songs always play in full.",
-            )}
-          </span>
-        </label>
-      </Show>
-      <SaveFooter save={save} signInAgain />
-    </form>
-  );
-}
-
 function SubscriberSettings(props: {
-  kind: "song" | "spin";
   tiers: Feature<Tiers> | null;
   twitch: boolean;
   kick: boolean;
   busy: boolean;
   onSave: (tiers: Feature<Tiers>) => Promise<void>;
 }) {
-  const song = props.kind === "song";
   const shownTiers = () => (props.twitch ? tierNumbers : ([1] as const));
   const initial = () => ({
     enabled: isOn(props.tiers),
@@ -1002,9 +926,7 @@ function SubscriberSettings(props: {
     (error) =>
       paymentErrorText(
         error,
-        song
-          ? t("Enter 0 to 100 songs per tier, and more than 0 for at least one tier.")
-          : t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier."),
+        t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier."),
       ),
   );
 
@@ -1012,25 +934,15 @@ function SubscriberSettings(props: {
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">
         {props.twitch && !props.kick
-          ? song
-            ? t("Songs for Twitch subscribers")
-            : t("Spins for Twitch subscribers")
-          : song
-            ? t("Songs for subscribers")
-            : t("Spins for subscribers")}
+          ? t("Spins for Twitch subscribers")
+          : t("Spins for subscribers")}
       </h2>
       <p class="text-ink-2">
-        {song
-          ? t(
-              "Give your subscribers song requests every month, without a tip. Subscribers sign " +
-                "in on your tip page, and their songs come back on the 1st of every " +
-                "month. This works with or without song requests for tips.",
-            )
-          : t(
-              "Give your subscribers spins of the wheel every month, without a tip. Subscribers sign " +
-                "in on your tip page, and their spins come back on the 1st of every " +
-                "month. This works with or without paid wheel spins.",
-            )}
+        {t(
+          "Give your subscribers spins of the wheel every month, without a tip. Subscribers sign " +
+            "in on your tip page, and their spins come back on the 1st of every " +
+            "month. This works with or without paid wheel spins.",
+        )}
         <Show when={props.twitch && props.kick}>
           {" "}
           {t("Kick subscribers get the tier 1 amount.")}
@@ -1043,9 +955,7 @@ function SubscriberSettings(props: {
           onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        {song
-          ? t("Subscribers can request songs without a tip")
-          : t("Subscribers can spin the wheel without a tip")}
+        {t("Subscribers can spin the wheel without a tip")}
       </label>
       <Show when={enabled()}>
         <div class="flex flex-wrap gap-4">
@@ -1072,65 +982,7 @@ function SubscriberSettings(props: {
             )}
           </For>
         </div>
-        <span class="text-[15px] text-muted">
-          {song ? t("Songs per month for each tier.") : t("Spins per month for each tier.")}
-        </span>
-      </Show>
-      <SaveFooter save={save} />
-    </form>
-  );
-}
-
-function SongLengthSettings(props: {
-  maxSongLength: Feature<{ minutes: number }> | null;
-  busy: boolean;
-  onSave: (maxSongLength: Feature<{ minutes: number }>) => Promise<void>;
-}) {
-  const initial = () => ({
-    enabled: isOn(props.maxSongLength),
-    minutes: String(props.maxSongLength?.minutes ?? 7),
-  });
-  const [enabled, setEnabled] = createSignal(initial().enabled);
-  const [minutes, setMinutes] = createSignal(initial().minutes);
-  const maxSongLength = (form: ReturnType<typeof initial>) => ({
-    enabled: form.enabled,
-    minutes: Number.parseInt(form.minutes, 10) || 0,
-  });
-  const current = () => maxSongLength({ enabled: enabled(), minutes: minutes() });
-  const save = createSave(
-    () => props.busy,
-    () => !same(current(), maxSongLength(initial())),
-    () => props.onSave(current()),
-    () => t("Enter 1 to 60 minutes."),
-  );
-
-  return (
-    <form class={cardClass} onSubmit={save.submit}>
-      <h2 class="text-[23px] font-semibold">{t("Longest song")}</h2>
-      <p class="text-ink-2">{t("Refuse song requests for songs longer than this.")}</p>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={enabled()}
-          onChange={(event) => setEnabled(event.currentTarget.checked)}
-          class="size-5 accent-moss"
-        />
-        {t("Limit the length of requested songs")}
-      </label>
-      <Show when={enabled()}>
-        <label class="flex flex-col gap-2">
-          <span class="text-[15px] font-semibold text-ink-2">{t("Minutes")}</span>
-          <input
-            type="number"
-            required
-            min={1}
-            max={60}
-            inputmode="numeric"
-            value={minutes()}
-            onInput={(event) => setMinutes(event.currentTarget.value)}
-            class={`${inputClass} max-w-28`}
-          />
-        </label>
+        <span class="text-[15px] text-muted">{t("Spins per month for each tier.")}</span>
       </Show>
       <SaveFooter save={save} />
     </form>
@@ -1298,58 +1150,6 @@ const moderationErrorText = (error: unknown) =>
   error instanceof BackendError && error.status < 500 && error.message
     ? error.message
     : t("Something went wrong. Try again.");
-
-function MusicQueue(props: { session: string; page: string; onSignOut: () => void }) {
-  const [status, setStatus] = createSignal<Status>("loading");
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const refresh = async () => {
-    try {
-      setStatus(await musicStatus(props.page));
-    } catch {
-      setStatus("offline");
-    }
-  };
-
-  const moderate: Moderate = async (command, song) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setStatus(await moderateMusic(props.session, props.page, command, song));
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      setError(moderationErrorText(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  onMount(() => {
-    void refresh();
-    onCleanup(poll(() => void refresh(), 30_000));
-  });
-
-  return (
-    <Show
-      when={status() !== "offline"}
-      fallback={
-        <div class={playerCardClass}>
-          <div class="flex items-center gap-4 rounded-2xl bg-well p-4">
-            <span class="flex size-12 shrink-0 items-center justify-center rounded-full bg-ghost text-muted">
-              <Icon name="music" class="size-6" />
-            </span>
-            <p class="text-ink-2">{t("Moblin is offline, so the queue can't be changed now.")}</p>
-          </div>
-        </div>
-      }
-    >
-      <Player status={status()} moderate={moderate} busy={busy()} error={error()} />
-    </Show>
-  );
-}
 
 function MoneyInput(props: {
   value: string;
@@ -1581,12 +1381,10 @@ function SpinSettings(props: {
 function SendForm(props: {
   title: string;
   description?: string;
-  songField: boolean;
   label: string;
-  send: (song: string, message: string) => Promise<unknown>;
+  send: (message: string) => Promise<unknown>;
   onSignOut: () => void;
 }) {
-  const [song, setSong] = createSignal("");
   const [message, setMessage] = createSignal("");
   const [sending, setSending] = createSignal(false);
   const [sent, flashSent] = createFlash(3000);
@@ -1600,11 +1398,7 @@ function SendForm(props: {
     setError(null);
     setSending(true);
     try {
-      await props.send(song(), message());
-      if (props.songField) {
-        setSong("");
-        setMessage("");
-      }
+      await props.send(message());
       flashSent();
     } catch (error) {
       if (signedOut(error)) {
@@ -1622,20 +1416,6 @@ function SendForm(props: {
       <Show when={props.description}>
         <p class="text-ink-2">{props.description}</p>
       </Show>
-      <Show when={props.songField}>
-        <input
-          type="url"
-          required
-          maxLength={500}
-          aria-label={t("Apple Music song link")}
-          placeholder="https://music.apple.com/…"
-          value={song()}
-          onInput={(event) => setSong(event.currentTarget.value)}
-          autocomplete="off"
-          spellcheck={false}
-          class={inputClass}
-        />
-      </Show>
       <input
         type="text"
         maxLength={200}
@@ -1646,11 +1426,7 @@ function SendForm(props: {
         class={inputClass}
       />
       <div class="flex flex-wrap items-center gap-4">
-        <button
-          type="submit"
-          class={buttonClass}
-          disabled={sending() || (props.songField && !song().trim())}
-        >
+        <button type="submit" class={buttonClass} disabled={sending()}>
           <Show when={sent()}>
             <Icon name="check" class="size-5" />
           </Show>
@@ -1671,10 +1447,6 @@ function SendForm(props: {
 }
 
 const testTexts: Record<RecentKind, { description: string; label: string }> = {
-  song: {
-    description: t("Add a song to Moblin's queue, to check that song requests work."),
-    label: t("Send test song"),
-  },
   tip: {
     description: t("Send yourself a tip, to check that tips show up in Moblin."),
     label: t("Send test tip"),
@@ -1696,30 +1468,8 @@ function TestSend(props: {
       title={t("Test it")}
       description={testTexts[props.kind].description}
       label={testTexts[props.kind].label}
-      songField={props.kind === "song"}
       onSignOut={props.onSignOut}
-      send={(song, message) =>
-        sendTest(
-          props.session,
-          props.kind,
-          props.kind === "song" ? { song, message } : { message },
-          props.page,
-        )
-      }
-    />
-  );
-}
-
-function FreeSong(props: { session: string; page: string; onSignOut: () => void }) {
-  return (
-    <SendForm
-      title={t("Add a song")}
-      label={t("Add song")}
-      songField
-      onSignOut={props.onSignOut}
-      send={(song, message) =>
-        addModeratorSong(props.session, props.page, song.trim(), message.trim())
-      }
+      send={(message) => sendTest(props.session, props.kind, { message }, props.page)}
     />
   );
 }
@@ -1824,13 +1574,6 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
       icon: "wheel",
       shown: () => true,
       status: () => onOff(isOn(settings().spin) || isOn(settings().subSpins)),
-    },
-    {
-      id: "songs",
-      label: t("Song requests"),
-      icon: "music",
-      shown: () => true,
-      status: () => onOff(isOn(settings().songs) || isOn(settings().subSongs)),
     },
     {
       id: "moderators",
@@ -2006,7 +1749,6 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
           </Show>
           <Show when={account().twitch || account().kick}>
             <SubscriberSettings
-              kind="spin"
               tiers={settings().subSpins}
               twitch={account().twitch !== null}
               kick={account().kick !== null}
@@ -2024,57 +1766,6 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
             kind="spin"
             list={recent()?.spin}
             onMore={() => loadMore("spin")}
-            onResend={resend}
-          />
-        </div>
-        <div hidden={active() !== "songs"} class="flex flex-col gap-6">
-          <Show
-            when={paid(isOn(settings().songs))}
-            fallback={
-              <NeedsPayments
-                title={t("Song requests")}
-                available={payments()}
-                streamer={moderating() ? account().name : null}
-                onConnect={() => select("payments")}
-              />
-            }
-          >
-            <SongSettings
-              songs={settings().songs}
-              currency={settings().currency}
-              busy={busy()}
-              onSave={save}
-            />
-          </Show>
-          <Show when={account().twitch || account().kick}>
-            <SubscriberSettings
-              kind="song"
-              tiers={settings().subSongs}
-              twitch={account().twitch !== null}
-              kick={account().kick !== null}
-              busy={busy()}
-              onSave={(subSongs) => save({ subSongs })}
-            />
-          </Show>
-          <SongLengthSettings
-            maxSongLength={settings().maxSongLength}
-            busy={busy()}
-            onSave={(maxSongLength) => save({ maxSongLength })}
-          />
-          <Show when={active() === "songs"}>
-            <MusicQueue session={props.session} page={settings().id} onSignOut={props.onSignOut} />
-          </Show>
-          <Show
-            when={props.page}
-            keyed
-            fallback={<TestSend kind="song" session={props.session} onSignOut={props.onSignOut} />}
-          >
-            {(page) => <FreeSong session={props.session} page={page} onSignOut={props.onSignOut} />}
-          </Show>
-          <Latest
-            kind="song"
-            list={recent()?.song}
-            onMore={() => loadMore("song")}
             onResend={resend}
           />
         </div>
@@ -2099,7 +1790,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
             <Show when={settings().payable}>
               <CurrencySettings
                 currency={settings().currency}
-                locked={isOn(settings().songs) || isOn(settings().tips) || isOn(settings().spin)}
+                locked={isOn(settings().tips) || isOn(settings().spin)}
                 busy={busy()}
                 onSave={save}
               />
@@ -2331,11 +2022,7 @@ function MoblinSettings(props: {
   };
   const gets = (device: Device) =>
     device.connected
-      ? [
-          device.music ? t("Song requests") : null,
-          device.wheel ? t("Wheel of luck") : null,
-          t("Tips"),
-        ]
+      ? [device.wheel ? t("Wheel of luck") : null, t("Tips")]
           .filter((text) => text !== null)
           .join(" · ")
       : t("Last seen {time}", { time: timeAgo(device.lastSeen ?? 0) });
@@ -2451,7 +2138,7 @@ function MoblinSettings(props: {
         </Show>
         <p class="text-[15px] text-muted">
           {t(
-            "Song requests go to the first device with song requests on and wheel spins to the first one with a wheel picked, both set in Moblin's Moblin Cloud settings. Tips go to every device.",
+            "Wheel spins go to the first device with a wheel picked in Moblin's Moblin Cloud settings. Tips go to every device.",
           )}
         </p>
       </div>

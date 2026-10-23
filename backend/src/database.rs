@@ -133,7 +133,8 @@ impl Database {
                  );
                  CREATE INDEX IF NOT EXISTS orders_recent ON orders (streamer, kind, state, updated_at);
                  CREATE INDEX IF NOT EXISTS deliveries_streamer ON deliveries (streamer, test);
-                 CREATE INDEX IF NOT EXISTS deliveries_open ON deliveries (requested_at) WHERE NOT finished AND failure IS NOT 'not-found';
+                 DROP INDEX IF EXISTS deliveries_open;
+                 CREATE INDEX IF NOT EXISTS deliveries_unfinished ON deliveries (requested_at) WHERE NOT finished;
                  CREATE TABLE IF NOT EXISTS identities (
                      platform TEXT NOT NULL,
                      user_id TEXT NOT NULL,
@@ -155,6 +156,13 @@ impl Database {
                  CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
             )
             .context("failed to create the database tables")?;
+        connection
+            .execute_batch(
+                "DELETE FROM orders WHERE json_extract(details, '$.item.Song') IS NOT NULL;
+                 DELETE FROM deliveries WHERE json_extract(item, '$.link') IS NOT NULL;
+                 DELETE FROM subscriber_allowances WHERE kind = 'song';",
+            )
+            .context("failed to remove the song requests")?;
         for column in ["login", "name", "avatar", "music_device", "wheel_device"] {
             if columns("accounts", column)? {
                 connection

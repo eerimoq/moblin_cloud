@@ -1,5 +1,4 @@
 import tomllib
-from enum import StrEnum
 from pathlib import Path
 
 from xdg_base_dirs import xdg_config_home
@@ -9,10 +8,6 @@ from .utils import TEST_DIR
 FRONTEND_URL = "https://moblin.app"
 REMOTE_CONTROL_PASSWORD = "1234"
 WEB_REMOTE_CONTROL_PORT = 1180
-
-
-class Capability(StrEnum):
-    APPLE_MUSIC = "apple-music"
 
 
 def find_config_toml() -> Path | None:
@@ -61,9 +56,6 @@ class Config:
     def moblin_ip_address(self, device_name: str) -> str:
         return self._device(device_name)["moblin-ip-address"]
 
-    def capabilities(self, device_name: str) -> list[str]:
-        return self._device(device_name).get("capabilities", [])
-
     def twitch(self) -> dict | None:
         return self._config.get("twitch")
 
@@ -78,14 +70,6 @@ class Config:
         return device
 
     def _validate(self):
-        for name, device in self._config.get("device", {}).items():
-            for capability in device.get("capabilities", []):
-                if capability not in list(Capability):
-                    allowed = ", ".join(f"'{item}'" for item in Capability)
-                    raise Exception(
-                        f"Unknown capability '{capability}' for device '{name}' in "
-                        f"'{self.config_toml}'. Allowed capabilities are {allowed}."
-                    )
         if self.twitch_sign_in() not in ["fake", "real"]:
             raise Exception(f"[twitch] sign-in must be 'fake' or 'real' in '{self.config_toml}'.")
         if self.twitch_sign_in() == "real" and self.twitch() is None:

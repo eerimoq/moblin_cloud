@@ -160,11 +160,10 @@ class AccountPageAtSignIn(AccountTestCase):
         self.assert_regex(account["key"], RE_MOBLIN_CLOUD_KEY)
         settings = account["settings"]
         self.assert_equal(
-            {key: settings[key] for key in ["connected", "currency", "songs", "tips", "spin", "merchantId"]},
+            {key: settings[key] for key in ["connected", "currency", "tips", "spin", "merchantId"]},
             {
                 "connected": False,
                 "currency": "USD",
-                "songs": None,
                 "tips": None,
                 "spin": None,
                 "merchantId": None,
@@ -192,12 +191,8 @@ class AccountUnknownPage(TestCase):
         self.assert_backend_error(404, lambda: self.website.id_of_twitch_login("nobody_has_this_login"))
         viewer = self.website.viewer("AAAAAAAAAAAAAAAA")
         self.assert_backend_error(404, viewer.profile)
-        self.assert_equal(viewer.paid_songs(), None)
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin(), {"spin": None, "subSpins": None, "wheel": None, "connected": False})
-        self.assert_backend_error(
-            404, viewer.queue, "The streamer is offline right now. Try again when they are live."
-        )
 
 
 class AccountNewMoblinCloudKey(AccountTestCase):
@@ -238,7 +233,6 @@ class AccountDevices(AccountTestCase):
                         "id": f"DEVICE-{number}",
                         "name": f"Moblin {number}",
                         "connected": True,
-                        "music": number == 1,
                         "wheel": False,
                         "lastSeen": None,
                     }
@@ -261,7 +255,7 @@ class AccountDevices(AccountTestCase):
                 lambda: not dashboard.account()["devices"][4]["connected"], "the closed device to disconnect"
             )
             device = dashboard.account()["devices"][4]
-            self.assert_equal([device["id"], device["name"], device["music"]], ["DEVICE-2", "Backup", False])
+            self.assert_equal([device["id"], device["name"]], ["DEVICE-2", "Backup"])
             self.assert_true(device["lastSeen"] is not None)
         finally:
             for websocket in websockets:
@@ -355,13 +349,12 @@ class AccountCurrency(AccountTestCase):
 
 
 class AccountPaidFeaturesNeedPayments(AccountTestCase):
-    """Refuse to turn song requests, tips or the wheel on before PayPal or Stripe is connected."""
+    """Refuse to turn tips or the wheel on before PayPal or Stripe is connected."""
 
     def run(self):
         dashboard = self.sign_in("paidneedspaypal")
         page_id = dashboard.page_id()
         for changes in [
-            {"songs": {"price": 100}},
             {"tips": {"amounts": [100]}},
             {"spin": {"options": [{"spins": 1, "price": 100}]}},
         ]:
@@ -371,24 +364,21 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
                 "connect PayPal or Stripe first",
             )
         viewer = self.website.viewer(page_id)
-        self.assert_equal(viewer.paid_songs(), None)
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin()["spin"], None)
 
 
 class AccountTestDeliveriesNeedMoblin(AccountTestCase):
-    """Refuse the dashboard's free test song and wheel spin without a connected Moblin, and queue the test tip."""
+    """Refuse the dashboard's free test wheel spin without a connected Moblin, and queue the test tip."""
 
     def run(self):
         dashboard = self.sign_in("testneedsmoblin")
         empty = {"items": [], "more": False}
-        for kind in ["song", "tip", "spin"]:
+        for kind in ["tip", "spin"]:
             self.assert_equal(dashboard.recent(kind), empty)
-        song = "https://music.apple.com/us/album/take-on-me/380907762?i=380907765"
-        self.assert_backend_error(409, lambda: dashboard.test_song(song), "Connect Moblin first.")
         self.assert_backend_error(409, dashboard.test_spin, "Connect Moblin first.")
         dashboard.test_tip()
-        for kind in ["song", "tip", "spin"]:
+        for kind in ["tip", "spin"]:
             self.assert_equal(dashboard.recent(kind), empty)
 
 

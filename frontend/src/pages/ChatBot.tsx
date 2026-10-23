@@ -1,5 +1,4 @@
-import { For, Show } from "solid-js";
-import { asset } from "../asset";
+import { For } from "solid-js";
 import CopyButton from "../components/CopyButton";
 import Footer from "../components/Footer";
 import Mascot from "../components/Mascot";
@@ -82,19 +81,6 @@ export default function ChatBot() {
                       </For>
                     </tbody>
                   </table>
-                  <Show when={group.pageHref}>
-                    {(href) => (
-                      <p class="border-t border-line pt-4 text-ink-2">
-                        {tRich("Viewers can also add songs without chat, on your own {link}.", {
-                          link: (
-                            <a href={asset(href())} class="text-leaf hover:text-leaf-bright">
-                              {t("page")}
-                            </a>
-                          ),
-                        })}
-                      </p>
-                    )}
-                  </Show>
                 </div>
               )}
             </For>

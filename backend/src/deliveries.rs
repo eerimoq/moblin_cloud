@@ -11,7 +11,7 @@ use tokio::time::sleep;
 use crate::counters;
 use crate::database::Database;
 use crate::pages::format_price;
-use crate::remote_control::{MusicCommand, RequestError, Streamers};
+use crate::remote_control::{RequestError, Streamers};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Delivery {
@@ -44,12 +44,6 @@ impl Delivery {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Item {
-    Song {
-        link: String,
-        user: String,
-        #[serde(default)]
-        message: String,
-    },
     Spin {
         user: String,
         message: String,
@@ -66,7 +60,6 @@ pub enum Item {
 impl Item {
     pub fn kind(&self) -> &'static str {
         match self {
-            Item::Song { .. } => "song",
             Item::Spin { .. } => "spin",
             Item::Tip { .. } => "tip",
         }
@@ -133,7 +126,7 @@ impl Deliveries {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*) FROM deliveries WHERE NOT finished AND failure IS NOT 'not-found' AND delivered = '[]'",
+                "SELECT count(*) FROM deliveries WHERE NOT finished AND delivered = '[]'",
                 [],
                 |row| row.get(0),
             )
@@ -147,7 +140,7 @@ impl Deliveries {
         let database = self.database.lock();
         let expired = query(
             &database,
-            "DELETE FROM deliveries WHERE requested_at < ?1 AND NOT finished AND failure IS NOT 'not-found' RETURNING *",
+            "DELETE FROM deliveries WHERE requested_at < ?1 AND NOT finished RETURNING *",
             [now().saturating_sub(7 * 24 * 60 * 60)],
         );
         for delivery in expired {
@@ -163,7 +156,7 @@ impl Deliveries {
             }
         }
         if let Err(error) = database.execute(
-            "DELETE FROM deliveries WHERE requested_at < ?1 AND (finished OR failure = 'not-found')",
+            "DELETE FROM deliveries WHERE requested_at < ?1 AND finished",
             [now().saturating_sub(30 * 24 * 60 * 60)],
         ) {
             warn!("failed to remove finished deliveries: {error:#}");
@@ -173,7 +166,7 @@ impl Deliveries {
     pub fn pending(&self) -> Vec<Delivery> {
         query(
             &self.database.lock(),
-            "SELECT * FROM deliveries WHERE NOT finished AND failure IS NOT 'not-found' ORDER BY rowid",
+            "SELECT * FROM deliveries WHERE NOT finished ORDER BY rowid",
             [],
         )
     }
@@ -238,7 +231,6 @@ impl Deliveries {
             for delivery in self.pending() {
                 let page = &delivery.streamer;
                 let devices: Vec<String> = match &delivery.item {
-                    Item::Song { .. } => streamers.music_device(page).into_iter().collect(),
                     Item::Spin { .. } => streamers.wheel_device(page).into_iter().collect(),
                     Item::Tip { .. } => streamers
                         .devices(page)
@@ -281,21 +273,12 @@ impl Deliveries {
     ) {
         for (delivery, devices) in deliveries {
             let counter = match deliver(streamers, &page, &device, &delivery).await {
-                Ok(Outcome::Delivered) => {
+                Ok(()) => {
                     info!(
                         "delivered {:?} in request {} to remote control streamer {page} device {device}",
                         delivery.item, delivery.request_id
                     );
                     Some(delivery.counter("Deliveries"))
-                }
-                Ok(Outcome::NotFound) => {
-                    if self.failed(&delivery, "not-found") {
-                        warn!(
-                            "{:?} in request {} was not found by remote control streamer {page} device {device}",
-                            delivery.item, delivery.request_id
-                        );
-                    }
-                    continue;
                 }
                 Err(RequestError::Offline | RequestError::Timeout) => return,
                 Err(error) => {
@@ -395,37 +378,14 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
     }
 }
 
-enum Outcome {
-    Delivered,
-    NotFound,
-}
-
 async fn deliver(
     streamers: &Streamers,
     page: &str,
     device: &str,
     delivery: &Delivery,
-) -> Result<Outcome, RequestError> {
+) -> Result<(), RequestError> {
     let request_id = delivery.moblin_request_id();
     match &delivery.item {
-        Item::Song {
-            link,
-            user,
-            message,
-        } => {
-            let add = MusicCommand::Add {
-                title: link.clone(),
-                user: user.clone(),
-                message: (!message.is_empty()).then(|| message.clone()),
-                request_id: Some(request_id),
-            };
-            let status = streamers.music_uncached((page, device), add).await?;
-            if status.song_not_found == Some(true) {
-                Ok(Outcome::NotFound)
-            } else {
-                Ok(Outcome::Delivered)
-            }
-        }
         Item::Spin {
             user,
             message,
@@ -439,8 +399,7 @@ async fn deliver(
                     *spins,
                     request_id,
                 )
-                .await?;
-            Ok(Outcome::Delivered)
+                .await
         }
         Item::Tip {
             user,
@@ -457,8 +416,7 @@ async fn deliver(
                     currency.clone(),
                     request_id,
                 )
-                .await?;
-            Ok(Outcome::Delivered)
+                .await
         }
     }
 }
@@ -467,14 +425,6 @@ async fn deliver(
 mod tests {
     use super::*;
     use crate::database;
-
-    fn song() -> Item {
-        Item::Song {
-            link: "https://music.apple.com/song/1?i=1".to_string(),
-            user: "Viewer".to_string(),
-            message: "Play it loud!".to_string(),
-        }
-    }
 
     fn tip() -> Item {
         Item::Tip {
@@ -505,7 +455,7 @@ mod tests {
     fn deliveries_are_saved() {
         let path = database::temporary_path("deliveries");
         let deliveries = Deliveries::new(Database::open(Some(&path)).unwrap());
-        deliveries.add_test("S".to_string(), "A".to_string(), song());
+        deliveries.add_test("S".to_string(), "A".to_string(), spin());
         deliveries.add_test("S".to_string(), "B".to_string(), tip());
         deliveries.add_test("S".to_string(), "C".to_string(), spin());
         deliveries.add_test("S".to_string(), "C".to_string(), tip());
@@ -562,13 +512,13 @@ mod tests {
         assert!(delivery.delivered.is_empty());
         assert_eq!(delivery.resends, 1);
         assert_eq!(delivery.moblin_request_id(), "PAID-1");
-        assert!(deliveries.failed(&delivery, "not-found"));
+        assert!(deliveries.failed(&delivery, "moblin-error"));
         deliveries.resend("S", "PAID", &tip()).unwrap();
         let delivery = deliveries.get("PAID").unwrap();
         assert_eq!(delivery.failure, None);
         assert_eq!(delivery.moblin_request_id(), "PAID-2");
         assert_eq!(request_ids(&deliveries), vec!["PAID"]);
-        deliveries.resend("S", "GONE", &song()).unwrap();
+        deliveries.resend("S", "GONE", &spin()).unwrap();
         assert_eq!(
             deliveries.get("GONE").unwrap().moblin_request_id(),
             "GONE-1"
@@ -579,8 +529,6 @@ mod tests {
     fn deliveries_are_given_up_after_7_days() {
         let deliveries = Deliveries::new(Database::memory());
         for (request_id, item, age) in [
-            ("A", song(), 8),
-            ("B", song(), 6),
             ("C", tip(), 8),
             ("D", tip(), 6),
             ("E", spin(), 8),
@@ -604,7 +552,7 @@ mod tests {
             &["phone".to_string(), "tablet".to_string()],
         );
         deliveries.expire();
-        assert_eq!(request_ids(&deliveries), vec!["B", "D", "F"]);
+        assert_eq!(request_ids(&deliveries), vec!["D", "F"]);
         let expiries: Vec<(String, u64)> = deliveries
             .database
             .lock()
@@ -617,7 +565,6 @@ mod tests {
         assert_eq!(
             expiries,
             [
-                ("songTestExpiries".to_string(), 1),
                 ("spinTestExpiries".to_string(), 1),
                 ("tipTestExpiries".to_string(), 1),
             ]
@@ -641,43 +588,30 @@ mod tests {
     }
 
     #[test]
-    fn songs_not_found_stay_songs_and_failures_are_counted_once() {
+    fn failures_are_counted_once() {
         let deliveries = Deliveries::new(Database::memory());
-        deliveries.add_test("S".to_string(), "A".to_string(), song());
+        deliveries.add_test("S".to_string(), "A".to_string(), spin());
         deliveries.add_test("S".to_string(), "B".to_string(), tip());
         let pending = deliveries.pending();
         assert!(deliveries.failed(&pending[0], "moblin-error"));
         assert!(!deliveries.failed(&pending[0], "moblin-error"));
-        assert!(deliveries.failed(&pending[0], "not-found"));
-        assert!(!deliveries.failed(&pending[0], "not-found"));
         assert!(deliveries.failed(&pending[1], "moblin-error"));
         assert!(!deliveries.failed(&pending[1], "moblin-error"));
-        assert_eq!(request_ids(&deliveries), vec!["B"]);
-        assert_eq!(deliveries.count(), 1);
-        let song_not_found = deliveries.get("A").unwrap();
-        assert_eq!(song_not_found.item, song());
-        assert_eq!(song_not_found.failure.as_deref(), Some("not-found"));
+        assert_eq!(request_ids(&deliveries), vec!["A", "B"]);
         assert_eq!(
             deliveries.get("B").unwrap().failure.as_deref(),
             Some("moblin-error")
         );
-        let age = |days: u64| {
-            deliveries
-                .database
-                .lock()
-                .execute(
-                    "UPDATE deliveries SET requested_at = ?1",
-                    [now() - days * 24 * 60 * 60],
-                )
-                .unwrap();
-        };
-        age(8);
+        deliveries
+            .database
+            .lock()
+            .execute(
+                "UPDATE deliveries SET requested_at = ?1",
+                [now() - 8 * 24 * 60 * 60],
+            )
+            .unwrap();
         deliveries.expire();
-        assert!(deliveries.get("A").is_some());
-        assert!(deliveries.get("B").is_none());
-        age(31);
-        deliveries.expire();
-        assert!(deliveries.get("A").is_none());
+        assert!(deliveries.pending().is_empty());
         let counters: Vec<(String, u64)> = deliveries
             .database
             .lock()
@@ -690,8 +624,8 @@ mod tests {
         assert_eq!(
             counters,
             [
-                ("songTestDeliveriesFailed:moblin-error".to_string(), 1),
-                ("songTestDeliveriesFailed:not-found".to_string(), 1),
+                ("spinTestDeliveriesFailed:moblin-error".to_string(), 1),
+                ("spinTestExpiries".to_string(), 1),
                 ("tipTestDeliveriesFailed:moblin-error".to_string(), 1),
                 ("tipTestExpiries".to_string(), 1),
             ]

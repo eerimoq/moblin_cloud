@@ -146,8 +146,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(account["admin"], true);
-        api.counters.bump("songOrders");
-        api.counters.bump("songOrders");
+        api.counters.bump("tipOrders");
+        api.counters.bump("tipOrders");
         let response = client.get(&url).bearer_auth(&admin).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let mut stats: Value = response.json().await.unwrap();
@@ -166,7 +166,7 @@ mod tests {
                 "moblin": {"connectedDevices": 0},
                 "pending": {"orders": 0, "deliveries": 0},
                 "database": { "bytes": 0 },
-                "counters": [{"name": "songOrders", "today": 2, "week": 2, "total": 2}],
+                "counters": [{"name": "tipOrders", "today": 2, "week": 2, "total": 2}],
             })
         );
     }

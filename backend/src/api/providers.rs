@@ -511,11 +511,11 @@ mod tests {
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
         let settings_url = format!("http://{address}/account/settings");
-        let songs = json!({"currency": "SEK", "songs": {"price": 250}});
+        let tips = json!({"currency": "SEK", "tips": {"amounts": [250]}});
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&songs)
+            .json(&tips)
             .send()
             .await
             .unwrap();
@@ -602,21 +602,21 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&old)
-            .json(&songs)
+            .json(&tips)
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let public: Value = client
-            .get(format!("http://{address}/pages/{id}/songs"))
+            .get(format!("http://{address}/pages/{id}/tips"))
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(public["songs"]["merchantId"], "SELLER0000001");
-        assert_eq!(public["songs"]["clientId"], "id");
+        assert_eq!(public["tips"]["merchantId"], "SELLER0000001");
+        assert_eq!(public["tips"]["clientId"], "id");
         let settings: Value = check().await.unwrap().json().await.unwrap();
         assert_eq!(settings["merchantId"], "SELLER0000001");
         let settings: Value = client
@@ -631,20 +631,19 @@ mod tests {
         assert_eq!(settings["merchantId"], Value::Null);
         assert_eq!(settings["paypalPending"], false);
         let public: Value = client
-            .get(format!("http://{address}/pages/{id}/songs"))
+            .get(format!("http://{address}/pages/{id}/tips"))
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(public["songs"]["merchantId"], Value::Null);
-        assert_eq!(public["songs"]["clientId"], Value::Null);
+        assert_eq!(public["tips"], Value::Null);
         for (currency, status) in [("SEK", StatusCode::OK), ("EUR", StatusCode::CONFLICT)] {
             let response = client
                 .post(&settings_url)
                 .bearer_auth(&session)
-                .json(&json!({"currency": currency, "songs": {"price": 250}}))
+                .json(&json!({"currency": currency, "tips": {"amounts": [250]}}))
                 .send()
                 .await
                 .unwrap();

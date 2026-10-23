@@ -353,7 +353,7 @@ mod tests {
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "usd", "songs": null, "tips": {
+            .json(&json!({"currency": "usd", "tips": {
                 "amounts": [1000, 200, 500],
             }}))
             .send()
@@ -418,7 +418,7 @@ mod tests {
         );
         let response = client
             .post(format!(
-                "http://{address}/pages/{id}/songs/orders/ORDER1/capture"
+                "http://{address}/pages/{id}/spin/orders/ORDER1/capture"
             ))
             .send()
             .await

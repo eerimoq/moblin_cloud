@@ -80,7 +80,7 @@ backend-seed:
 backend-seed-forever interval="2":
 	python3 scripts/seed_backend.py --forever {{interval}}
 
-# Connects the fake Moblin to the running `just backend-run` as the admin user's Moblin, with a playlist to show in the player.
+# Connects the fake Moblin to the running `just backend-run` as the admin user's Moblin.
 fake-moblin-run *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -112,6 +112,6 @@ cards-print out="cards-print":
 	cd frontend && npm run build
 	cd frontend && node scripts/print-cards.ts {{absolute_path(out)}}
 
-# Pretends to be a Moblin streamer connected over remote control, for developing song requests on the page.
+# Pretends to be a Moblin streamer connected over remote control, for developing tips and wheel spins on the page.
 backend-fake-streamer *key:
 	python3 scripts/remote_control_streamer.py {{key}}

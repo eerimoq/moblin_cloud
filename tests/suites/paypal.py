@@ -53,15 +53,14 @@ class PayPalConnectNeedsFreshSignIn(TestCase):
 
 
 class PayPalPaidSettings(TestCase):
-    """Turn song requests, tips and the wheel on, which viewers see with what they need to pay with PayPal, and change the currency only while they are off."""
+    """Turn tips and the wheel on, which viewers see with what they need to pay with PayPal, and change the currency only while they are off."""
 
     def run(self):
         dashboard = self.sign_in()
         settings = self.context.page_with_paypal(dashboard)
         merchant_id = settings["merchantId"]
-        settings = dashboard.save_settings(currency="eur", songs={"price": 150}, tips=TIPS, spin=SPIN)
+        settings = dashboard.save_settings(currency="eur", tips=TIPS, spin=SPIN)
         self.assert_equal(settings["currency"], "EUR")
-        self.assert_equal(settings["songs"], {"enabled": True, "price": 150})
         self.assert_equal(settings["tips"], {"enabled": True, "amounts": [100, 500, 1000]})
         self.assert_equal(
             settings["spin"]["options"], [{"spins": 1, "price": 200}, {"spins": 3, "price": 500}]
@@ -69,17 +68,6 @@ class PayPalPaidSettings(TestCase):
         viewer = self.website.viewer(settings["id"])
         client_id = self.backend.fake_paypal.config["client-id"]
         stripe = public_stripe(self.context, settings)
-        self.assert_equal(
-            viewer.paid_songs(),
-            {
-                "price": 150,
-                "currency": "EUR",
-                "clientId": client_id,
-                "merchantId": merchant_id,
-                "environment": "sandbox",
-                "stripe": stripe,
-            },
-        )
         self.assert_equal(
             viewer.tips(),
             {
@@ -95,15 +83,14 @@ class PayPalPaidSettings(TestCase):
         self.assert_backend_error(
             409,
             lambda: dashboard.update_settings(currency="USD"),
-            "turn paid songs, tips and the wheel off before changing the currency",
+            "turn tips and the wheel off before changing the currency",
         )
         tips = viewer.tips()
         assert tips is not None
         self.assert_equal(tips["currency"], "EUR")
         self.assert_equal(dashboard.save_settings()["currency"], "EUR")
         settings = dashboard.save_settings(currency="USD")
-        self.assert_equal([settings["songs"], settings["tips"], settings["spin"]], [None, None, None])
-        self.assert_equal(viewer.paid_songs(), None)
+        self.assert_equal([settings["tips"], settings["spin"]], [None, None])
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin()["spin"], None)
 
@@ -114,12 +101,9 @@ class PayPalInvalidPaidSettings(TestCase):
     def run(self):
         dashboard = self.sign_in()
         self.context.page_with_paypal(dashboard)
-        songs = "song requests need a price of 0.50 to 100000"
         tips = "tips need one to five amounts of 0.50 to 100000"
         spin = "the spin wheel needs one to five options of 1 to 10 spins for 0.50 to 100000"
         for changes, text in [
-            ({"songs": {"price": 49}}, songs),
-            ({"songs": {"price": 10_000_001}}, songs),
             ({"tips": {"amounts": []}}, tips),
             ({"tips": {"amounts": [100, 200, 300, 400, 500, 600]}}, tips),
             ({"tips": {"amounts": [49]}}, tips),
@@ -129,7 +113,7 @@ class PayPalInvalidPaidSettings(TestCase):
             ({"spin": {"options": [{"spins": 1, "price": 10}]}}, spin),
         ]:
             self.assert_backend_error(400, lambda changes=changes: dashboard.save_settings(**changes), text)
-        dashboard.save_settings(songs={"price": 50}, tips={"amounts": [100_000]})
+        dashboard.save_settings(tips={"amounts": [50, 100_000]})
         dashboard.save_settings()
 
 
@@ -139,15 +123,13 @@ class PayPalDisconnect(TestCase):
     def run(self):
         dashboard = self.sign_in()
         page_id = self.context.page_with_paypal(dashboard)["id"]
-        dashboard.save_settings(songs={"price": 100}, tips={"amounts": [100]})
+        dashboard.save_settings(tips={"amounts": [100]}, spin={"options": [{"spins": 1, "price": 100}]})
         settings = dashboard.disconnect_paypal()
         self.assert_is_none(settings["merchantId"])
         self.assert_false(settings["paypalPending"])
         viewer = self.website.viewer(page_id)
         self.assert_equal(viewer.tips(), None)
-        paid_songs = viewer.paid_songs()
-        assert paid_songs is not None
-        self.assert_is_none(paid_songs["merchantId"])
+        self.assert_equal(viewer.spin()["spin"], None)
         self.assert_backend_error(
             503, lambda: viewer.order_tip(100), "Payments are unavailable right now. Try again later."
         )

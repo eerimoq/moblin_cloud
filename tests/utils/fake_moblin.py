@@ -8,22 +8,11 @@ import logging
 import threading
 import uuid
 import zipfile
-from urllib.parse import parse_qs
-from urllib.parse import urlsplit
 
 from websockets.sync.client import ClientConnection
 from websockets.sync.client import connect
 
 LOGGER = logging.getLogger(__name__)
-
-
-def song_id_of(link: str) -> str:
-    parts = urlsplit(link)
-    return parse_qs(parts.query).get("i", [parts.path.rstrip("/").split("/")[-1]])[0]
-
-
-def found(link: str) -> bool:
-    return not song_id_of(link).startswith("9999")
 
 
 def wheel_of(options: list[dict] | None) -> dict | None:
@@ -37,7 +26,6 @@ class FakeMoblin:
         self,
         url: str | None,
         api_url: str,
-        songs: int = 0,
         key: str | None = None,
         device_id: str | None = None,
     ):
@@ -46,22 +34,7 @@ class FakeMoblin:
         self.key = key
         self.device_id = device_id or str(uuid.uuid4()).upper()
         self.wheel: dict | None = None
-        self.song_requests = True
         self.refuse_tips = False
-        self.songs: list[dict] = [
-            {
-                "id": str(number),
-                "title": f"Fake song {number}",
-                "artist": f"Fake artist {number % 4 + 1}",
-                "duration": 140 + number * 37 % 200,
-                "user": ["anna", None, "pelle", "kalle_the_streamer"][number % 4],
-                "requestId": None,
-            }
-            for number in range(1, songs + 1)
-        ]
-        self.playing = True
-        self.current_song_index = songs // 2
-        self.next_song_id = songs
         self.handled_request_ids: set[str] = set()
         self._stopped = threading.Event()
         self._lock = threading.Lock()
@@ -121,9 +94,6 @@ class FakeMoblin:
             elif "identified" in message:
                 if name == "cloud":
                     self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
-                    self.send(
-                        websocket, {"event": {"data": {"songRequests": {"enabled": self.song_requests}}}}
-                    )
             elif "request" in message:
                 request = message["request"]
                 result, data = self.handle(request["data"])
@@ -139,13 +109,6 @@ class FakeMoblin:
         if websocket is not None:
             self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
 
-    def change_song_requests(self, enabled: bool):
-        self.song_requests = enabled
-        with self._lock:
-            websocket = self._websockets.get("cloud")
-        if websocket is not None:
-            self.send(websocket, {"event": {"data": {"songRequests": {"enabled": enabled}}}})
-
     def send(self, websocket: ClientConnection, message: dict):
         websocket.send(json.dumps(message))
 
@@ -153,8 +116,6 @@ class FakeMoblin:
         kind, body = next(iter(data.items()))
         if kind == "importSettings":
             self.import_settings(body["data"])
-        elif kind == "music":
-            return self.music(body["command"])
         elif kind == "tip" and self.refuse_tips:
             LOGGER.debug("Refusing tip %s", body)
             return {"error": {}}, None
@@ -178,75 +139,16 @@ class FakeMoblin:
         self.wheel = wheel_of(widgets[0]["wheelOfLuck"]["options"] if widgets else None)
         self.close("cloud")
 
-    def music(self, command: dict) -> tuple[dict, dict | None]:
-        kind, body = next(iter(command.items()))
-        if kind == "find":
-            if not found(body["title"]):
-                return {"ok": {}}, {"musicFind": {}}
-            song_id = song_id_of(body["title"])
-            song = {"id": song_id, "title": f"Song {song_id}", "artist": "Fake Artist", "duration": 200}
-            return {"ok": {}}, {"musicFind": {"song": song}}
-        song_not_found = None
-        if kind == "add":
-            request_id = body.get("requestId")
-            if request_id is not None and any(song.get("requestId") == request_id for song in self.songs):
-                song_not_found = False
-            elif not found(body["title"]):
-                song_not_found = True
-            else:
-                self.next_song_id += 1
-                self.songs.append(
-                    {
-                        "id": str(self.next_song_id),
-                        "title": f"Song {song_id_of(body['title'])}",
-                        "artist": "Fake Artist",
-                        "duration": 200,
-                        "user": body.get("user", "Remote control assistant"),
-                        "requestId": request_id,
-                    }
-                )
-                song_not_found = False
-        elif kind == "clear":
-            self.songs.clear()
-        elif kind == "play":
-            self.playing = True
-        elif kind == "pause":
-            self.playing = False
-        elif kind == "remove":
-            self.songs = [song for song in self.songs if song["id"] != body["id"]]
-        elif kind == "select":
-            self.current_song_index = next(
-                (index for index, song in enumerate(self.songs) if song["id"] == body["id"]),
-                self.current_song_index,
-            )
-        return {"ok": {}}, {"music": {"status": self.status(song_not_found)}}
-
-    def status(self, song_not_found: bool | None) -> dict:
-        songs = [{key: value for key, value in song.items() if key != "requestId"} for song in self.songs]
-        status: dict = {"playing": self.playing and bool(songs), "songs": songs}
-        if songs:
-            status["currentSongIndex"] = min(self.current_song_index, len(songs) - 1)
-        if song_not_found is not None:
-            status["songNotFound"] = song_not_found
-        return status
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("api_url", help="Where Moblin Cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
     parser.add_argument("--control", help="Where the remote control streamer connects at first.")
     parser.add_argument("--key", help="The Moblin Cloud key, instead of waiting for imported settings.")
     parser.add_argument("--device-id", help="The id Moblin identifies itself with (random by default).")
-    parser.add_argument(
-        "--songs",
-        type=int,
-        default=20,
-        help="How many songs the playlist starts with, playing the one in the middle (default 20).",
-    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     LOGGER.setLevel(logging.DEBUG)
-    fake = FakeMoblin(args.control, args.api_url, args.songs, args.key, args.device_id)
+    fake = FakeMoblin(args.control, args.api_url, args.key, args.device_id)
     fake.start()
     threading.Event().wait()
 

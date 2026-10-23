@@ -1,6 +1,6 @@
 Black box system tests of the backend. They build and start the backend, then use its API
 like the website does: a streamer signs in and manages the page in the dashboard, and viewers
-tip, spin the wheel and request songs on the page. Payments go through fake PayPal and Stripe servers.
+tip and spin the wheel on the page. Payments go through fake PayPal and Stripe servers.
 Everything but the frontend is tested.
 
 The streamer's Moblin is the fake one in `tests/utils/fake_moblin.py` by default, which speaks
@@ -44,7 +44,7 @@ Moblin's remote control streamer connects to the tester at `remote-control-port`
 acts as Moblin's assistant and sets Moblin up by importing settings. When a test gives Moblin a
 Moblin Cloud key from the dashboard, Moblin Cloud connects to the tester at the same port too, and
 the tester relays that connection to the backend while watching what they send each other. That
-is how the tests see the songs, tips and wheel spins the backend delivers.
+is how the tests see the tips and wheel spins the backend delivers.
 
 This is only needed for `--device`.
 
@@ -56,8 +56,6 @@ This is only needed for `--device`.
    just system-test-generate-device-settings-clipboard
    ```
 3. Import the generated settings from clipboard into Moblin.
-4. Allow Moblin to access Apple Music and give the device the `apple-music` capability, for the
-   song request tests.
 
 # Run the tests
 

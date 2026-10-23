@@ -29,8 +29,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
         donations and you are not owed anything in return.
       </>,
       <>
-        A streamer may thank you for a tip, for example by playing a song you request, but doesn't
-        have to. The streamer decides what happens on their stream and when.
+        A streamer may thank you for a tip, for example by spinning their wheel, but doesn't have
+        to. The streamer decides what happens on their stream and when.
       </>,
       <>
         Questions about a tip, refunds and disputes are between you and the streamer. Contact the
@@ -58,9 +58,9 @@ const sections: { title: string; body: JSX.Element[] }[] = [
         rules of the platforms you stream on.
       </>,
       <>
-        Tips, wheel spins and song requests are sent to your Moblin app. When it is not connected,
-        Moblin keeps them for 7 days and then gives up, so don't rely on it as your only record;
-        PayPal and Stripe have all your tips.
+        Tips and wheel spins are sent to your Moblin app. When it is not connected, Moblin keeps
+        them for 7 days and then gives up, so don't rely on it as your only record; PayPal and
+        Stripe have all your tips.
       </>,
     ],
   },

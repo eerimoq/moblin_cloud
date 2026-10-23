@@ -126,7 +126,7 @@ function LinkedAccounts(props: {
       </ul>
       <p class="text-[15px] text-muted">
         {t(
-          "Songs and spins for subscribers and moderators need a linked Twitch or Kick account. An account that already has its own page can't be linked. Delete that page first.",
+          "Spins for subscribers and moderators need a linked Twitch or Kick account. An account that already has its own page can't be linked. Delete that page first.",
         )}
       </p>
     </section>

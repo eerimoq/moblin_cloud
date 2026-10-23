@@ -517,14 +517,10 @@ mod tests {
         assert_eq!(account["devices"], json!([]));
         assert_eq!(account["admin"], false);
         assert_eq!(account["premium"], false);
-        assert_eq!(
-            account["settings"]["maxSongLength"],
-            json!({"enabled": true, "minutes": 7})
-        );
         let settings: Value = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"songs": null, "maxSongLength": {"minutes": 7}}))
+            .json(&json!({}))
             .send()
             .await
             .unwrap()
@@ -536,7 +532,6 @@ mod tests {
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
             .json(&json!({
-                "songs": null,
                 "message": "Thanks for hanging out!",
                 "accent": "pink",
             }))
@@ -552,7 +547,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"songs": null, "accent": "teal"}))
+            .json(&json!({"accent": "teal"}))
             .send()
             .await
             .unwrap();
@@ -686,19 +681,11 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({
-                "subSongs": {"tier1": 1, "tier2": 2, "tier3": 3},
-                "subSpins": {"tier1": 1, "tier2": 2, "tier3": 3},
-            }))
+            .json(&json!({"subSpins": {"tier1": 1, "tier2": 2, "tier3": 3}}))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
-        assert_eq!(
-            songs["subSongs"],
-            json!({"tier1": 1, "tier2": 2, "tier3": 3})
-        );
         let (_, spin) = get_json(&address, &format!("/pages/{id}/spin")).await;
         assert_eq!(
             spin["subSpins"],
@@ -844,13 +831,13 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"subSongs": {"tier1": 1, "tier2": 2, "tier3": 3}}))
+            .json(&json!({"subSpins": {"tier1": 1, "tier2": 2, "tier3": 3}}))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
-        assert_eq!(songs["subSongs"]["tier1"], 1);
+        let (_, spin) = get_json(&address, &format!("/pages/{id}/spin")).await;
+        assert_eq!(spin["subSpins"]["tier1"], 1);
         let other = session_of(&flow.sign_in("kick", "kick-b").await);
         let other_account = api.auth.session_of(&other).unwrap().account;
         assert_ne!(other_account, twitch_account);
@@ -888,8 +875,8 @@ mod tests {
         assert_eq!(account["settings"]["id"], id);
         let (status, _) = get_json(&address, "/pages/twitch/erik").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
-        let (_, songs) = get_json(&address, &format!("/pages/{id}/songs")).await;
-        assert_eq!(songs["subSongs"]["tier1"], 1);
+        let (_, spin) = get_json(&address, &format!("/pages/{id}/spin")).await;
+        assert_eq!(spin["subSpins"]["tier1"], 1);
         assert_eq!(account_of(&address, &session).await["settings"]["id"], id);
         let fresh = session_of(&flow.sign_in("twitch", "c").await);
         let fresh_account = api.auth.session_of(&fresh).unwrap().account;
@@ -946,7 +933,6 @@ mod tests {
             premium_accounts: Vec::new(),
             started: 0,
             tests: Mutex::default(),
-            song_finds: Mutex::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());

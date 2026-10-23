@@ -29,50 +29,6 @@ def id_of(key):
     return base64url(hashlib.sha256(key.encode()).digest()[:12])
 
 
-def found(link):
-    return not link.endswith("i=404")
-
-
-class Player:
-    def __init__(self):
-        self.next_id = 0
-        self.songs = []
-        self.current_song_index = None
-
-    def status(self, song_not_found=None):
-        status = {
-            "playing": self.current_song_index is not None,
-            "songs": self.songs,
-        }
-        if self.current_song_index is not None:
-            status["currentSongIndex"] = self.current_song_index
-        if song_not_found is not None:
-            status["songNotFound"] = song_not_found
-        return status
-
-    def handle(self, command):
-        if "find" in command:
-            if found(command["find"]["title"]):
-                return {"musicFind": {"song": {"id": "1", "title": "Fake Song", "artist": "Fake Artist"}}}
-            return {"musicFind": {}}
-        if "add" in command:
-            add = command["add"]
-            if "requestId" in add and any(song.get("requestId") == add["requestId"] for song in self.songs):
-                return {"music": {"status": self.status(song_not_found=False)}}
-            if not found(add["title"]):
-                return {"music": {"status": self.status(song_not_found=True)}}
-            self.next_id += 1
-            song = {"id": str(self.next_id), "title": add["title"], "artist": "Fake Artist"}
-            for name in ["user", "requestId"]:
-                if name in add:
-                    song[name] = add[name]
-            self.songs.append(song)
-            if self.current_song_index is None:
-                self.current_song_index = 0
-            return {"music": {"status": self.status(song_not_found=False)}}
-        return {"music": {"status": self.status()}}
-
-
 async def ping(websocket):
     while True:
         await asyncio.sleep(30)
@@ -80,7 +36,6 @@ async def ping(websocket):
 
 
 async def run(key):
-    player = Player()
     async with websockets.connect(f"ws://{BACKEND}/remote-control/streamer/{key}") as websocket:
         pinger = asyncio.create_task(ping(websocket))
         try:
@@ -98,7 +53,6 @@ async def run(key):
                         "response": {
                             "id": request["id"],
                             "result": {"ok": {}},
-                            "data": player.handle(request["data"]["music"]["command"]),
                         }
                     }
                 else:
@@ -118,7 +72,6 @@ def main():
     key = args.key or str(uuid.uuid4())
     print(f"Moblin Cloud key: {key}")
     print(f"Page: http://localhost:5173/page/?streamer={id_of(key)}")
-    print("Songs with the id 404 are not found.")
     asyncio.run(run(key))
 
 

@@ -39,7 +39,6 @@ mod public;
 mod recent;
 mod settings;
 mod sign_in;
-mod songs;
 mod spins;
 mod streamers;
 mod subscriber;
@@ -59,7 +58,6 @@ use public::*;
 use recent::*;
 use settings::*;
 use sign_in::*;
-use songs::*;
 use spins::*;
 use streamers::*;
 use subscriber::*;
@@ -86,7 +84,6 @@ pub struct Api {
     pub premium_accounts: Vec<String>,
     pub started: u64,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
-    pub song_finds: Mutex<HashMap<String, Vec<Instant>>>,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -149,7 +146,6 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/recent/{order}/resend",
             post(handle_account_resend),
         )
-        .route("/account/test/song", post(handle_account_test_song))
         .route("/account/test/tip", post(handle_account_test_tip))
         .route("/account/test/spin", post(handle_account_test_spin))
         .route(
@@ -160,8 +156,6 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/moderators/{platform}/{moderator}/remove",
             post(handle_account_moderator_remove),
         )
-        .route("/account/pages/{id}/music", post(handle_moderator_music))
-        .route("/account/pages/{id}/songs", post(handle_moderator_song))
         .route("/account/pages/{id}/recent", get(handle_moderator_recent))
         .route(
             "/account/pages/{id}/recent/{order}/resend",
@@ -189,22 +183,11 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_moderator_test_spin),
         )
         .route("/admin/stats", get(handle_admin_stats))
-        .route("/pages/{id}/songs", get(handle_songs))
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/image", get(handle_page_image))
-        .route("/pages/{id}/songs/queue", get(handle_queue))
-        .route(
-            "/pages/{id}/songs/subscriber",
-            get(handle_subscriber_song_allowance).post(handle_subscriber_song),
-        )
         .route(
             "/pages/{id}/spin/subscriber",
             get(handle_subscriber_spin_allowance).post(handle_subscriber_spin),
-        )
-        .route("/pages/{id}/songs/orders", post(handle_song_order))
-        .route(
-            "/pages/{id}/songs/orders/{order_id}/capture",
-            post(handle_song_capture),
         )
         .route("/pages/{id}/tips", get(handle_tips))
         .route("/pages/{id}/tips/orders", post(handle_tip_order))
@@ -224,10 +207,6 @@ pub fn router(api: Arc<Api>) -> Router {
 
 pub(super) fn page_of(api: &Api, id: &str) -> Option<Page> {
     Some(api.accounts.of_page(id)?.page)
-}
-
-pub(super) fn music_device(api: &Api, id: &str) -> String {
-    api.remote_control.music_device(id).unwrap_or_default()
 }
 
 pub(super) fn not_signed_in() -> (StatusCode, String) {

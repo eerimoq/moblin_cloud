@@ -36,17 +36,11 @@ pub(super) struct Recent {
     amount: u32,
     currency: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    link: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     spins: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tier: Option<u8>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    moderator: bool,
     #[serde(rename = "kickSubscriber", skip_serializing_if = "std::ops::Not::not")]
     kick_subscriber: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,7 +71,7 @@ pub(super) fn recent(
     query: RecentQuery,
     owner: bool,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
-    if !["song", "tip", "spin"].contains(&query.kind.as_str()) {
+    if !["tip", "spin"].contains(&query.kind.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string()));
     }
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
@@ -98,20 +92,14 @@ pub(super) fn recent(
                 Payee::Twitch(tier) => Some(tier),
                 _ => None,
             };
-            let moderator = order.payee == Payee::Moderator;
             let kick_subscriber = order.payee == Payee::Kick;
             let provider = match order.payee {
                 Payee::PayPal(_) | Payee::Stripe(_) if owner => Some(order.payee.slug()),
                 _ => None,
             };
-            let (name, link, message, spins) = match order.item {
-                Item::Song {
-                    link,
-                    name,
-                    message,
-                } => (Some(name), Some(link), message, None),
-                Item::Tip { message } => (None, None, message, None),
-                Item::Spin { spins, message } => (None, None, message, Some(spins)),
+            let (message, spins) = match order.item {
+                Item::Tip { message } => (message, None),
+                Item::Spin { spins, message } => (message, Some(spins)),
             };
             Recent {
                 id,
@@ -119,20 +107,14 @@ pub(super) fn recent(
                 user: order.user,
                 amount: order.price,
                 currency: order.currency,
-                name,
-                link,
                 message,
                 spins,
                 tier,
-                moderator,
                 kick_subscriber,
                 provider,
                 status: match &delivery {
                     None => "delivered",
                     Some(delivery) if delivery.finished => "delivered",
-                    Some(delivery) if delivery.failure.as_deref() == Some("not-found") => {
-                        "notAdded"
-                    }
                     Some(_) => "waiting",
                 },
                 devices,
@@ -156,11 +138,6 @@ fn recent_devices(
         .collect();
     if !delivery.finished {
         let waiting = match item {
-            Item::Song { .. } => api
-                .remote_control
-                .music_device(&page.id)
-                .into_iter()
-                .collect(),
             Item::Spin { .. } => api
                 .remote_control
                 .wheel_device(&page.id)
@@ -406,7 +383,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recent_lists_are_paged_per_kind_and_show_songs_not_added() {
+    async fn recent_lists_are_paged_per_kind() {
         let (address, api) = start_api(None).await;
         let (session, _, id) = streamer(&address, &api).await;
         let order = |item: Item, price: u32| Order {
@@ -432,38 +409,6 @@ mod tests {
                 .unwrap();
             api.orders.captured(&order_id, |_| Ok(())).unwrap();
         }
-        api.orders
-            .insert(
-                "SONG1",
-                &order(
-                    Item::Song {
-                        link: LINK.to_string(),
-                        name: "Song".to_string(),
-                        message: Some("Play it loud!".to_string()),
-                    },
-                    250,
-                ),
-            )
-            .unwrap();
-        api.orders
-            .captured("SONG1", |connection| {
-                deliveries::insert(
-                    connection,
-                    &id,
-                    "SONG1",
-                    &deliveries::Item::Song {
-                        link: LINK.to_string(),
-                        user: "Viewer".to_string(),
-                        message: "Play it loud!".to_string(),
-                    },
-                )?;
-                connection.execute(
-                    "UPDATE deliveries SET failure = 'not-found' WHERE request_id = 'SONG1'",
-                    [],
-                )?;
-                Ok(())
-            })
-            .unwrap();
         api.orders
             .insert(
                 "SPIN1",
@@ -497,8 +442,10 @@ mod tests {
                 .bearer_auth(&session);
             async move { request.send().await.unwrap() }
         };
-        let response = recent("kind=gift".to_string()).await;
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        for kind in ["gift", "song"] {
+            let response = recent(format!("kind={kind}")).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
         let mut ids = Vec::new();
         let mut before = String::new();
         for (expected, more) in [(20, true), (20, true), (5, false)] {
@@ -533,15 +480,6 @@ mod tests {
         assert_eq!(tips[0]["message"], "m44");
         assert_eq!(tips[0]["amount"], 144);
         assert_eq!(tips[0]["status"], "delivered");
-        let listed: Value = recent("kind=song".to_string()).await.json().await.unwrap();
-        assert_eq!(listed["items"].as_array().unwrap().len(), 1);
-        let song = &listed["items"][0];
-        assert_eq!(song["name"], "Song");
-        assert_eq!(song["link"], LINK);
-        assert_eq!(song["message"], "Play it loud!");
-        assert_eq!(song["amount"], 250);
-        assert_eq!(song["status"], "notAdded");
-        assert_eq!(song["devices"], json!([]));
         let listed: Value = recent("kind=spin".to_string()).await.json().await.unwrap();
         assert_eq!(listed["items"].as_array().unwrap().len(), 1);
         let spin = &listed["items"][0];

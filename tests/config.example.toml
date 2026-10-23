@@ -19,8 +19,6 @@ allow-unattested = true
 # A real Moblin device, used with --device iphone16pro instead of the fake Moblin.
 [device.iphone16pro]
 moblin-ip-address = "iphone16pro.home"
-# "apple-music" if Moblin may use Apple Music, for song requests.
-capabilities = ["apple-music"]
 
 # Optional. A Twitch application, for profile lookups, the live status and real sign in. Its
 # OAuth redirect URL must be http://localhost:<backend-port>/auth/twitch/callback.

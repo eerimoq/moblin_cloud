@@ -128,47 +128,6 @@ fn public_stripe(api: &Api, account: Option<&Account>) -> Option<PublicStripe> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct PublicSongs {
-    price: u32,
-    currency: String,
-    client_id: Option<String>,
-    merchant_id: Option<String>,
-    environment: Option<&'static str>,
-    stripe: Option<PublicStripe>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct SongsResponse {
-    songs: Option<PublicSongs>,
-    sub_songs: Option<Tiers>,
-    max_song_minutes: Option<u32>,
-}
-
-pub(super) async fn handle_songs(
-    State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
-) -> Json<SongsResponse> {
-    let account = api.accounts.of_page(&id);
-    let merchant_id = merchant(account.as_ref());
-    let settings = api.pages.get(&id);
-    let currency = settings.currency().to_string();
-    Json(SongsResponse {
-        sub_songs: linked_tiers(account.as_ref(), settings.sub_songs()),
-        max_song_minutes: settings.max_song_minutes(),
-        songs: settings.songs().map(|songs| PublicSongs {
-            price: songs.price,
-            currency,
-            client_id: client_id(&api, &merchant_id),
-            merchant_id,
-            environment: api.paypal.as_ref().map(PayPal::environment),
-            stripe: public_stripe(&api, account.as_ref()),
-        }),
-    })
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub(super) struct PublicTips {
     amounts: Vec<u32>,
     currency: String,

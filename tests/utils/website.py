@@ -154,29 +154,23 @@ class Dashboard(Client):
     def save_settings(
         self,
         currency: str | None = None,
-        songs: dict | None = None,
         tips: dict | None = None,
         spin: dict | None = None,
         message: str | None = None,
         accent: str | None = None,
         font: str | None = None,
-        sub_songs: dict | None = None,
         sub_spins: dict | None = None,
-        max_song_length: dict | None = None,
     ) -> dict:
         return self.post(
             "/account/settings",
             {
                 "currency": currency,
-                "songs": songs,
                 "tips": tips,
                 "spin": spin,
                 "message": message,
                 "accent": accent,
                 "font": font,
-                "subSongs": sub_songs,
                 "subSpins": sub_spins,
-                "maxSongLength": max_song_length,
             },
         )
 
@@ -185,17 +179,14 @@ class Dashboard(Client):
         settings = self.account()["settings"]
         fields = [
             "currency",
-            "songs",
             "tips",
             "spin",
             "message",
             "accent",
             "font",
-            "subSongs",
             "subSpins",
-            "maxSongLength",
         ]
-        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongLength": "max_song_length"}
+        names = {"subSpins": "sub_spins"}
         current = {names.get(field, field): settings[field] for field in fields}
         return self.save_settings(**{**current, **changes})
 
@@ -223,9 +214,6 @@ class Dashboard(Client):
     def resend(self, order_id: str) -> dict:
         return self.post(f"/account/recent/{quote(order_id, safe='')}/resend")
 
-    def test_song(self, song: str) -> dict:
-        return self.post("/account/test/song", {"song": song})
-
     def test_tip(self, message: str | None = None) -> dict:
         return self.post("/account/test/tip", {"message": message})
 
@@ -241,14 +229,6 @@ class Dashboard(Client):
     def remove_moderator(self, platform: str, moderator: str) -> dict:
         return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/remove")
 
-    def moderate_music(self, page_id: str, command: str, song: str | None = None) -> dict:
-        return self.post(f"/account/pages/{quote(page_id, safe='')}/music", {"command": command, "id": song})
-
-    def add_free_song(self, page_id: str, song: str, message: str | None = None) -> dict:
-        return self.post(
-            f"/account/pages/{quote(page_id, safe='')}/songs", {"song": song, "message": message}
-        )
-
     def moderated_recent(self, page_id: str, kind: str) -> dict:
         return self.get(f"/account/pages/{quote(page_id, safe='')}/recent?kind={kind}")
 
@@ -258,21 +238,18 @@ class Dashboard(Client):
     def moderated_settings(self, page_id: str, **changes) -> dict:
         """Saves the moderated page's settings with some changed, like the moderator's dashboard does."""
         settings = self.moderated_account(page_id)["settings"]
-        names = {"subSongs": "sub_songs", "subSpins": "sub_spins", "maxSongLength": "max_song_length"}
+        names = {"subSpins": "sub_spins"}
         body = {
             field: settings[field]
             for field in [
                 "currency",
-                "songs",
-                "tips",
+                    "tips",
                 "spin",
                 "message",
                 "accent",
                 "font",
-                "subSongs",
-                "subSpins",
-                "maxSongLength",
-            ]
+                    "subSpins",
+                ]
         }
         for field in body:
             if names.get(field, field) in changes:
@@ -318,19 +295,6 @@ class Viewer(Client):
     def profile(self) -> dict:
         return self.get(self._path())
 
-    def paid_songs(self) -> dict | None:
-        return self.get(self._path("/songs"))["songs"]
-
-    def queue(self) -> dict:
-        return self.get(self._path("/songs/queue"))
-
-    def order_song(self, song: str, user: str | None = None, provider: str | None = None) -> str:
-        body = {"song": song, "user": user, "provider": provider}
-        return self.post(self._path("/songs/orders"), body)["orderId"]
-
-    def capture_song(self, order_id: str) -> dict:
-        return self.post(self._path(f"/songs/orders/{quote(order_id, safe='')}/capture"))
-
     def tips(self) -> dict | None:
         return self.get(self._path("/tips"))["tips"]
 
@@ -366,12 +330,6 @@ class Subscriber(Viewer):
         super().__init__(url, page_id)
         self.token = token
         self.session = token
-
-    def songs(self) -> dict:
-        return self.get(self._path("/songs/subscriber"))
-
-    def request_song(self, song: str, message: str | None = None) -> dict:
-        return self.post(self._path("/songs/subscriber"), {"song": song, "message": message})
 
     def spins(self) -> dict:
         return self.get(self._path("/spin/subscriber"))

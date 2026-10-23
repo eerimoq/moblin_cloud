@@ -119,7 +119,7 @@ mod tests {
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
-            .json(&json!({"currency": "usd", "songs": null, "spin": {
+            .json(&json!({"currency": "usd", "spin": {
                 "options": [{"spins": 2, "price": 800}],
             }}))
             .send()
@@ -261,7 +261,7 @@ mod tests {
         let response = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"currency": "jpy", "songs": null, "spin": {
+            .json(&json!({"currency": "jpy", "spin": {
                 "options": [{"spins": 1, "price": 500}],
             }}))
             .send()
@@ -271,7 +271,7 @@ mod tests {
         let settings: Value = client
             .post(&settings_url)
             .bearer_auth(&session)
-            .json(&json!({"currency": "usd", "songs": null, "spin": {
+            .json(&json!({"currency": "usd", "spin": {
                 "options": [{"spins": 2, "price": 800}, {"spins": 1, "price": 500}],
             }}))
             .send()

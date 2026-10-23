@@ -8,8 +8,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::pages::{
-    CURRENCIES, FONTS, Feature, Settings, SettingsError, SongLength, Songs, Spin, Tiers, Tips,
-    is_color,
+    CURRENCIES, FONTS, Feature, Settings, SettingsError, Spin, Tiers, Tips, is_color,
 };
 use crate::stripe::Stripe;
 
@@ -20,15 +19,10 @@ pub(super) struct SettingsResponse {
     id: String,
     connected: bool,
     currency: String,
-    songs: Option<Feature<Songs>>,
     tips: Option<Feature<Tips>>,
     spin: Option<Feature<Spin>>,
-    #[serde(rename = "subSongs")]
-    sub_songs: Option<Feature<Tiers>>,
     #[serde(rename = "subSpins")]
     sub_spins: Option<Feature<Tiers>>,
-    #[serde(rename = "maxSongLength")]
-    max_song_length: Option<Feature<SongLength>>,
     paypal: bool,
     #[serde(rename = "merchantId")]
     merchant_id: Option<String>,
@@ -61,12 +55,9 @@ pub(super) fn settings_response(
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
         currency: settings.currency().to_string(),
-        songs: settings.songs,
         tips: settings.tips,
         spin: settings.spin,
-        sub_songs: settings.sub_songs,
         sub_spins: settings.sub_spins,
-        max_song_length: settings.max_song_length,
         paypal: api.paypal.is_some(),
         merchant_id: account.merchant_id,
         paypal_pending: account.paypal_tracking_id.is_some(),
@@ -101,17 +92,12 @@ pub(super) fn without_payments(mut response: Json<SettingsResponse>) -> Json<Set
 pub(super) struct SettingsRequest {
     #[serde(default)]
     currency: Option<String>,
-    songs: Option<Feature<Songs>>,
     #[serde(default)]
     tips: Option<Feature<Tips>>,
     #[serde(default)]
     spin: Option<Feature<Spin>>,
-    #[serde(default, rename = "subSongs")]
-    sub_songs: Option<Feature<Tiers>>,
     #[serde(default, rename = "subSpins")]
     sub_spins: Option<Feature<Tiers>>,
-    #[serde(default, rename = "maxSongLength")]
-    max_song_length: Option<Feature<SongLength>>,
     #[serde(default)]
     message: Option<String>,
     #[serde(default)]
@@ -183,18 +169,6 @@ async fn update_settings(
     if !CURRENCIES.contains(&currency.as_str()) {
         return Err(invalid_currency());
     }
-    let songs = match request.songs {
-        Some(songs) => {
-            let songs = songs
-                .normalize(Songs::normalize)
-                .ok_or_else(invalid_songs)?;
-            if songs.enabled && current.songs.as_ref() != Some(&songs) {
-                check_payable(api, &id)?;
-            }
-            Some(songs)
-        }
-        None => None,
-    };
     let tips = match request.tips {
         Some(tips) => {
             let tips = tips.normalize(Tips::normalize).ok_or_else(invalid_tips)?;
@@ -215,12 +189,10 @@ async fn update_settings(
         }
         None => None,
     };
-    if currency != current.currency()
-        && (current.songs().is_some() || current.tips().is_some() || current.spin().is_some())
-    {
+    if currency != current.currency() && (current.tips().is_some() || current.spin().is_some()) {
         return Err((
             StatusCode::CONFLICT,
-            "turn paid songs, tips and the wheel off before changing the currency".to_string(),
+            "turn tips and the wheel off before changing the currency".to_string(),
         ));
     }
     let settings = api
@@ -229,12 +201,9 @@ async fn update_settings(
             &id,
             Settings {
                 currency: Some(currency),
-                songs,
                 tips,
                 spin,
-                sub_songs: request.sub_songs,
                 sub_spins: request.sub_spins,
-                max_song_length: request.max_song_length,
                 message: request.message,
                 accent,
                 font,
@@ -242,17 +211,12 @@ async fn update_settings(
         )
         .map_err(|error| match error {
             SettingsError::InvalidCurrency => invalid_currency(),
-            SettingsError::InvalidSongs => invalid_songs(),
             SettingsError::InvalidTips => invalid_tips(),
             SettingsError::InvalidSpin => invalid_spin(),
             SettingsError::InvalidTiers => (
                 StatusCode::BAD_REQUEST,
-                "subscribers' songs and spins per month must be 0 to 100 per tier, with at least one above 0"
+                "subscribers' spins per month must be 0 to 100 per tier, with at least one above 0"
                     .to_string(),
-            ),
-            SettingsError::InvalidSongLength => (
-                StatusCode::BAD_REQUEST,
-                "the longest song must be 1 to 60 minutes".to_string(),
             ),
             SettingsError::InvalidPage => (
                 StatusCode::BAD_REQUEST,
@@ -268,14 +232,11 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, songs {:?}, tips {:?}, spin {:?}, sub songs {:?}, sub spins {:?}, max song length {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {id} set currency {}, tips {:?}, spin {:?}, sub spins {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
-        settings.songs,
         settings.tips,
         settings.spin,
-        settings.sub_songs,
         settings.sub_spins,
-        settings.max_song_length,
         settings.message,
         settings.accent,
         settings.font
@@ -332,13 +293,6 @@ fn invalid_tips() -> (StatusCode, String) {
     )
 }
 
-fn invalid_songs() -> (StatusCode, String) {
-    (
-        StatusCode::BAD_REQUEST,
-        "song requests need a price of 0.50 to 100000".to_string(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
@@ -354,14 +308,14 @@ mod tests {
             client
                 .post(format!("http://{address}/account/settings"))
                 .bearer_auth(session)
-                .json(&json!({"songs": null, "accent": accent}))
+                .json(&json!({"accent": accent}))
                 .send()
         };
         let save_font = |session: String, font: &'static str| {
             client
                 .post(format!("http://{address}/account/settings"))
                 .bearer_auth(session)
-                .json(&json!({"songs": null, "font": font}))
+                .json(&json!({"font": font}))
                 .send()
         };
         let (session, _, _) = streamer(&address, &api).await;
@@ -442,11 +396,11 @@ mod tests {
                 StatusCode::OK,
             ),
             (
-                json!({"currency": "EUR", "songs": {"price": 250}, "spin": {"options": [{"spins": 1, "price": 100}]}}),
+                json!({"currency": "EUR", "spin": {"options": [{"spins": 1, "price": 100}]}}),
                 StatusCode::OK,
             ),
             (
-                json!({"currency": "USD", "songs": {"enabled": false, "price": 250}}),
+                json!({"currency": "USD", "spin": {"enabled": false, "options": [{"spins": 1, "price": 100}]}}),
                 StatusCode::CONFLICT,
             ),
             (json!({"currency": "EUR"}), StatusCode::OK),

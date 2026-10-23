@@ -36,13 +36,8 @@ const reasonLabels: Record<string, string> = {
   "too-many-devices": "More than 5 devices",
   "feature-off": "Turned off on the page",
   offline: "Streamer offline",
-  "requests-off": "Song requests off in Moblin",
   "no-wheel": "No wheel in Moblin",
-  "invalid-link": "Not an Apple Music song link",
-  "too-many-requests": "Over 10 song orders a minute on the page",
   "too-many-tests": "Over 10 tests a minute on the page",
-  "song-not-found": "Song not on the streamer's Apple Music",
-  "not-found": "Song not found by Moblin",
   "invalid-message": "Message over 200 characters",
   "amount-too-low": "Below the smallest suggested tip",
   "invalid-option": "Unknown spin option",
@@ -60,12 +55,9 @@ const reasonLabels: Record<string, string> = {
   account: "Not signed in",
   "not-signed-in": "Viewer not signed in with Twitch",
   "not-subscribed": "Viewer not subscribed on Twitch",
-  "no-songs-left": "Viewer used this month's songs",
   "no-spins-left": "Viewer used this month's spins",
   "tier-excluded": "Viewer's tier gets nothing on the page",
-  "over-max-length": "Song longer than the page's longest song",
   "not-moderator": "Not the streamer or a moderator they turned on",
-  "invalid-command": "Unknown queue command or song",
 };
 
 const problemReasons = [
@@ -75,7 +67,6 @@ const problemReasons = [
   "payments-unavailable",
   "moblin-timeout",
   "moblin-error",
-  "not-found",
   "crashed",
 ];
 
@@ -105,13 +96,8 @@ const problems: Problem[] = [
   },
   {
     label: "Moblin answered with an error",
-    hint: "Moblin refused a song lookup or a delivery. Deliveries are retried every 10 seconds, so one stuck request counts many times.",
+    hint: "Moblin refused a delivery. Deliveries are retried every 10 seconds, so one stuck request counts many times.",
     matches: (_, reason) => reason === "moblin-error",
-  },
-  {
-    label: "Song not found by Moblin",
-    hint: "The song was found before paying or the subscriber's request but not when adding it, so it was dropped.",
-    matches: (_, reason) => reason === "not-found",
   },
   {
     label: "Backend error",
@@ -131,7 +117,6 @@ type Kind = {
   orders: string[];
   payments: string[];
   subscribers?: { event: string; reasons: string[] };
-  moderators?: { event: string; label: string; hint: string; reasons: string[] }[];
   tests: string[];
   deliveries: string[];
 };
@@ -193,95 +178,6 @@ const kinds: Kind[] = [
     },
     tests: ["account", "too-many-tests", "offline", "no-wheel", "invalid-message", "crashed"],
     deliveries: ["moblin-error"],
-  },
-  {
-    kind: "song",
-    label: "Songs",
-    orders: [
-      "feature-off",
-      "payments-unavailable",
-      "invalid-link",
-      "too-many-requests",
-      "offline",
-      "requests-off",
-      "song-not-found",
-      "over-max-length",
-      "moblin-timeout",
-      "moblin-error",
-      "provider",
-      "not-saved",
-    ],
-    payments: ["expired", "offline", "requests-off", ...captureReasons],
-    subscribers: {
-      event: "subSongs",
-      reasons: [
-        "feature-off",
-        "not-signed-in",
-        "not-subscribed",
-        "tier-excluded",
-        "no-songs-left",
-        "invalid-message",
-        "invalid-link",
-        "too-many-requests",
-        "offline",
-        "requests-off",
-        "song-not-found",
-        "over-max-length",
-        "moblin-timeout",
-        "moblin-error",
-        "crashed",
-        "not-saved",
-      ],
-    },
-    moderators: [
-      {
-        event: "modSongs",
-        label: "Moderators",
-        hint: "Songs added for free by the streamer's Twitch moderators from the dashboard.",
-        reasons: [
-          "account",
-          "not-moderator",
-          "invalid-message",
-          "invalid-link",
-          "too-many-requests",
-          "offline",
-          "requests-off",
-          "song-not-found",
-          "over-max-length",
-          "moblin-timeout",
-          "moblin-error",
-          "crashed",
-          "not-saved",
-        ],
-      },
-      {
-        event: "moderatorMusic",
-        label: "Queue changes",
-        hint: "Play, pause, play now, remove and clear sent to Moblin by streamers and moderators from the dashboard.",
-        reasons: [
-          "account",
-          "not-moderator",
-          "invalid-command",
-          "offline",
-          "moblin-timeout",
-          "moblin-error",
-        ],
-      },
-    ],
-    tests: [
-      "account",
-      "too-many-tests",
-      "invalid-link",
-      "offline",
-      "requests-off",
-      "song-not-found",
-      "over-max-length",
-      "moblin-timeout",
-      "moblin-error",
-      "invalid-message",
-      "crashed",
-    ],
-    deliveries: ["not-found", "moblin-error"],
   },
 ];
 
@@ -643,12 +539,9 @@ function Loaded(props: { stats: AdminStats }) {
             ),
           ]
         : []),
-      ...(kind.moderators ?? []).map((moderators) =>
-        counters().step(moderators.event, moderators.label, moderators.hint, moderators.reasons),
-      ),
       paid(
         "Deliveries",
-        "Paid, subscriber and moderator requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
+        "Paid and subscriber requests Moblin accepted. A stuck request is retried every 10 seconds and counts each time.",
         kind.deliveries,
       ),
       {
@@ -791,7 +684,7 @@ function Loaded(props: { stats: AdminStats }) {
         <Tile
           label="Waiting for a device"
           value={format(props.stats.pending.deliveries)}
-          hint="Tips, spins and songs no device has received yet. A tip one of several devices got is not counted. Kept for 7 days."
+          hint="Tips and spins no device has received yet. A tip one of several devices got is not counted. Kept for 7 days."
           attention={props.stats.pending.deliveries > 0}
         />
         <Tile
@@ -806,7 +699,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="problems"
             title="Problems"
-            hint="Failures on our side or at PayPal, Stripe or Moblin, across tips, wheel spins and songs. Viewer mistakes and streamers being offline are not counted here."
+            hint="Failures on our side or at PayPal, Stripe or Moblin, across tips and wheel spins. Viewer mistakes and streamers being offline are not counted here."
           >
             <StepTable
               steps={problems.map((problem) => ({
@@ -828,7 +721,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="providers"
             title="Providers"
-            hint="Payments by provider, across tips, wheel spins and songs, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
+            hint="Payments by provider, across tips and wheel spins, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
           >
             <div class="flex flex-col gap-5">
               <For each={providers}>
@@ -855,7 +748,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="tests"
             title="Tests"
-            hint="Free tips, wheel spins and songs streamers send themselves from the dashboard. Not counted as problems above."
+            hint="Free tips and wheel spins streamers send themselves from the dashboard. Not counted as problems above."
           >
             <div class="flex flex-col gap-5">
               <For each={kinds}>

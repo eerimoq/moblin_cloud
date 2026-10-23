@@ -1,4 +1,3 @@
-from ..utils.config import Capability
 from ..utils.context import Context
 from ..utils.fake_moblin import FakeMoblin
 from ..utils.moblin import Moblin
@@ -6,9 +5,6 @@ from ..utils.moblin import wheel_option
 from ..utils.test_case import TestCase
 
 WHEEL = [wheel_option("Dance"), wheel_option("Spin again", 4)]
-SONG = "https://music.apple.com/us/album/take-on-me/380907762?i=380907765"
-SONG_LINK = "https://music.apple.com/song/380907765?i=380907765"
-MISSING_SONG = "https://music.apple.com/us/song/does-not-exist/99999999999"
 
 
 class RemoteControlTestCase(TestCase):
@@ -31,18 +27,13 @@ class RemoteControlTestCase(TestCase):
 
 
 class RemoteControlConnects(RemoteControlTestCase):
-    """Show in the dashboard that Moblin is connected, and Moblin's song queue on the page."""
+    """Show in the dashboard that Moblin is connected."""
 
     def run(self):
         self.moblin.disconnect_from_backend()
         self.wait_until(lambda: not self.connected(), "Moblin to be disconnected")
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key())
         self.wait_until(self.connected, "Moblin to be connected")
-        if self.moblin.has_capability(Capability.APPLE_MUSIC):
-            queue = self.viewer.queue()
-            self.assert_in("playing", queue)
-            self.assert_in("songs", queue)
-            self.assert_true(any(request.kind == "status" for request in self.moblin.backend_requests()))
         self.moblin.disconnect_from_backend()
         self.wait_until(lambda: not self.connected(), "Moblin to be disconnected")
 
@@ -103,7 +94,7 @@ class RemoteControlNewMoblinCloudKeyDisconnects(RemoteControlTestCase):
 
 
 class RemoteControlTestDeliveries(RemoteControlTestCase):
-    """Send a free test tip, wheel spin and song from the dashboard, which Moblin gets like paid ones."""
+    """Send a free test tip and wheel spin from the dashboard, which Moblin gets like paid ones."""
 
     def run(self):
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
@@ -131,29 +122,6 @@ class RemoteControlTestDeliveries(RemoteControlTestCase):
         request = self.moblin.wait_for_new_backend_request("spinWheelOfLuck", start)
         self.assert_equal([request.body["name"], request.body["count"]], [name, spins])
         self.assert_not_equal(request.body["requestId"], tip.body["requestId"])
-        if not self.moblin.has_capability(Capability.APPLE_MUSIC):
-            return
-        self.moblin.clear_music()
-        self.assert_backend_error(
-            400, lambda: self.dashboard.test_song("Take on me"), "Paste the Apple Music share link of a song."
-        )
-        self.assert_backend_error(
-            422,
-            lambda: self.dashboard.test_song(MISSING_SONG),
-            "That song is not available on the streamer's Apple Music.",
-        )
-        start = self.moblin.backend_requests_position()
-        self.assert_equal(self.dashboard.test_song(SONG), {})
-        add = self.moblin.wait_for_new_backend_request("add", start)
-        self.assert_equal([add.body["title"], add.body["user"]], [SONG_LINK, name])
-        self.wait_until(
-            lambda: [song.get("user") for song in self.viewer.queue()["songs"]] == [name],
-            "the test song to be in the queue on the page",
-        )
-
-    def teardown(self):
-        if self.context.moblin is not None and self.moblin.has_capability(Capability.APPLE_MUSIC):
-            self.moblin.clear_music()
 
 
 class RemoteControlNoWheel(RemoteControlTestCase):
@@ -170,33 +138,8 @@ class RemoteControlNoWheel(RemoteControlTestCase):
         )
 
 
-class RemoteControlSongRequestsOff(RemoteControlTestCase):
-    """Refuse songs while song requests are off in Moblin, but keep showing the queue."""
-
-    def run(self):
-        self.skip_if_missing_capability(Capability.APPLE_MUSIC)
-        if not self.moblin.is_fake():
-            self.skip_if_not_interactive()
-        self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key())
-        self.wait_until(lambda: self.viewer.queue()["songRequests"], "song requests to be on")
-        self.moblin.change_song_requests(False)
-        self.wait_until(lambda: not self.viewer.queue()["songRequests"], "song requests to be off")
-        self.assert_in("songs", self.viewer.queue())
-        self.assert_backend_error(
-            409,
-            lambda: self.dashboard.test_song(SONG),
-            "The streamer is not taking song requests right now.",
-        )
-        self.moblin.change_song_requests(True)
-        self.wait_until(lambda: self.viewer.queue()["songRequests"], "song requests to be on again")
-
-    def teardown(self):
-        if self.context.moblin is not None and self.moblin.is_fake():
-            self.moblin.change_song_requests(True)
-
-
 class RemoteControlDevices(RemoteControlTestCase):
-    """Send songs to the first device with song requests on, spins to the first with a wheel and tips to every device, all connected with the one Moblin Cloud key."""
+    """Send spins to the first device with a wheel and tips to every device, all connected with the one Moblin Cloud key."""
 
     login = "devices"
 
@@ -211,34 +154,18 @@ class RemoteControlDevices(RemoteControlTestCase):
         self.second.start()
         self.wait_until(lambda: len(self.connected()) == 2, "the second device to connect")
         devices = self.connected()
-        self.assert_equal(
-            [(device["id"], device["music"], device["wheel"]) for device in devices][1],
-            ("SECOND", False, False),
-        )
-        self.assert_equal([devices[0]["music"], devices[0]["wheel"]], [True, True])
-        self.moblin.change_song_requests(False)
-        self.wait_until(
-            lambda: self.connected()[1]["music"],
-            "song requests to go to the second device",
-        )
-        self.dashboard.test_song(SONG)
-        self.wait_until(
-            lambda: any(song["requestId"] is not None for song in self.second.songs),
-            "the second device to get the song",
-        )
+        self.assert_equal([(device["id"], device["wheel"]) for device in devices][1], ("SECOND", False))
+        self.assert_true(devices[0]["wheel"])
         start = self.moblin.backend_requests_position()
         self.dashboard.test_tip()
         self.moblin.wait_for_new_backend_request("tip", start)
         self.wait_until(lambda: len(self.second.handled_request_ids) == 1, "the second device to get the tip")
         self.second.stop()
         self.wait_until(lambda: len(self.connected()) == 1, "the second device to disconnect")
-        self.assert_equal(self.connected()[0]["music"], False)
 
     def teardown(self):
         if hasattr(self, "second"):
             self.second.stop()
-        if self.context.moblin is not None and self.moblin.is_fake():
-            self.moblin.change_song_requests(True)
 
 
 def tests(context: Context):
@@ -250,6 +177,5 @@ def tests(context: Context):
         RemoteControlNewMoblinCloudKeyDisconnects(context),
         RemoteControlTestDeliveries(context),
         RemoteControlNoWheel(context),
-        RemoteControlSongRequestsOff(context),
         RemoteControlDevices(context),
     ]

@@ -336,11 +336,11 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "b", "name": "Moblin 2", "connected": true, "music": true, "wheel": false, "lastSeen": null},
-                {"id": "c", "name": "Moblin 3", "connected": true, "music": false, "wheel": false, "lastSeen": null},
-                {"id": "d", "name": "Moblin 4", "connected": true, "music": false, "wheel": false, "lastSeen": null},
-                {"id": "e", "name": "Moblin 5", "connected": true, "music": false, "wheel": false, "lastSeen": null},
-                {"id": "a", "name": "Moblin 1", "connected": true, "music": false, "wheel": false, "lastSeen": null},
+                {"id": "b", "name": "Moblin 2", "connected": true, "wheel": false, "lastSeen": null},
+                {"id": "c", "name": "Moblin 3", "connected": true, "wheel": false, "lastSeen": null},
+                {"id": "d", "name": "Moblin 4", "connected": true, "wheel": false, "lastSeen": null},
+                {"id": "e", "name": "Moblin 5", "connected": true, "wheel": false, "lastSeen": null},
+                {"id": "a", "name": "Moblin 1", "connected": true, "wheel": false, "lastSeen": null},
             ])
         );
         assert_eq!(api.remote_control.connected_count(), 5);
@@ -381,9 +381,11 @@ mod tests {
         assert!(!api.remote_control.is_connected(&id));
         let devices = account["devices"].as_array().unwrap();
         assert_eq!(devices.len(), 5);
-        assert!(devices.iter().all(|device| device["connected"] == false
-            && device["music"] == false
-            && device["lastSeen"].is_u64()));
+        assert!(
+            devices
+                .iter()
+                .all(|device| device["connected"] == false && device["lastSeen"].is_u64())
+        );
         assert!(
             devices
                 .iter()
@@ -404,13 +406,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn songs_and_spins_go_to_the_first_device_taking_them_and_tips_to_all() {
+    async fn spins_go_to_the_first_device_with_a_wheel_and_tips_to_all() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
         let mut main = connect_as(&address, &key, "main").await;
         let mut other = connect_as(&address, &key, "other").await;
-        send_event(&mut main, json!({"songRequests": {"enabled": false}})).await;
         send_event(
             &mut other,
             json!({"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}),
@@ -428,8 +429,8 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "main", "name": "Moblin 1", "connected": true, "music": false, "wheel": false, "lastSeen": null},
-                {"id": "other", "name": "Moblin 2", "connected": true, "music": true, "wheel": true, "lastSeen": null},
+                {"id": "main", "name": "Moblin 1", "connected": true, "wheel": false, "lastSeen": null},
+                {"id": "other", "name": "Moblin 2", "connected": true, "wheel": true, "lastSeen": null},
             ])
         );
         let spin_url = format!("http://{address}/pages/{id}/spin");
@@ -442,37 +443,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(spin["wheel"]["options"][0]["text"], "A");
-        let queue_url = format!("http://{address}/pages/{id}/songs/queue");
-        let queue = |url: String| {
-            tokio::spawn(async move {
-                reqwest::get(url)
-                    .await
-                    .unwrap()
-                    .json::<Value>()
-                    .await
-                    .unwrap()
-            })
-        };
-        let status = queue(queue_url.clone());
-        let request = receive(&mut other).await;
-        answer(&mut other, &request, music(json!([]))).await;
-        assert_eq!(status.await.unwrap()["songRequests"], true);
-        send_event(&mut other, json!({"songRequests": {"enabled": false}})).await;
-        let status = queue(queue_url.clone());
-        let request = receive(&mut main).await;
-        answer(&mut main, &request, music(json!([]))).await;
-        assert_eq!(status.await.unwrap()["songRequests"], false);
-        let account: Value = client
-            .get(format!("http://{address}/account"))
-            .bearer_auth(&session)
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let devices = account["devices"].as_array().unwrap();
-        assert!(devices.iter().all(|device| device["music"] == false));
         api.deliveries.add_test(
             id.clone(),
             "TIP1".to_string(),

@@ -94,7 +94,6 @@ pub(super) struct DeviceResponse {
     id: String,
     name: String,
     connected: bool,
-    music: bool,
     wheel: bool,
     last_seen: Option<u64>,
 }
@@ -119,7 +118,6 @@ fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
                 .map(|known| known.name.clone())
                 .unwrap_or_else(|| "Moblin".to_string()),
             connected: true,
-            music: device.music,
             wheel: device.wheel,
             last_seen: None,
         })
@@ -132,7 +130,6 @@ fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
                 id: known.id,
                 name: known.name,
                 connected: false,
-                music: false,
                 wheel: false,
                 last_seen: Some(known.last_seen),
             }),
@@ -497,7 +494,7 @@ mod tests {
             ] {
                 let mut request = client
                     .request(method.parse().unwrap(), format!("http://{address}{path}"))
-                    .json(&json!({"songs": null, "name": "Moblin", "music": "d", "wheel": "d", "enabled": false}));
+                    .json(&json!({"name": "Moblin", "wheel": "d", "enabled": false}));
                 if let Some(token) = token {
                     request = request.bearer_auth(token);
                 }

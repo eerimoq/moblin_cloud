@@ -2,7 +2,6 @@ import logging
 import time
 from collections.abc import Callable
 
-from ..utils.config import Capability
 from ..utils.context import Context
 from ..utils.fake_moblin import FakeMoblin
 from ..utils.moblin import Moblin
@@ -11,10 +10,6 @@ from ..utils.test_case import TestCase
 from ..utils.website import BackendError
 
 LOGGER = logging.getLogger(__name__)
-SONG = "https://music.apple.com/us/album/take-on-me/380907762?i=380907765"
-SONG_LINK = "https://music.apple.com/song/380907765?i=380907765"
-OTHER_SONG = "https://music.apple.com/us/album/billie-jean/269572838?i=269573364"
-MISSING_SONG = "https://music.apple.com/us/song/does-not-exist/99999999999"
 TIPS = {"amounts": [100, 700]}
 SPIN = {"options": [{"spins": 1, "price": 100}, {"spins": 3, "price": 250}]}
 WHEEL = [wheel_option("Push-ups"), wheel_option("Sing a song", 2), wheel_option("Nothing", 3)]
@@ -61,9 +56,6 @@ class PaymentTestCase(TestCase):
 
     def order_spin(self, spins: int, user: str | None = None, message: str | None = None) -> str:
         return self.viewer.order_spin(spins, user, message, self.provider)
-
-    def order_song(self, song: str, user: str | None = None) -> str:
-        return self.viewer.order_song(song, user, self.provider)
 
     def pay(self, order_id: str):
         """Pays the order with a test card, like the viewer in PayPal's popup or Stripe's Payment Element."""
@@ -130,7 +122,6 @@ class PaymentsTipNotApproved(PaymentTestCase):
             402, lambda: self.capture(self.viewer.capture_tip, order_id), "The payment was not completed."
         )
         gone = "This payment is unknown or expired, so no money was taken."
-        self.assert_backend_error(410, lambda: self.capture(self.viewer.capture_song, order_id), gone)
         self.assert_backend_error(410, lambda: self.capture(self.viewer.capture_spin, order_id), gone)
         other = self.website.viewer("AAAAAAAAAAAAAAAA")
         self.assert_backend_error(410, lambda: other.capture_tip(order_id), gone)
@@ -376,103 +367,6 @@ class PaymentsSpinWhenWheelIsGone(PaymentTestCase):
         self.assert_hold_released(order_id)
 
 
-class SongRequestTestCase(PaymentTestCase):
-    def setup(self):
-        super().setup()
-        self.dashboard.save_settings(songs={"price": 150})
-
-
-class PaymentsInvalidSongRequest(SongRequestTestCase):
-    """Refuse song requests that are not Apple Music song links, or when the streamer is offline."""
-
-    def run(self):
-        if self.context.moblin is not None:
-            self.moblin.disconnect_from_backend()
-        for song in [
-            "Take on me",
-            "https://open.spotify.com/track/2WfaOiMkCvy7F5fcp2zZ8L",
-            "http://music.apple.com/song/1",
-        ]:
-            self.assert_backend_error(
-                400,
-                lambda song=song: self.order_song(song),
-                "Paste the Apple Music share link of a song.",
-            )
-        offline = "The streamer is offline right now. Try again when they are live."
-        self.assert_backend_error(404, lambda: self.order_song(SONG), offline)
-        self.assert_backend_error(404, self.viewer.queue, offline)
-        self.dashboard.save_settings()
-        self.assert_backend_error(
-            400,
-            lambda: self.order_song(SONG),
-            "The streamer no longer takes song requests. Reload the page.",
-        )
-
-
-class PaymentsSongNotOnAppleMusic(SongRequestTestCase):
-    """Refuse requests of songs the streamer's Apple Music can't find, before the viewer pays."""
-
-    def run(self):
-        self.skip_if_missing_capability(Capability.APPLE_MUSIC)
-        self.connect_moblin()
-        self.assert_backend_error(
-            422,
-            lambda: self.order_song(MISSING_SONG),
-            "That song is not available on the streamer's Apple Music.",
-        )
-        find = self.moblin.backend_requests("find")[-1]
-        self.assert_equal(find.body, {"title": "https://music.apple.com/song/99999999999?i=99999999999"})
-
-
-class PaymentsSongRequestPaid(SongRequestTestCase):
-    """Request a song, which adds it to the queue in Moblin and on the page."""
-
-    def run(self):
-        self.skip_if_missing_capability(Capability.APPLE_MUSIC)
-        self.connect_moblin()
-        self.moblin.clear_music()
-        paid_songs = self.viewer.paid_songs()
-        assert paid_songs is not None
-        self.assert_equal(paid_songs["price"], 150)
-        order_id = self.order_song(SONG, "Viewer")
-        self.assert_equal(self.moblin.backend_requests("find")[-1].body, {"title": SONG_LINK})
-        self.pay(order_id)
-        self.assert_equal(self.capture(self.viewer.capture_song, order_id), {})
-        self.assert_paid(order_id, "1.50")
-        add = self.moblin.wait_for_backend_request("add", order_id)
-        self.assert_equal(add.body, {"title": SONG_LINK, "user": "Viewer", "requestId": order_id})
-        songs = self.moblin.music_status()["songs"]
-        self.assert_equal([song["user"] for song in songs], ["Viewer"])
-
-        def on_page() -> bool:
-            return [song.get("user") for song in self.viewer.queue()["songs"]] == ["Viewer"]
-
-        self.wait_until(on_page, "the song to be in the queue on the page")
-
-    def teardown(self):
-        if self.context.moblin is not None:
-            self.moblin.clear_music()
-        super().teardown()
-
-
-class PaymentsSongRequestWhenStreamerGoesOffline(SongRequestTestCase):
-    """Do not take the money for a song when Moblin disconnects between ordering and paying."""
-
-    def run(self):
-        self.skip_if_missing_capability(Capability.APPLE_MUSIC)
-        self.connect_moblin()
-        order_id = self.order_song(OTHER_SONG)
-        self.pay(order_id)
-        self.moblin.disconnect_from_backend()
-        self.wait_until(lambda: not self.dashboard.account()["settings"]["connected"], "Moblin to disconnect")
-        self.assert_backend_error(
-            404,
-            lambda: self.capture(self.viewer.capture_song, order_id),
-            "The streamer went offline, so your payment was not taken.",
-        )
-        self.assert_hold_released(order_id)
-
-
 def tests(context: Context):
     return [
         test(context, provider)
@@ -489,9 +383,5 @@ def tests(context: Context):
             PaymentsSpinNeedsWheel,
             PaymentsSpinPaid,
             PaymentsSpinWhenWheelIsGone,
-            PaymentsInvalidSongRequest,
-            PaymentsSongNotOnAppleMusic,
-            PaymentsSongRequestPaid,
-            PaymentsSongRequestWhenStreamerGoesOffline,
         ]
     ]

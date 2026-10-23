@@ -1,37 +1,6 @@
 import { BackendError, backendUrl, call as callBackend, post } from "./backend";
 import { t } from "../i18n";
 
-export type MusicCommand = "play" | "pause" | "clear" | "remove" | "select";
-
-export type Song = {
-  id: string;
-  title: string;
-  artist: string | null;
-  duration: number | null;
-  user: string | null;
-};
-
-export type MusicStatus = {
-  playing: boolean;
-  currentSongIndex: number | null;
-  songs: Song[];
-  songNotFound: boolean | null;
-  songRequests: boolean;
-};
-
-export const formatDuration = (duration: number) => {
-  const seconds = String(duration % 60).padStart(2, "0");
-  if (duration < 3600) {
-    return `${Math.floor(duration / 60)}:${seconds}`;
-  }
-  const minutes = String(Math.floor(duration / 60) % 60).padStart(2, "0");
-  return `${Math.floor(duration / 3600)}:${minutes}:${seconds}`;
-};
-
-export type Songs = {
-  price: number;
-};
-
 export type Tips = {
   amounts: number[];
 };
@@ -70,12 +39,9 @@ export type Settings = Page & {
   id: string;
   connected: boolean;
   currency: string;
-  songs: Feature<Songs> | null;
   tips: Feature<Tips> | null;
   spin: Feature<Spin> | null;
-  subSongs: Feature<Tiers> | null;
   subSpins: Feature<Tiers> | null;
-  maxSongLength: Feature<{ minutes: number }> | null;
   paypal: boolean;
   merchantId: string | null;
   paypalPending: boolean;
@@ -152,8 +118,6 @@ export type PublicPayment = {
   stripe?: StripeConfig | null;
 };
 
-export type PublicSongs = Price & PublicPayment;
-
 export type PublicTips = PublicPayment & {
   amounts: number[];
   currency: string;
@@ -208,7 +172,7 @@ const call = <T>(path: string, init?: RequestInit, viewer?: string) =>
 
 const pagePath = (id: string, rest = "") => `/${encodeURIComponent(id)}${rest}`;
 
-const segments = { song: "songs", tip: "tips", spin: "spin" } as const;
+const segments = { tip: "tips", spin: "spin" } as const;
 
 export const captureOrder = async (kind: keyof typeof segments, id: string, orderId: string) => {
   const path = pagePath(id, `/${segments[kind]}/orders/${encodeURIComponent(orderId)}/capture`);
@@ -223,8 +187,6 @@ export const captureOrder = async (kind: keyof typeof segments, id: string, orde
     }
   }
 };
-
-export const musicStatus = (id: string) => call<MusicStatus>(pagePath(id, "/songs/queue"));
 
 export type Platform = "twitch" | "kick";
 
@@ -270,11 +232,6 @@ export const pageImageUrl = (id: string, version: string) =>
 
 export const streamerProfile = (id: string) => call<Profile>(pagePath(id));
 
-export const streamerSongs = (id: string) =>
-  call<{ songs: PublicSongs | null; subSongs: Tiers | null; maxSongMinutes: number | null }>(
-    pagePath(id, "/songs"),
-  );
-
 export type Allowance = {
   platform: Platform;
   name: string;
@@ -286,27 +243,8 @@ export type Allowance = {
 export const viewerSignInUrl = (platform: Platform, id: string) =>
   `${backendUrl}/auth/${platform}/login?${new URLSearchParams({ page: id })}`;
 
-export const fetchAllowance = (kind: "song" | "spin", id: string, viewer: string) =>
-  call<Allowance>(pagePath(id, `/${segments[kind]}/subscriber`), undefined, viewer);
-
-export const requestSubscriberSong = (id: string, viewer: string, song: string, message: string) =>
-  call<{ left: number }>(
-    pagePath(id, "/songs/subscriber"),
-    post({ song, message: message || null }),
-    viewer,
-  );
-
-export const orderSong = (
-  id: string,
-  song: string,
-  user: string,
-  message: string,
-  provider: Provider,
-) =>
-  call<Order>(
-    pagePath(id, "/songs/orders"),
-    post({ song, user: user || null, message: message || null, provider }),
-  );
+export const fetchAllowance = (id: string, viewer: string) =>
+  call<Allowance>(pagePath(id, "/spin/subscriber"), undefined, viewer);
 
 export const streamerTips = async (id: string) =>
   (await call<{ tips: PublicTips | null }>(pagePath(id, "/tips"))).tips;

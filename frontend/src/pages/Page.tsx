@@ -18,7 +18,6 @@ import { asset } from "../asset";
 import { BackendError } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
-import Player, { type Status } from "../components/Player";
 import { fireConfetti } from "../confetti";
 import { poll } from "../poll";
 import {
@@ -28,7 +27,7 @@ import {
   inputClass,
   Notice,
 } from "../components/PageParts";
-import { links, pages } from "../data/links";
+import { pages } from "../data/links";
 import {
   accentAttributes,
   captureOrder,
@@ -40,8 +39,6 @@ import {
   identityOf,
   idOfLogin,
   loadFonts,
-  musicStatus,
-  orderSong,
   orderSpin,
   orderTip,
   pageImageUrl,
@@ -49,10 +46,8 @@ import {
   platforms,
   providerName,
   spinsText,
-  requestSubscriberSong,
   requestSubscriberSpin,
   streamerProfile,
-  streamerSongs,
   streamerSpin,
   streamerTips,
   tierCount,
@@ -66,7 +61,6 @@ import {
   type Profile,
   type Provider,
   type PublicPayment,
-  type PublicSongs,
   type PublicSpin,
   type PublicTips,
   type StripeConfig,
@@ -117,9 +111,9 @@ function takeSection(): Section {
   try {
     const section = sessionStorage.getItem(sectionKey);
     sessionStorage.removeItem(sectionKey);
-    return section === "tip" || section === "spin" ? section : "songs";
+    return section === "tip" ? section : "spin";
   } catch {
-    return "songs";
+    return "spin";
   }
 }
 
@@ -135,7 +129,7 @@ function takeViewerSignIn(): { viewer: string | null; failed: string | null; sec
     : hash === "viewerCheckFailed"
       ? t("Couldn't check your Kick subscription, try again.")
       : null;
-  const section = viewer || failed ? takeSection() : "songs";
+  const section = viewer || failed ? takeSection() : "spin";
   if (viewer || failed) {
     history.replaceState(null, "", `${location.pathname}${location.search}#${section}`);
   }
@@ -575,7 +569,6 @@ function CheerCard(props: { title: string; text: string; onClose: () => void }) 
 }
 
 function SubscriberBox(props: {
-  kind: "song" | "spin";
   tiers: Tiers;
   platforms: Platform[];
   allowance: Allowance | null;
@@ -592,7 +585,6 @@ function SubscriberBox(props: {
     tierNumbers
       .map((tier) => ({ tier, count: tierCount(props.tiers, tier) }))
       .filter((tier) => tier.count > 0);
-  const song = () => props.kind === "song";
   const signOut = () => (
     <button type="button" class="underline hover:text-ink" onClick={() => props.onSignOut()}>
       {t("Sign out")}
@@ -609,19 +601,11 @@ function SubscriberBox(props: {
           .map((tier) => tier.tier)
           .join(" / "),
       };
-      lines.push(
-        song()
-          ? t("{counts} songs a month for tier {tiers}", values)
-          : t("{counts} spins a month for tier {tiers}", values),
-      );
+      lines.push(t("{counts} spins a month for tier {tiers}", values));
     }
     if (props.platforms.includes("kick") && props.tiers.tier1 > 0) {
       const values = { count: props.tiers.tier1 };
-      lines.push(
-        song()
-          ? t("{count} songs a month for Kick subscribers", values)
-          : t("{count} spins a month for Kick subscribers", values),
-      );
+      lines.push(t("{count} spins a month for Kick subscribers", values));
     }
     return (
       <For each={lines}>
@@ -650,46 +634,28 @@ function SubscriberBox(props: {
                     : t("You are not subscribed to this streamer on Twitch.")}
                 </Match>
                 <Match when={current().allowance === 0 && current().platform === "kick"}>
-                  {song()
-                    ? t("Kick subscribers can't request songs here.")
-                    : t("Kick subscribers can't spin the wheel here.")}
+                  {t("Kick subscribers can't spin the wheel here.")}
                 </Match>
                 <Match when={current().allowance === 0}>
-                  {song()
-                    ? t("Tier {tier} subscribers can't request songs here.", {
-                        tier: current().tier ?? 0,
-                      })
-                    : t("Tier {tier} subscribers can't spin the wheel here.", {
-                        tier: current().tier ?? 0,
-                      })}
+                  {t("Tier {tier} subscribers can't spin the wheel here.", {
+                    tier: current().tier ?? 0,
+                  })}
                 </Match>
                 <Match when={current().left === 0}>
-                  {song()
-                    ? t(
-                        "You have used all your songs this month. New ones come on the 1st of the month.",
-                      )
-                    : t(
-                        "You have used all your spins this month. New ones come on the 1st of the month.",
-                      )}
+                  {t(
+                    "You have used all your spins this month. New ones come on the 1st of the month.",
+                  )}
                 </Match>
                 <Match when={current().left > 0}>
-                  {song()
-                    ? t("{left} of {allowance} songs left this month", {
-                        left: current().left,
-                        allowance: current().allowance,
-                      })
-                    : t("{left} of {allowance} spins left this month", {
-                        left: current().left,
-                        allowance: current().allowance,
-                      })}
+                  {t("{left} of {allowance} spins left this month", {
+                    left: current().left,
+                    allowance: current().allowance,
+                  })}
                 </Match>
               </Switch>
             )}
           </Show>
         </span>
-        <Show when={song() && !props.paid}>
-          <span class="text-sm text-muted">{t("The song always plays in full.")}</span>
-        </Show>
       </p>
       <Show when={!props.paid}>
         <ResultLine result={props.result} onClose={props.onCloseResult} />
@@ -721,7 +687,7 @@ function SubscriberBox(props: {
                 onClick={() => props.onRequest()}
               >
                 <Icon name={current().platform} class={platformIconClass(current().platform)} />
-                {song() ? t("Request song") : t("Spin the wheel")}
+                {t("Spin the wheel")}
               </button>
             </Show>
             <p class="text-center text-sm text-muted">
@@ -1413,7 +1379,6 @@ function SpinWheel(props: {
       <Show when={props.subSpins} keyed>
         {(tiers) => (
           <SubscriberBox
-            kind="spin"
             tiers={tiers}
             platforms={props.platforms}
             allowance={props.allowance}
@@ -1432,11 +1397,11 @@ function SpinWheel(props: {
   );
 }
 
-type Section = "tip" | "spin" | "songs";
+type Section = "tip" | "spin";
 
 type Way = {
   section: Section;
-  icon: "heart" | "wheel" | "music";
+  icon: "heart" | "wheel";
   title: string;
   text: string;
   enabled: boolean;
@@ -1472,7 +1437,7 @@ function WaysToTip(props: {
                 : t("Every tip goes straight to the streamer.")}
         </p>
       </div>
-      <div role="tablist" class="grid gap-3 sm:grid-cols-3">
+      <div role="tablist" class="grid gap-3 sm:grid-cols-2">
         <For each={props.ways}>
           {(way) => {
             const selected = () => props.section === way.section;
@@ -1515,18 +1480,10 @@ function WaysToTip(props: {
 
 function Viewer(props: { id: string | null; platform: Platform | null; login: string | null }) {
   const [id, setId] = createSignal(props.id);
-  const [status, setStatus] = createSignal<Status>("loading");
-  const [song, setSong] = createSignal("");
+  const [unknown, setUnknown] = createSignal(false);
   const [name, setName] = createSignal(readName());
-  const [message, setMessage] = createSignal("");
-  const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<Result | null>(null);
-  const [songPrice, setSongPrice] = createSignal<PublicSongs | null>(null);
-  const [subSongs, setSubSongs] = createSignal<Tiers | null>(null, { equals: sameData });
-  const [maxSongMinutes, setMaxSongMinutes] = createSignal<number | null>(null);
   const [subSpins, setSubSpins] = createSignal<Tiers | null>(null, { equals: sameData });
   const [viewer, setViewer] = createSignal<string | null>(null);
-  const [songAllowance, setSongAllowance] = createSignal<Allowance | null>(null);
   const [spinAllowance, setSpinAllowance] = createSignal<Allowance | null>(null);
   const [spinSignInFailed, setSpinSignInFailed] = createSignal<string | null>(null);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
@@ -1542,37 +1499,25 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     const current = profile();
     return current ? platforms.filter((platform) => current[platform] !== null) : [];
   };
-  const subscribersText = (song: boolean) => {
+  const subscribersText = () => {
     const linked = subPlatforms();
     if (linked.includes("kick") && !linked.includes("twitch")) {
-      return song
-        ? t("Kick subscribers add songs to the queue.")
-        : t("Kick subscribers spin the wheel live on stream.");
+      return t("Kick subscribers spin the wheel live on stream.");
     }
     if (linked.includes("kick")) {
-      return song
-        ? t("Twitch and Kick subscribers add songs to the queue.")
-        : t("Twitch and Kick subscribers spin the wheel live on stream.");
+      return t("Twitch and Kick subscribers spin the wheel live on stream.");
     }
-    return song
-      ? t("Twitch subscribers add songs to the queue.")
-      : t("Twitch subscribers spin the wheel live on stream.");
+    return t("Twitch subscribers spin the wheel live on stream.");
   };
   const [dashboard, setDashboard] = createSignal<DashboardLink | null>(null);
   const [styled, setStyled] = createSignal(false);
   const [section, setSection] = createSignal<Section | null>(
-    (["tip", "spin", "songs"] as const).find((name) => location.hash === `#${name}`) ?? null,
+    (["tip", "spin"] as const).find((name) => location.hash === `#${name}`) ?? null,
   );
   const sections = (): Section[] => [
     ...(tipJar() ? (["tip"] as const) : []),
     ...(spinnable() ? (["spin"] as const) : []),
-    ...(songs() ? (["songs"] as const) : []),
   ];
-  const songs = () => payable() !== null || subSongs() !== null;
-  const closed = () => {
-    const current = status();
-    return typeof current !== "string" && !current.songRequests;
-  };
   const shown = () => {
     const current = section();
     return current && sections().includes(current) ? current : sections()[0];
@@ -1591,15 +1536,8 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         section: "spin",
         icon: "wheel",
         title: t("Spin the wheel"),
-        text: wheel() ? t("Your tip spins the wheel live on stream.") : subscribersText(false),
+        text: wheel() ? t("Your tip spins the wheel live on stream.") : subscribersText(),
         enabled: spinnable(),
-      },
-      {
-        section: "songs",
-        icon: "music",
-        title: t("Request a song"),
-        text: payable() ? t("Your tip puts a song in the queue.") : subscribersText(true),
-        enabled: songs(),
       },
     ];
   };
@@ -1608,12 +1546,10 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     setSection(next);
     history.replaceState(null, "", `${location.pathname}${location.search}#${next}`);
   };
-  let form: HTMLFormElement | undefined;
   const withPayment = <T extends PublicPayment>(current: T | null) => {
     const payment = current && paymentOf(current);
     return current && payment ? { ...current, payment } : null;
   };
-  const payable = createMemo(() => withPayment(songPrice()), null, { equals: sameData });
   const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
   const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
   const spinnable = () => wheel() !== null || subSpins() !== null;
@@ -1621,25 +1557,12 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
 
   const celebrate = (text: string, title = t("Thanks for the tip!")) => setCheer({ title, text });
 
-  const refreshSongPrice = async () => {
-    const current = id();
-    if (current) {
-      try {
-        const found = await streamerSongs(current);
-        setSongPrice(found.songs);
-        setSubSongs(found.subSongs);
-        setMaxSongMinutes(found.maxSongMinutes);
-      } catch {}
-    }
-  };
-
   const signOutViewer = () => {
     const current = id();
     if (current) {
       saveViewer(current, null);
     }
     setViewer(null);
-    setSongAllowance(null);
     setSpinAllowance(null);
   };
 
@@ -1650,10 +1573,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       return;
     }
     try {
-      await Promise.all([
-        subSongs() && fetchAllowance("song", current, session).then(setSongAllowance),
-        subSpins() && fetchAllowance("spin", current, session).then(setSpinAllowance),
-      ]);
+      if (subSpins()) {
+        setSpinAllowance(await fetchAllowance(current, session));
+      }
     } catch (error) {
       if (error instanceof BackendError && error.status === 401) {
         signOutViewer();
@@ -1661,9 +1583,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  const allowancesMissing = () =>
-    (subSongs() !== null && songAllowance() === null) ||
-    (subSpins() !== null && spinAllowance() === null);
+  const allowancesMissing = () => subSpins() !== null && spinAllowance() === null;
 
   createEffect(() => {
     if (viewer() && allowancesMissing()) {
@@ -1705,88 +1625,12 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  const requested = (title = t("Thanks for the tip!")) => {
-    setCheer({ title, text: t("Your song will be added to the queue in a moment.") });
-    setSong("");
-    setMessage("");
-    setTimeout(refresh, 3_000);
-  };
-
-  const start = () => {
-    setResult(null);
-    if (busy() || !id() || !song().trim() || !form?.reportValidity()) {
-      return false;
-    }
-    saveName(name().trim());
-    return true;
-  };
-
-  const showError = (error: unknown) => {
-    setResult({ text: errorText(error) });
-    if (error instanceof BackendError && error.status === 404) {
-      setStatus("offline");
-    }
-    if (error instanceof BackendError && [400, 402].includes(error.status)) {
-      void refreshSongPrice();
-    }
-    if (error instanceof BackendError && error.status === 409) {
-      void refresh();
-    }
-  };
-
-  const requestAsSubscriber = async () => {
-    const current = id();
-    const session = viewer();
-    if (!current || !session || !start()) {
-      return;
-    }
-    setBusy(true);
-    try {
-      const answer = await requestSubscriberSong(current, session, song().trim(), message().trim());
-      setSongAllowance((found) => found && { ...found, left: answer.left });
-      requested(t("Enjoy the song!"));
-    } catch (error) {
-      showError(error);
-      if (error instanceof BackendError && error.status === 401) {
-        signOutViewer();
-      } else {
-        void refreshAllowances();
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const songPayOptions = payOptions({
-    start,
-    order: (provider) =>
-      orderSong(id() ?? "", song().trim(), name().trim(), message().trim(), provider),
-    capture: (orderId) => captureOrder("song", id() ?? "", orderId),
-    paid: () => requested(),
-    cancelled: t("Payment cancelled. No tip was sent and no song was added."),
-    showError,
-    setBusy,
-    setResult,
-  });
-
-  const refresh = async () => {
-    const current = id();
-    if (!current || !songs()) {
-      return;
-    }
-    try {
-      setStatus(await musicStatus(current));
-    } catch {
-      setStatus("offline");
-    }
-  };
-
   onMount(async () => {
     if (props.platform && props.login) {
       try {
         setId(await idOfLogin(props.platform, props.login));
       } catch {
-        setStatus("unknown");
+        setUnknown(true);
       }
     }
     const current = id();
@@ -1801,8 +1645,6 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       }
       if (signIn.failed && signIn.section === "spin") {
         setSpinSignInFailed(signIn.failed);
-      } else if (signIn.failed) {
-        setResult({ text: signIn.failed });
       }
       Promise.all([streamerProfile(current), signedInAccount()])
         .then(([found, account]) => {
@@ -1819,12 +1661,10 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         .catch(() => {})
         .finally(() => setStyled(true));
     }
-    void refreshSongPrice().then(refresh);
     void refreshTips();
     void refreshSpin();
     onCleanup(
       poll(() => {
-        void refresh();
         void refreshSpin();
         if (viewer() && allowancesMissing()) {
           void refreshAllowances();
@@ -1844,11 +1684,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
           id={id()}
           profile={profile()}
           platform={props.platform}
-          unknown={status() === "unknown"}
+          unknown={unknown()}
           dashboard={dashboard()}
         />
         <Show
-          when={status() !== "unknown"}
+          when={!unknown()}
           fallback={
             <p class="mx-auto max-w-[720px] px-5 text-center text-lg text-ink-2 sm:px-8">
               {t("There is no page with this name.")}
@@ -1864,121 +1704,6 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
               section={shown()}
               onSection={changeSection}
             />
-            <form
-              ref={(element) => (form = element)}
-              class={`${cardClass} ${shown() === "songs" ? "" : "hidden"}`}
-              onSubmit={(event) => event.preventDefault()}
-            >
-              <Show when={status() === "offline"}>
-                <Notice>
-                  {t(
-                    "Song requests are not available right now. Try again when the streamer is live.",
-                  )}
-                </Notice>
-              </Show>
-              <Show when={closed()}>
-                <Notice>{t("The streamer is not taking song requests right now.")}</Notice>
-              </Show>
-              <label class="flex flex-col gap-2">
-                <span class="text-[15px] font-semibold text-ink-2">
-                  {t("Apple Music song link")}
-                </span>
-                <input
-                  type="url"
-                  required
-                  maxLength={500}
-                  value={song()}
-                  onInput={(event) => setSong(event.currentTarget.value)}
-                  placeholder="https://music.apple.com/…"
-                  autocomplete="off"
-                  spellcheck={false}
-                  class={inputClass}
-                />
-                <span class="text-[15px] text-muted">
-                  {tRich("Find the song on {appleMusic}, then use Share → Copy Link.", {
-                    appleMusic: (
-                      <a
-                        href={links.appleMusic}
-                        target="_blank"
-                        rel="noopener"
-                        class="text-leaf hover:text-leaf-bright"
-                      >
-                        Apple Music
-                      </a>
-                    ),
-                  })}
-                </span>
-                <Show when={maxSongMinutes()}>
-                  {(minutes) => (
-                    <span class="text-[15px] text-muted">
-                      {t("Songs can be at most {minutes} minutes long.", { minutes: minutes() })}
-                    </span>
-                  )}
-                </Show>
-              </label>
-              <NameField
-                name={name()}
-                onName={setName}
-                placeholder={t("Shown next to the song")}
-                hidden={!payable()}
-              />
-              <MessageField
-                message={message()}
-                onMessage={setMessage}
-                placeholder={t("This one is for the drive home!")}
-              />
-              <div class="flex flex-wrap items-center gap-4">
-                <Show when={payable()} keyed>
-                  {(current) => (
-                    <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
-                      <p class="flex flex-col items-center gap-1 text-center">
-                        <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
-                          {t("Your tip")}
-                        </span>
-                        <span class="font-display text-4xl font-semibold text-ink">
-                          {formatPrice(current)}
-                        </span>
-                      </p>
-                      <ResultLine result={result()} onClose={() => setResult(null)} />
-                      <PayButtons
-                        payment={current.payment}
-                        options={songPayOptions}
-                        disabled={
-                          busy() || typeof status() === "string" || closed() || !song().trim()
-                        }
-                        resetKey={`${song()}\n${name()}\n${message()}`}
-                      />
-                      <p class="text-center text-sm text-muted">
-                        {tRich(
-                          "The song always plays in full. Your tip goes straight to the streamer. {terms}",
-                          { terms: <TermsLink /> },
-                        )}
-                      </p>
-                    </div>
-                  )}
-                </Show>
-                <Show when={subSongs()} keyed>
-                  {(current) => (
-                    <SubscriberBox
-                      kind="song"
-                      tiers={current}
-                      platforms={subPlatforms()}
-                      allowance={songAllowance()}
-                      signedIn={viewer() !== null}
-                      paid={payable() !== null}
-                      disabled={
-                        busy() || typeof status() === "string" || closed() || !song().trim()
-                      }
-                      result={result()}
-                      onCloseResult={() => setResult(null)}
-                      onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "songs")}
-                      onSignOut={signOutViewer}
-                      onRequest={() => void requestAsSubscriber()}
-                    />
-                  )}
-                </Show>
-              </div>
-            </form>
             <Show when={tipJar()} keyed>
               {(current) => (
                 <div class={shown() === "tip" ? "" : "hidden"}>
@@ -2017,13 +1742,10 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                 </div>
               )}
             </Show>
-            <div class={shown() === "songs" && status() !== "offline" ? "" : "hidden"}>
-              <Player status={status()} />
-            </div>
           </div>
         </Show>
       </main>
-      <Show when={styled() || status() === "unknown"}>
+      <Show when={styled() || unknown()}>
         <PoweredBy />
       </Show>
       <Show when={cheer()} keyed>

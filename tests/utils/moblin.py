@@ -23,7 +23,6 @@ from websockets.sync.server import serve
 from .backend import Backend
 from .config import REMOTE_CONTROL_PASSWORD
 from .config import WEB_REMOTE_CONTROL_PORT
-from .config import Capability
 from .config import Config
 from .fake_moblin import FakeMoblin
 from .utils import manual_confirmation
@@ -49,14 +48,10 @@ class BackendRequest:
 
     @property
     def kind(self) -> str:
-        if "music" in self.data:
-            return next(iter(self.data["music"]["command"]))
         return next(iter(self.data))
 
     @property
     def body(self) -> dict:
-        if "music" in self.data:
-            return self.data["music"]["command"][self.kind]
         return self.data[self.kind]
 
     def ok(self) -> bool:
@@ -217,10 +212,6 @@ class Moblin:
         self.config = config
         self.backend = backend
         self.device_name = device_name if device_name is not None else "fake Moblin"
-        if device_name is None:
-            self.capabilities = list(Capability)
-        else:
-            self.capabilities = [Capability(capability) for capability in config.capabilities(device_name)]
         self._fake: FakeMoblin | None = None
         self._port = config.remote_control_port()
         self._tester_ip_address = config.tester_ip_address()
@@ -325,9 +316,6 @@ class Moblin:
 
     def is_fake(self) -> bool:
         return self.device_name == "fake Moblin"
-
-    def has_capability(self, capability: str) -> bool:
-        return capability in self.capabilities
 
     def connected_key(self) -> str | None:
         """The key of Moblin's Moblin Cloud connection to the backend, if any."""
@@ -443,15 +431,6 @@ class Moblin:
             if self._cloud is not connection:
                 raise MoblinError("Moblin reconnected when its wheel changed.")
 
-    def change_song_requests(self, enabled: bool):
-        """Turns song requests on or off in Moblin's Moblin Cloud settings, by hand on a real device."""
-        if self._fake is not None:
-            self._fake.change_song_requests(enabled)
-        else:
-            manual_confirmation(
-                f"In Moblin's Moblin Cloud settings, turn Song requests {'on' if enabled else 'off'}."
-            )
-
     def disconnect_from_backend(self):
         if self.connected_key() is None:
             return
@@ -522,16 +501,6 @@ class Moblin:
                 return any(regex.search(entry) for entry in self._log_entries[start:])
 
         wait_until(check, f"Moblin log entry matching '{pattern}'", timeout=timeout)
-
-    def music_command(self, command: dict) -> dict:
-        response = self.request({"music": {"command": command}}, timeout=20)
-        return response["data"]["music"]["status"]
-
-    def music_status(self) -> dict:
-        return self.music_command({"status": {}})
-
-    def clear_music(self):
-        self.music_command({"clear": {}})
 
     def set_live(self, on: bool):
         self.request({"setLive": {"on": on}})

@@ -3,6 +3,7 @@ import { asset } from "../asset";
 import { cloudSteps } from "../data/cloud";
 import Icon, { type IconName } from "./Icon";
 import { Notice, PlatformSignIn } from "./PageParts";
+import { spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
 
 function SignInButtons() {
@@ -40,7 +41,6 @@ function PageMockup() {
   const ways: { icon: IconName; title: string }[] = [
     { icon: "heart", title: t("Just a tip") },
     { icon: "wheel", title: t("Spin the wheel") },
-    { icon: "music", title: t("Request a song") },
   ];
   return (
     <div inert aria-hidden="true" class="relative mx-auto w-full max-w-[340px] select-none">
@@ -95,9 +95,9 @@ function PageMockup() {
         class="-top-6 -left-6 -rotate-3 max-sm:hidden lg:-left-20"
       />
       <Toast
-        icon="music"
-        label={t("Added to queue")}
-        text="Take On Me · a-ha"
+        icon="wheel"
+        label={t("Wheel spin")}
+        text={spinsText(3)}
         class="-right-6 -bottom-8 rotate-2 max-sm:hidden lg:-right-16"
       />
     </div>
@@ -124,8 +124,8 @@ export default function CloudLanding(props: { failed: boolean }) {
           </h1>
           <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
             {t(
-              "Viewers tip you from your own page, with a message, a song request or a spin of " +
-                "your wheel, and it all shows up in Moblin while you stream.",
+              "Viewers tip you from your own page, with a message or a spin of your wheel, and it " +
+                "all shows up in Moblin while you stream.",
             )}
           </p>
           <SignInButtons />

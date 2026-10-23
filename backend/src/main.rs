@@ -394,7 +394,6 @@ async fn main() -> Result<()> {
         premium_accounts: cli.premium_accounts,
         started: crate::deliveries::now(),
         tests: Mutex::default(),
-        song_finds: Mutex::default(),
     });
     tokio::spawn({
         let api = api.clone();

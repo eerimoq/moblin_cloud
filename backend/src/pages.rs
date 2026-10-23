@@ -12,17 +12,11 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub songs: Option<Feature<Songs>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tips: Option<Feature<Tips>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spin: Option<Feature<Spin>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sub_songs: Option<Feature<Tiers>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub_spins: Option<Feature<Tiers>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_song_length: Option<Feature<SongLength>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,11 +62,6 @@ fn active<T>(feature: &Option<Feature<T>>) -> Option<&T> {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Songs {
-    pub price: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tips {
     pub amounts: Vec<u32>,
 }
@@ -86,11 +75,6 @@ pub struct Spin {
 pub struct SpinOption {
     pub spins: u32,
     pub price: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SongLength {
-    pub minutes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -132,10 +116,6 @@ impl Settings {
         self.currency.as_deref().unwrap_or(DEFAULT_CURRENCY)
     }
 
-    pub fn songs(&self) -> Option<&Songs> {
-        active(&self.songs)
-    }
-
     pub fn tips(&self) -> Option<&Tips> {
         active(&self.tips)
     }
@@ -144,16 +124,8 @@ impl Settings {
         active(&self.spin)
     }
 
-    pub fn sub_songs(&self) -> Option<&Tiers> {
-        active(&self.sub_songs)
-    }
-
     pub fn sub_spins(&self) -> Option<&Tiers> {
         active(&self.sub_spins)
-    }
-
-    pub fn max_song_minutes(&self) -> Option<u32> {
-        active(&self.max_song_length).map(|length| length.minutes)
     }
 
     pub fn normalize(self) -> Result<Self, SettingsError> {
@@ -162,14 +134,6 @@ impl Settings {
                 return Err(SettingsError::InvalidCurrency);
             }
             currency => currency.filter(|currency| currency != DEFAULT_CURRENCY),
-        };
-        let songs = match self.songs {
-            Some(songs) => Some(
-                songs
-                    .normalize(Songs::normalize)
-                    .ok_or(SettingsError::InvalidSongs)?,
-            ),
-            None => None,
         };
         let tips = match self.tips {
             Some(tips) => Some(
@@ -185,27 +149,11 @@ impl Settings {
             ),
             None => None,
         };
-        let sub_songs = match self.sub_songs {
-            Some(tiers) => Some(
-                tiers
-                    .normalize(Tiers::normalize)
-                    .ok_or(SettingsError::InvalidTiers)?,
-            ),
-            None => None,
-        };
         let sub_spins = match self.sub_spins {
             Some(tiers) => Some(
                 tiers
                     .normalize(Tiers::normalize)
                     .ok_or(SettingsError::InvalidTiers)?,
-            ),
-            None => None,
-        };
-        let max_song_length = match self.max_song_length {
-            Some(length) => Some(
-                length
-                    .normalize(SongLength::normalize)
-                    .ok_or(SettingsError::InvalidSongLength)?,
             ),
             None => None,
         };
@@ -223,12 +171,9 @@ impl Settings {
         };
         Ok(Self {
             currency,
-            songs,
             tips,
             spin,
-            sub_songs,
             sub_spins,
-            max_song_length,
             message: text(self.message, 300)?,
             accent,
             font,
@@ -242,12 +187,6 @@ pub fn format_price(price: u32) -> String {
 
 fn valid_price(price: u32) -> bool {
     (50..=10_000_000).contains(&price)
-}
-
-impl Songs {
-    pub fn normalize(self) -> Option<Self> {
-        valid_price(self.price).then_some(self)
-    }
 }
 
 impl Tips {
@@ -273,16 +212,10 @@ impl Spin {
     }
 }
 
-impl SongLength {
-    pub fn normalize(self) -> Option<Self> {
-        (1..=60).contains(&self.minutes).then_some(self)
-    }
-}
-
 impl Tiers {
     pub fn normalize(self) -> Option<Self> {
         let tiers = [self.tier1, self.tier2, self.tier3];
-        let valid = tiers.iter().all(|songs| *songs <= 100) && tiers.iter().any(|songs| *songs > 0);
+        let valid = tiers.iter().all(|spins| *spins <= 100) && tiers.iter().any(|spins| *spins > 0);
         valid.then_some(self)
     }
 
@@ -299,11 +232,9 @@ impl Tiers {
 #[derive(Debug, PartialEq)]
 pub enum SettingsError {
     InvalidCurrency,
-    InvalidSongs,
     InvalidTips,
     InvalidSpin,
     InvalidTiers,
-    InvalidSongLength,
     InvalidPage,
     Full,
     NotSaved,
@@ -429,10 +360,10 @@ mod tests {
     fn settings_are_saved() {
         let path = database::temporary_path("pages");
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
-        let songs = Songs { price: 250 };
+        let tips = Tips { amounts: vec![250] };
         let settings = Settings {
             currency: Some("SEK".to_string()),
-            songs: Some(Feature::on(songs.clone())),
+            tips: Some(Feature::on(tips.clone())),
             message: Some("Hi".to_string()),
             ..Settings::default()
         };
@@ -440,7 +371,7 @@ mod tests {
         pages.set("b", settings).unwrap();
         pages.set("b", Settings::default()).unwrap();
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
-        assert_eq!(pages.get("a").songs(), Some(&songs));
+        assert_eq!(pages.get("a").tips(), Some(&tips));
         assert_eq!(pages.get("a").currency(), "SEK");
         assert_eq!(pages.get("a").message.as_deref(), Some("Hi"));
         assert_eq!(pages.get("b"), Settings::default());
@@ -456,26 +387,29 @@ mod tests {
     #[test]
     fn turned_off_features_keep_their_values() {
         let pages = Pages::new(Database::memory());
-        let off = |minutes| Settings {
-            songs: Some(Feature {
+        let off = |amount| Settings {
+            tips: Some(Feature {
                 enabled: false,
-                value: Songs { price: 250 },
+                value: Tips {
+                    amounts: vec![amount],
+                },
             }),
-            max_song_length: Some(Feature {
+            sub_spins: Some(Feature {
                 enabled: false,
-                value: SongLength { minutes },
+                value: Tiers {
+                    tier1: 1,
+                    tier2: 2,
+                    tier3: 3,
+                },
             }),
             ..Settings::default()
         };
-        assert_eq!(pages.set("a", off(7)), Ok(off(7)));
+        assert_eq!(pages.set("a", off(250)), Ok(off(250)));
         let settings = pages.get("a");
-        assert_eq!(settings, off(7));
-        assert_eq!(settings.songs(), None);
-        assert_eq!(settings.max_song_minutes(), None);
-        assert_eq!(
-            pages.set("a", off(61)),
-            Err(SettingsError::InvalidSongLength)
-        );
+        assert_eq!(settings, off(250));
+        assert_eq!(settings.tips(), None);
+        assert_eq!(settings.sub_spins(), None);
+        assert_eq!(pages.set("a", off(49)), Err(SettingsError::InvalidTips));
     }
 
     #[test]
@@ -495,24 +429,6 @@ mod tests {
         assert_eq!(pages.image("a"), Some((second, b"second".to_vec())));
         assert_eq!(pages.image("b"), None);
         database::remove(&path);
-    }
-
-    #[test]
-    fn song_prices_are_validated() {
-        let pages = Pages::new(Database::memory());
-        let settings = |price| Settings {
-            songs: Some(Feature::on(Songs { price })),
-            ..Settings::default()
-        };
-        assert_eq!(pages.set("a", settings(250)), Ok(settings(250)));
-        for price in [49, 10_000_001] {
-            assert_eq!(
-                pages.set("a", settings(price)),
-                Err(SettingsError::InvalidSongs)
-            );
-        }
-        assert!(pages.set("a", Settings::default()).is_ok());
-        assert_eq!(pages.get("a"), Settings::default());
     }
 
     #[test]
@@ -597,50 +513,32 @@ mod tests {
     }
 
     #[test]
-    fn sub_songs_are_validated() {
+    fn sub_spins_are_validated() {
         let pages = Pages::new(Database::memory());
-        let sub_songs = |tier1, tier2, tier3| Settings {
-            sub_songs: Some(Feature::on(Tiers {
+        let sub_spins = |tier1, tier2, tier3| Settings {
+            sub_spins: Some(Feature::on(Tiers {
                 tier1,
                 tier2,
                 tier3,
             })),
             ..Settings::default()
         };
-        assert_eq!(pages.set("a", sub_songs(1, 5, 10)), Ok(sub_songs(1, 5, 10)));
+        assert_eq!(pages.set("a", sub_spins(1, 5, 10)), Ok(sub_spins(1, 5, 10)));
         assert_eq!(
-            pages.set("a", sub_songs(0, 0, 100)),
-            Ok(sub_songs(0, 0, 100))
+            pages.set("a", sub_spins(0, 0, 100)),
+            Ok(sub_spins(0, 0, 100))
         );
         for (tier1, tier2, tier3) in [(0, 0, 0), (101, 5, 10), (1, 5, 101)] {
             assert_eq!(
-                pages.set("a", sub_songs(tier1, tier2, tier3)),
+                pages.set("a", sub_spins(tier1, tier2, tier3)),
                 Err(SettingsError::InvalidTiers)
             );
         }
-        let sub_songs = sub_songs(1, 0, 10).sub_songs.unwrap().value;
+        let sub_spins = sub_spins(1, 0, 10).sub_spins.unwrap().value;
         assert_eq!(
-            [None, Some(1), Some(2), Some(3)].map(|tier| sub_songs.allowance(tier)),
+            [None, Some(1), Some(2), Some(3)].map(|tier| sub_spins.allowance(tier)),
             [0, 1, 0, 10]
         );
-    }
-
-    #[test]
-    fn song_lengths_are_validated() {
-        let pages = Pages::new(Database::memory());
-        let settings = |minutes| Settings {
-            max_song_length: Some(Feature::on(SongLength { minutes })),
-            ..Settings::default()
-        };
-        assert_eq!(pages.set("a", settings(1)), Ok(settings(1)));
-        assert_eq!(pages.set("a", settings(60)), Ok(settings(60)));
-        assert_eq!(pages.get("a").max_song_minutes(), Some(60));
-        for minutes in [0, 61] {
-            assert_eq!(
-                pages.set("a", settings(minutes)),
-                Err(SettingsError::InvalidSongLength)
-            );
-        }
     }
 
     #[test]

@@ -7,7 +7,6 @@ use axum::extract::ws::{Message, WebSocket};
 use base64::Engine;
 use base64::prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD};
 use log::info;
-use reqwest::Url;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -72,7 +71,6 @@ enum MessageToAssistant {
 #[serde(rename_all = "camelCase")]
 enum Event {
     WheelOfLuck { wheel: Option<Wheel> },
-    SongRequests { enabled: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -105,9 +103,6 @@ impl Wheel {
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum Request {
-    Music {
-        command: MusicCommand,
-    },
     #[serde(rename_all = "camelCase")]
     SpinWheelOfLuck {
         name: String,
@@ -125,75 +120,6 @@ enum Request {
     },
 }
 
-#[derive(Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum MusicCommand {
-    Status {},
-    #[serde(rename_all = "camelCase")]
-    Add {
-        title: String,
-        user: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        request_id: Option<String>,
-    },
-    Find {
-        title: String,
-    },
-    Play {},
-    Pause {},
-    Clear {},
-    Remove {
-        id: String,
-    },
-    Select {
-        id: String,
-    },
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum ResponseData {
-    Music { status: MusicStatus },
-    MusicFind { song: Option<FoundSong> },
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct FoundSong {
-    pub id: String,
-    pub title: String,
-    pub artist: Option<String>,
-    pub duration: Option<u32>,
-}
-
-impl FoundSong {
-    pub fn name(&self) -> String {
-        match &self.artist {
-            Some(artist) => format!("{artist} - {}", self.title),
-            None => self.title.clone(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MusicStatus {
-    pub playing: bool,
-    pub current_song_index: Option<usize>,
-    pub songs: Vec<Song>,
-    pub song_not_found: Option<bool>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Song {
-    pub id: String,
-    pub title: String,
-    pub artist: Option<String>,
-    pub duration: Option<u32>,
-    pub user: Option<String>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RequestError {
     Offline,
@@ -206,11 +132,8 @@ struct Session {
     number: u64,
     sender: mpsc::UnboundedSender<MessageToStreamer>,
     next_request_id: u64,
-    pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
-    status: Option<(Instant, Result<MusicStatus, RequestError>)>,
-    status_waiting: Option<Vec<oneshot::Sender<Result<MusicStatus, RequestError>>>>,
+    pending: HashMap<u64, oneshot::Sender<Outcome>>,
     wheel: Option<Wheel>,
-    song_requests: bool,
 }
 
 #[derive(Default)]
@@ -226,14 +149,6 @@ impl Sessions {
         })
     }
 
-    fn music(&self, page: &str) -> Option<&Session> {
-        let sessions = self.by_page.get(page)?;
-        sessions
-            .iter()
-            .find(|session| session.song_requests)
-            .or(sessions.first())
-    }
-
     fn wheel(&self, page: &str) -> Option<&Session> {
         let sessions = self.by_page.get(page)?;
         sessions
@@ -246,7 +161,6 @@ impl Sessions {
 #[derive(Debug, PartialEq)]
 pub struct Device {
     pub id: String,
-    pub music: bool,
     pub wheel: bool,
 }
 
@@ -261,29 +175,6 @@ pub struct Streamers {
     random: SystemRandom,
     sessions: Mutex<Sessions>,
     pub connected: Notify,
-}
-
-pub fn song_link(text: &str) -> Option<String> {
-    let url = Url::parse(text.trim()).ok()?;
-    if url.scheme() != "https" || url.host_str() != Some("music.apple.com") {
-        return None;
-    }
-    let song_id = match url.query_pairs().find(|(name, _)| name == "i") {
-        Some((_, song_id)) => song_id.into_owned(),
-        None => {
-            let segments: Vec<&str> = url.path_segments()?.collect();
-            if !segments.contains(&"song") {
-                return None;
-            }
-            segments.last()?.to_string()
-        }
-    };
-    if !(1..=20).contains(&song_id.len()) || !song_id.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    Some(format!(
-        "https://music.apple.com/song/{song_id}?i={song_id}"
-    ))
 }
 
 async fn send(socket: &mut WebSocket, message: &MessageToStreamer) -> Result<()> {
@@ -357,10 +248,6 @@ impl Streamers {
 
     pub fn devices(&self, page: &str) -> Vec<Device> {
         let sessions = self.sessions.lock().unwrap();
-        let music = sessions
-            .music(page)
-            .filter(|session| session.song_requests)
-            .map(|session| session.number);
         let wheel = sessions
             .wheel(page)
             .filter(|session| session.wheel.is_some())
@@ -372,15 +259,9 @@ impl Streamers {
             .flatten()
             .map(|session| Device {
                 id: session.device.clone(),
-                music: music == Some(session.number),
                 wheel: wheel == Some(session.number),
             })
             .collect()
-    }
-
-    pub fn music_device(&self, page: &str) -> Option<String> {
-        let sessions = self.sessions.lock().unwrap();
-        sessions.music(page).map(|session| session.device.clone())
     }
 
     pub fn wheel_device(&self, page: &str) -> Option<String> {
@@ -438,10 +319,7 @@ impl Streamers {
             sender,
             next_request_id: 0,
             pending: HashMap::new(),
-            status: None,
-            status_waiting: None,
             wheel: None,
-            song_requests: true,
         });
         Some(Connection {
             page: page.to_string(),
@@ -511,13 +389,13 @@ impl Streamers {
             Ok(MessageToAssistant::Response {
                 id: request_id,
                 result,
-                data,
+                ..
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(session) = sessions.get_mut(page, device, Some(number))
                     && let Some(pending) = session.pending.remove(&request_id)
                 {
-                    let _ = pending.send((result, data));
+                    let _ = pending.send(result);
                 }
             }
             Ok(MessageToAssistant::Event {
@@ -526,14 +404,6 @@ impl Streamers {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(session) = sessions.get_mut(page, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
-                }
-            }
-            Ok(MessageToAssistant::Event {
-                data: Event::SongRequests { enabled },
-            }) => {
-                let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
-                    session.song_requests = enabled;
                 }
             }
             _ => {}
@@ -557,112 +427,6 @@ impl Streamers {
             .unwrap()
             .wheel(page)
             .and_then(|session| session.wheel.clone())
-    }
-
-    pub fn takes_song_requests(&self, page: &str) -> bool {
-        self.sessions
-            .lock()
-            .unwrap()
-            .music(page)
-            .is_some_and(|session| session.song_requests)
-    }
-
-    pub async fn music(
-        &self,
-        (page, device): (&str, &str),
-        command: MusicCommand,
-    ) -> Result<MusicStatus, RequestError> {
-        if !matches!(command, MusicCommand::Status {}) {
-            return self.music_uncached((page, device), command).await;
-        }
-        let number = loop {
-            let fetching = {
-                let mut sessions = self.sessions.lock().unwrap();
-                let session = sessions
-                    .get_mut(page, device, None)
-                    .ok_or(RequestError::Offline)?;
-                if let Some((fetched, status)) = &session.status
-                    && fetched.elapsed() < Duration::from_secs(10)
-                {
-                    return status.clone();
-                }
-                match &mut session.status_waiting {
-                    Some(waiting) => {
-                        let (sender, receiver) = oneshot::channel();
-                        waiting.push(sender);
-                        Err(receiver)
-                    }
-                    None => {
-                        session.status_waiting = Some(Vec::new());
-                        Ok(session.number)
-                    }
-                }
-            };
-            match fetching {
-                Ok(number) => break number,
-                Err(receiver) => {
-                    if let Ok(result) = receiver.await {
-                        return result;
-                    }
-                }
-            }
-        };
-        let mut fetch = StatusFetch {
-            streamers: self,
-            page,
-            device,
-            number,
-            result: None,
-        };
-        let result = self
-            .music_uncached((page, device), MusicCommand::Status {})
-            .await;
-        fetch.result = Some(result.clone());
-        result
-    }
-
-    pub async fn music_uncached(
-        &self,
-        (page, device): (&str, &str),
-        command: MusicCommand,
-    ) -> Result<MusicStatus, RequestError> {
-        let (number, data) = self
-            .request(
-                (page, device),
-                Request::Music { command },
-                Duration::from_secs(20),
-            )
-            .await?;
-        let Some(ResponseData::Music { status }) = parse(data) else {
-            return Err(RequestError::Failed);
-        };
-        let mut sessions = self.sessions.lock().unwrap();
-        if let Some(session) = sessions.get_mut(page, device, Some(number)) {
-            let mut cached = status.clone();
-            cached.song_not_found = None;
-            session.status = Some((Instant::now(), Ok(cached)));
-        }
-        Ok(status)
-    }
-
-    pub async fn find(
-        &self,
-        (page, device): (&str, &str),
-        title: String,
-    ) -> Result<Option<FoundSong>, RequestError> {
-        let (_, data) = self
-            .request(
-                (page, device),
-                Request::Music {
-                    command: MusicCommand::Find { title },
-                },
-                Duration::from_secs(10),
-            )
-            .await?;
-        match parse(data) {
-            Some(ResponseData::MusicFind { song }) => Ok(song),
-            _ => Err(RequestError::Failed),
-        }
     }
 
     pub async fn spin_wheel(
@@ -716,7 +480,7 @@ impl Streamers {
         (page, device): (&str, &str),
         data: Request,
         wait: Duration,
-    ) -> Result<(u64, Option<Value>), RequestError> {
+    ) -> Result<(), RequestError> {
         let (number, request_id, receiver) = {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions
@@ -735,7 +499,7 @@ impl Streamers {
                 .map_err(|_| RequestError::Offline)?;
             (session.number, request_id, receiver)
         };
-        let (result, data) = match timeout(wait, receiver).await {
+        let result = match timeout(wait, receiver).await {
             Ok(Ok(response)) => response,
             Ok(Err(_)) => return Err(RequestError::Offline),
             Err(_) => {
@@ -749,41 +513,8 @@ impl Streamers {
         if result != (Outcome::Ok {}) {
             return Err(RequestError::Failed);
         }
-        Ok((number, data))
+        Ok(())
     }
-}
-
-struct StatusFetch<'a> {
-    streamers: &'a Streamers,
-    page: &'a str,
-    device: &'a str,
-    number: u64,
-    result: Option<Result<MusicStatus, RequestError>>,
-}
-
-impl Drop for StatusFetch<'_> {
-    fn drop(&mut self) {
-        let mut sessions = self.streamers.sessions.lock().unwrap();
-        let Some(session) = sessions.get_mut(self.page, self.device, Some(self.number)) else {
-            return;
-        };
-        let waiting = session.status_waiting.take().unwrap_or_default();
-        let Some(result) = self.result.take() else {
-            return;
-        };
-        let result = result.map(|mut status| {
-            status.song_not_found = None;
-            status
-        });
-        session.status = Some((Instant::now(), result.clone()));
-        for sender in waiting {
-            let _ = sender.send(result.clone());
-        }
-    }
-}
-
-fn parse(data: Option<Value>) -> Option<ResponseData> {
-    serde_json::from_value(data?).ok()
 }
 
 #[cfg(test)]
@@ -816,54 +547,6 @@ mod tests {
                 },
             }),
             r#"{"hello":{"apiVersion":"0.1","authentication":{"challenge":"c","salt":"s"}}}"#
-        );
-        assert_eq!(
-            encode(&MessageToStreamer::Request {
-                id: 3,
-                data: Request::Music {
-                    command: MusicCommand::Add {
-                        title: "Song".to_string(),
-                        user: "Erik".to_string(),
-                        message: None,
-                        request_id: None,
-                    },
-                },
-            }),
-            r#"{"request":{"id":3,"data":{"music":{"command":{"add":{"title":"Song","user":"Erik"}}}}}}"#
-        );
-        assert_eq!(
-            encode(&MessageToStreamer::Request {
-                id: 5,
-                data: Request::Music {
-                    command: MusicCommand::Add {
-                        title: "Song".to_string(),
-                        user: "Erik".to_string(),
-                        message: Some("Play it loud!".to_string()),
-                        request_id: Some("ORDER1".to_string()),
-                    },
-                },
-            }),
-            r#"{"request":{"id":5,"data":{"music":{"command":{"add":{"title":"Song","user":"Erik","message":"Play it loud!","requestId":"ORDER1"}}}}}}"#
-        );
-        assert_eq!(
-            encode(&MessageToStreamer::Request {
-                id: 6,
-                data: Request::Music {
-                    command: MusicCommand::Find {
-                        title: "Song".to_string(),
-                    },
-                },
-            }),
-            r#"{"request":{"id":6,"data":{"music":{"command":{"find":{"title":"Song"}}}}}}"#
-        );
-        assert_eq!(
-            encode(&MessageToStreamer::Request {
-                id: 4,
-                data: Request::Music {
-                    command: MusicCommand::Status {},
-                },
-            }),
-            r#"{"request":{"id":4,"data":{"music":{"command":{"status":{}}}}}}"#
         );
         assert_eq!(
             encode(&MessageToStreamer::Request {
@@ -913,59 +596,6 @@ mod tests {
                 data: None,
             }
         );
-        let MessageToAssistant::Response {
-            data: Some(data), ..
-        } = decode(
-            r#"{"response":{"id":2,"result":{"ok":{}},"data":{"music":{"status":{"playing":true,"currentSongIndex":0,"songs":[{"id":"q1","title":"Song","artist":"Band","duration":213}],"songNotFound":false}}}}}"#,
-        )
-        else {
-            panic!();
-        };
-        let Ok(ResponseData::Music { status }) = serde_json::from_value(data) else {
-            panic!();
-        };
-        assert_eq!(
-            status,
-            MusicStatus {
-                playing: true,
-                current_song_index: Some(0),
-                songs: vec![Song {
-                    id: "q1".to_string(),
-                    title: "Song".to_string(),
-                    artist: Some("Band".to_string()),
-                    duration: Some(213),
-                    user: None,
-                }],
-                song_not_found: Some(false),
-            }
-        );
-        let found = |text: &str| -> Option<FoundSong> {
-            let MessageToAssistant::Response {
-                data: Some(data), ..
-            } = decode(text)
-            else {
-                panic!();
-            };
-            let Ok(ResponseData::MusicFind { song }) = serde_json::from_value(data) else {
-                panic!();
-            };
-            song
-        };
-        assert_eq!(
-            found(
-                r#"{"response":{"id":3,"result":{"ok":{}},"data":{"musicFind":{"song":{"id":"1440818839","title":"Song","artist":"Band","duration":213}}}}}"#
-            ),
-            Some(FoundSong {
-                id: "1440818839".to_string(),
-                title: "Song".to_string(),
-                artist: Some("Band".to_string()),
-                duration: Some(213),
-            })
-        );
-        assert_eq!(
-            found(r#"{"response":{"id":4,"result":{"ok":{}},"data":{"musicFind":{}}}}"#),
-            None
-        );
     }
 
     #[test]
@@ -995,12 +625,6 @@ mod tests {
             decode(r#"{"event":{"data":{"wheelOfLuck":{}}}}"#),
             MessageToAssistant::Event {
                 data: Event::WheelOfLuck { wheel: None },
-            }
-        );
-        assert_eq!(
-            decode(r#"{"event":{"data":{"songRequests":{"enabled":false}}}}"#),
-            MessageToAssistant::Event {
-                data: Event::SongRequests { enabled: false },
             }
         );
         assert!(
@@ -1068,35 +692,5 @@ mod tests {
         let id = streamers.new_page_id().unwrap();
         assert_eq!(id.len(), 16);
         assert_ne!(streamers.new_page_id().unwrap(), id);
-    }
-
-    #[test]
-    fn only_song_links_are_accepted() {
-        let link = Some("https://music.apple.com/song/1440818839?i=1440818839");
-        assert_eq!(
-            song_link(" https://music.apple.com/us/album/x/1440818584?i=1440818839 ").as_deref(),
-            link
-        );
-        assert_eq!(
-            song_link("https://music.apple.com/us/song/never-gonna/1440818839").as_deref(),
-            link
-        );
-        assert_eq!(
-            song_link("https://music.apple.com/se/song/x/1440818839?l=en").as_deref(),
-            link
-        );
-        assert_eq!(
-            song_link("https://music.apple.com/us/album/x/1440818584"),
-            None
-        );
-        assert_eq!(song_link("https://music.apple.com/us/album/x/1?i=x1"), None);
-        assert_eq!(song_link("https://example.com/us/song/x/1440818839"), None);
-        assert_eq!(
-            song_link("http://music.apple.com/us/song/x/1440818839"),
-            None
-        );
-        assert_eq!(song_link("1440818839"), None);
-        assert_eq!(song_link("Rick Astley Never Gonna"), None);
-        assert_eq!(song_link("  "), None);
     }
 }

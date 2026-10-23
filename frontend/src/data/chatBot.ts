@@ -6,7 +6,6 @@
  * Placeholders are written as <name> and optional parts as [<name>].
  */
 import { t } from "../i18n";
-import { pages } from "./links";
 
 export type Command = {
   command: string;
@@ -16,7 +15,6 @@ export type Command = {
 export type CommandGroup = {
   title: string;
   commands: Command[];
-  pageHref?: string;
 };
 
 const filters = [
@@ -71,7 +69,6 @@ export const commandGroups: CommandGroup[] = [
       { command: "!moblin music status", text: t("Show status.") },
       { command: "!moblin music clear", text: t("Clear the queue.") },
     ],
-    pageHref: pages.dashboard,
   },
   {
     title: t("Chat and AI"),

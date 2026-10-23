@@ -30,18 +30,8 @@ export function Latest(props: {
   const [loading, setLoading] = createSignal(false);
   const [resending, setResending] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal<string | null>(null);
-  const title = () =>
-    props.kind === "song"
-      ? t("Received song requests")
-      : props.kind === "tip"
-        ? t("Received tips")
-        : t("Received spins");
-  const empty = () =>
-    props.kind === "song"
-      ? t("No song requests yet.")
-      : props.kind === "tip"
-        ? t("No tips yet.")
-        : t("No spins yet.");
+  const title = () => (props.kind === "tip" ? t("Received tips") : t("Received spins"));
+  const empty = () => (props.kind === "tip" ? t("No tips yet.") : t("No spins yet."));
   const more = async () => {
     setLoading(true);
     try {
@@ -82,13 +72,11 @@ export function Latest(props: {
                       <span class="flex flex-wrap items-baseline gap-x-2">
                         <span class="font-semibold">{item.user}</span>
                         <span class="text-ink-2">
-                          {item.moderator
-                            ? t("Moderator")
-                            : item.kickSubscriber
-                              ? t("Kick subscriber")
-                              : item.tier
-                                ? t("Tier {tier} subscriber", { tier: item.tier })
-                                : formatPrice({ price: item.amount, currency: item.currency })}
+                          {item.kickSubscriber
+                            ? t("Kick subscriber")
+                            : item.tier
+                              ? t("Tier {tier} subscriber", { tier: item.tier })
+                              : formatPrice({ price: item.amount, currency: item.currency })}
                           <Show when={item.provider}>
                             {(provider) => (
                               <span class="text-muted">
@@ -99,9 +87,6 @@ export function Latest(props: {
                           </Show>
                         </span>
                       </span>
-                      <Show when={item.name}>
-                        {(name) => <span class="truncate text-ink-2">{name()}</span>}
-                      </Show>
                       <Show when={item.spins}>
                         {(spins) => <span class="text-ink-2">{spinsText(spins())}</span>}
                       </Show>
@@ -134,11 +119,6 @@ export function Latest(props: {
                     <div class="flex flex-col items-end gap-1 text-[15px]">
                       <div class="flex items-baseline gap-3">
                         <span class="text-muted">{timeAgo(item.at)}</span>
-                        <Show when={item.status === "notAdded"}>
-                          <span class="font-semibold text-amber-ink">
-                            {t("Not added by Moblin")}
-                          </span>
-                        </Show>
                         <Show when={item.status === "waiting" && !item.devices?.length}>
                           <span class="text-muted">{t("Waiting for Moblin")}</span>
                         </Show>
@@ -185,8 +165,8 @@ export function createRecent(
   const loadRecent = async () => {
     const shown = recent();
     try {
-      const [song, tip, spin] = await Promise.all(
-        (["song", "tip", "spin"] as const).map((kind) =>
+      const [tip, spin] = await Promise.all(
+        (["tip", "spin"] as const).map((kind) =>
           fetchList(kind, Math.min(Math.max(shown?.[kind].items.length ?? 0, 5), 50)),
         ),
       );
@@ -199,7 +179,6 @@ export function createRecent(
         return { items: [...page.items, ...old.items.slice(index + 1)], more: old.more };
       };
       setRecent((old) => ({
-        song: merge(song, old?.song),
         tip: merge(tip, old?.tip),
         spin: merge(spin, old?.spin),
       }));

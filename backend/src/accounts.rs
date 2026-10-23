@@ -263,7 +263,7 @@ impl Accounts {
                     .map_err(not_saved)?;
                 transaction
                     .execute(
-                        "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{\"max_song_length\":{\"enabled\":true,\"minutes\":7}}')",
+                        "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{}')",
                         [&page.id],
                     )
                     .map_err(not_saved)?;
