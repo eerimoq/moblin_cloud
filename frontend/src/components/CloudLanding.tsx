@@ -140,7 +140,7 @@ export default function CloudLanding(props: { failed: boolean }) {
             </span>
             <h2 class="text-4xl font-bold sm:text-[46px]">{t("Up and running in minutes.")}</h2>
           </div>
-          <ol class="grid gap-6 sm:grid-cols-3">
+          <ol class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <For each={cloudSteps}>
               {(step, index) => (
                 <li class="flex flex-col gap-3">

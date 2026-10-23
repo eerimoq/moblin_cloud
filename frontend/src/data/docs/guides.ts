@@ -656,6 +656,162 @@ export const guides: Guide[] = [
     ],
   },
   {
+    id: "moblin-cloud",
+    title: t("Moblin Cloud: tips and wheel of luck"),
+    summary: t(
+      "Let viewers tip you from your own page on moblin.app, with a message or a spin of your wheel.",
+    ),
+    blocks: [
+      {
+        type: "p",
+        text: t(
+          "Moblin Cloud gives you a tip page on moblin.app. Viewers send you a tip with a " +
+            "message, or tip to spin your wheel of luck, and Moblin shows it on stream. The " +
+            "money goes straight to your PayPal or Stripe account.",
+        ),
+      },
+      { type: "h", text: t("Sign in and connect payments") },
+      {
+        type: "steps",
+        items: [
+          t("Open moblin.app/dashboard and sign in with Twitch or Kick. Your page is ready."),
+          t(
+            "In Payments, connect PayPal or Stripe. Stripe asks for your country, which cannot " +
+              "be changed later.",
+          ),
+          t(
+            "In Tips, turn on Viewers can send tips and set your suggested amounts. In Wheel of " +
+              "luck, turn on Viewers tip to spin the wheel and set the prices.",
+          ),
+        ],
+      },
+      { type: "h", text: t("Connect Moblin") },
+      {
+        type: "steps",
+        items: [
+          t(
+            "In the dashboard's Moblin section, tap Show QR code and scan it with the camera of " +
+              "the device running Moblin, or open the deep link on it. This turns on Moblin " +
+              "Cloud with your key.",
+          ),
+          t(
+            "Or copy the key and paste it in Moblin under Settings → Moblin Cloud → Moblin Cloud " +
+              "key, and turn on Enabled.",
+          ),
+          t(
+            "Moblin shows Moblin Cloud connected, and the device shows up as connected in the " +
+              "dashboard. Up to 5 devices can use the same key.",
+          ),
+        ],
+      },
+      { type: "h", text: t("Show tips on stream") },
+      {
+        type: "p",
+        text: t(
+          "Tips always show up in Moblin's chat. To also show them as an alert on stream, " +
+            "Moblin needs an alerts widget.",
+        ),
+      },
+      {
+        type: "steps",
+        items: [
+          t(
+            "Create a widget of type Alerts in Settings → Scenes and add it to the scenes you " +
+              "stream with. An alerts widget you already use for Twitch or Kick works too.",
+          ),
+          t(
+            "Optionally open the widget and change the tip alert's media, position, colors and " +
+              "text to speech under Moblin Cloud → Tips.",
+          ),
+          t("In Settings → Moblin Cloud, pick the widget under Tips."),
+        ],
+      },
+      { type: "h", text: t("Let viewers tip to spin your wheel") },
+      {
+        type: "steps",
+        items: [
+          t(
+            "Create a widget of type Wheel of luck in Settings → Scenes, add its options and " +
+              "add it to the scenes you stream with.",
+          ),
+          t("In Settings → Moblin Cloud, pick the widget under Wheel of luck."),
+          t(
+            "Your tip page now draws your wheel with its options, and follows your changes to " +
+              "them.",
+          ),
+        ],
+      },
+      {
+        type: "tip",
+        text: t(
+          "Viewers can only tip to spin the wheel while Moblin is connected with a wheel " +
+            "picked. Other tips work all the time: those sent while Moblin is offline show up " +
+            "when it connects.",
+        ),
+      },
+      { type: "h", text: t("Test it and share your page") },
+      {
+        type: "steps",
+        items: [
+          t(
+            "In the dashboard's Tips and Wheel of luck sections, use Send test tip and Send " +
+              "test spin. They are free and show up in Moblin like paid ones.",
+          ),
+          t(
+            "Copy your page's address from Tip page and put it in your chat, panels or bio, or " +
+              "show it on stream with a QR code widget.",
+          ),
+        ],
+      },
+      { type: "h", text: t("More") },
+      {
+        type: "list",
+        items: [
+          t(
+            "Subscriber spins: give your Twitch or Kick subscribers free spins every month, " +
+              "under Wheel of luck in the dashboard.",
+          ),
+          t(
+            "Moderators: add your moderators in the dashboard. They can change your page, tips " +
+              "and wheel and send tests, but not your payment accounts or currency.",
+          ),
+          t(
+            "Tips with a spin go to the first connected device with a wheel picked. Other tips " +
+              "go to every connected device.",
+          ),
+          t(
+            "Keep your key to yourself. Reset key in the dashboard disconnects every device, " +
+              "and each one needs the new key.",
+          ),
+        ],
+      },
+      { type: "h", text: t("Troubleshooting") },
+      {
+        type: "list",
+        items: [
+          t(
+            "Tips only show up in chat? Pick an alerts widget under Settings → Moblin Cloud → " +
+              "Tips, add it to the current scene and check that Moblin Cloud → Tips is on in " +
+              "the widget.",
+          ),
+          t(
+            "The page says the wheel is not available right now? Moblin is not connected, or no " +
+              "wheel is picked under Settings → Moblin Cloud → Wheel of luck.",
+          ),
+          t(
+            "A spin or tip is sent but nothing shows? Add the widget to the scene you are in. " +
+              "The dashboard's latest tips and spins list which devices got each one.",
+          ),
+          t(
+            "Moblin says Failed to identify? Five devices are already connected with the key. " +
+              "Disconnect one, or update Moblin if it is old.",
+          ),
+        ],
+      },
+    ],
+    related: ["settings-moblin-cloud", "alerts", "moblin-cloud", "tips", "wheel-of-luck", "widget"],
+  },
+  {
     id: "chat-bot",
     title: t("Chat bot"),
     summary: t("Let you and your moderators control Moblin with !moblin chat commands."),

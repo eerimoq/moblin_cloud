@@ -712,6 +712,107 @@ function BannerImage(props: {
   );
 }
 
+const setupGuide = `${asset(pages.docs)}#guides/moblin-cloud`;
+
+function GuideLink(props: { text: string }) {
+  return (
+    <a href={setupGuide} class="text-leaf hover:text-leaf-bright">
+      {props.text}
+    </a>
+  );
+}
+
+function GetStarted(props: {
+  account: Account;
+  settings: Settings;
+  payments: boolean;
+  onSelect: (section: string) => void;
+}) {
+  const spin = () => isOn(props.settings.spin);
+  const steps = () =>
+    [
+      {
+        shown: props.payments,
+        done: props.settings.payable,
+        title: t("Connect PayPal or Stripe"),
+        text: t("The money goes straight to your account."),
+        section: "payments",
+      },
+      {
+        shown: true,
+        done:
+          isOn(props.settings.tips) || isOn(props.settings.spin) || isOn(props.settings.subSpins),
+        title: t("Turn on tips or the wheel"),
+        text: t("Set your amounts in Tips and Wheel of luck."),
+        section: props.payments ? "tips" : "wheel",
+      },
+      {
+        shown: true,
+        done: props.account.devices.length > 0,
+        title: t("Connect Moblin"),
+        text: t("Scan the QR code with the device running Moblin."),
+        section: "moblin",
+      },
+      {
+        shown: spin(),
+        done: props.account.devices.some((device) => device.wheel),
+        title: t("Pick your wheel in Moblin"),
+        text: t(
+          "Create a wheel of luck widget and pick it under Settings → Moblin Cloud → Wheel of luck.",
+        ),
+        section: "moblin",
+      },
+    ].filter((step) => step.shown);
+
+  return (
+    <Show when={steps().some((step) => !step.done)}>
+      <div class={cardClass}>
+        <h2 class="text-[23px] font-semibold">{t("Get started")}</h2>
+        <ol class="flex flex-col gap-3">
+          <For each={steps()}>
+            {(step, index) => (
+              <li class="flex items-start gap-3">
+                <span
+                  class={`flex size-8 shrink-0 items-center justify-center rounded-full font-display font-bold ${
+                    step.done ? "bg-moss text-white" : "bg-well text-leaf"
+                  }`}
+                >
+                  <Show when={step.done} fallback={index() + 1}>
+                    <Icon name="check" class="size-4" />
+                  </Show>
+                </span>
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class={`font-semibold ${step.done ? "text-muted line-through" : ""}`}>
+                    {step.title}
+                  </span>
+                  <Show when={!step.done}>
+                    <span class="text-[15px] text-ink-2">{step.text}</span>
+                  </Show>
+                </span>
+                <Show when={!step.done}>
+                  <button
+                    type="button"
+                    class={`${smallButtonClass} shrink-0`}
+                    aria-label={step.title}
+                    onClick={() => props.onSelect(step.section)}
+                  >
+                    {t("Go")}
+                  </button>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ol>
+        <p class="text-[15px] text-ink-2">
+          {tRich("To show tips as alerts on stream, see the {guide}.", {
+            guide: <GuideLink text={t("setup guide")} />,
+          })}
+        </p>
+      </div>
+    </Show>
+  );
+}
+
 function YourPage(props: {
   account: Account;
   page: Settings;
@@ -1207,6 +1308,13 @@ function TipSettings(props: {
             "not connected.",
         )}
       </p>
+      <p class="text-ink-2">
+        {tRich(
+          "To also show them as alerts on stream, pick an alerts widget in Moblin under " +
+            "Settings → Moblin Cloud → Tips. See the {guide}.",
+          { guide: <GuideLink text={t("setup guide")} /> },
+        )}
+      </p>
       <label class="flex items-center gap-3 text-ink-2">
         <input
           type="checkbox"
@@ -1310,6 +1418,13 @@ function SpinSettings(props: {
           "Let viewers spin your wheel by sending you a tip, with a smaller tip per spin " +
             "when they buy more. Moblin spins the wheel you pick in its Moblin Cloud settings, showing " +
             "the viewer's name and message.",
+        )}
+      </p>
+      <p class="text-ink-2">
+        {tRich(
+          "Create a wheel of luck widget in Moblin under Settings → Scenes, then pick it under " +
+            "Settings → Moblin Cloud → Wheel of luck. See the {guide}.",
+          { guide: <GuideLink text={t("setup guide")} /> },
         )}
       </p>
       <label class="flex items-center gap-3 text-ink-2">
@@ -1686,7 +1801,15 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
         </div>
       </nav>
       <div class="min-w-0">
-        <div hidden={active() !== "page"}>
+        <div hidden={active() !== "page"} class="flex flex-col gap-6">
+          <Show when={!moderating()}>
+            <GetStarted
+              account={account()}
+              settings={settings()}
+              payments={payments()}
+              onSelect={select}
+            />
+          </Show>
           <YourPage
             account={account()}
             page={settings()}
@@ -1729,6 +1852,26 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
           />
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
+          <Show when={!moderating() && isOn(settings().spin) && !settings().connected}>
+            <Notice>
+              {t("Viewers can't spin the wheel right now, as Moblin is not connected.")}
+            </Notice>
+          </Show>
+          <Show
+            when={
+              !moderating() &&
+              isOn(settings().spin) &&
+              settings().connected &&
+              !account().devices.some((device) => device.wheel)
+            }
+          >
+            <Notice>
+              {t(
+                "Viewers can't spin the wheel right now, as no wheel is picked under Settings → " +
+                  "Moblin Cloud → Wheel of luck in Moblin.",
+              )}
+            </Notice>
+          </Show>
           <Show
             when={paid(isOn(settings().spin))}
             fallback={
@@ -2033,6 +2176,13 @@ function MoblinSettings(props: {
       <p class="text-ink-2">
         {t(
           "Use the same key on up to 5 devices running Moblin. In Moblin, go to Settings → Moblin Cloud, paste the key and turn on Enabled.",
+        )}
+      </p>
+      <p class="text-ink-2">
+        {tRich(
+          "Then pick the alerts widget that shows tips and the wheel viewers spin in the same " +
+            "settings. See the {guide}.",
+          { guide: <GuideLink text={t("setup guide")} /> },
         )}
       </p>
       <div class="flex flex-col gap-2">

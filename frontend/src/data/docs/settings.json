@@ -1,6 +1,6 @@
 {
-  "commit": "276c3703b27886d53fa60f64f7e40152e58c12a4",
-  "date": "2026-10-08",
+  "commit": "edcdbd8a283972edc429356fbf76d84aa7f8b098",
+  "date": "2026-10-23",
   "pages": [
     {
       "id": "settings",
@@ -139,6 +139,11 @@
               "type": "page",
               "label": "Remote control",
               "page": "settings-remote-control"
+            },
+            {
+              "type": "page",
+              "label": "Moblin Cloud",
+              "page": "settings-moblin-cloud"
             }
           ]
         },
@@ -3437,6 +3442,11 @@
             },
             {
               "type": "page",
+              "label": "Moblin Cloud",
+              "page": "moblin-cloud"
+            },
+            {
+              "type": "page",
               "label": "Chat bot",
               "page": "chat-bot"
             },
@@ -4788,6 +4798,131 @@
       ]
     },
     {
+      "id": "moblin-cloud",
+      "title": "Moblin Cloud",
+      "path": ["Settings", "Scenes", "Widget", "Alerts", "Moblin Cloud"],
+      "parent": "alerts",
+      "sections": [
+        {
+          "header": null,
+          "footer": null,
+          "items": [
+            {
+              "type": "page",
+              "label": "Tips",
+              "page": "tips"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tips",
+      "title": "Tips",
+      "path": ["Settings", "Scenes", "Widget", "Alerts", "Moblin Cloud", "Tips"],
+      "parent": "moblin-cloud",
+      "sections": [
+        {
+          "header": null,
+          "footer": null,
+          "items": [
+            {
+              "type": "toggle",
+              "label": "Enabled"
+            }
+          ]
+        },
+        {
+          "header": "Media",
+          "footer": null,
+          "items": [
+            {
+              "type": "picker",
+              "label": "Type",
+              "options": ["GIF and sound", "Video"]
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": null,
+          "items": [
+            {
+              "type": "page",
+              "label": "Image",
+              "page": "follows-image"
+            },
+            {
+              "type": "page",
+              "label": "Sound",
+              "page": "sound"
+            },
+            {
+              "type": "page",
+              "label": "Video",
+              "page": "follows-video"
+            }
+          ]
+        },
+        {
+          "header": "Position",
+          "footer": null,
+          "items": [
+            {
+              "type": "picker",
+              "label": "Type",
+              "options": ["Scene", "Face"]
+            }
+          ]
+        },
+        {
+          "header": "Colors",
+          "footer": null,
+          "items": [
+            {
+              "type": "setting",
+              "label": "Text"
+            },
+            {
+              "type": "setting",
+              "label": "Accent"
+            }
+          ]
+        },
+        {
+          "header": "Font",
+          "footer": null,
+          "items": [
+            {
+              "type": "picker",
+              "label": "Design",
+              "options": ["Serif", "Rounded", "Monospaced"]
+            },
+            {
+              "type": "picker",
+              "label": "Weight",
+              "options": ["Regular", "Light", "Bold"]
+            }
+          ]
+        },
+        {
+          "header": "Text to speech",
+          "footer": null,
+          "items": [
+            {
+              "type": "toggle",
+              "label": "Enabled"
+            },
+            {
+              "type": "page",
+              "label": "Voices",
+              "page": "voices"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "chat-bot",
       "title": "Chat bot",
       "path": ["Settings", "Scenes", "Widget", "Alerts", "Chat bot"],
@@ -5758,6 +5893,21 @@
               "label": "Advanced"
             }
           ]
+        },
+        {
+          "header": null,
+          "footer": null,
+          "items": [
+            {
+              "type": "toggle",
+              "label": "Only show when spinning"
+            }
+          ]
+        },
+        {
+          "header": "Results",
+          "footer": null,
+          "items": []
         }
       ]
     },
@@ -5778,6 +5928,41 @@
             {
               "type": "picker",
               "label": "Weight"
+            }
+          ]
+        },
+        {
+          "header": "Action",
+          "footer": "Executed when the wheel stops on this option.",
+          "items": [
+            {
+              "type": "picker",
+              "label": "Function"
+            },
+            {
+              "type": "picker",
+              "label": "Scene"
+            },
+            {
+              "type": "picker",
+              "label": "Widget"
+            },
+            {
+              "type": "picker",
+              "label": "Preset"
+            },
+            {
+              "type": "picker",
+              "label": "Motion",
+              "options": ["Kapow", "Yes", "No", "Wakeup"]
+            },
+            {
+              "type": "picker",
+              "label": "Macro"
+            },
+            {
+              "type": "picker",
+              "label": "Layout"
             }
           ]
         }
@@ -6527,6 +6712,17 @@
         },
         {
           "header": null,
+          "footer": "Vibrate the phone. Until turned off if no seconds is given.\n\nIntensity and sharpness from 1 to 100, default 100 and 50.\n\nStop vibrating the phone.",
+          "items": [
+            {
+              "type": "page",
+              "label": "!moblin vibrate ...",
+              "page": "moblin-vibrate"
+            }
+          ]
+        },
+        {
+          "header": null,
           "footer": "!moblin send <message>\n\nSend given message.",
           "items": [
             {
@@ -6538,7 +6734,7 @@
         },
         {
           "header": null,
-          "footer": "!moblin music add <song>\n\nAdd given song to the queue.\n\n<song> is either a share link or text search.\n\nPlay.\n\nPause.\n\nNext song.\n\nPrevious song.\n\nShow status.",
+          "footer": "!moblin music add <song>\n\nAdd given song to the queue.\n\n<song> is either a share link or text search.\n\nPlay.\n\nPause.\n\nNext song.\n\nPrevious song.\n\nShow status.\n\nClear the queue.",
           "items": [
             {
               "type": "page",
@@ -7222,6 +7418,26 @@
       "parent": "commands",
       "sections": [
         {
+          "header": null,
+          "footer": "Take the snapshot on this device, or fetch it from another device's web remote control.",
+          "items": [
+            {
+              "type": "picker",
+              "label": "Source",
+              "options": ["This device", "Web remote control"]
+            },
+            {
+              "type": "picker",
+              "label": "Use remote source",
+              "options": ["When not live", "Always"]
+            },
+            {
+              "type": "setting",
+              "label": "URL"
+            }
+          ]
+        },
+        {
           "header": "Permissions",
           "footer": null,
           "items": [
@@ -7369,6 +7585,56 @@
       "id": "moblin-torch",
       "title": "!moblin torch ...",
       "path": ["Settings", "Chat", "Bot", "Commands", "!moblin torch ..."],
+      "parent": "commands",
+      "sections": [
+        {
+          "header": "Permissions",
+          "footer": null,
+          "items": [
+            {
+              "type": "toggle",
+              "label": "Moderators"
+            },
+            {
+              "type": "toggle",
+              "label": "Subscribers"
+            },
+            {
+              "type": "picker",
+              "label": "Minimum subscriber tier"
+            },
+            {
+              "type": "toggle",
+              "label": "Others"
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": "Does not apply to you and your moderators.",
+          "items": [
+            {
+              "type": "picker",
+              "label": "Cooldown"
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": "Typically sends a chat message if the user is not allowed to execute the command. Some commands responds on success as well.",
+          "items": [
+            {
+              "type": "toggle",
+              "label": "Send chat responses"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "moblin-vibrate",
+      "title": "!moblin vibrate ...",
+      "path": ["Settings", "Chat", "Bot", "Commands", "!moblin vibrate ..."],
       "parent": "commands",
       "sections": [
         {
@@ -7967,6 +8233,11 @@
               "type": "page",
               "label": "TTS.Monster",
               "page": "tts-monster"
+            },
+            {
+              "type": "page",
+              "label": "ElevenLabs",
+              "page": "elevenlabs"
             }
           ]
         },
@@ -8051,6 +8322,24 @@
             {
               "type": "setting",
               "label": "API token"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "elevenlabs",
+      "title": "ElevenLabs",
+      "path": ["Settings", "Chat", "Text to speech", "ElevenLabs"],
+      "parent": "text-to-speech",
+      "sections": [
+        {
+          "header": null,
+          "footer": null,
+          "items": [
+            {
+              "type": "setting",
+              "label": "API key"
             }
           ]
         }
@@ -8502,6 +8791,10 @@
             },
             {
               "type": "toggle",
+              "label": "Moblin Cloud"
+            },
+            {
+              "type": "toggle",
               "label": "DJI devices"
             },
             {
@@ -8545,6 +8838,10 @@
             {
               "type": "toggle",
               "label": "Zoom presets"
+            },
+            {
+              "type": "toggle",
+              "label": "Zoom slider"
             }
           ]
         }
@@ -10126,13 +10423,23 @@
           "items": [
             {
               "type": "setting",
+              "label": "What are you looking for?"
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": null,
+          "items": [
+            {
+              "type": "setting",
               "label": "Add song"
             }
           ]
         },
         {
           "header": "Playlist",
-          "footer": null,
+          "footer": "The playlist holds at most … songs. The oldest song is removed when a song is added to a full playlist.",
           "items": []
         }
       ]
@@ -10881,6 +11188,58 @@
               "type": "page",
               "label": "URLs",
               "page": "remote-control-urls"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings-moblin-cloud",
+      "title": "Moblin Cloud",
+      "path": ["Settings", "Moblin Cloud"],
+      "parent": "settings",
+      "sections": [
+        {
+          "header": null,
+          "footer": null,
+          "items": [
+            {
+              "type": "note",
+              "label": "Let viewers interact with your stream from your page at https://moblin.app. Sign in at https://moblin.app/dashboard to get your Moblin Cloud key."
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": "Keep the Moblin Cloud key to yourself.",
+          "items": [
+            {
+              "type": "toggle",
+              "label": "Enabled"
+            },
+            {
+              "type": "setting",
+              "label": "Moblin Cloud key"
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": "Alerts widget that shows tips.",
+          "items": [
+            {
+              "type": "picker",
+              "label": "Tips"
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": "Wheel of luck widget viewers can spin.",
+          "items": [
+            {
+              "type": "picker",
+              "label": "Wheel of luck"
             }
           ]
         }
@@ -11973,6 +12332,16 @@
             {
               "type": "toggle",
               "label": "Periodic video bitrate change"
+            }
+          ]
+        },
+        {
+          "header": null,
+          "footer": "Compression quality of snapshots and photo shoot photos saved to Photos.",
+          "items": [
+            {
+              "type": "picker",
+              "label": "Photos image quality"
             }
           ]
         }
