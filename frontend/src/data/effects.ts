@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import { backendUrl } from "./backend";
 import { t } from "../i18n";
 
@@ -14,8 +15,27 @@ export const effectName = (id: string) => effectNames[id] ?? id;
 
 let playing: HTMLAudioElement | null = null;
 
-export const playEffect = (id: string) => {
+const [playingEffect, setPlayingEffect] = createSignal<string | null>(null);
+
+export { playingEffect };
+
+export const stopEffect = () => {
   playing?.pause();
-  playing = new Audio(`${backendUrl}/effects/${id}`);
-  playing.play().catch(() => undefined);
+  playing = null;
+  setPlayingEffect(null);
+};
+
+export const playEffect = (id: string) => {
+  stopEffect();
+  const audio = new Audio(`${backendUrl}/effects/${id}`);
+  const ended = () => {
+    if (playing === audio) {
+      stopEffect();
+    }
+  };
+  audio.addEventListener("ended", ended);
+  audio.addEventListener("error", ended);
+  playing = audio;
+  setPlayingEffect(id);
+  audio.play().catch(ended);
 };

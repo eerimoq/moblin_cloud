@@ -73,7 +73,7 @@ import {
   type Tiers,
   type Wheel,
 } from "../data/remoteControl";
-import { effectName, playEffect } from "../data/effects";
+import { effectName, playEffect, playingEffect, stopEffect } from "../data/effects";
 import { t, tRich } from "../i18n";
 
 const nameKey = "songRequestName";
@@ -1074,22 +1074,38 @@ function EffectJar(props: {
     >
       <fieldset class="flex flex-col gap-3">
         <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Effect")}</legend>
-        <p class="-mt-1 text-[15px] text-muted">{t("Tap an effect to hear it.")}</p>
-        <div class="flex flex-wrap gap-3">
+        <div class="divide-y divide-line overflow-hidden rounded-2xl border-[1.5px] border-line bg-well">
           <For each={props.options}>
             {(option) => (
-              <label class={`${chipClass} gap-2`}>
-                <input
-                  type="radio"
-                  name="effect"
-                  checked={effect() === option.id}
-                  onChange={() => setChosen(option.id)}
-                  onClick={() => playEffect(option.id)}
-                  class="sr-only"
-                />
-                <Icon name="play" class="size-4 shrink-0" />
-                {effectName(option.id)}
-              </label>
+              <div class="flex items-center has-[:checked]:bg-moss/15">
+                <label class="flex min-h-14 flex-1 cursor-pointer items-center gap-3 px-4 font-display text-lg font-semibold text-ink has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-ink">
+                  <input
+                    type="radio"
+                    name="effect"
+                    checked={effect() === option.id}
+                    onChange={() => setChosen(option.id)}
+                    class="peer sr-only"
+                  />
+                  <span class="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-muted peer-checked:border-moss peer-checked:bg-moss peer-checked:[&>span]:bg-white">
+                    <span class="size-2 rounded-full" />
+                  </span>
+                  {effectName(option.id)}
+                </label>
+                <button
+                  type="button"
+                  class="mr-2 flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-line bg-card text-ink transition-colors hover:border-leaf"
+                  aria-label={
+                    playingEffect() === option.id
+                      ? t("Stop {name}", { name: effectName(option.id) })
+                      : t("Play {name}", { name: effectName(option.id) })
+                  }
+                  onClick={() =>
+                    playingEffect() === option.id ? stopEffect() : playEffect(option.id)
+                  }
+                >
+                  <Icon name={playingEffect() === option.id ? "pause" : "play"} class="size-5" />
+                </button>
+              </div>
             )}
           </For>
         </div>
