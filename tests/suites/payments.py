@@ -263,7 +263,8 @@ class PaymentsTipToEveryDevice(PaymentTestCase):
     def teardown(self):
         if hasattr(self, "second"):
             self.second.stop()
-        super().teardown()
+        if hasattr(self, "dashboard"):
+            self.dashboard.delete_account()
 
 
 class PaymentsTipSentAgain(PaymentTestCase):
