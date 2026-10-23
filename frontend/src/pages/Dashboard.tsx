@@ -252,19 +252,17 @@ function CurrencySettings(props: {
     () => props.onSave({ currency: currency() }),
     (error) =>
       error instanceof BackendError && error.status === 409
-        ? t("Turn paid songs, tips and the wheel off to change the currency.")
+        ? t("Turn song requests, tips and the wheel off to change the currency.")
         : paymentErrorText(error, t("Pick one of the currencies.")),
   );
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">{t("Currency")}</h2>
-      <p class="text-ink-2">
-        {t("Viewers pay all tips, song requests and wheel spins in this currency.")}
-      </p>
+      <p class="text-ink-2">{t("Tips, song requests and wheel spins are all in this currency.")}</p>
       <Show when={props.locked}>
         <p class="text-ink-2">
-          {t("Turn paid songs, tips and the wheel off to change the currency.")}
+          {t("Turn song requests, tips and the wheel off to change the currency.")}
         </p>
       </Show>
       <select
@@ -930,7 +928,7 @@ function SongSettings(props: {
     () => props.busy,
     () => !same(current(), songs(initial())),
     () => props.onSave({ songs: current() }),
-    (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
+    (error) => paymentErrorText(error, t("Enter a tip from 0.50 to 100000.")),
   );
 
   return (
@@ -963,7 +961,9 @@ function SongSettings(props: {
           </span>
           <MoneyInput value={price()} onValue={setPrice} required />
           <span class="text-[15px] text-muted">
-            {t("Every song costs the same, whatever its length. Songs always play in full.")}
+            {t(
+              "The tip is the same for every song, whatever its length. Songs always play in full.",
+            )}
           </span>
         </label>
       </Show>
@@ -1024,7 +1024,7 @@ function SubscriberSettings(props: {
           ? t(
               "Give your subscribers song requests every month, without a tip. Subscribers sign " +
                 "in on your tip page, and their songs come back on the 1st of every " +
-                "month. This works with or without paid song requests.",
+                "month. This works with or without song requests for tips.",
             )
           : t(
               "Give your subscribers spins of the wheel every month, without a tip. Subscribers sign " +

@@ -80,7 +80,10 @@ pub struct Order {
 impl Order {
     pub fn description(&self) -> String {
         let (description, message) = match &self.item {
-            Item::Song { name, message, .. } => (format!("Song request: {name}"), message.as_ref()),
+            Item::Song { name, message, .. } => (
+                format!("Tip from {} with a song: {name}", self.user),
+                message.as_ref(),
+            ),
             Item::Tip { message } => (format!("Tip from {}", self.user), message.as_ref()),
             Item::Spin { spins: 1, message } => {
                 (format!("Wheel spin by {}", self.user), message.as_ref())

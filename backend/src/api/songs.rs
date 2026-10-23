@@ -536,7 +536,7 @@ mod tests {
         );
         assert_eq!(
             sent["purchase_units"][0]["description"],
-            "Song request: Band - Song: Play it loud!"
+            "Tip from Viewer with a song: Band - Song: Play it loud!"
         );
         let response = client
             .post(format!("{orders_url}/OTHER/capture"))
