@@ -54,7 +54,6 @@ class ModeratorsTestCase(TestCase):
         self.wait_until(lambda: self.viewer.spin()["connected"], "Moblin to be connected")
 
 
-
 class ModeratorsAdded(ModeratorsTestCase):
     """Let a moderator help only once the streamer added them by username, and not once removed."""
 
@@ -63,9 +62,7 @@ class ModeratorsAdded(ModeratorsTestCase):
     def run(self):
         self.assert_equal(self.listed_moderators(), [])
         self.assert_equal(self.moderating(), [])
-        self.assert_backend_error(
-            403, lambda: self.moderator.moderated_test_tip(self.page_id), NOT_MODERATOR
-        )
+        self.assert_backend_error(403, lambda: self.moderator.moderated_test_tip(self.page_id), NOT_MODERATOR)
         self.assert_backend_error(
             403, lambda: self.moderator.moderated_recent(self.page_id, "tip"), NOT_MODERATOR
         )
@@ -123,9 +120,7 @@ class ModeratorsAdded(ModeratorsTestCase):
         self.assert_equal(account["twitchModerators"], [])
         self.assert_equal(self.listed_moderators(), [])
         self.assert_equal(self.moderating(), [])
-        self.assert_backend_error(
-            403, lambda: self.moderator.moderated_test_tip(self.page_id), NOT_MODERATOR
-        )
+        self.assert_backend_error(403, lambda: self.moderator.moderated_test_tip(self.page_id), NOT_MODERATOR)
 
 
 class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):

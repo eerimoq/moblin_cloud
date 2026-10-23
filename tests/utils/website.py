@@ -243,13 +243,13 @@ class Dashboard(Client):
             field: settings[field]
             for field in [
                 "currency",
-                    "tips",
+                "tips",
                 "spin",
                 "message",
                 "accent",
                 "font",
-                    "subSpins",
-                ]
+                "subSpins",
+            ]
         }
         for field in body:
             if names.get(field, field) in changes:

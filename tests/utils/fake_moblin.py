@@ -139,6 +139,7 @@ class FakeMoblin:
         self.wheel = wheel_of(widgets[0]["wheelOfLuck"]["options"] if widgets else None)
         self.close("cloud")
 
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("api_url", help="Where Moblin Cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
