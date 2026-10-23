@@ -143,12 +143,7 @@ fn recent_devices(
                 .wheel_device(&page.id)
                 .into_iter()
                 .collect(),
-            Item::Tip { .. } => api
-                .remote_control
-                .devices(&page.id)
-                .into_iter()
-                .map(|device| device.id)
-                .collect::<Vec<_>>(),
+            Item::Tip { .. } => api.deliveries.tip_devices(&api.remote_control, &page.id),
         };
         for device in waiting {
             if !devices.iter().any(|(other, _)| *other == device) {

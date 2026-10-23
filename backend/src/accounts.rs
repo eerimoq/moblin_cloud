@@ -155,6 +155,22 @@ pub struct KnownDevice {
 
 const ACCOUNT_OF_PAGE: &str = "(SELECT id FROM accounts WHERE page_id = ?1)";
 
+pub fn device_ids(connection: &Connection, page: &str) -> Vec<String> {
+    let result = connection
+        .prepare_cached(&format!(
+            "SELECT id FROM devices WHERE account = {ACCOUNT_OF_PAGE} ORDER BY last_seen DESC, rowid DESC"
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([page], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()
+        });
+    result.unwrap_or_else(|error| {
+        warn!("failed to read the devices of {page}: {error:#}");
+        Vec::new()
+    })
+}
+
 const COLUMNS: &str = "page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
 
 const IDENTITIES: &str = "(SELECT json_group_array(json_object('platform', platform, 'user_id', user_id, 'login', login, 'name', name, 'avatar', avatar) ORDER BY platform = 'twitch' DESC, platform) FROM identities WHERE account = accounts.id)";

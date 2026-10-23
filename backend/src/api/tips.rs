@@ -283,11 +283,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tips_reach_every_device_but_stop_waiting_for_disconnected_ones() {
+    async fn tips_reach_every_known_device_also_after_reconnecting() {
         let (address, api) = start_api(None).await;
         let (_, key, id) = streamer(&address, &api).await;
         let mut main = connect_as(&address, &key, "main").await;
-        let mut backup = connect_as(&address, &key, "backup").await;
+        let backup = connect_as(&address, &key, "backup").await;
+        for _ in 0..100 {
+            if api.remote_control.devices(&id).len() == 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        drop(backup);
+        for _ in 0..100 {
+            if api.remote_control.devices(&id).len() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         api.deliveries.add_test(
             id.clone(),
             "TIP1".to_string(),
@@ -301,24 +314,28 @@ mod tests {
         let request = receive(&mut main).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
         answer(&mut main, &request, Value::Null).await;
-        let request = receive(&mut backup).await;
-        assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
         for _ in 0..100 {
             if api.deliveries.get("TIP1").unwrap().delivered == ["main"] {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert_eq!(api.deliveries.pending().len(), 1);
-        backup.close(None).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!api.deliveries.get("TIP1").unwrap().finished);
+        let mut backup = connect_as(&address, &key, "backup").await;
+        let request = receive(&mut backup).await;
+        assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
+        answer(&mut backup, &request, Value::Null).await;
         for _ in 0..100 {
-            if api.remote_control.devices(&id).len() == 1 {
+            if api.deliveries.get("TIP1").unwrap().finished {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        api.deliveries.notify();
-        wait_until_added(&api).await;
+        assert_eq!(
+            api.deliveries.get("TIP1").unwrap().delivered,
+            ["main", "backup"]
+        );
         assert!(
             tokio::time::timeout(Duration::from_millis(200), receive(&mut main))
                 .await

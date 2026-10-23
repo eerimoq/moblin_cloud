@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::time::sleep;
 
+use crate::accounts;
 use crate::counters;
 use crate::database::Database;
 use crate::pages::format_price;
@@ -171,6 +172,20 @@ impl Deliveries {
         )
     }
 
+    pub fn tip_devices(&self, streamers: &Streamers, page: &str) -> Vec<String> {
+        let mut devices: Vec<String> = streamers
+            .devices(page)
+            .into_iter()
+            .map(|device| device.id)
+            .collect();
+        for device in accounts::device_ids(&self.database.lock(), page) {
+            if !devices.contains(&device) {
+                devices.push(device);
+            }
+        }
+        devices
+    }
+
     pub fn get(&self, request_id: &str) -> Option<Delivery> {
         query(
             &self.database.lock(),
@@ -230,20 +245,32 @@ impl Deliveries {
             let mut by_device: Vec<((String, String), Vec<Targeted>)> = Vec::new();
             for delivery in self.pending() {
                 let page = &delivery.streamer;
-                let devices: Vec<String> = match &delivery.item {
-                    Item::Spin { .. } => streamers.wheel_device(page).into_iter().collect(),
-                    Item::Tip { .. } => streamers
-                        .devices(page)
-                        .into_iter()
-                        .map(|device| device.id)
-                        .filter(|device| !delivery.delivered.contains(device))
-                        .collect(),
+                let (devices, connected): (Vec<String>, Vec<String>) = match &delivery.item {
+                    Item::Spin { .. } => {
+                        let devices: Vec<String> =
+                            streamers.wheel_device(page).into_iter().collect();
+                        (devices.clone(), devices)
+                    }
+                    Item::Tip { .. } => {
+                        let connected: Vec<String> = streamers
+                            .devices(page)
+                            .into_iter()
+                            .map(|device| device.id)
+                            .filter(|device| !delivery.delivered.contains(device))
+                            .collect();
+                        let devices = self
+                            .tip_devices(streamers, page)
+                            .into_iter()
+                            .filter(|device| !delivery.delivered.contains(device))
+                            .collect();
+                        (devices, connected)
+                    }
                 };
                 if devices.is_empty() && !delivery.delivered.is_empty() {
                     finish(&self.database.lock(), &delivery.request_id);
                     continue;
                 }
-                for device in &devices {
+                for device in &connected {
                     let target = (page.clone(), device.clone());
                     let delivery = (delivery.clone(), devices.clone());
                     match by_device.iter_mut().find(|(other, _)| *other == target) {
