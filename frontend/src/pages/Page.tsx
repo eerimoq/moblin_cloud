@@ -1073,7 +1073,7 @@ function EffectJar(props: {
       onSubmit={(event) => event.preventDefault()}
     >
       <fieldset class="flex flex-col gap-3">
-        <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Effect")}</legend>
+        <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Sound")}</legend>
         <div class="divide-y divide-line overflow-hidden rounded-2xl border-[1.5px] border-line bg-well">
           <For each={props.options}>
             {(option) => (
