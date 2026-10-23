@@ -8,7 +8,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::pages::{
-    CURRENCIES, FONTS, Feature, Settings, SettingsError, Spin, Tiers, Tips, is_color,
+    CURRENCIES, Effects, FONTS, Feature, Settings, SettingsError, Spin, Tiers, Tips, is_color,
 };
 use crate::stripe::Stripe;
 
@@ -21,8 +21,11 @@ pub(super) struct SettingsResponse {
     currency: String,
     tips: Option<Feature<Tips>>,
     spin: Option<Feature<Spin>>,
+    effects: Option<Feature<Effects>>,
     #[serde(rename = "subSpins")]
     sub_spins: Option<Feature<Tiers>>,
+    #[serde(rename = "subEffects")]
+    sub_effects: Option<Feature<Tiers>>,
     paypal: bool,
     #[serde(rename = "merchantId")]
     merchant_id: Option<String>,
@@ -57,7 +60,9 @@ pub(super) fn settings_response(
         currency: settings.currency().to_string(),
         tips: settings.tips,
         spin: settings.spin,
+        effects: settings.effects,
         sub_spins: settings.sub_spins,
+        sub_effects: settings.sub_effects,
         paypal: api.paypal.is_some(),
         merchant_id: account.merchant_id,
         paypal_pending: account.paypal_tracking_id.is_some(),
@@ -96,8 +101,12 @@ pub(super) struct SettingsRequest {
     tips: Option<Feature<Tips>>,
     #[serde(default)]
     spin: Option<Feature<Spin>>,
+    #[serde(default)]
+    effects: Option<Feature<Effects>>,
     #[serde(default, rename = "subSpins")]
     sub_spins: Option<Feature<Tiers>>,
+    #[serde(default, rename = "subEffects")]
+    sub_effects: Option<Feature<Tiers>>,
     #[serde(default)]
     message: Option<String>,
     #[serde(default)]
@@ -189,10 +198,24 @@ async fn update_settings(
         }
         None => None,
     };
-    if currency != current.currency() && (current.tips().is_some() || current.spin().is_some()) {
+    let effects = match request.effects {
+        Some(effects) => {
+            let effects = effects
+                .normalize(Effects::normalize)
+                .ok_or_else(invalid_effects)?;
+            if effects.enabled && current.effects.as_ref() != Some(&effects) {
+                check_payable(api, &id)?;
+            }
+            Some(effects)
+        }
+        None => None,
+    };
+    if currency != current.currency()
+        && (current.tips().is_some() || current.spin().is_some() || current.effects().is_some())
+    {
         return Err((
             StatusCode::CONFLICT,
-            "turn tips and the wheel off before changing the currency".to_string(),
+            "turn off all tips before changing the currency".to_string(),
         ));
     }
     let settings = api
@@ -203,7 +226,9 @@ async fn update_settings(
                 currency: Some(currency),
                 tips,
                 spin,
+                effects,
                 sub_spins: request.sub_spins,
+                sub_effects: request.sub_effects,
                 message: request.message,
                 accent,
                 font,
@@ -213,9 +238,10 @@ async fn update_settings(
             SettingsError::InvalidCurrency => invalid_currency(),
             SettingsError::InvalidTips => invalid_tips(),
             SettingsError::InvalidSpin => invalid_spin(),
+            SettingsError::InvalidEffects => invalid_effects(),
             SettingsError::InvalidTiers => (
                 StatusCode::BAD_REQUEST,
-                "subscribers' spins per month must be 0 to 100 per tier, with at least one above 0"
+                "subscribers' spins and effects per month must be 0 to 100 per tier, with at least one above 0"
                     .to_string(),
             ),
             SettingsError::InvalidPage => (
@@ -232,11 +258,13 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, tips {:?}, spin {:?}, sub spins {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {id} set currency {}, tips {:?}, spin {:?}, effects {:?}, sub spins {:?}, sub effects {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.tips,
         settings.spin,
+        settings.effects,
         settings.sub_spins,
+        settings.sub_effects,
         settings.message,
         settings.accent,
         settings.font
@@ -276,6 +304,13 @@ fn invalid_spin() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
         "the spin wheel needs one to five options of 1 to 10 spins for 0.50 to 100000".to_string(),
+    )
+}
+
+fn invalid_effects() -> (StatusCode, String) {
+    (
+        StatusCode::BAD_REQUEST,
+        "effects need a price of 0.50 to 100000".to_string(),
     )
 }
 

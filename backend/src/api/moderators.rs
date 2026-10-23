@@ -724,8 +724,8 @@ mod tests {
         let tip = &request["request"]["data"]["tip"];
         assert_eq!(tip["name"], "Mod 21");
         assert_eq!(tip["message"], "From a mod");
-        assert_eq!(tip["amount"], "5.00");
-        assert_eq!(tip["currency"], "SEK");
+        assert_eq!(tip["kind"]["message"]["amount"], "5.00");
+        assert_eq!(tip["kind"]["message"]["currency"], "SEK");
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
         let counters = api.counters.all();

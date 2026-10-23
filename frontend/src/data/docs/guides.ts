@@ -657,17 +657,15 @@ export const guides: Guide[] = [
   },
   {
     id: "moblin-cloud",
-    title: t("Moblin Cloud: tips and wheel of luck"),
-    summary: t(
-      "Let viewers tip you from your own page on moblin.app, with a message or a spin of your wheel.",
-    ),
+    title: t("Moblin Cloud: your tip page"),
+    summary: t("Let viewers tip you from your own page on moblin.app."),
     blocks: [
       {
         type: "p",
         text: t(
-          "Moblin Cloud gives you a tip page on moblin.app. Viewers send you a tip with a " +
-            "message, or tip to spin your wheel of luck, and Moblin shows it on stream. The " +
-            "money goes straight to your PayPal or Stripe account.",
+          "Moblin Cloud gives you a tip page on moblin.app. Viewers tip you there in the ways " +
+            "you turn on, and Moblin shows it on stream. The money goes straight to your PayPal " +
+            "or Stripe account.",
         ),
       },
       { type: "h", text: t("Sign in and connect payments") },
@@ -680,8 +678,8 @@ export const guides: Guide[] = [
               "be changed later.",
           ),
           t(
-            "In Message, turn on Viewers can send messages and set your suggested amounts. In Wheel of " +
-              "luck, turn on Viewers tip to spin the wheel and set the prices.",
+            "Each way to tip has its own section in the dashboard. Turn on the ones you want and " +
+              "set their amounts.",
           ),
         ],
       },
@@ -745,7 +743,7 @@ export const guides: Guide[] = [
         type: "tip",
         text: t(
           "Viewers can only tip to spin the wheel while Moblin is connected with a wheel " +
-            "picked. Messages work all the time: those sent while Moblin is offline show up " +
+            "picked. Other tips work all the time: those sent while Moblin is offline show up " +
             "when it connects.",
         ),
       },
@@ -754,8 +752,8 @@ export const guides: Guide[] = [
         type: "steps",
         items: [
           t(
-            "In the dashboard's Message and Wheel of luck sections, use Send test message and Send " +
-              "test spin. They are free and show up in Moblin like paid ones.",
+            "Each section of the dashboard has a free test, which shows up in Moblin like a " +
+              "real tip.",
           ),
           t(
             "Copy your page's address from Tip page and put it in your chat, panels or bio, or " +
@@ -768,16 +766,16 @@ export const guides: Guide[] = [
         type: "list",
         items: [
           t(
-            "Subscriber spins: give your Twitch or Kick subscribers free spins every month, " +
-              "under Wheel of luck in the dashboard.",
+            "Subscribers: give your Twitch or Kick subscribers free tips every month, in the " +
+              "dashboard sections that offer it.",
           ),
           t(
-            "Moderators: add your moderators in the dashboard. They can change your page, tips " +
-              "and wheel and send tests, but not your payment accounts or currency.",
+            "Moderators: add your moderators in the dashboard. They can change your page and " +
+              "how viewers tip you and send tests, but not your payment accounts or currency.",
           ),
           t(
-            "Spins go to the first connected device with a wheel picked. Messages " +
-              "go to every connected device.",
+            "Spins go to the first connected device with a wheel picked. Other tips go to " +
+              "every connected device.",
           ),
           t(
             "Keep your key to yourself. Reset key in the dashboard disconnects every device, " +
@@ -799,8 +797,8 @@ export const guides: Guide[] = [
               "wheel is picked under Settings → Moblin Cloud → Wheel of luck.",
           ),
           t(
-            "A spin or tip is sent but nothing shows? Add the widget to the scene you are in. " +
-              "The dashboard's latest tips and spins list which devices got each one.",
+            "A tip is sent but nothing shows? Add the widget to the scene you are in. The " +
+              "dashboard's received lists show which devices got each one.",
           ),
           t(
             "Moblin says Failed to identify? Five devices are already connected with the key. " +

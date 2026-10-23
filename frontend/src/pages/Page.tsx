@@ -39,6 +39,7 @@ import {
   identityOf,
   idOfLogin,
   loadFonts,
+  orderEffect,
   orderSpin,
   orderTip,
   pageImageUrl,
@@ -46,7 +47,9 @@ import {
   platforms,
   providerName,
   spinsText,
+  requestSubscriberEffect,
   requestSubscriberSpin,
+  streamerEffects,
   streamerProfile,
   streamerSpin,
   streamerTips,
@@ -54,12 +57,15 @@ import {
   tierNumbers,
   viewerSignInUrl,
   type Allowance,
+  type EffectOption,
+  type Perk,
   type Identity,
   type Order,
   type PayPalConfig,
   type Platform,
   type Profile,
   type Provider,
+  type PublicEffects,
   type PublicPayment,
   type PublicSpin,
   type PublicTips,
@@ -67,6 +73,7 @@ import {
   type Tiers,
   type Wheel,
 } from "../data/remoteControl";
+import { effectName, playEffect } from "../data/effects";
 import { t, tRich } from "../i18n";
 
 const nameKey = "songRequestName";
@@ -111,7 +118,7 @@ function takeSection(): Section {
   try {
     const section = sessionStorage.getItem(sectionKey);
     sessionStorage.removeItem(sectionKey);
-    return section === "tip" ? section : "spin";
+    return section === "tip" || section === "effect" ? section : "spin";
   } catch {
     return "spin";
   }
@@ -220,7 +227,7 @@ function payOptions(props: {
         props.showError(orderError);
       } else {
         props.setResult({
-          text: t("{provider} could not complete the payment. Try again.", {
+          text: t("{provider} could not complete the tip. Try again.", {
             provider: providerName(provider),
           }),
         });
@@ -290,7 +297,7 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
       />
       <Show when={props.config.environment === "sandbox"}>
         <Notice status>
-          {t("PayPal sandbox. This is a test payment and no real money is moved.")}
+          {t("PayPal sandbox. This is a test tip and no real money is moved.")}
         </Notice>
       </Show>
       <Show when={failed()}>
@@ -396,7 +403,7 @@ function StripeCard(props: {
         confirmParams: { return_url: location.href },
       });
       if (error?.type === "card_error" || error?.type === "validation_error") {
-        setCardError(error.message ?? t("The payment did not go through. Try another card."));
+        setCardError(error.message ?? t("The tip did not go through. Try another card."));
         return;
       }
       close();
@@ -473,7 +480,7 @@ function StripeCard(props: {
       </Show>
       <Show when={props.config.publishableKey.startsWith("pk_test_")}>
         <Notice status>
-          {t("Stripe test mode. This is a test payment and no real money is moved.")}
+          {t("Stripe test mode. This is a test tip and no real money is moved.")}
         </Notice>
       </Show>
       <Show when={failed()}>
@@ -569,6 +576,7 @@ function CheerCard(props: { title: string; text: string; onClose: () => void }) 
 }
 
 function SubscriberBox(props: {
+  perk: Perk;
   tiers: Tiers;
   platforms: Platform[];
   allowance: Allowance | null;
@@ -601,11 +609,19 @@ function SubscriberBox(props: {
           .map((tier) => tier.tier)
           .join(" / "),
       };
-      lines.push(t("{counts} spins a month for tier {tiers}", values));
+      lines.push(
+        props.perk === "spin"
+          ? t("{counts} spins a month for tier {tiers}", values)
+          : t("{counts} effects a month for tier {tiers}", values),
+      );
     }
     if (props.platforms.includes("kick") && props.tiers.tier1 > 0) {
       const values = { count: props.tiers.tier1 };
-      lines.push(t("{count} spins a month for Kick subscribers", values));
+      lines.push(
+        props.perk === "spin"
+          ? t("{count} spins a month for Kick subscribers", values)
+          : t("{count} effects a month for Kick subscribers", values),
+      );
     }
     return (
       <For each={lines}>
@@ -634,23 +650,38 @@ function SubscriberBox(props: {
                     : t("You are not subscribed to this streamer on Twitch.")}
                 </Match>
                 <Match when={current().allowance === 0 && current().platform === "kick"}>
-                  {t("Kick subscribers can't spin the wheel here.")}
+                  {props.perk === "spin"
+                    ? t("Kick subscribers can't spin the wheel here.")
+                    : t("Kick subscribers can't play effects here.")}
                 </Match>
                 <Match when={current().allowance === 0}>
-                  {t("Tier {tier} subscribers can't spin the wheel here.", {
-                    tier: current().tier ?? 0,
-                  })}
+                  {props.perk === "spin"
+                    ? t("Tier {tier} subscribers can't spin the wheel here.", {
+                        tier: current().tier ?? 0,
+                      })
+                    : t("Tier {tier} subscribers can't play effects here.", {
+                        tier: current().tier ?? 0,
+                      })}
                 </Match>
                 <Match when={current().left === 0}>
-                  {t(
-                    "You have used all your spins this month. New ones come on the 1st of the month.",
-                  )}
+                  {props.perk === "spin"
+                    ? t(
+                        "You have used all your spins this month. New ones come on the 1st of the month.",
+                      )
+                    : t(
+                        "You have used all your effects this month. New ones come on the 1st of the month.",
+                      )}
                 </Match>
                 <Match when={current().left > 0}>
-                  {t("{left} of {allowance} spins left this month", {
-                    left: current().left,
-                    allowance: current().allowance,
-                  })}
+                  {props.perk === "spin"
+                    ? t("{left} of {allowance} spins left this month", {
+                        left: current().left,
+                        allowance: current().allowance,
+                      })
+                    : t("{left} of {allowance} effects left this month", {
+                        left: current().left,
+                        allowance: current().allowance,
+                      })}
                 </Match>
               </Switch>
             )}
@@ -687,7 +718,7 @@ function SubscriberBox(props: {
                 onClick={() => props.onRequest()}
               >
                 <Icon name={current().platform} class={platformIconClass(current().platform)} />
-                {t("Spin the wheel")}
+                {props.perk === "spin" ? t("Spin the wheel") : t("Play the effect")}
               </button>
             </Show>
             <p class="text-center text-sm text-muted">
@@ -874,7 +905,7 @@ function TipJar(props: {
       props.onPaid(t("Your tip is on its way to the streamer."));
       setMessage("");
     },
-    cancelled: t("Payment cancelled. No tip was sent."),
+    cancelled: t("Tip cancelled."),
     showError,
     setBusy,
     setResult,
@@ -948,6 +979,177 @@ function TipJar(props: {
           {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
         </p>
       </div>
+    </form>
+  );
+}
+
+function EffectJar(props: {
+  id: string;
+  options: EffectOption[];
+  effects: (PublicEffects & { payment: Payment }) | null;
+  subEffects: Tiers | null;
+  platforms: Platform[];
+  allowance: Allowance | null;
+  viewer: string | null;
+  name: string;
+  onName: (name: string) => void;
+  onError: (error: unknown) => void;
+  onPaid: (text: string, title?: string) => void;
+  onSignIn: (platform: Platform) => void;
+  onSignOut: () => void;
+  onAllowance: () => void;
+  signInFailed: string | null;
+}) {
+  const [chosen, setChosen] = createSignal<string | null>(null);
+  const [message, setMessage] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [result, setResult] = createSignal<Result | null>(
+    props.signInFailed ? { text: props.signInFailed } : null,
+  );
+  let form: HTMLFormElement | undefined;
+
+  const effect = () => {
+    const current = chosen();
+    return props.options.some((option) => option.id === current) ? current : null;
+  };
+
+  const showError = (error: unknown) => {
+    setResult({ text: errorText(error) });
+    props.onError(error);
+  };
+
+  const options = payOptions({
+    start: () => {
+      setResult(null);
+      if (busy() || effect() === null || !form?.reportValidity()) {
+        return false;
+      }
+      saveName(props.name.trim());
+      return true;
+    },
+    order: (provider) =>
+      orderEffect(
+        props.id,
+        effect() ?? "",
+        props.effects?.price ?? 0,
+        props.name.trim(),
+        message().trim(),
+        provider,
+      ),
+    capture: (orderId) => captureOrder("effect", props.id, orderId),
+    paid: () => {
+      props.onPaid(t("Your effect is on its way to the streamer."));
+      setMessage("");
+    },
+    cancelled: t("Tip cancelled. No effect was played."),
+    showError,
+    setBusy,
+    setResult,
+  });
+
+  const playAsSubscriber = async () => {
+    const current = effect();
+    if (busy() || !props.viewer || current === null) {
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      await requestSubscriberEffect(props.id, props.viewer, current, message().trim());
+      props.onPaid(t("Your effect is on its way to the streamer."), t("Enjoy the effect!"));
+      setMessage("");
+    } catch (error) {
+      showError(error);
+    } finally {
+      setBusy(false);
+      props.onAllowance();
+    }
+  };
+
+  return (
+    <form
+      ref={(element) => (form = element)}
+      class={cardClass}
+      onSubmit={(event) => event.preventDefault()}
+    >
+      <fieldset class="flex flex-col gap-3">
+        <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Effect")}</legend>
+        <p class="-mt-1 text-[15px] text-muted">{t("Tap an effect to hear it.")}</p>
+        <div class="flex flex-wrap gap-3">
+          <For each={props.options}>
+            {(option) => (
+              <label class={`${chipClass} gap-2`}>
+                <input
+                  type="radio"
+                  name="effect"
+                  checked={effect() === option.id}
+                  onChange={() => setChosen(option.id)}
+                  onClick={() => playEffect(option.id)}
+                  class="sr-only"
+                />
+                <Icon name="play" class="size-4 shrink-0" />
+                {effectName(option.id)}
+              </label>
+            )}
+          </For>
+        </div>
+      </fieldset>
+      <NameField
+        name={props.name}
+        onName={props.onName}
+        placeholder={t("Shown with your message")}
+        hidden={!props.effects}
+      />
+      <MessageField
+        message={message()}
+        onMessage={setMessage}
+        placeholder={t("Love the stream!")}
+      />
+      <Show when={props.effects} keyed>
+        {(effects) => (
+          <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
+            <p class="flex flex-col items-center gap-1 text-center">
+              <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
+                {t("Your tip")}
+              </span>
+              <span class="font-display text-4xl font-semibold">
+                {formatPrice({ price: effects.price, currency: effects.currency })}
+              </span>
+              <span class="text-ink-2">
+                {effect() === null ? t("Pick an effect") : effectName(effect()!)}
+              </span>
+            </p>
+            <ResultLine result={result()} onClose={() => setResult(null)} />
+            <PayButtons
+              payment={effects.payment}
+              options={options}
+              disabled={busy() || effect() === null}
+              resetKey={`${effect()}\n${effects.price}\n${props.name}\n${message()}`}
+            />
+            <p class="text-center text-sm text-muted">
+              {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
+            </p>
+          </div>
+        )}
+      </Show>
+      <Show when={props.subEffects} keyed>
+        {(tiers) => (
+          <SubscriberBox
+            perk="effect"
+            tiers={tiers}
+            platforms={props.platforms}
+            allowance={props.allowance}
+            signedIn={props.viewer !== null}
+            paid={props.effects !== null}
+            disabled={busy() || effect() === null}
+            result={result()}
+            onCloseResult={() => setResult(null)}
+            onSignIn={props.onSignIn}
+            onSignOut={props.onSignOut}
+            onRequest={() => void playAsSubscriber()}
+          />
+        )}
+      </Show>
     </form>
   );
 }
@@ -1269,7 +1471,7 @@ function SpinWheel(props: {
       );
       setMessage("");
     },
-    cancelled: t("Payment cancelled. No tip was sent and the wheel was not spun."),
+    cancelled: t("Tip cancelled. The wheel was not spun."),
     showError,
     setBusy,
     setResult,
@@ -1379,6 +1581,7 @@ function SpinWheel(props: {
       <Show when={props.subSpins} keyed>
         {(tiers) => (
           <SubscriberBox
+            perk="spin"
             tiers={tiers}
             platforms={props.platforms}
             allowance={props.allowance}
@@ -1397,11 +1600,11 @@ function SpinWheel(props: {
   );
 }
 
-type Section = "tip" | "spin";
+type Section = "tip" | "spin" | "effect";
 
 type Way = {
   section: Section;
-  icon: "heart" | "wheel";
+  icon: "heart" | "wheel" | "sparkles";
   title: string;
   text: string;
   enabled: boolean;
@@ -1437,7 +1640,10 @@ function WaysToTip(props: {
                 : t("Every tip goes straight to the streamer.")}
         </p>
       </div>
-      <div role="tablist" class="grid gap-3 sm:grid-cols-2">
+      <div
+        role="tablist"
+        class={`grid gap-3 ${props.ways.length > 2 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+      >
         <For each={props.ways}>
           {(way) => {
             const selected = () => props.section === way.section;
@@ -1486,8 +1692,13 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const [viewer, setViewer] = createSignal<string | null>(null);
   const [spinAllowance, setSpinAllowance] = createSignal<Allowance | null>(null);
   const [spinSignInFailed, setSpinSignInFailed] = createSignal<string | null>(null);
+  const [subEffects, setSubEffects] = createSignal<Tiers | null>(null, { equals: sameData });
+  const [effectOptions, setEffectOptions] = createSignal<EffectOption[]>([], { equals: sameData });
+  const [effectAllowance, setEffectAllowance] = createSignal<Allowance | null>(null);
+  const [effectSignInFailed, setEffectSignInFailed] = createSignal<string | null>(null);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
   const [spin, setSpin] = createSignal<PublicSpin | null>(null);
+  const [effects, setEffects] = createSignal<PublicEffects | null>(null);
   const [wheelOfLuck, setWheelOfLuck] = createSignal<Wheel | null>(null, { equals: sameData });
   const [streamerConnected, setStreamerConnected] = createSignal(false);
   const [profile, setProfile] = createSignal<Profile | null>(null);
@@ -1512,11 +1723,12 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const [dashboard, setDashboard] = createSignal<DashboardLink | null>(null);
   const [styled, setStyled] = createSignal(false);
   const [section, setSection] = createSignal<Section | null>(
-    (["tip", "spin"] as const).find((name) => location.hash === `#${name}`) ?? null,
+    (["tip", "spin", "effect"] as const).find((name) => location.hash === `#${name}`) ?? null,
   );
   const sections = (): Section[] => [
     ...(tipJar() ? (["tip"] as const) : []),
     ...(spinnable() ? (["spin"] as const) : []),
+    ...(effectsShown() ? (["effect"] as const) : []),
   ];
   const shown = () => {
     const current = section();
@@ -1539,6 +1751,19 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         text: wheel() ? t("Your tip spins the wheel live on stream.") : subscribersText(),
         enabled: spinnable(),
       },
+      ...(effectsShown()
+        ? [
+            {
+              section: "effect" as const,
+              icon: "sparkles" as const,
+              title: t("Effect"),
+              text: effectJar()
+                ? t("Your tip plays a sound live on stream.")
+                : t("Subscribers play a sound live on stream."),
+              enabled: true,
+            },
+          ]
+        : []),
     ];
   };
 
@@ -1552,6 +1777,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   };
   const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
   const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
+  const effectJar = createMemo(() => withPayment(effects()), null, { equals: sameData });
+  const effectsShown = () =>
+    effectOptions().length > 0 && (effectJar() !== null || subEffects() !== null);
   const spinnable = () => wheel() !== null || subSpins() !== null;
   const [cheer, setCheer] = createSignal<{ title: string; text: string } | null>(null);
 
@@ -1564,6 +1792,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
     setViewer(null);
     setSpinAllowance(null);
+    setEffectAllowance(null);
   };
 
   const refreshAllowances = async () => {
@@ -1574,7 +1803,10 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
     try {
       if (subSpins()) {
-        setSpinAllowance(await fetchAllowance(current, session));
+        setSpinAllowance(await fetchAllowance(current, "spin", session));
+      }
+      if (subEffects()) {
+        setEffectAllowance(await fetchAllowance(current, "effect", session));
       }
     } catch (error) {
       if (error instanceof BackendError && error.status === 401) {
@@ -1583,7 +1815,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  const allowancesMissing = () => subSpins() !== null && spinAllowance() === null;
+  const allowancesMissing = () =>
+    (subSpins() !== null && spinAllowance() === null) ||
+    (subEffects() !== null && effectAllowance() === null);
 
   createEffect(() => {
     if (viewer() && allowancesMissing()) {
@@ -1603,6 +1837,24 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const tipError = (error: unknown) => {
     if (error instanceof BackendError && error.status === 400) {
       void refreshTips();
+    }
+  };
+
+  const refreshEffects = async () => {
+    const current = id();
+    if (current) {
+      try {
+        const found = await streamerEffects(current);
+        setEffects(found.effects);
+        setSubEffects(found.subEffects);
+        setEffectOptions(found.options);
+      } catch {}
+    }
+  };
+
+  const effectError = (error: unknown) => {
+    if (error instanceof BackendError && [400, 409].includes(error.status)) {
+      void refreshEffects();
     }
   };
 
@@ -1646,6 +1898,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       if (signIn.failed && signIn.section === "spin") {
         setSpinSignInFailed(signIn.failed);
       }
+      if (signIn.failed && signIn.section === "effect") {
+        setEffectSignInFailed(signIn.failed);
+      }
       Promise.all([streamerProfile(current), signedInAccount()])
         .then(([found, account]) => {
           batch(() => {
@@ -1663,6 +1918,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
     void refreshTips();
     void refreshSpin();
+    void refreshEffects();
     onCleanup(
       poll(() => {
         void refreshSpin();
@@ -1741,6 +1997,27 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                   />
                 </div>
               )}
+            </Show>
+            <Show when={effectsShown()}>
+              <div class={shown() === "effect" ? "" : "hidden"}>
+                <EffectJar
+                  id={id() ?? ""}
+                  options={effectOptions()}
+                  effects={effectJar()}
+                  subEffects={subEffects()}
+                  platforms={subPlatforms()}
+                  allowance={effectAllowance()}
+                  viewer={viewer()}
+                  name={name()}
+                  onName={setName}
+                  onError={effectError}
+                  onPaid={celebrate}
+                  onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "effect")}
+                  onSignOut={signOutViewer}
+                  onAllowance={() => void refreshAllowances()}
+                  signInFailed={effectSignInFailed()}
+                />
+              </div>
             </Show>
           </div>
         </Show>

@@ -90,7 +90,7 @@ async fn create_order(api: &Api, order: Order) -> Result<OrderResponse, Failure>
         failure(
             "not-saved",
             StatusCode::SERVICE_UNAVAILABLE,
-            "Payments are unavailable right now. Try again later.",
+            "Tips are unavailable right now. Try again later.",
         )
     })?;
     Ok(OrderResponse { order_id, stripe })
@@ -100,7 +100,7 @@ pub(super) fn capture_crashed() -> Failure {
     failure(
         "crashed",
         StatusCode::INTERNAL_SERVER_ERROR,
-        "Something went wrong with the payment.",
+        "Something went wrong with the tip.",
     )
 }
 
@@ -108,7 +108,7 @@ fn payment_unavailable() -> Failure {
     failure(
         "payments-unavailable",
         StatusCode::SERVICE_UNAVAILABLE,
-        "Payments are unavailable right now. Try again later.",
+        "Tips are unavailable right now. Try again later.",
     )
 }
 
@@ -130,7 +130,7 @@ pub(super) fn expired() -> Failure {
     failure(
         "expired",
         StatusCode::GONE,
-        "This payment is unknown or expired, so no money was taken.",
+        "This tip is unknown or expired, so no money was taken.",
     )
 }
 
@@ -138,17 +138,20 @@ fn provider_failed(provider: &str) -> Failure {
     failure(
         "provider",
         StatusCode::BAD_GATEWAY,
-        &format!("{provider} could not complete the payment."),
+        &format!("{provider} could not complete the tip."),
     )
 }
 
 pub(super) fn pending(provider: &str, kind: &str) -> Failure {
     let text = match kind {
         "tip" => format!(
-            "{provider} is still reviewing the payment. If {provider} approves it, the tip will be shown and the money reaches the streamer."
+            "{provider} is still reviewing the tip. If {provider} approves it, the tip will be shown and the money reaches the streamer."
+        ),
+        "effect" => format!(
+            "{provider} is still reviewing the tip, so the effect was not played yet. It will be played if {provider} approves it."
         ),
         _ => format!(
-            "{provider} is still reviewing the payment, so the wheel was not spun yet. It will be spun if {provider} approves the payment."
+            "{provider} is still reviewing the tip, so the wheel was not spun yet. It will be spun if {provider} approves it."
         ),
     };
     failure("pending", StatusCode::PAYMENT_REQUIRED, &text)
@@ -172,7 +175,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         Some((
             "no-wheel",
             StatusCode::NOT_FOUND,
-            "The streamer's wheel is gone, so your payment was not taken.",
+            "The streamer's wheel is gone, so your tip was not taken.",
         ))
     } else {
         None
@@ -204,7 +207,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         return Err(failure(
             "not-saved",
             StatusCode::SERVICE_UNAVAILABLE,
-            "Payments are unavailable right now, so no money was taken. Try again later.",
+            "Tips are unavailable right now, so no money was taken. Try again later.",
         ));
     }
     capture_at_provider(api, order_id, &order, kind).await
@@ -255,7 +258,7 @@ async fn capture_at_provider(
                 CaptureError::NotApproved => failure(
                     "not-approved",
                     StatusCode::PAYMENT_REQUIRED,
-                    "The payment was not completed.",
+                    "The tip was not completed.",
                 ),
                 CaptureError::Pending => pending(provider, kind),
                 _ => provider_failed(provider),
@@ -286,6 +289,7 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
                 "{provider} did not answer. If the money was taken, {}.",
                 match order.item.kind() {
                     "tip" => "the tip will still be shown",
+                    "effect" => "the effect will still be played",
                     _ => "the wheel will still be spun",
                 }
             ),
@@ -386,6 +390,11 @@ pub(super) fn delivery_item(order: &Order) -> deliveries::Item {
             user: order.user.clone(),
             message: message.clone().unwrap_or_default(),
             spins: *spins,
+        },
+        Item::Effect { effect, message } => deliveries::Item::Effect {
+            user: order.user.clone(),
+            message: message.clone().unwrap_or_default(),
+            effect: effect.clone(),
         },
     }
 }
@@ -592,7 +601,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal could not complete the payment."
+            "PayPal could not complete the tip."
         );
         assert!(api.deliveries.pending().is_empty());
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
@@ -612,7 +621,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(
             response.text().await.unwrap(),
-            "Payments are unavailable right now, so no money was taken. Try again later."
+            "Tips are unavailable right now, so no money was taken. Try again later."
         );
         assert!(!*fake.captured.lock().unwrap());
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
@@ -633,7 +642,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal could not complete the payment."
+            "PayPal could not complete the tip."
         );
         assert!(api.deliveries.pending().is_empty());
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
@@ -695,7 +704,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             response.text().await.unwrap(),
-            "Stripe is still reviewing the payment. If Stripe approves it, the tip will be shown and the money reaches the streamer."
+            "Stripe is still reviewing the tip. If Stripe approves it, the tip will be shown and the money reaches the streamer."
         );
         assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Capturing);
         settle(&api, Duration::ZERO).await;
@@ -767,7 +776,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal is still reviewing the payment. If PayPal approves it, the tip will be shown and the money reaches the streamer."
+            "PayPal is still reviewing the tip. If PayPal approves it, the tip will be shown and the money reaches the streamer."
         );
         assert!(api.deliveries.pending().is_empty());
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);

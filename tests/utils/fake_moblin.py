@@ -116,10 +116,10 @@ class FakeMoblin:
         kind, body = next(iter(data.items()))
         if kind == "importSettings":
             self.import_settings(body["data"])
-        elif kind == "tip" and self.refuse_tips:
+        elif kind == "tip" and "message" in body["kind"] and self.refuse_tips:
             LOGGER.debug("Refusing tip %s", body)
             return {"error": {}}, None
-        elif kind in ["tip", "spinWheelOfLuck"]:
+        elif kind == "tip":
             request_id = body.get("requestId")
             if request_id in self.handled_request_ids:
                 LOGGER.debug("Request %s already handled", request_id)

@@ -41,6 +41,7 @@ function PageMockup() {
   const ways: { icon: IconName; title: string }[] = [
     { icon: "heart", title: t("Message") },
     { icon: "wheel", title: t("Spin the wheel") },
+    { icon: "sparkles", title: t("Effect") },
   ];
   return (
     <div inert aria-hidden="true" class="relative mx-auto w-full max-w-[340px] select-none">
@@ -124,8 +125,7 @@ export default function CloudLanding(props: { failed: boolean }) {
           </h1>
           <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
             {t(
-              "Viewers tip you from your own page, with a message or a spin of your wheel, and it " +
-                "all shows up in Moblin while you stream.",
+              "Viewers tip you from your own page, and their tips show up in Moblin while you stream.",
             )}
           </p>
           <SignInButtons />

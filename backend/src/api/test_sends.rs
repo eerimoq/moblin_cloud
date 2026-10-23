@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::accounts::Account;
 use crate::deliveries;
+use crate::effects::EFFECTS;
 
 use super::*;
 
@@ -17,6 +18,8 @@ use super::*;
 pub(super) struct TestRequest {
     #[serde(default)]
     message: Option<String>,
+    #[serde(default)]
+    effect: Option<String>,
 }
 
 fn test_page(
@@ -151,6 +154,47 @@ async fn account_test_spin(
     Ok(accepted())
 }
 
+pub(super) async fn handle_account_test_effect(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let result = account_test_effect(&api, &headers, None, request).await;
+    counted(&api, "effectTests", result)
+}
+
+pub(super) async fn handle_moderator_test_effect(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let result = account_test_effect(&api, &headers, Some(&id), request).await;
+    counted(&api, "effectTests", result)
+}
+
+async fn account_test_effect(
+    api: &Api,
+    headers: &HeaderMap,
+    page: Option<&str>,
+    request: TestRequest,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (id, account, request_id) = test_page(api, headers, page)?;
+    let effect = viewer_effect(request.effect.as_deref().unwrap_or(EFFECTS[0].id))?;
+    let message = viewer_message(request.message)?.unwrap_or_default();
+    info!("queued a test effect in request {request_id} for remote control streamer {id}");
+    api.deliveries.add_test(
+        id,
+        request_id,
+        deliveries::Item::Effect {
+            user: account.name().to_string(),
+            message,
+            effect,
+        },
+    );
+    Ok(accepted())
+}
+
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
@@ -218,8 +262,8 @@ mod tests {
         let tip = &request["request"]["data"]["tip"];
         assert_eq!(tip["name"], "Erik");
         assert_eq!(tip["message"], "Testing");
-        assert_eq!(tip["amount"], "5.00");
-        assert_eq!(tip["currency"], "USD");
+        assert_eq!(tip["kind"]["message"]["amount"], "5.00");
+        assert_eq!(tip["kind"]["message"]["currency"], "USD");
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
         let recent: Value = client
@@ -249,9 +293,9 @@ mod tests {
         let response = test("spin", json!({})).await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let request = receive(&mut socket).await;
-        let spin = &request["request"]["data"]["spinWheelOfLuck"];
+        let spin = &request["request"]["data"]["tip"];
         assert_eq!(spin["name"], "Erik");
-        assert_eq!(spin["count"], 1);
+        assert_eq!(spin["kind"]["wheelOfLuck"]["count"], 1);
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
     }

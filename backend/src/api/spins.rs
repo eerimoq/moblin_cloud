@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert_eq!(
             response.text().await.unwrap(),
-            "The streamer's wheel is gone, so your payment was not taken."
+            "The streamer's wheel is gone, so your tip was not taken."
         );
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
         assert!(api.deliveries.pending().is_empty());
@@ -173,10 +173,7 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let request = receive(&mut socket).await;
-        assert_eq!(
-            request["request"]["data"]["spinWheelOfLuck"]["requestId"],
-            "ORDER1"
-        );
+        assert_eq!(request["request"]["data"]["tip"]["requestId"], "ORDER1");
     }
 
     #[tokio::test]
@@ -398,10 +395,10 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let request = receive(&mut socket).await;
-        let spin = json!({"spinWheelOfLuck": {
+        let spin = json!({"tip": {
             "name": "Viewer",
             "message": "Go big!",
-            "count": 2,
+            "kind": {"wheelOfLuck": {"count": 2}},
             "requestId": "ORDER1",
         }});
         assert_eq!(request["request"]["data"], spin);

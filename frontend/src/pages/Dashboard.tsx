@@ -65,13 +65,16 @@ import {
   platforms,
   tierCount,
   tierNumbers,
+  type Effects,
   type Feature,
+  type Perk,
   type Page,
   type Settings,
   type Spin,
   type Tiers,
   type Tips,
 } from "../data/remoteControl";
+import { effectName, effects } from "../data/effects";
 import { language, t, tRich } from "../i18n";
 import CloudLanding from "../components/CloudLanding";
 
@@ -247,7 +250,7 @@ function CurrencySettings(props: {
     () => props.onSave({ currency: currency() }),
     (error) =>
       error instanceof BackendError && error.status === 409
-        ? t("Turn messages and the wheel off to change the currency.")
+        ? t("Turn off all tips to change the currency.")
         : paymentErrorText(error, t("Pick one of the currencies.")),
   );
 
@@ -256,7 +259,7 @@ function CurrencySettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Currency")}</h2>
       <p class="text-ink-2">{t("All tips are in this currency.")}</p>
       <Show when={props.locked}>
-        <p class="text-ink-2">{t("Turn messages and the wheel off to change the currency.")}</p>
+        <p class="text-ink-2">{t("Turn off all tips to change the currency.")}</p>
       </Show>
       <select
         aria-label={t("Currency")}
@@ -347,7 +350,7 @@ function PayPalAccount(props: {
       connect: () => connectPayPal(props.session),
       check: checkPayPal,
       disconnect: disconnectPayPal,
-      confirmText: t("Viewers can't pay you with PayPal until you connect a PayPal account again."),
+      confirmText: t("Viewers can't tip you with PayPal until you connect a PayPal account again."),
     });
 
   onMount(() => {
@@ -366,9 +369,7 @@ function PayPalAccount(props: {
       <h2 class="text-[23px] font-semibold">PayPal</h2>
       <Show when={props.settings.paypalSandbox}>
         <Notice status>
-          {t(
-            "PayPal is in sandbox mode. Payments are for testing only and no real money is moved.",
-          )}
+          {t("PayPal is in sandbox mode. Tips are for testing only and no real money is moved.")}
         </Notice>
       </Show>
       <Show
@@ -376,8 +377,8 @@ function PayPalAccount(props: {
         fallback={
           <p class="text-ink-2">
             {tRich(
-              "Connect your PayPal account to let viewers send you tips, on their own or with a " +
-                "wheel spin. You sign in or sign up on PayPal with a personal or business " +
+              "Connect your PayPal account to let viewers send you tips. You sign in or sign up " +
+                "on PayPal with a personal or business " +
                 "account (in some countries PayPal asks for a business account). By connecting PayPal you " +
                 "agree to the {terms}.",
               {
@@ -464,7 +465,7 @@ function StripeAccount(props: {
       connect: () => connectStripe(props.session, country()),
       check: checkStripe,
       disconnect: disconnectStripe,
-      confirmText: t("Viewers can't pay you with Stripe until you connect a Stripe account again."),
+      confirmText: t("Viewers can't tip you with Stripe until you connect a Stripe account again."),
     });
   const [waiting, setWaiting] = createSignal(false);
   let stopped = false;
@@ -500,7 +501,7 @@ function StripeAccount(props: {
       <h2 class="text-[23px] font-semibold">Stripe</h2>
       <Show when={props.settings.stripeTest}>
         <Notice status>
-          {t("Stripe is in test mode. Payments are for testing only and no real money is moved.")}
+          {t("Stripe is in test mode. Tips are for testing only and no real money is moved.")}
         </Notice>
       </Show>
       <Show
@@ -508,9 +509,9 @@ function StripeAccount(props: {
         fallback={
           <p class="text-ink-2">
             {tRich(
-              "Connect a Stripe account to let viewers pay with a card, Apple Pay or Google Pay. You " +
-                "sign up or sign in on Stripe, which asks about you and your bank account so it can pay " +
-                "you out. By connecting Stripe you agree to the {terms}.",
+              "Connect a Stripe account to let viewers tip with a card, Apple Pay or Google Pay. You " +
+                "sign up or sign in on Stripe, which asks about you and your bank account so it can send " +
+                "your tips to you. By connecting Stripe you agree to the {terms}.",
               {
                 terms: (
                   <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
@@ -741,9 +742,13 @@ function GetStarted(props: {
       {
         shown: true,
         done:
-          isOn(props.settings.tips) || isOn(props.settings.spin) || isOn(props.settings.subSpins),
-        title: t("Turn on messages or the wheel"),
-        text: t("Set your amounts in Message and Wheel of luck."),
+          isOn(props.settings.tips) ||
+          isOn(props.settings.spin) ||
+          isOn(props.settings.effects) ||
+          isOn(props.settings.subSpins) ||
+          isOn(props.settings.subEffects),
+        title: t("Choose how viewers tip you"),
+        text: t("Turn on at least one way to tip and set its amounts."),
         section: props.payments ? "tips" : "wheel",
       },
       {
@@ -848,9 +853,7 @@ function YourPage(props: {
           ? t("The tip page of {name}", { name: props.account.name })
           : t("Your tip page")}
       </h2>
-      <p class="text-ink-2">
-        {t("Share it with your viewers so they can send you tips and spin your wheel.")}
-      </p>
+      <p class="text-ink-2">{t("Share it with your viewers so they can tip you.")}</p>
       <For each={pageUrls(props.account)}>
         {(address) => (
           <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -1000,6 +1003,7 @@ function YourPage(props: {
 }
 
 function SubscriberSettings(props: {
+  perk: Perk;
   tiers: Feature<Tiers> | null;
   twitch: boolean;
   kick: boolean;
@@ -1027,23 +1031,35 @@ function SubscriberSettings(props: {
     (error) =>
       paymentErrorText(
         error,
-        t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier."),
+        props.perk === "spin"
+          ? t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier.")
+          : t("Enter 0 to 100 effects per tier, and more than 0 for at least one tier."),
       ),
   );
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">
-        {props.twitch && !props.kick
-          ? t("Spins for Twitch subscribers")
-          : t("Spins for subscribers")}
+        {props.perk === "spin"
+          ? props.twitch && !props.kick
+            ? t("Spins for Twitch subscribers")
+            : t("Spins for subscribers")
+          : props.twitch && !props.kick
+            ? t("Effects for Twitch subscribers")
+            : t("Effects for subscribers")}
       </h2>
       <p class="text-ink-2">
-        {t(
-          "Give your subscribers spins of the wheel every month, without a tip. Subscribers sign " +
-            "in on your tip page, and their spins come back on the 1st of every " +
-            "month. This works with or without paid wheel spins.",
-        )}
+        {props.perk === "spin"
+          ? t(
+              "Give your subscribers spins of the wheel every month, without a tip. Subscribers sign " +
+                "in on your tip page, and their spins come back on the 1st of every " +
+                "month. This works with or without tips to spin the wheel.",
+            )
+          : t(
+              "Give your subscribers effects every month, without a tip. Subscribers sign in on " +
+                "your tip page, and their effects come back on the 1st of every month. This " +
+                "works with or without tips for effects.",
+            )}
         <Show when={props.twitch && props.kick}>
           {" "}
           {t("Kick subscribers get the tier 1 amount.")}
@@ -1056,7 +1072,9 @@ function SubscriberSettings(props: {
           onChange={(event) => setEnabled(event.currentTarget.checked)}
           class="size-5 accent-moss"
         />
-        {t("Subscribers can spin the wheel without a tip")}
+        {props.perk === "spin"
+          ? t("Subscribers can spin the wheel without a tip")
+          : t("Subscribers can play effects without a tip")}
       </label>
       <Show when={enabled()}>
         <div class="flex flex-wrap gap-4">
@@ -1083,7 +1101,11 @@ function SubscriberSettings(props: {
             )}
           </For>
         </div>
-        <span class="text-[15px] text-muted">{t("Spins per month for each tier.")}</span>
+        <span class="text-[15px] text-muted">
+          {props.perk === "spin"
+            ? t("Spins per month for each tier.")
+            : t("Effects per month for each tier.")}
+        </span>
       </Show>
       <SaveFooter save={save} />
     </form>
@@ -1372,6 +1394,61 @@ function TipSettings(props: {
   );
 }
 
+function EffectSettings(props: {
+  effects: Feature<Effects> | null;
+  currency: string;
+  busy: boolean;
+  onSave: (changes: { effects: Feature<Effects> }) => Promise<void>;
+}) {
+  const initial = () => ({
+    enabled: isOn(props.effects),
+    price: ((props.effects?.price ?? 200) / 100).toFixed(2),
+  });
+  const [enabled, setEnabled] = createSignal(initial().enabled);
+  const [price, setPrice] = createSignal(initial().price);
+  const effectsOf = (form: ReturnType<typeof initial>): Feature<Effects> => ({
+    enabled: form.enabled,
+    price: hundredths(form.price),
+  });
+  const current = () => effectsOf({ enabled: enabled(), price: price() });
+  const save = createSave(
+    () => props.busy,
+    () => !same(current(), effectsOf(initial())),
+    () => props.onSave({ effects: current() }),
+    (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
+  );
+
+  return (
+    <form class={cardClass} onSubmit={save.submit}>
+      <h2 class="text-[23px] font-semibold">{t("Effect")}</h2>
+      <p class="text-ink-2">
+        {t(
+          "Let viewers tip to play an effect on stream. Viewers pick one of Moblin's fart sounds, " +
+            "listen to it first if they like, and add an optional message.",
+        )}
+      </p>
+      <label class="flex items-center gap-3 text-ink-2">
+        <input
+          type="checkbox"
+          checked={enabled()}
+          onChange={(event) => setEnabled(event.currentTarget.checked)}
+          class="size-5 accent-moss"
+        />
+        {t("Viewers tip to play effects")}
+      </label>
+      <Show when={enabled()}>
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">
+            {t("Price per effect ({currency})", { currency: props.currency })}
+          </span>
+          <MoneyInput value={price()} onValue={setPrice} required label={t("Price per effect")} />
+        </label>
+      </Show>
+      <SaveFooter save={save} signInAgain />
+    </form>
+  );
+}
+
 function SpinSettings(props: {
   spin: Feature<Spin> | null;
   currency: string;
@@ -1497,10 +1574,12 @@ function SendForm(props: {
   title: string;
   description?: string;
   label: string;
-  send: (message: string) => Promise<unknown>;
+  effects?: string[];
+  send: (message: string, effect: string | undefined) => Promise<unknown>;
   onSignOut: () => void;
 }) {
   const [message, setMessage] = createSignal("");
+  const [effect, setEffect] = createSignal(props.effects?.[0]);
   const [sending, setSending] = createSignal(false);
   const [sent, flashSent] = createFlash(3000);
   const [error, setError] = createSignal<string | null>(null);
@@ -1513,7 +1592,7 @@ function SendForm(props: {
     setError(null);
     setSending(true);
     try {
-      await props.send(message());
+      await props.send(message(), effect());
       flashSent();
     } catch (error) {
       if (signedOut(error)) {
@@ -1540,6 +1619,18 @@ function SendForm(props: {
         onInput={(event) => setMessage(event.currentTarget.value)}
         class={inputClass}
       />
+      <Show when={props.effects}>
+        {(effects) => (
+          <select
+            aria-label={t("Effect")}
+            value={effect()}
+            onChange={(event) => setEffect(event.currentTarget.value)}
+            class={`${inputClass} max-w-60`}
+          >
+            <For each={effects()}>{(id) => <option value={id}>{effectName(id)}</option>}</For>
+          </select>
+        )}
+      </Show>
       <div class="flex flex-wrap items-center gap-4">
         <button type="submit" class={buttonClass} disabled={sending()}>
           <Show when={sent()}>
@@ -1570,6 +1661,10 @@ const testTexts: Record<RecentKind, { description: string; label: string }> = {
     description: t("Spin your wheel in Moblin, to check that it works."),
     label: t("Send test spin"),
   },
+  effect: {
+    description: t("Play an effect in Moblin, to check that it works."),
+    label: t("Send test effect"),
+  },
 };
 
 function TestSend(props: {
@@ -1583,8 +1678,11 @@ function TestSend(props: {
       title={t("Test it")}
       description={testTexts[props.kind].description}
       label={testTexts[props.kind].label}
+      effects={props.kind === "effect" ? effects : undefined}
       onSignOut={props.onSignOut}
-      send={(message) => sendTest(props.session, props.kind, { message }, props.page)}
+      send={(message, effect) =>
+        sendTest(props.session, props.kind, { message, effect }, props.page)
+      }
     />
   );
 }
@@ -1689,6 +1787,13 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
       icon: "wheel",
       shown: () => true,
       status: () => onOff(isOn(settings().spin) || isOn(settings().subSpins)),
+    },
+    {
+      id: "effects",
+      label: t("Effect"),
+      icon: "sparkles",
+      shown: () => true,
+      status: () => onOff(isOn(settings().effects) || isOn(settings().subEffects)),
     },
     {
       id: "moderators",
@@ -1892,6 +1997,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
           </Show>
           <Show when={account().twitch || account().kick}>
             <SubscriberSettings
+              perk="spin"
               tiers={settings().subSpins}
               twitch={account().twitch !== null}
               kick={account().kick !== null}
@@ -1909,6 +2015,48 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
             kind="spin"
             list={recent()?.spin}
             onMore={() => loadMore("spin")}
+            onResend={resend}
+          />
+        </div>
+        <div hidden={active() !== "effects"} class="flex flex-col gap-6">
+          <Show
+            when={paid(isOn(settings().effects))}
+            fallback={
+              <NeedsPayments
+                title={t("Effect")}
+                available={payments()}
+                streamer={moderating() ? account().name : null}
+                onConnect={() => select("payments")}
+              />
+            }
+          >
+            <EffectSettings
+              effects={settings().effects}
+              currency={settings().currency}
+              busy={busy()}
+              onSave={save}
+            />
+          </Show>
+          <Show when={account().twitch || account().kick}>
+            <SubscriberSettings
+              perk="effect"
+              tiers={settings().subEffects}
+              twitch={account().twitch !== null}
+              kick={account().kick !== null}
+              busy={busy()}
+              onSave={(subEffects) => save({ subEffects })}
+            />
+          </Show>
+          <TestSend
+            kind="effect"
+            session={props.session}
+            page={props.page}
+            onSignOut={props.onSignOut}
+          />
+          <Latest
+            kind="effect"
+            list={recent()?.effect}
+            onMore={() => loadMore("effect")}
             onResend={resend}
           />
         </div>
@@ -1933,7 +2081,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
             <Show when={settings().payable}>
               <CurrencySettings
                 currency={settings().currency}
-                locked={isOn(settings().tips) || isOn(settings().spin)}
+                locked={isOn(settings().tips) || isOn(settings().spin) || isOn(settings().effects)}
                 busy={busy()}
                 onSave={save}
               />
@@ -2180,7 +2328,7 @@ function MoblinSettings(props: {
       </p>
       <p class="text-ink-2">
         {tRich(
-          "Then pick the alerts widget that shows tips and the wheel viewers spin in the same " +
+          "Then pick the alerts widget that shows messages and the wheel of luck widget that viewers spin in the same " +
             "settings. See the {guide}.",
           { guide: <GuideLink text={t("setup guide")} /> },
         )}
@@ -2288,7 +2436,7 @@ function MoblinSettings(props: {
         </Show>
         <p class="text-[15px] text-muted">
           {t(
-            "Wheel spins go to the first device with a wheel picked in Moblin's Moblin Cloud settings. Tips go to every device.",
+            "Wheel spins go to the first device with a wheel picked in Moblin's Moblin Cloud settings. Other tips go to every device.",
           )}
         </p>
       </div>

@@ -40,6 +40,8 @@ pub(super) struct Recent {
     #[serde(skip_serializing_if = "Option::is_none")]
     spins: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    effect: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tier: Option<u8>,
     #[serde(rename = "kickSubscriber", skip_serializing_if = "std::ops::Not::not")]
     kick_subscriber: bool,
@@ -71,7 +73,7 @@ pub(super) fn recent(
     query: RecentQuery,
     owner: bool,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
-    if !["tip", "spin"].contains(&query.kind.as_str()) {
+    if !["tip", "spin", "effect"].contains(&query.kind.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string()));
     }
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
@@ -97,9 +99,10 @@ pub(super) fn recent(
                 Payee::PayPal(_) | Payee::Stripe(_) if owner => Some(order.payee.slug()),
                 _ => None,
             };
-            let (message, spins) = match order.item {
-                Item::Tip { message } => (message, None),
-                Item::Spin { spins, message } => (message, Some(spins)),
+            let (message, spins, effect) = match order.item {
+                Item::Tip { message } => (message, None, None),
+                Item::Spin { spins, message } => (message, Some(spins), None),
+                Item::Effect { effect, message } => (message, None, Some(effect)),
             };
             Recent {
                 id,
@@ -109,6 +112,7 @@ pub(super) fn recent(
                 currency: order.currency,
                 message,
                 spins,
+                effect,
                 tier,
                 kick_subscriber,
                 provider,
@@ -143,7 +147,9 @@ fn recent_devices(
                 .wheel_device(&page.id)
                 .into_iter()
                 .collect(),
-            Item::Tip { .. } => api.deliveries.tip_devices(&api.remote_control, &page.id),
+            Item::Tip { .. } | Item::Effect { .. } => {
+                api.deliveries.tip_devices(&api.remote_control, &page.id)
+            }
         };
         for device in waiting {
             if !devices.iter().any(|(other, _)| *other == device) {

@@ -126,7 +126,7 @@ function LinkedAccounts(props: {
       </ul>
       <p class="text-[15px] text-muted">
         {t(
-          "Spins for subscribers and moderators need a linked Twitch or Kick account. An account that already has its own page can't be linked. Delete that page first.",
+          "Free tips for subscribers and moderators need a linked Twitch or Kick account. An account that already has its own page can't be linked. Delete that page first.",
         )}
       </p>
     </section>
@@ -190,7 +190,7 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
       <p class="text-ink-2">
         {t(
           "Deletes your account with its tip page, Moblin devices, settings and history. Your PayPal " +
-            "and Stripe accounts stay as they are, and viewers keep what they paid for. Signing in " +
+            "and Stripe accounts stay as they are, and tips you got stay with you. Signing in " +
             "again starts over with a new account.",
         )}
       </p>

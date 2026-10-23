@@ -111,8 +111,7 @@ mod tests {
         let tip = json!({"tip": {
             "name": "Viewer",
             "message": "",
-            "amount": "7.00",
-            "currency": currency,
+            "kind": {"message": {"amount": "7.00", "currency": currency}},
             "requestId": "ORDER1",
         }});
         let request = receive(&mut socket).await;
@@ -457,8 +456,7 @@ mod tests {
         let tip = json!({"tip": {
             "name": "Viewer",
             "message": "Great stream!",
-            "amount": "7.00",
-            "currency": "USD",
+            "kind": {"message": {"amount": "7.00", "currency": "USD"}},
             "requestId": "ORDER1",
         }});
         let mut socket = connect(&address, &key).await;

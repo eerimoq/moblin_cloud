@@ -3,6 +3,7 @@ import Icon from "./Icon";
 import { cardClass, ghostButtonClass, Spinner } from "./PageParts";
 import type { Recent, RecentKind, RecentList } from "../data/account";
 import { formatPrice, providerName, spinsText } from "../data/remoteControl";
+import { effectName } from "../data/effects";
 import { language, t } from "../i18n";
 
 const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
@@ -30,8 +31,14 @@ export function Latest(props: {
   const [loading, setLoading] = createSignal(false);
   const [resending, setResending] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal<string | null>(null);
-  const title = () => (props.kind === "tip" ? t("Received messages") : t("Received spins"));
-  const empty = () => (props.kind === "tip" ? t("No messages yet.") : t("No spins yet."));
+  const title = () =>
+    ({ tip: t("Received messages"), spin: t("Received spins"), effect: t("Received effects") })[
+      props.kind
+    ];
+  const empty = () =>
+    ({ tip: t("No messages yet."), spin: t("No spins yet."), effect: t("No effects yet.") })[
+      props.kind
+    ];
   const more = async () => {
     setLoading(true);
     try {
@@ -89,6 +96,14 @@ export function Latest(props: {
                       </span>
                       <Show when={item.spins}>
                         {(spins) => <span class="text-ink-2">{spinsText(spins())}</span>}
+                      </Show>
+                      <Show when={item.effect}>
+                        {(effect) => (
+                          <span class="flex items-center gap-1 text-ink-2">
+                            <Icon name="play" class="size-4 shrink-0" />
+                            {effectName(effect())}
+                          </span>
+                        )}
                       </Show>
                       <Show when={item.message}>
                         {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
@@ -165,8 +180,8 @@ export function createRecent(
   const loadRecent = async () => {
     const shown = recent();
     try {
-      const [tip, spin] = await Promise.all(
-        (["tip", "spin"] as const).map((kind) =>
+      const [tip, spin, effect] = await Promise.all(
+        (["tip", "spin", "effect"] as const).map((kind) =>
           fetchList(kind, Math.min(Math.max(shown?.[kind].items.length ?? 0, 5), 50)),
         ),
       );
@@ -181,6 +196,7 @@ export function createRecent(
       setRecent((old) => ({
         tip: merge(tip, old?.tip),
         spin: merge(spin, old?.spin),
+        effect: merge(effect, old?.effect),
       }));
     } catch (error) {
       onError(error);

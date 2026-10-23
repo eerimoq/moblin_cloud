@@ -11,8 +11,9 @@ use tokio::time::sleep;
 use crate::accounts;
 use crate::counters;
 use crate::database::Database;
+use crate::effects;
 use crate::pages::format_price;
-use crate::remote_control::{RequestError, Streamers};
+use crate::remote_control::{RequestError, Streamers, TipKind};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Delivery {
@@ -45,6 +46,11 @@ impl Delivery {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Item {
+    Effect {
+        user: String,
+        message: String,
+        effect: String,
+    },
     Spin {
         user: String,
         message: String,
@@ -63,6 +69,7 @@ impl Item {
         match self {
             Item::Spin { .. } => "spin",
             Item::Tip { .. } => "tip",
+            Item::Effect { .. } => "effect",
         }
     }
 }
@@ -251,7 +258,7 @@ impl Deliveries {
                             streamers.wheel_device(page).into_iter().collect();
                         (devices.clone(), devices)
                     }
-                    Item::Tip { .. } => {
+                    Item::Tip { .. } | Item::Effect { .. } => {
                         let connected: Vec<String> = streamers
                             .devices(page)
                             .into_iter()
@@ -411,41 +418,47 @@ async fn deliver(
     device: &str,
     delivery: &Delivery,
 ) -> Result<(), RequestError> {
-    let request_id = delivery.moblin_request_id();
-    match &delivery.item {
+    let (user, message, kind) = match &delivery.item {
         Item::Spin {
             user,
             message,
             spins,
-        } => {
-            streamers
-                .spin_wheel(
-                    (page, device),
-                    user.clone(),
-                    message.clone(),
-                    *spins,
-                    request_id,
-                )
-                .await
-        }
+        } => (user, message, TipKind::WheelOfLuck { count: *spins }),
         Item::Tip {
             user,
             message,
             amount,
             currency,
-        } => {
-            streamers
-                .tip(
-                    (page, device),
-                    user.clone(),
-                    message.clone(),
-                    format_price(*amount),
-                    currency.clone(),
-                    request_id,
-                )
-                .await
-        }
-    }
+        } => (
+            user,
+            message,
+            TipKind::Message {
+                amount: format_price(*amount),
+                currency: currency.clone(),
+            },
+        ),
+        Item::Effect {
+            user,
+            message,
+            effect,
+        } => (
+            user,
+            message,
+            TipKind::Effect {
+                sound: effects::effect(effect)
+                    .map_or(effect.clone(), |effect| effect.name.to_string()),
+            },
+        ),
+    };
+    streamers
+        .tip(
+            (page, device),
+            user.clone(),
+            message.clone(),
+            kind,
+            delivery.moblin_request_id(),
+        )
+        .await
 }
 
 #[cfg(test)]
@@ -459,6 +472,19 @@ mod tests {
             message: "Hi".to_string(),
             amount: 500,
             currency: "USD".to_string(),
+        }
+    }
+
+    #[test]
+    fn effects_are_not_read_back_as_tips() {
+        let effect = Item::Effect {
+            user: "Viewer".to_string(),
+            message: String::new(),
+            effect: "fart-2".to_string(),
+        };
+        for item in [effect, tip(), spin()] {
+            let json = serde_json::to_string(&item).unwrap();
+            assert_eq!(serde_json::from_str::<Item>(&json).unwrap(), item);
         }
     }
 

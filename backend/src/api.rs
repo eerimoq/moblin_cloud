@@ -32,6 +32,7 @@ use crate::subscribers::Allowances;
 mod account;
 mod admin;
 mod banner;
+mod effects;
 mod moderators;
 mod orders;
 mod providers;
@@ -50,6 +51,7 @@ mod tips;
 use account::*;
 use admin::*;
 use banner::*;
+use effects::*;
 use moderators::*;
 pub use orders::settle_orders;
 use orders::*;
@@ -148,6 +150,7 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route("/account/test/tip", post(handle_account_test_tip))
         .route("/account/test/spin", post(handle_account_test_spin))
+        .route("/account/test/effect", post(handle_account_test_effect))
         .route(
             "/account/moderators/{platform}",
             post(handle_account_moderator_add),
@@ -182,6 +185,10 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/pages/{id}/test/spin",
             post(handle_moderator_test_spin),
         )
+        .route(
+            "/account/pages/{id}/test/effect",
+            post(handle_moderator_test_effect),
+        )
         .route("/admin/stats", get(handle_admin_stats))
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/image", get(handle_page_image))
@@ -195,6 +202,17 @@ pub fn router(api: Arc<Api>) -> Router {
             "/pages/{id}/tips/orders/{order_id}/capture",
             post(handle_tip_capture),
         )
+        .route("/pages/{id}/effects", get(handle_effects))
+        .route(
+            "/pages/{id}/effects/subscriber",
+            get(handle_subscriber_effect_allowance).post(handle_subscriber_effect),
+        )
+        .route("/pages/{id}/effects/orders", post(handle_effect_order))
+        .route(
+            "/pages/{id}/effects/orders/{order_id}/capture",
+            post(handle_effect_capture),
+        )
+        .route("/effects/{id}", get(handle_effect_media))
         .route("/pages/{id}/spin", get(handle_spin))
         .route("/pages/{id}/spin/orders", post(handle_spin_order))
         .route(

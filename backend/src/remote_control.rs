@@ -104,20 +104,20 @@ impl Wheel {
 #[serde(rename_all = "camelCase")]
 enum Request {
     #[serde(rename_all = "camelCase")]
-    SpinWheelOfLuck {
-        name: String,
-        message: String,
-        count: u32,
-        request_id: String,
-    },
-    #[serde(rename_all = "camelCase")]
     Tip {
         name: String,
         message: String,
-        amount: String,
-        currency: String,
+        kind: TipKind,
         request_id: String,
     },
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TipKind {
+    Message { amount: String, currency: String },
+    Effect { sound: String },
+    WheelOfLuck { count: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -429,35 +429,12 @@ impl Streamers {
             .and_then(|session| session.wheel.clone())
     }
 
-    pub async fn spin_wheel(
-        &self,
-        (page, device): (&str, &str),
-        name: String,
-        message: String,
-        count: u32,
-        request_id: String,
-    ) -> Result<(), RequestError> {
-        self.request(
-            (page, device),
-            Request::SpinWheelOfLuck {
-                name,
-                message,
-                count,
-                request_id,
-            },
-            Duration::from_secs(10),
-        )
-        .await?;
-        Ok(())
-    }
-
     pub async fn tip(
         &self,
         (page, device): (&str, &str),
         name: String,
         message: String,
-        amount: String,
-        currency: String,
+        kind: TipKind,
         request_id: String,
     ) -> Result<(), RequestError> {
         self.request(
@@ -465,8 +442,7 @@ impl Streamers {
             Request::Tip {
                 name,
                 message,
-                amount,
-                currency,
+                kind,
                 request_id,
             },
             Duration::from_secs(10),
@@ -548,30 +524,39 @@ mod tests {
             }),
             r#"{"hello":{"apiVersion":"0.1","authentication":{"challenge":"c","salt":"s"}}}"#
         );
-        assert_eq!(
+        let tip = |id, kind| {
             encode(&MessageToStreamer::Request {
-                id: 7,
-                data: Request::SpinWheelOfLuck {
-                    name: "Erik".to_string(),
-                    message: "Go!".to_string(),
-                    count: 3,
-                    request_id: "ORDER1".to_string(),
-                },
-            }),
-            r#"{"request":{"id":7,"data":{"spinWheelOfLuck":{"name":"Erik","message":"Go!","count":3,"requestId":"ORDER1"}}}}"#
-        );
-        assert_eq!(
-            encode(&MessageToStreamer::Request {
-                id: 8,
+                id,
                 data: Request::Tip {
                     name: "Erik".to_string(),
                     message: "Hi".to_string(),
+                    kind,
+                    request_id: "ORDER1".to_string(),
+                },
+            })
+        };
+        assert_eq!(
+            tip(
+                7,
+                TipKind::Message {
                     amount: "7.00".to_string(),
                     currency: "USD".to_string(),
-                    request_id: "ORDER2".to_string(),
-                },
-            }),
-            r#"{"request":{"id":8,"data":{"tip":{"name":"Erik","message":"Hi","amount":"7.00","currency":"USD","requestId":"ORDER2"}}}}"#
+                }
+            ),
+            r#"{"request":{"id":7,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"message":{"amount":"7.00","currency":"USD"}},"requestId":"ORDER1"}}}}"#
+        );
+        assert_eq!(
+            tip(
+                8,
+                TipKind::Effect {
+                    sound: "Bad chili fart".to_string(),
+                }
+            ),
+            r#"{"request":{"id":8,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"effect":{"sound":"Bad chili fart"}},"requestId":"ORDER1"}}}}"#
+        );
+        assert_eq!(
+            tip(9, TipKind::WheelOfLuck { count: 3 }),
+            r#"{"request":{"id":9,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"wheelOfLuck":{"count":3}},"requestId":"ORDER1"}}}}"#
         );
     }
 

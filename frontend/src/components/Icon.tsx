@@ -16,6 +16,7 @@ export type IconName =
   | "assistant-relay"
   | "warning"
   | "heart"
+  | "sparkles"
   | "wheel"
   | "twitch"
   | "youtube"
@@ -171,6 +172,9 @@ export default function Icon(props: Props) {
         <Match when={props.name === "warning"}>
           <path d="M12 3l10 18H2L12 3Z" />
           <path d="M12 10v5M12 18h.01" />
+        </Match>
+        <Match when={props.name === "sparkles"}>
+          <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" />
         </Match>
         <Match when={props.name === "heart"}>
           <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />

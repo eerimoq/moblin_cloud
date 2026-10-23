@@ -58,9 +58,9 @@ const sections: { title: string; body: JSX.Element[] }[] = [
         rules of the platforms you stream on.
       </>,
       <>
-        Tips and wheel spins are sent to your Moblin app. When it is not connected, Moblin keeps
-        them for 7 days and then gives up, so don't rely on it as your only record; PayPal and
-        Stripe have all your tips.
+        Tips are sent to your Moblin app. When it is not connected, Moblin keeps them for 7 days and
+        then gives up, so don't rely on it as your only record; PayPal and Stripe have all your
+        tips.
       </>,
     ],
   },

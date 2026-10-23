@@ -49,6 +49,7 @@ export type Recent = {
   currency: string;
   message?: string;
   spins?: number;
+  effect?: string;
   tier?: number;
   kickSubscriber?: boolean;
   provider?: "paypal" | "stripe";
@@ -56,7 +57,7 @@ export type Recent = {
   devices?: { name: string; received: boolean }[];
 };
 
-export type RecentKind = "tip" | "spin";
+export type RecentKind = "tip" | "spin" | "effect";
 
 export type RecentList = { items: Recent[]; more: boolean };
 
@@ -311,12 +312,13 @@ export const uploadImage = (session: string, image: File, page?: string) =>
 export const removeImage = (session: string, page?: string) =>
   call<Settings>(`${accountPath(page)}/image/remove`, session, post());
 
-export type SettingsChanges = Page & Pick<Settings, "currency" | "tips" | "spin" | "subSpins">;
+export type SettingsChanges = Page &
+  Pick<Settings, "currency" | "tips" | "spin" | "effects" | "subSpins" | "subEffects">;
 
 export const sendTest = (
   session: string,
   kind: RecentKind,
-  body: { message?: string },
+  body: { message?: string; effect?: string },
   page?: string,
 ) => call<object>(`${accountPath(page)}/test/${kind}`, session, post(body));
 
@@ -328,7 +330,9 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges, 
       currency: settings.currency,
       tips: settings.tips,
       spin: settings.spin,
+      effects: settings.effects,
       subSpins: settings.subSpins,
+      subEffects: settings.subEffects,
       message: settings.message,
       accent: settings.accent,
       font: settings.font,

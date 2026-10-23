@@ -68,7 +68,7 @@ class StripeNotForPagesWithoutIt(TestCase):
         tips = viewer.tips()
         assert tips is not None
         self.assert_is_none(tips["stripe"])
-        unavailable = "Payments are unavailable right now. Try again later."
+        unavailable = "Tips are unavailable right now. Try again later."
         self.assert_backend_error(503, lambda: viewer.order_tip(100, provider="stripe"), unavailable)
         self.assert_backend_error(503, lambda: viewer.order_tip(100, provider="bitcoin"), unavailable)
         dashboard.save_settings()

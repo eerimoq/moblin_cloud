@@ -48,11 +48,21 @@ class BackendRequest:
 
     @property
     def kind(self) -> str:
-        return next(iter(self.data))
+        """The request's name, or for a tip its kind: message, effect or wheelOfLuck."""
+        name = next(iter(self.data))
+        if name == "tip":
+            return next(iter(self.data[name]["kind"]))
+        return name
 
     @property
     def body(self) -> dict:
-        return self.data[self.kind]
+        """The request's fields, for a tip with the fields of its kind in place of the kind."""
+        name = next(iter(self.data))
+        body = dict(self.data[name])
+        if name == "tip":
+            kind = body.pop("kind")
+            body.update(next(iter(kind.values())))
+        return body
 
     def ok(self) -> bool:
         return self.response is not None and "ok" in self.response["result"]

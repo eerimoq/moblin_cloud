@@ -204,7 +204,7 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
         self.connect_moblin()
         start = self.moblin.backend_requests_position()
         self.moderator.moderated_test_tip(self.page_id, " Checking ")
-        tip = self.moblin.wait_for_new_backend_request("tip", start)
+        tip = self.moblin.wait_for_new_backend_request("message", start)
         self.assert_equal(
             [tip.body["name"], tip.body["message"], tip.body["amount"]],
             [self.moderator_login, "Checking", "5.00"],

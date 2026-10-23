@@ -83,7 +83,7 @@ class PayPalPaidSettings(TestCase):
         self.assert_backend_error(
             409,
             lambda: dashboard.update_settings(currency="USD"),
-            "turn tips and the wheel off before changing the currency",
+            "turn off all tips before changing the currency",
         )
         tips = viewer.tips()
         assert tips is not None
@@ -131,7 +131,7 @@ class PayPalDisconnect(TestCase):
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin()["spin"], None)
         self.assert_backend_error(
-            503, lambda: viewer.order_tip(100), "Payments are unavailable right now. Try again later."
+            503, lambda: viewer.order_tip(100), "Tips are unavailable right now. Try again later."
         )
         self.assert_backend_error(
             409, lambda: dashboard.save_settings(tips={"amounts": [200]}), "connect PayPal or Stripe first"

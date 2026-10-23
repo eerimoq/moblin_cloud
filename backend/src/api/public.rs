@@ -9,6 +9,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
 use crate::accounts::Platform;
+use crate::effects::EFFECTS;
 use crate::pages::{SpinOption, Tiers};
 use crate::paypal::PayPal;
 use crate::remote_control::Wheel;
@@ -161,6 +162,64 @@ pub(super) async fn handle_tips(
             environment: api.paypal.as_ref().map(PayPal::environment),
             stripe,
         }),
+    })
+}
+
+#[derive(Serialize)]
+pub(super) struct PublicEffect {
+    id: &'static str,
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PublicEffects {
+    price: u32,
+    currency: String,
+    client_id: Option<String>,
+    merchant_id: Option<String>,
+    environment: Option<&'static str>,
+    stripe: Option<PublicStripe>,
+}
+
+#[derive(Serialize)]
+pub(super) struct EffectsResponse {
+    effects: Option<PublicEffects>,
+    #[serde(rename = "subEffects")]
+    sub_effects: Option<Tiers>,
+    options: Vec<PublicEffect>,
+}
+
+pub(super) async fn handle_effects(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+) -> Json<EffectsResponse> {
+    let account = api.accounts.of_page(&id);
+    let settings = api.pages.get(&id);
+    let currency = settings.currency().to_string();
+    let merchant_id = merchant(account.as_ref());
+    let stripe = public_stripe(&api, account.as_ref());
+    let payable = merchant_id.is_some() || stripe.is_some();
+    Json(EffectsResponse {
+        sub_effects: linked_tiers(account.as_ref(), settings.sub_effects()),
+        options: EFFECTS
+            .iter()
+            .map(|effect| PublicEffect {
+                id: effect.id,
+                kind: effect.kind,
+            })
+            .collect(),
+        effects: settings
+            .effects()
+            .filter(|_| payable)
+            .map(|effects| PublicEffects {
+                price: effects.price,
+                currency,
+                client_id: client_id(&api, &merchant_id),
+                merchant_id,
+                environment: api.paypal.as_ref().map(PayPal::environment),
+                stripe,
+            }),
     })
 }
 

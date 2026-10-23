@@ -6,6 +6,7 @@ mod challenges;
 mod counters;
 mod database;
 mod deliveries;
+mod effects;
 mod images;
 mod kick;
 mod live;

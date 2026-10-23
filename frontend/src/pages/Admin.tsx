@@ -40,6 +40,7 @@ const reasonLabels: Record<string, string> = {
   "too-many-tests": "Over 10 tests a minute on the page",
   "invalid-message": "Message over 200 characters",
   "amount-too-low": "Below the smallest suggested tip",
+  "no-such-effect": "Unknown effect",
   "invalid-option": "Unknown spin option",
   "payments-unavailable": "PayPal or Stripe not connected",
   provider: "PayPal or Stripe failed",
@@ -56,6 +57,7 @@ const reasonLabels: Record<string, string> = {
   "not-signed-in": "Viewer not signed in with Twitch",
   "not-subscribed": "Viewer not subscribed on Twitch",
   "no-spins-left": "Viewer used this month's spins",
+  "no-effects-left": "Viewer used this month's effects",
   "tier-excluded": "Viewer's tier gets nothing on the page",
   "not-moderator": "Not the streamer or a moderator they turned on",
 };
@@ -177,6 +179,36 @@ const kinds: Kind[] = [
       ],
     },
     tests: ["account", "too-many-tests", "offline", "no-wheel", "invalid-message", "crashed"],
+    deliveries: ["moblin-error"],
+  },
+  {
+    kind: "effect",
+    label: "Effects",
+    orders: [
+      "feature-off",
+      "payments-unavailable",
+      "invalid-option",
+      "no-such-effect",
+      "invalid-message",
+      "provider",
+      "not-saved",
+    ],
+    payments: ["expired", ...captureReasons],
+    subscribers: {
+      event: "subEffects",
+      reasons: [
+        "feature-off",
+        "not-signed-in",
+        "not-subscribed",
+        "tier-excluded",
+        "no-effects-left",
+        "no-such-effect",
+        "invalid-message",
+        "crashed",
+        "not-saved",
+      ],
+    },
+    tests: ["account", "too-many-tests", "no-such-effect", "invalid-message", "crashed"],
     deliveries: ["moblin-error"],
   },
 ];
@@ -534,7 +566,7 @@ function Loaded(props: { stats: AdminStats }) {
             counters().step(
               kind.subscribers.event,
               "Subscribers",
-              "Requests by Twitch subscribers, queued without a payment.",
+              "Requests by subscribers, queued without a payment.",
               kind.subscribers.reasons,
             ),
           ]
@@ -699,7 +731,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="problems"
             title="Problems"
-            hint="Failures on our side or at PayPal, Stripe or Moblin, across messages and wheel spins. Viewer mistakes and streamers being offline are not counted here."
+            hint="Failures on our side or at PayPal, Stripe or Moblin, across all kinds of tips. Viewer mistakes and streamers being offline are not counted here."
           >
             <StepTable
               steps={problems.map((problem) => ({
@@ -721,7 +753,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="providers"
             title="Providers"
-            hint="Payments by provider, across messages and wheel spins, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
+            hint="Payments by provider, across all kinds of tips, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
           >
             <div class="flex flex-col gap-5">
               <For each={providers}>
@@ -748,7 +780,7 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="tests"
             title="Tests"
-            hint="Free messages and wheel spins streamers send themselves from the dashboard. Not counted as problems above."
+            hint="Free tests streamers send themselves from the dashboard. Not counted as problems above."
           >
             <div class="flex flex-col gap-5">
               <For each={kinds}>

@@ -14,6 +14,10 @@ export type Spin = {
   options: SpinOption[];
 };
 
+export type Effects = {
+  price: number;
+};
+
 export type Tiers = {
   tier1: number;
   tier2: number;
@@ -41,7 +45,9 @@ export type Settings = Page & {
   currency: string;
   tips: Feature<Tips> | null;
   spin: Feature<Spin> | null;
+  effects: Feature<Effects> | null;
   subSpins: Feature<Tiers> | null;
+  subEffects: Feature<Tiers> | null;
   paypal: boolean;
   merchantId: string | null;
   paypalPending: boolean;
@@ -123,6 +129,13 @@ export type PublicTips = PublicPayment & {
   currency: string;
 };
 
+export type PublicEffects = PublicPayment & {
+  price: number;
+  currency: string;
+};
+
+export type EffectOption = { id: string; kind: "sound" };
+
 export type PublicSpin = PublicPayment & {
   options: SpinOption[];
   currency: string;
@@ -172,7 +185,7 @@ const call = <T>(path: string, init?: RequestInit, viewer?: string) =>
 
 const pagePath = (id: string, rest = "") => `/${encodeURIComponent(id)}${rest}`;
 
-const segments = { tip: "tips", spin: "spin" } as const;
+const segments = { tip: "tips", spin: "spin", effect: "effects" } as const;
 
 export const captureOrder = async (kind: keyof typeof segments, id: string, orderId: string) => {
   const path = pagePath(id, `/${segments[kind]}/orders/${encodeURIComponent(orderId)}/capture`);
@@ -243,8 +256,12 @@ export type Allowance = {
 export const viewerSignInUrl = (platform: Platform, id: string) =>
   `${backendUrl}/auth/${platform}/login?${new URLSearchParams({ page: id })}`;
 
-export const fetchAllowance = (id: string, viewer: string) =>
-  call<Allowance>(pagePath(id, "/spin/subscriber"), undefined, viewer);
+export type Perk = "spin" | "effect";
+
+const perkSegments: Record<Perk, string> = { spin: "spin", effect: "effects" };
+
+export const fetchAllowance = (id: string, perk: Perk, viewer: string) =>
+  call<Allowance>(pagePath(id, `/${perkSegments[perk]}/subscriber`), undefined, viewer);
 
 export const streamerTips = async (id: string) =>
   (await call<{ tips: PublicTips | null }>(pagePath(id, "/tips"))).tips;
@@ -259,6 +276,38 @@ export const orderTip = (
   call<Order>(
     pagePath(id, "/tips/orders"),
     post({ amount, user: user || null, message: message || null, provider }),
+  );
+
+export const streamerEffects = (id: string) =>
+  call<{
+    effects: PublicEffects | null;
+    subEffects: Tiers | null;
+    options: EffectOption[];
+  }>(pagePath(id, "/effects"));
+
+export const requestSubscriberEffect = (
+  id: string,
+  viewer: string,
+  effect: string,
+  message: string,
+) =>
+  call<{ left: number }>(
+    pagePath(id, "/effects/subscriber"),
+    post({ effect, message: message || null }),
+    viewer,
+  );
+
+export const orderEffect = (
+  id: string,
+  effect: string,
+  price: number,
+  user: string,
+  message: string,
+  provider: Provider,
+) =>
+  call<Order>(
+    pagePath(id, "/effects/orders"),
+    post({ effect, price, user: user || null, message: message || null, provider }),
   );
 
 export type Wheel = {

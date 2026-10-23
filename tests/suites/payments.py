@@ -119,9 +119,9 @@ class PaymentsTipNotApproved(PaymentTestCase):
         self.dashboard.save_settings(tips=TIPS)
         order_id = self.order_tip(700, "Viewer", "Hi!")
         self.assert_backend_error(
-            402, lambda: self.capture(self.viewer.capture_tip, order_id), "The payment was not completed."
+            402, lambda: self.capture(self.viewer.capture_tip, order_id), "The tip was not completed."
         )
-        gone = "This payment is unknown or expired, so no money was taken."
+        gone = "This tip is unknown or expired, so no money was taken."
         self.assert_backend_error(410, lambda: self.capture(self.viewer.capture_spin, order_id), gone)
         other = self.website.viewer("AAAAAAAAAAAAAAAA")
         self.assert_backend_error(410, lambda: other.capture_tip(order_id), gone)
@@ -165,7 +165,7 @@ class PaymentsTipPaid(PaymentTestCase):
         self.assert_equal(self.capture(self.viewer.capture_tip, order_id), {})
         if self.context.moblin is None:
             return
-        tip = self.moblin.wait_for_backend_request("tip", order_id)
+        tip = self.moblin.wait_for_backend_request("message", order_id)
         self.assert_equal(
             tip.body,
             {
@@ -188,7 +188,7 @@ class PaymentsAnonymousTipPaid(PaymentTestCase):
         order_id = self.order_tip(100)
         self.pay(order_id)
         self.capture(self.viewer.capture_tip, order_id)
-        tip = self.moblin.wait_for_backend_request("tip", order_id)
+        tip = self.moblin.wait_for_backend_request("message", order_id)
         self.assert_equal([tip.body["name"], tip.body["message"]], ["Someone", ""])
 
 
@@ -205,7 +205,7 @@ class PaymentsTipDeliveredWhenMoblinConnects(PaymentTestCase):
         self.capture(self.viewer.capture_tip, order_id)
         self.assert_paid(order_id, "1.00")
         self.connect_moblin()
-        tip = self.moblin.wait_for_backend_request("tip", order_id)
+        tip = self.moblin.wait_for_backend_request("message", order_id)
         self.assert_equal(tip.body["name"], "Early")
 
 
@@ -221,7 +221,7 @@ class PaymentsTipDeliveredAfterBackendRestart(PaymentTestCase):
         self.capture(self.viewer.capture_tip, order_id)
         self.backend.restart()
         self.connect_moblin()
-        self.moblin.wait_for_backend_request("tip", order_id)
+        self.moblin.wait_for_backend_request("message", order_id)
 
 
 class PaymentsTipToEveryDevice(PaymentTestCase):
@@ -243,7 +243,7 @@ class PaymentsTipToEveryDevice(PaymentTestCase):
         order_id = self.order_tip(100, "Everyone")
         self.pay(order_id)
         self.capture(self.viewer.capture_tip, order_id)
-        self.moblin.wait_for_backend_request("tip", order_id)
+        self.moblin.wait_for_backend_request("message", order_id)
 
         def tip() -> dict:
             return self.dashboard.recent("tip")["items"][0]
@@ -276,14 +276,14 @@ class PaymentsTipSentAgain(PaymentTestCase):
         order_id = self.order_tip(700, "Again", "Once more")
         self.pay(order_id)
         self.capture(self.viewer.capture_tip, order_id)
-        first = self.moblin.wait_for_backend_request("tip", order_id)
+        first = self.moblin.wait_for_backend_request("message", order_id)
         self.wait_until(
             lambda: self.dashboard.recent("tip")["items"][0]["status"] == "delivered",
             "the tip to be delivered",
         )
         for resends in [1, 2]:
             self.assert_equal(self.dashboard.resend(order_id), {})
-            again = self.moblin.wait_for_backend_request("tip", f"{order_id}-{resends}")
+            again = self.moblin.wait_for_backend_request("message", f"{order_id}-{resends}")
             self.assert_equal(
                 {**again.body, "requestId": order_id},
                 first.body,
@@ -340,7 +340,7 @@ class PaymentsSpinPaid(PaymentTestCase):
         self.pay(order_id)
         self.assert_equal(self.capture(self.viewer.capture_spin, order_id), {})
         self.assert_paid(order_id, "2.50")
-        request = self.moblin.wait_for_backend_request("spinWheelOfLuck", order_id)
+        request = self.moblin.wait_for_backend_request("wheelOfLuck", order_id)
         self.assert_equal(
             request.body,
             {"name": "Spinner", "message": "Spin it!", "count": 3, "requestId": order_id},
@@ -362,7 +362,7 @@ class PaymentsSpinWhenWheelIsGone(PaymentTestCase):
         self.assert_backend_error(
             404,
             lambda: self.capture(self.viewer.capture_spin, order_id),
-            "The streamer's wheel is gone, so your payment was not taken.",
+            "The streamer's wheel is gone, so your tip was not taken.",
         )
         self.assert_hold_released(order_id)
 

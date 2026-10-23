@@ -96,7 +96,7 @@ class SubscribersSpinTheWheel(SubscribersTestCase):
         self.connect_moblin(WHEEL)
         start = self.moblin.backend_requests_position()
         self.assert_equal(tier1.spin_wheel(" Land on dance "), {"left": 0})
-        request = self.moblin.wait_for_new_backend_request("spinWheelOfLuck", start)
+        request = self.moblin.wait_for_new_backend_request("wheelOfLuck", start)
         self.assert_equal(
             [request.body["name"], request.body["count"], request.body.get("message")],
             ["spinfan1", 1, "Land on dance"],
@@ -153,7 +153,7 @@ class SubscribersKeptOnRestart(SubscribersTestCase):
         subscriber = self.subscriber("restartfan1")
         start = self.moblin.backend_requests_position()
         self.assert_equal(subscriber.spin_wheel(), {"left": 1})
-        self.moblin.wait_for_new_backend_request("spinWheelOfLuck", start)
+        self.moblin.wait_for_new_backend_request("wheelOfLuck", start)
         self.backend.restart()
         self.assert_equal(
             self.dashboard.account()["settings"]["subSpins"],

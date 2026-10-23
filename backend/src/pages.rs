@@ -16,7 +16,11 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spin: Option<Feature<Spin>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects: Option<Feature<Effects>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub_spins: Option<Feature<Tiers>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_effects: Option<Feature<Tiers>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,6 +68,11 @@ fn active<T>(feature: &Option<Feature<T>>) -> Option<&T> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tips {
     pub amounts: Vec<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Effects {
+    pub price: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -124,8 +133,16 @@ impl Settings {
         active(&self.spin)
     }
 
+    pub fn effects(&self) -> Option<&Effects> {
+        active(&self.effects)
+    }
+
     pub fn sub_spins(&self) -> Option<&Tiers> {
         active(&self.sub_spins)
+    }
+
+    pub fn sub_effects(&self) -> Option<&Tiers> {
+        active(&self.sub_effects)
     }
 
     pub fn normalize(self) -> Result<Self, SettingsError> {
@@ -149,14 +166,23 @@ impl Settings {
             ),
             None => None,
         };
-        let sub_spins = match self.sub_spins {
-            Some(tiers) => Some(
-                tiers
-                    .normalize(Tiers::normalize)
-                    .ok_or(SettingsError::InvalidTiers)?,
+        let effects = match self.effects {
+            Some(effects) => Some(
+                effects
+                    .normalize(Effects::normalize)
+                    .ok_or(SettingsError::InvalidEffects)?,
             ),
             None => None,
         };
+        let tiers = |tiers: Option<Feature<Tiers>>| match tiers {
+            Some(tiers) => tiers
+                .normalize(Tiers::normalize)
+                .map(Some)
+                .ok_or(SettingsError::InvalidTiers),
+            None => Ok(None),
+        };
+        let sub_spins = tiers(self.sub_spins)?;
+        let sub_effects = tiers(self.sub_effects)?;
         let accent = match self.accent.map(|accent| accent.to_lowercase()) {
             Some(accent) if !ACCENTS.contains(&accent.as_str()) && !is_color(&accent) => {
                 return Err(SettingsError::InvalidPage);
@@ -173,7 +199,9 @@ impl Settings {
             currency,
             tips,
             spin,
+            effects,
             sub_spins,
+            sub_effects,
             message: text(self.message, 300)?,
             accent,
             font,
@@ -212,6 +240,12 @@ impl Spin {
     }
 }
 
+impl Effects {
+    pub fn normalize(self) -> Option<Self> {
+        valid_price(self.price).then_some(self)
+    }
+}
+
 impl Tiers {
     pub fn normalize(self) -> Option<Self> {
         let tiers = [self.tier1, self.tier2, self.tier3];
@@ -234,6 +268,7 @@ pub enum SettingsError {
     InvalidCurrency,
     InvalidTips,
     InvalidSpin,
+    InvalidEffects,
     InvalidTiers,
     InvalidPage,
     Full,
@@ -410,6 +445,21 @@ mod tests {
         assert_eq!(settings.tips(), None);
         assert_eq!(settings.sub_spins(), None);
         assert_eq!(pages.set("a", off(49)), Err(SettingsError::InvalidTips));
+    }
+
+    #[test]
+    fn effects_need_a_valid_price() {
+        let pages = Pages::new(Database::memory());
+        let effects = |price| Settings {
+            effects: Some(Feature::on(Effects { price })),
+            ..Settings::default()
+        };
+        assert_eq!(pages.set("a", effects(300)), Ok(effects(300)));
+        assert_eq!(pages.get("a").effects(), Some(&Effects { price: 300 }));
+        assert_eq!(
+            pages.set("a", effects(49)),
+            Err(SettingsError::InvalidEffects)
+        );
     }
 
     #[test]

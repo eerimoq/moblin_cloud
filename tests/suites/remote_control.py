@@ -105,7 +105,7 @@ class RemoteControlTestDeliveries(RemoteControlTestCase):
         amount = tips["amounts"][0] if tips is not None and tips["enabled"] else 500
         start = self.moblin.backend_requests_position()
         self.assert_equal(self.dashboard.test_tip("Testing tips"), {})
-        tip = self.moblin.wait_for_new_backend_request("tip", start)
+        tip = self.moblin.wait_for_new_backend_request("message", start)
         self.assert_equal(
             {key: value for key, value in tip.body.items() if key != "requestId"},
             {
@@ -119,7 +119,7 @@ class RemoteControlTestDeliveries(RemoteControlTestCase):
         spins = spin["options"][0]["spins"] if spin is not None and spin["enabled"] else 1
         start = self.moblin.backend_requests_position()
         self.assert_equal(self.dashboard.test_spin(), {})
-        request = self.moblin.wait_for_new_backend_request("spinWheelOfLuck", start)
+        request = self.moblin.wait_for_new_backend_request("wheelOfLuck", start)
         self.assert_equal([request.body["name"], request.body["count"]], [name, spins])
         self.assert_not_equal(request.body["requestId"], tip.body["requestId"])
 
@@ -158,7 +158,7 @@ class RemoteControlDevices(RemoteControlTestCase):
         self.assert_true(devices[0]["wheel"])
         start = self.moblin.backend_requests_position()
         self.dashboard.test_tip()
-        self.moblin.wait_for_new_backend_request("tip", start)
+        self.moblin.wait_for_new_backend_request("message", start)
         self.wait_until(lambda: len(self.second.handled_request_ids) == 1, "the second device to get the tip")
         self.second.stop()
         self.wait_until(lambda: len(self.connected()) == 1, "the second device to disconnect")

@@ -44,10 +44,48 @@ pub(super) struct AllowanceResponse {
     left: u32,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum Perk {
+    Spin,
+    Effect,
+}
+
+impl Perk {
+    fn kind(self) -> &'static str {
+        match self {
+            Perk::Spin => "spin",
+            Perk::Effect => "effect",
+        }
+    }
+
+    fn doing(self) -> &'static str {
+        match self {
+            Perk::Spin => "spin the wheel",
+            Perk::Effect => "play effects",
+        }
+    }
+
+    fn used_up(self) -> Failure {
+        match self {
+            Perk::Spin => failure(
+                "no-spins-left",
+                StatusCode::CONFLICT,
+                "You have used all your spins this month.",
+            ),
+            Perk::Effect => failure(
+                "no-effects-left",
+                StatusCode::CONFLICT,
+                "You have used all your effects this month.",
+            ),
+        }
+    }
+}
+
 fn allowance_response(
     api: &Api,
     headers: &HeaderMap,
     id: &str,
+    perk: Perk,
     tiers: Option<Tiers>,
 ) -> Result<Json<AllowanceResponse>, Failure> {
     let viewer = viewer(api, headers, id)?;
@@ -55,7 +93,7 @@ fn allowance_response(
     Ok(Json(AllowanceResponse {
         left: api
             .allowances
-            .left(id, &viewer.key(), "spin", allowance)
+            .left(id, &viewer.key(), perk.kind(), allowance)
             .map_err(not_saved)?,
         platform: viewer.platform,
         name: viewer.name,
@@ -73,7 +111,22 @@ pub(super) async fn handle_subscriber_spin_allowance(
         &api,
         &headers,
         &id,
+        Perk::Spin,
         sub_tiers(&api, &id, api.pages.get(&id).sub_spins()),
+    )
+}
+
+pub(super) async fn handle_subscriber_effect_allowance(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<AllowanceResponse>, Failure> {
+    allowance_response(
+        &api,
+        &headers,
+        &id,
+        Perk::Effect,
+        sub_tiers(&api, &id, api.pages.get(&id).sub_effects()),
     )
 }
 
@@ -98,18 +151,28 @@ pub(super) async fn handle_subscriber_spin(
     counted(&api, "subSpins", result)
 }
 
-fn used_up() -> Failure {
-    failure(
-        "no-spins-left",
-        StatusCode::CONFLICT,
-        "You have used all your spins this month.",
-    )
+#[derive(Deserialize)]
+pub(super) struct SubscriberEffectRequest {
+    effect: String,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+pub(super) async fn handle_subscriber_effect(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<SubscriberEffectRequest>,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let result = subscriber_effect(&api, id, &headers, request);
+    counted(&api, "subEffects", result)
 }
 
 pub(super) struct Subscriber {
     viewer: Viewer,
     tier: u8,
     allowance: u32,
+    perk: Perk,
 }
 
 impl Subscriber {
@@ -125,19 +188,21 @@ pub(super) fn subscriber(
     api: &Api,
     headers: &HeaderMap,
     id: &str,
+    perk: Perk,
     tiers: Option<&Tiers>,
 ) -> Result<Subscriber, Failure> {
+    let doing = perk.doing();
     let tiers = tiers.ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
-        "The streamer no longer lets subscribers spin the wheel. Reload the page.",
+        &format!("The streamer no longer lets subscribers {doing}. Reload the page."),
     ))?;
     let viewer = viewer(api, headers, id)?;
     let tier = viewer.tier.ok_or(failure(
         "not-subscribed",
         StatusCode::FORBIDDEN,
         &format!(
-            "Only {} subscribers of this streamer can spin the wheel.",
+            "Only {} subscribers of this streamer can {doing}.",
             viewer.platform.title()
         ),
     ))?;
@@ -147,22 +212,23 @@ pub(super) fn subscriber(
             "tier-excluded",
             StatusCode::FORBIDDEN,
             &match viewer.platform {
-                Platform::Twitch => format!("Tier {tier} subscribers can't spin the wheel here."),
-                Platform::Kick => "Kick subscribers can't spin the wheel here.".to_string(),
+                Platform::Twitch => format!("Tier {tier} subscribers can't {doing} here."),
+                Platform::Kick => format!("Kick subscribers can't {doing} here."),
             },
         ));
     }
     let left = api
         .allowances
-        .left(id, &viewer.key(), "spin", allowance)
+        .left(id, &viewer.key(), perk.kind(), allowance)
         .map_err(not_saved)?;
     if left == 0 {
-        return Err(used_up());
+        return Err(perk.used_up());
     }
     Ok(Subscriber {
         viewer,
         tier,
         allowance,
+        perk,
     })
 }
 
@@ -174,7 +240,7 @@ fn queue_for_subscriber(api: &Api, subscriber: &Subscriber, order: &Order) -> Re
         .take(
             &order.streamer,
             &subscriber.viewer.key(),
-            "spin",
+            subscriber.perk.kind(),
             subscriber.allowance,
             |connection| {
                 insert_captured(connection, &request_id, order)?;
@@ -182,7 +248,7 @@ fn queue_for_subscriber(api: &Api, subscriber: &Subscriber, order: &Order) -> Re
             },
         )
         .map_err(not_saved)?
-        .ok_or(used_up())?;
+        .ok_or_else(|| subscriber.perk.used_up())?;
     api.deliveries.notify();
     info!(
         "queued {:?} for {} tier {} subscriber {:?} in request {request_id} for remote control streamer {}",
@@ -203,12 +269,36 @@ fn subscriber_spin(
 ) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
     let settings = api.pages.get(&id);
     let sub_spins = sub_tiers(api, &id, settings.sub_spins());
-    let subscriber = subscriber(api, headers, &id, sub_spins.as_ref())?;
+    let subscriber = subscriber(api, headers, &id, Perk::Spin, sub_spins.as_ref())?;
     wheel_available(api, &id)?;
     let order = Order {
         streamer: id,
         item: Item::Spin {
             spins: 1,
+            message: viewer_message(request.message)?,
+        },
+        user: user_name(Some(subscriber.viewer.name.clone()), "Someone"),
+        payee: subscriber.payee(),
+        price: 0,
+        currency: settings.currency().to_string(),
+    };
+    let left = queue_for_subscriber(api, &subscriber, &order)?;
+    Ok((StatusCode::ACCEPTED, Json(LeftResponse { left })))
+}
+
+fn subscriber_effect(
+    api: &Api,
+    id: String,
+    headers: &HeaderMap,
+    request: SubscriberEffectRequest,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let settings = api.pages.get(&id);
+    let sub_effects = sub_tiers(api, &id, settings.sub_effects());
+    let subscriber = subscriber(api, headers, &id, Perk::Effect, sub_effects.as_ref())?;
+    let order = Order {
+        streamer: id,
+        item: Item::Effect {
+            effect: viewer_effect(&request.effect)?,
             message: viewer_message(request.message)?,
         },
         user: user_name(Some(subscriber.viewer.name.clone()), "Someone"),
@@ -465,10 +555,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 0}));
         let request = receive(&mut socket).await;
-        let sent = &request["request"]["data"]["spinWheelOfLuck"];
+        let sent = &request["request"]["data"]["tip"];
         assert_eq!(sent["name"], "Viewer 11");
         assert_eq!(sent["message"], "Big one");
-        assert_eq!(sent["count"], 1);
+        assert_eq!(sent["kind"]["wheelOfLuck"]["count"], 1);
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
         let response = spin(&tier1).await;
@@ -546,14 +636,11 @@ mod tests {
         let tier3 = viewer("31", Some(3));
         assert_eq!(spin(&tier3).await.status(), StatusCode::ACCEPTED);
         let request = receive(&mut socket).await;
-        let request_id = request["request"]["data"]["spinWheelOfLuck"]["requestId"].clone();
+        let request_id = request["request"]["data"]["tip"]["requestId"].clone();
         drop(socket);
         let mut socket = connect(&address, &key).await;
         let request = receive(&mut socket).await;
-        assert_eq!(
-            request["request"]["data"]["spinWheelOfLuck"]["requestId"],
-            request_id
-        );
+        assert_eq!(request["request"]["data"]["tip"]["requestId"], request_id);
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
         assert!(
@@ -721,7 +808,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(response.json::<Value>().await.unwrap(), json!({"left": 1}));
         let request = receive(&mut socket).await;
-        assert_eq!(request["request"]["data"]["spinWheelOfLuck"]["name"], "Sub");
+        assert_eq!(request["request"]["data"]["tip"]["name"], "Sub");
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
         assert_eq!(allowance(&subscriber).await.1["left"], 1);

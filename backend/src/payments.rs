@@ -8,11 +8,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
 use crate::deliveries::now;
+use crate::effects;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Item {
-    Tip { message: Option<String> },
-    Spin { spins: u32, message: Option<String> },
+    Tip {
+        message: Option<String>,
+    },
+    Spin {
+        spins: u32,
+        message: Option<String>,
+    },
+    Effect {
+        effect: String,
+        message: Option<String>,
+    },
 }
 
 impl Item {
@@ -20,6 +30,7 @@ impl Item {
         match self {
             Item::Tip { .. } => "tip",
             Item::Spin { .. } => "spin",
+            Item::Effect { .. } => "effect",
         }
     }
 }
@@ -71,6 +82,14 @@ impl Order {
             }
             Item::Spin { spins, message } => (
                 format!("{spins} wheel spins by {}", self.user),
+                message.as_ref(),
+            ),
+            Item::Effect { effect, message } => (
+                format!(
+                    "{} by {}",
+                    effects::effect(effect).map_or(effect.as_str(), |effect| effect.name),
+                    self.user
+                ),
                 message.as_ref(),
             ),
         };
