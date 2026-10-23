@@ -107,7 +107,7 @@ machine-translate:
 	python3 scripts/translate.py
 	cd frontend && oxfmt src/locales
 
-# Renders every trading card as a 300 dpi PNG with bleed, sized for poker cards at makeplayingcards.com.
+# Renders a 108 card deck of the trading cards as 300 dpi PNGs with bleed, sized for poker cards at makeplayingcards.com.
 cards-print out="cards-print":
 	cd frontend && npm run build
 	cd frontend && node scripts/print-cards.ts {{absolute_path(out)}}

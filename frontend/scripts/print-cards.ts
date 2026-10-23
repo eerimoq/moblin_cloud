@@ -44,6 +44,7 @@ function withDpi(png: Buffer): Buffer {
 const server = await preview({ preview: { port: 0, strictPort: false, open: false } });
 const browser = await chromium.launch({ channel: "chrome" });
 let problems = 0;
+const fronts: { id: string; png: Buffer }[] = [];
 try {
   const page = await browser.newPage({
     viewport: { width: 1400, height: 1000 },
@@ -130,7 +131,7 @@ try {
       },
       { i, bleed, safe, backShrink },
     );
-    const name = card.id === null ? "back.png" : `${String(i + 1).padStart(2, "0")}-${card.id}.png`;
+    const name = card.id ?? "back";
     for (const problem of card.problems) {
       console.warn(`${name}: ${problem}`);
       problems++;
@@ -154,8 +155,23 @@ try {
       },
       { data: shot.toString("base64"), width, height, source: pixelRatio / scale },
     );
-    await writeFile(`${out}/${name}`, withDpi(Buffer.from(resized, "base64")));
-    console.log(name);
+    const png = withDpi(Buffer.from(resized, "base64"));
+    if (card.id === null) {
+      await writeFile(`${out}/back.png`, png);
+      console.log("back.png");
+    } else {
+      fronts.push({ id: card.id, png });
+    }
+  }
+  let number = 0;
+  for (const front of fronts) {
+    const copies = front.id === "wifiaware" ? 3 : 5;
+    for (let copy = 0; copy < copies; copy++) {
+      number++;
+      const name = `${String(number).padStart(3, "0")}-${front.id}.png`;
+      await writeFile(`${out}/${name}`, front.png);
+      console.log(name);
+    }
   }
 } finally {
   await browser.close();
