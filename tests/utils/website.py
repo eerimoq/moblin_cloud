@@ -151,6 +151,9 @@ class Dashboard(Client):
     def rename_device(self, device: str, name: str) -> dict:
         return self.post(f"/account/devices/{device}/name", {"name": name})
 
+    def remove_device(self, device: str) -> dict:
+        return self.post(f"/account/devices/{device}/remove")
+
     def save_settings(
         self,
         currency: str | None = None,

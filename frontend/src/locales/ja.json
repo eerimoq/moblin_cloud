@@ -452,6 +452,7 @@
   "Remove amount {number}": "金額 {number} を削除",
   "Remove option {number}": "オプション {number} を削除",
   "Remove {name}": "{name}を削除",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "{name} をリストから削除しますか?チップはその接続を待たなくなります。再接続すると、また追加されます。",
   "Rename": "名前を変更",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "{placeholder} のようなプレースホルダーは、自分のテキストに置き換えてください。角括弧の部分は省略できます。",
   "Replace the wheel of luck options.": "ラッキーホイールの選択肢を置き換えます。",

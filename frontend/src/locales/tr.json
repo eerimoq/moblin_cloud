@@ -452,6 +452,7 @@
   "Remove amount {number}": "{number}. tutarı kaldır",
   "Remove option {number}": "{number}. seçeneği kaldır",
   "Remove {name}": "{name} öğesini kaldır",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "{name} listeden kaldırılsın mı? Bahşişler artık onu beklemez. Tekrar bağlanırsa geri eklenir.",
   "Rename": "Yeniden adlandır",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "{placeholder} gibi yer tutucuları kendi metninle değiştir. Köşeli parantez içindeki kısımlar isteğe bağlıdır.",
   "Replace the wheel of luck options.": "Şans çarkı seçeneklerini değiştir.",

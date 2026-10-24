@@ -452,6 +452,7 @@
   "Remove amount {number}": "Poista summa {number}",
   "Remove option {number}": "Poista vaihtoehto {number}",
   "Remove {name}": "Poista {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Poistetaanko {name} luettelosta? Vinkit eivät enää odota sitä. Jos se yhdistää uudelleen, se lisätään takaisin.",
   "Rename": "Nimeä uudelleen",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Korvaa paikkamerkit, kuten {placeholder}, omalla tekstilläsi. Hakasulkeissa olevat osat ovat valinnaisia.",
   "Replace the wheel of luck options.": "Korvaa onnenpyörän vaihtoehdot.",

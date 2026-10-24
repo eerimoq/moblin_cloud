@@ -35,6 +35,7 @@ import {
   fetchAccount,
   fetchRecent,
   newMoblinKey,
+  removeDevice,
   renameDevice,
   removeImage,
   saveAccountSettings,
@@ -2106,6 +2107,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
             onRename={(device, name) =>
               busyWith(() => renameDevice(props.session, device, name), setAccount)
             }
+            onRemove={(device) => busyWith(() => removeDevice(props.session, device), setAccount)}
           />
         </div>
       </div>
@@ -2262,6 +2264,7 @@ function MoblinSettings(props: {
   busy: boolean;
   onNewKey: () => Promise<void>;
   onRename: (device: string, name: string) => Promise<void>;
+  onRemove: (device: string) => Promise<void>;
 }) {
   let qrDialog: HTMLDialogElement | undefined;
   const [error, setError] = createSignal<string | null>(null);
@@ -2310,6 +2313,19 @@ function MoblinSettings(props: {
       await props.onRename(device, name().trim());
       setRenaming(null);
     });
+  };
+  const remove = async (device: Device) => {
+    if (
+      !confirm(
+        t(
+          "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.",
+          { name: device.name },
+        ),
+      )
+    ) {
+      return;
+    }
+    await run(() => props.onRemove(device.id));
   };
   const gets = (device: Device) =>
     device.connected
@@ -2397,6 +2413,16 @@ function MoblinSettings(props: {
                         >
                           {t("Rename")}
                         </button>
+                        <Show when={!device.connected}>
+                          <button
+                            type="button"
+                            class="text-[15px] font-semibold text-danger hover:underline disabled:opacity-60"
+                            disabled={props.busy}
+                            onClick={() => void remove(device)}
+                          >
+                            {t("Remove")}
+                          </button>
+                        </Show>
                       </>
                     }
                   >

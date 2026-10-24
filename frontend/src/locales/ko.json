@@ -452,6 +452,7 @@
   "Remove amount {number}": "금액 {number} 삭제",
   "Remove option {number}": "옵션 {number} 삭제",
   "Remove {name}": "{name} 삭제",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "{name}을(를) 목록에서 삭제할까요? 후원은 더 이상 기다리지 않아요. 다시 연결되면 다시 추가돼요.",
   "Rename": "이름 변경",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "{placeholder} 같은 자리 표시자는 원하는 텍스트로 바꾸세요. 대괄호 안의 내용은 생략해도 됩니다.",
   "Replace the wheel of luck options.": "행운의 룰렛 옵션을 교체합니다.",

@@ -116,6 +116,10 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/devices/{device}/name",
             post(handle_account_device_name),
         )
+        .route(
+            "/account/devices/{device}/remove",
+            post(handle_account_device_remove),
+        )
         .route("/account/settings", post(handle_account_settings))
         .route(
             "/account/image",

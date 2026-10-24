@@ -242,6 +242,31 @@ pub(super) async fn handle_account_device_name(
     Ok(account_response(&api, account))
 }
 
+pub(super) async fn handle_account_device_remove(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Path(device): Path<String>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    if api
+        .remote_control
+        .devices(&account.page.id)
+        .iter()
+        .any(|connected| connected.id == device)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "Turn off Moblin Cloud on the device first.".to_string(),
+        ));
+    }
+    api.accounts
+        .remove_device(&account.page.id, &device)
+        .map_err(account_error)?;
+    api.deliveries.notify();
+    info!("{id} removed Moblin device {device}");
+    Ok(account_response(&api, account))
+}
+
 pub(super) async fn handle_account_sign_out(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,

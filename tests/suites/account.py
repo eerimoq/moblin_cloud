@@ -257,6 +257,16 @@ class AccountDevices(AccountTestCase):
             device = dashboard.account()["devices"][4]
             self.assert_equal([device["id"], device["name"]], ["DEVICE-2", "Backup"])
             self.assert_true(device["lastSeen"] is not None)
+            self.assert_backend_error(
+                409,
+                lambda: dashboard.remove_device("DEVICE-1"),
+                "Turn off Moblin Cloud on the device first.",
+            )
+            account = dashboard.remove_device("DEVICE-2")
+            self.assert_equal(
+                [device["id"] for device in account["devices"]],
+                [f"DEVICE-{number}" for number in [1, 3, 4, 5]],
+            )
         finally:
             for websocket in websockets:
                 if websocket is not None:

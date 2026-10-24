@@ -453,6 +453,21 @@ impl Accounts {
         Ok(())
     }
 
+    pub fn remove_device(&self, page: &str, device: &str) -> Result<(), AccountError> {
+        let removed = self
+            .database
+            .lock()
+            .execute(
+                &format!("DELETE FROM devices WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2"),
+                params![page, device],
+            )
+            .map_err(not_saved)?;
+        if removed == 0 {
+            return Err(AccountError::UnknownDevice);
+        }
+        Ok(())
+    }
+
     pub fn left_device(&self, page: &str, device: &str) {
         let result = self.database.lock().execute(
             &format!(
@@ -1283,6 +1298,12 @@ mod tests {
         );
         accounts.rename_device("p", "b", "Backup").unwrap();
         accounts.rename_device("q", "a", "Other").unwrap();
+        assert_eq!(
+            accounts.remove_device("p", "x"),
+            Err(AccountError::UnknownDevice)
+        );
+        accounts.seen_device("p", "x").unwrap();
+        accounts.remove_device("p", "x").unwrap();
         assert_eq!(seen("p", "d"), "Moblin 2");
         assert_eq!(
             accounts.device_names("p"),

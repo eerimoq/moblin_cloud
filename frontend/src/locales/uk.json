@@ -452,6 +452,7 @@
   "Remove amount {number}": "Видалити суму {number}",
   "Remove option {number}": "Видалити варіант {number}",
   "Remove {name}": "Видалити {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Видалити {name} зі списку? Донати більше не чекатимуть на нього. Якщо він знову підключиться, його буде додано назад.",
   "Rename": "Перейменувати",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Заміни плейсхолдери на кшталт {placeholder} власним текстом. Частини в квадратних дужках необов'язкові.",
   "Replace the wheel of luck options.": "Замінити варіанти колеса удачі.",

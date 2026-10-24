@@ -452,6 +452,7 @@
   "Remove amount {number}": "Usuń kwotę {number}",
   "Remove option {number}": "Usuń opcję {number}",
   "Remove {name}": "Usuń {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Usunąć {name} z listy? Napiwki przestaną na to czekać. Jeśli połączy się ponownie, zostanie dodane z powrotem.",
   "Rename": "Zmień nazwę",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Zastąp symbole zastępcze, takie jak {placeholder}, własnym tekstem. Części w nawiasach kwadratowych są opcjonalne.",
   "Replace the wheel of luck options.": "Zastąp opcje koła fortuny.",

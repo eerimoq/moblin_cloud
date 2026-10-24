@@ -452,6 +452,7 @@
   "Remove amount {number}": "राशि {number} हटाएँ",
   "Remove option {number}": "विकल्प {number} हटाएँ",
   "Remove {name}": "{name} हटाएं",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "{name} को सूची से हटाएं? टिप्स अब इसका इंतज़ार नहीं करेंगे। अगर यह दोबारा कनेक्ट होता है, तो इसे वापस जोड़ दिया जाएगा।",
   "Rename": "नाम बदलें",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "{placeholder} जैसे प्लेसहोल्डर को अपने टेक्स्ट से बदलें। चौकोर कोष्ठक वाले हिस्से वैकल्पिक हैं।",
   "Replace the wheel of luck options.": "लकी व्हील के विकल्प बदलें।",

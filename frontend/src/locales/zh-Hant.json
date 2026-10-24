@@ -452,6 +452,7 @@
   "Remove amount {number}": "移除金額 {number}",
   "Remove option {number}": "移除選項 {number}",
   "Remove {name}": "移除 {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "要將 {name} 從清單中移除嗎?斗內將不再等待它。如果它再次連線,會被重新加入。",
   "Rename": "重新命名",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "把 {placeholder} 這類預留位置換成你自己的文字。方括號中的部分可以省略。",
   "Replace the wheel of luck options.": "替換幸運轉盤選項。",

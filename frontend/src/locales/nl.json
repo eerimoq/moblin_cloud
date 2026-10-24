@@ -452,6 +452,7 @@
   "Remove amount {number}": "Bedrag {number} verwijderen",
   "Remove option {number}": "Optie {number} verwijderen",
   "Remove {name}": "{name} verwijderen",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "{name} van de lijst verwijderen? Tips wachten er dan niet meer op. Als het weer verbinding maakt, wordt het opnieuw toegevoegd.",
   "Rename": "Hernoemen",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Vervang placeholders zoals {placeholder} door je eigen tekst. Delen tussen vierkante haken zijn optioneel.",
   "Replace the wheel of luck options.": "De opties van het rad van fortuin vervangen.",

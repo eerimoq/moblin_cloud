@@ -452,6 +452,7 @@
   "Remove amount {number}": "Supprimer le montant {number}",
   "Remove option {number}": "Supprimer l'option {number}",
   "Remove {name}": "Supprimer {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Retirer {name} de la liste ? Les pourboires n'attendront plus. S'il se reconnecte, il est ajouté de nouveau.",
   "Rename": "Renommer",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Remplace les paramètres comme {placeholder} par ton propre texte. Les parties entre crochets sont facultatives.",
   "Replace the wheel of luck options.": "Remplacer les options de la roue de la chance.",

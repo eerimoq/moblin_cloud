@@ -452,6 +452,7 @@
   "Remove amount {number}": "Удалить сумму {number}",
   "Remove option {number}": "Удалить вариант {number}",
   "Remove {name}": "Удалить {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Удалить {name} из списка? Донаты перестанут его ждать. Если он снова подключится, он будет добавлен обратно.",
   "Rename": "Переименовать",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Замени плейсхолдеры вроде {placeholder} своим текстом. Части в квадратных скобках необязательны.",
   "Replace the wheel of luck options.": "Заменить варианты колеса удачи.",

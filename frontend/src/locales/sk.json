@@ -452,6 +452,7 @@
   "Remove amount {number}": "Odstrániť sumu {number}",
   "Remove option {number}": "Odstrániť možnosť {number}",
   "Remove {name}": "Odstrániť {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Odstrániť {name} zo zoznamu? Tipy naň prestanú čakať. Ak sa znova pripojí, pridá sa späť.",
   "Rename": "Premenovať",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Zástupné texty ako {placeholder} nahraď vlastným textom. Časti v hranatých zátvorkách sú voliteľné.",
   "Replace the wheel of luck options.": "Nahradiť možnosti kolesa šťastia.",

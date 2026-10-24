@@ -369,6 +369,14 @@ mod tests {
         assert_eq!(account["devices"][0]["name"], "Backup");
         let response = rename("b", " ").await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let remove = |device: &str| {
+            client
+                .post(format!("http://{address}/account/devices/{device}/remove"))
+                .bearer_auth(&session)
+                .send()
+        };
+        let response = remove("b").await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
         let response = client
             .post(format!("http://{address}/account/key"))
             .bearer_auth(&session)
@@ -391,6 +399,12 @@ mod tests {
                 .iter()
                 .any(|device| device["id"] == "b" && device["name"] == "Backup")
         );
+        let response = remove("x").await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let account: Value = remove("b").await.unwrap().json().await.unwrap();
+        let devices = account["devices"].as_array().unwrap();
+        assert_eq!(devices.len(), 4);
+        assert!(devices.iter().all(|device| device["id"] != "b"));
     }
 
     async fn send_event(socket: &mut Socket, event: Value) {

@@ -452,6 +452,7 @@
   "Remove amount {number}": "Hapus jumlah {number}",
   "Remove option {number}": "Hapus opsi {number}",
   "Remove {name}": "Hapus {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Hapus {name} dari daftar? Tip tidak akan menunggunya lagi. Jika terhubung lagi, akan ditambahkan kembali.",
   "Rename": "Ganti nama",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Ganti placeholder seperti {placeholder} dengan teksmu sendiri. Bagian dalam tanda kurung siku bersifat opsional.",
   "Replace the wheel of luck options.": "Ganti opsi roda keberuntungan.",

@@ -237,6 +237,9 @@ export const newMoblinKey = (session: string) => call<Account>("/account/key", s
 export const renameDevice = (session: string, device: string, name: string) =>
   call<Account>(`/account/devices/${encodeURIComponent(device)}/name`, session, post({ name }));
 
+export const removeDevice = (session: string, device: string) =>
+  call<Account>(`/account/devices/${encodeURIComponent(device)}/remove`, session, post());
+
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>("/account/paypal/connect", session, post())).url;
 

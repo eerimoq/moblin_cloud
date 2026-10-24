@@ -452,6 +452,7 @@
   "Remove amount {number}": "删除金额 {number}",
   "Remove option {number}": "删除选项 {number}",
   "Remove {name}": "移除 {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "要从列表中移除 {name} 吗?打赏将不再等待它。如果它再次连接,会被重新添加。",
   "Rename": "重命名",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "把 {placeholder} 这类占位符替换成你自己的文字。方括号中的部分可以省略。",
   "Replace the wheel of luck options.": "替换幸运转盘选项。",

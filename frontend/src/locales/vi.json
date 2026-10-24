@@ -452,6 +452,7 @@
   "Remove amount {number}": "Xóa số tiền {number}",
   "Remove option {number}": "Xóa tùy chọn {number}",
   "Remove {name}": "Xóa {name}",
+  "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.": "Xóa {name} khỏi danh sách? Tiền tip sẽ không chờ nó nữa. Nếu nó kết nối lại, nó sẽ được thêm lại.",
   "Rename": "Đổi tên",
   "Replace placeholders like {placeholder} with your own text. Parts in square brackets are optional.": "Thay các placeholder như {placeholder} bằng nội dung của bạn. Phần trong ngoặc vuông là tùy chọn.",
   "Replace the wheel of luck options.": "Thay các lựa chọn của vòng quay may mắn.",
