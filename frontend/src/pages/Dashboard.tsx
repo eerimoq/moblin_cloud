@@ -1828,12 +1828,21 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
   const active = () =>
     visible().some((section) => section.id === chosen()) ? chosen() : visible()[0].id;
   const select = (id: string) => {
-    if (id !== active()) {
+    const url = `${location.pathname}${location.search}#${id}`;
+    if (id === active()) {
+      history.replaceState(null, "", url);
+    } else {
       scrollTo({ top: 0, behavior: "instant" });
+      history.pushState(null, "", url);
     }
     setChosen(id);
-    history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
   };
+  const onPopState = () => {
+    scrollTo({ top: 0, behavior: "instant" });
+    setChosen(location.hash.slice(1));
+  };
+  addEventListener("popstate", onPopState);
+  onCleanup(() => removeEventListener("popstate", onPopState));
   const current = () => visible().find((section) => section.id === active())!;
   const [menuOpen, setMenuOpen] = createSignal(false);
   const paid = (configured: boolean) => settings().payable || configured;
