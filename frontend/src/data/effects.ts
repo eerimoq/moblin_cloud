@@ -11,6 +11,28 @@ const effectNames: Record<string, string> = {
 
 export const effects = Object.keys(effectNames);
 
+const effectCredits: Record<string, { title: string; author: string; url: string }> = {
+  fart: { title: "FART.aif", author: "Manicciola", url: "https://freesound.org/s/121783/" },
+  "fart-2": {
+    title: "Fart sound.wav",
+    author: "aditwayer",
+    url: "https://freesound.org/s/520671/",
+  },
+  "bad-chili-fart": {
+    title: "Bad Chili Fart.wav",
+    author: "deleted_user_1391979",
+    url: "https://freesound.org/s/94989/",
+  },
+  "perfect-fart": {
+    title: "perfect-fart.mp3",
+    author: "TV_LING",
+    url: "https://freesound.org/s/523467/",
+  },
+};
+
+export const effectCredit = (id: string): (typeof effectCredits)[string] | undefined =>
+  effectCredits[id];
+
 export const effectName = (id: string) => effectNames[id] ?? id;
 
 let playing: HTMLAudioElement | null = null;

@@ -73,7 +73,7 @@ import {
   type Tiers,
   type Wheel,
 } from "../data/remoteControl";
-import { effectName, playEffect, playingEffect, stopEffect } from "../data/effects";
+import { effectCredit, effectName, playEffect, playingEffect, stopEffect } from "../data/effects";
 import { t, tRich } from "../i18n";
 
 const nameKey = "songRequestName";
@@ -1091,10 +1091,10 @@ function EffectJar(props: {
     >
       <fieldset class="flex flex-col gap-3">
         <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Sound")}</legend>
-        <div class="divide-y divide-line overflow-hidden rounded-2xl border-[1.5px] border-line bg-well">
+        <div class="divide-y divide-line rounded-2xl border-[1.5px] border-line bg-well">
           <For each={props.options}>
             {(option) => (
-              <div class="flex items-center has-[:checked]:bg-moss/15">
+              <div class="flex items-center first:rounded-t-[14px] last:rounded-b-[14px] has-[:checked]:bg-moss/15">
                 <label class="flex min-h-14 flex-1 cursor-pointer items-center gap-3 px-4 font-display text-lg font-semibold text-ink has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-ink">
                   <input
                     type="radio"
@@ -1108,6 +1108,9 @@ function EffectJar(props: {
                   </span>
                   {effectName(option.id)}
                 </label>
+                <Show when={effectCredit(option.id)}>
+                  {(credit) => <SoundInfo name={effectName(option.id)} credit={credit()} />}
+                </Show>
                 <button
                   type="button"
                   class="mr-2 flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-line bg-card text-ink transition-colors hover:border-leaf"
@@ -1184,6 +1187,57 @@ function EffectJar(props: {
         )}
       </Show>
     </form>
+  );
+}
+
+function SoundInfo(props: {
+  name: string;
+  credit: { title: string; author: string; url: string };
+}) {
+  const [open, setOpen] = createSignal(false);
+  return (
+    <span
+      class="group relative mr-1"
+      onFocusOut={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-label={t("About {name}", { name: props.name })}
+        aria-expanded={open()}
+        class="flex size-10 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:text-ink aria-expanded:text-ink"
+        onClick={() => setOpen(!open())}
+      >
+        <Icon name="info" class="size-5" />
+      </button>
+      <span
+        role="tooltip"
+        class={`absolute right-0 bottom-full z-10 w-max max-w-[min(18rem,calc(100vw-5rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-[14px] leading-snug text-ink-2 shadow-xl ${
+          open() ? "block" : "hidden group-hover:block group-has-[:focus-visible]:block"
+        }`}
+      >
+        <span class="block font-semibold text-ink">
+          {t("{name} by {author}", { name: props.credit.title, author: props.credit.author })}
+        </span>
+        <span class="block">
+          {tRich("From {freesound}, license CC0.", {
+            freesound: (
+              <a
+                href={props.credit.url}
+                target="_blank"
+                rel="noopener"
+                class="underline hover:text-ink"
+              >
+                Freesound
+              </a>
+            ),
+          })}
+        </span>
+      </span>
+    </span>
   );
 }
 
