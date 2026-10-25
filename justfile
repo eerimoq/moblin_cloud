@@ -59,7 +59,7 @@ backend-run *args:
 	set -euo pipefail
 	python3 -m tests.utils.fake_twitch --port 8081 &
 	python3 -m tests.utils.fake_kick --port 8082 &
-	trap 'kill $(jobs -p)' EXIT
+	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
 	cd backend
 	cargo build
 	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins fake-admin,kick:fake-admin --premium-accounts fake-premium,kick:fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
@@ -97,7 +97,7 @@ fake-moblin-run *args:
 run:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	trap 'kill $(jobs -p)' EXIT
+	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
 	just backend-run &
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	just frontend-run &
