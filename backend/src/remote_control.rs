@@ -14,6 +14,8 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, sleep, sleep_until, timeout, timeout_at};
 use uuid::Uuid;
 
+use crate::icons::{self, Icon};
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Outcome {
@@ -71,6 +73,7 @@ enum MessageToAssistant {
 #[serde(rename_all = "camelCase")]
 enum Event {
     WheelOfLuck { wheel: Option<Wheel> },
+    Icon { id: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -342,7 +345,12 @@ impl Streamers {
         })
     }
 
-    pub async fn serve(&self, connection: Connection, mut socket: WebSocket) {
+    pub async fn serve(
+        &self,
+        connection: Connection,
+        mut socket: WebSocket,
+        on_icon: impl Fn(&'static Icon),
+    ) {
         let Connection {
             page,
             device,
@@ -374,7 +382,7 @@ impl Streamers {
                         deadline = Instant::now() + Duration::from_secs(60);
                         match message {
                             Message::Text(text) => {
-                                if self.handle(&page, &device, number, text.as_str(), &mut socket).await.is_err() {
+                                if self.handle(&page, &device, number, text.as_str(), &mut socket, &on_icon).await.is_err() {
                                     break;
                                 }
                             }
@@ -405,6 +413,7 @@ impl Streamers {
         number: u64,
         text: &str,
         socket: &mut WebSocket,
+        on_icon: &impl Fn(&'static Icon),
     ) -> Result<()> {
         match serde_json::from_str(text) {
             Ok(MessageToAssistant::Ping {}) => send(socket, &MessageToStreamer::Pong {}).await?,
@@ -426,6 +435,13 @@ impl Streamers {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(session) = sessions.get_mut(page, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
+                }
+            }
+            Ok(MessageToAssistant::Event {
+                data: Event::Icon { id },
+            }) => {
+                if let Some(icon) = icons::of_moblin(&id) {
+                    on_icon(icon);
                 }
             }
             _ => {}
@@ -617,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn wheel_events_match_moblin() {
+    fn events_match_moblin() {
         assert_eq!(
             decode(
                 r#"{"event":{"data":{"wheelOfLuck":{"wheel":{"options":[{"text":"Yes","weight":1},{"text":" No ","weight":3}]}}}}}"#
@@ -643,6 +659,14 @@ mod tests {
             decode(r#"{"event":{"data":{"wheelOfLuck":{}}}}"#),
             MessageToAssistant::Event {
                 data: Event::WheelOfLuck { wheel: None },
+            }
+        );
+        assert_eq!(
+            decode(r#"{"event":{"data":{"icon":{"id":"AppIconKing"}}}}"#),
+            MessageToAssistant::Event {
+                data: Event::Icon {
+                    id: "AppIconKing".to_string()
+                },
             }
         );
         assert!(

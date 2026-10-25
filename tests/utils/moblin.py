@@ -436,6 +436,13 @@ class Moblin:
         self.wait_for_control_connection(other_than=control)
         self.wait_for_backend_connection(key, other_than=cloud)
 
+    def change_icon(self):
+        """Picks another icon in the top right of Moblin's UI, King on the fake Moblin."""
+        if self._fake is not None:
+            self._fake.change_icon("AppIconKing")
+        else:
+            manual_confirmation("In Moblin's Store settings, pick another icon.")
+
     def change_wheel(self, wheel: list[dict] | None):
         """Changes the wheel without reconnecting, like a streamer in Moblin's settings, as Moblin
         reconnects when settings are imported. A person does it on a real device, where the wheel

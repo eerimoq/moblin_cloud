@@ -7,6 +7,7 @@ mod counters;
 mod database;
 mod deliveries;
 mod effects;
+mod icons;
 mod images;
 mod kick;
 mod live;

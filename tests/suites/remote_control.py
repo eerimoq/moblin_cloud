@@ -77,6 +77,23 @@ class RemoteControlWheelChanges(RemoteControlTestCase):
         self.wait_until(lambda: self.viewer.spin()["wheel"] == expected, "the wheel to be back on the page")
 
 
+class RemoteControlIcon(RemoteControlTestCase):
+    """Show the icon in the top right of Moblin's UI on the page, and follow changes to it."""
+
+    def run(self):
+        self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key())
+        self.wait_until(lambda: self.viewer.profile()["icon"] is not None, "the icon to be on the page")
+        icon = self.viewer.profile()["icon"]
+        if self.moblin.is_fake():
+            self.assert_equal(icon, "plain")
+        elif not self.context.interactive:
+            return
+        self.moblin.change_icon()
+        self.wait_until(lambda: self.viewer.profile()["icon"] != icon, "the new icon to be on the page")
+        if self.moblin.is_fake():
+            self.assert_equal(self.viewer.profile()["icon"], "king")
+
+
 class RemoteControlNewMoblinCloudKeyDisconnects(RemoteControlTestCase):
     """Disconnect Moblin when the streamer replaces the Moblin Cloud key, until it gets the new one."""
 
@@ -174,6 +191,7 @@ def tests(context: Context):
         RemoteControlReconnects(context),
         RemoteControlWheel(context),
         RemoteControlWheelChanges(context),
+        RemoteControlIcon(context),
         RemoteControlNewMoblinCloudKeyDisconnects(context),
         RemoteControlTestDeliveries(context),
         RemoteControlNoWheel(context),

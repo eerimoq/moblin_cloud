@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::accounts::Platform;
 use crate::effects::EFFECTS;
+use crate::icons;
 use crate::pages::{SpinOption, Tiers};
 use crate::paypal::PayPal;
 use crate::remote_control::Wheel;
@@ -29,6 +30,7 @@ pub(super) struct ProfileResponse {
     accent: Option<String>,
     font: Option<String>,
     image: Option<String>,
+    icon: Option<String>,
 }
 
 pub(super) async fn handle_page(
@@ -44,7 +46,21 @@ pub(super) async fn handle_page(
         accent: settings.accent,
         font: settings.font,
         image: api.pages.image_version(&id),
+        icon: api.pages.icon(&id),
     }))
+}
+
+pub(super) async fn handle_icon(Path(id): Path<String>) -> Result<Response, StatusCode> {
+    let icon = icons::icon(&id).ok_or(StatusCode::NOT_FOUND)?;
+    Ok((
+        [
+            (CONTENT_TYPE, "image/png"),
+            (CACHE_CONTROL, "public, max-age=86400"),
+            (X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        icon.data,
+    )
+        .into_response())
 }
 
 pub(super) async fn handle_page_image(

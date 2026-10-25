@@ -761,6 +761,7 @@ impl Accounts {
             ("DELETE FROM devices WHERE account = ?1", id),
             ("DELETE FROM pages WHERE id = ?1", page),
             ("DELETE FROM page_images WHERE id = ?1", page),
+            ("DELETE FROM page_icons WHERE id = ?1", page),
             ("DELETE FROM orders WHERE streamer = ?1", page),
             ("DELETE FROM deliveries WHERE streamer = ?1", page),
             ("DELETE FROM subscriber_allowances WHERE page = ?1", page),

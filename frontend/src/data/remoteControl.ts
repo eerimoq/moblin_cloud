@@ -225,6 +225,7 @@ export type Profile = Page & {
   twitch: Identity | null;
   kick: Identity | null;
   image: string | null;
+  icon: string | null;
 };
 
 export const identityOf = (

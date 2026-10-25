@@ -3,6 +3,8 @@ import { links } from "./links";
 
 export const backendUrl = import.meta.env.DEV ? "/api" : links.api;
 
+export const moblinIconUrl = (icon: string) => `${backendUrl}/icons/${encodeURIComponent(icon)}`;
+
 export class BackendError extends Error {
   constructor(
     readonly status: number,

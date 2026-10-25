@@ -15,7 +15,7 @@ import {
   Switch,
 } from "solid-js";
 import { asset } from "../asset";
-import { BackendError } from "../data/backend";
+import { BackendError, moblinIconUrl } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
 import { fireConfetti } from "../confetti";
@@ -1243,28 +1243,44 @@ function SoundInfo(props: {
 
 type Streamer = Identity & { platform: Platform };
 
-function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) {
+function Avatar(props: {
+  streamer: Streamer;
+  icon?: string | null;
+  class: string;
+  cutout?: boolean;
+}) {
   const ring = (color: string) =>
     props.cutout ? "ring-4 ring-page" : `ring-4 ${color} ring-offset-4 ring-offset-page`;
   return (
-    <Show
-      when={props.streamer.avatar}
-      fallback={
-        <span
-          class={`flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring("ring-moss/40")} ${props.class}`}
-        >
-          {props.streamer.name.slice(0, 1).toUpperCase()}
-        </span>
-      }
-    >
-      {(avatar) => (
-        <img
-          src={avatar()}
-          alt=""
-          class={`shrink-0 rounded-full bg-ghost object-cover ${ring("ring-moss")} ${props.class}`}
-        />
-      )}
-    </Show>
+    <span class={`shrink-0 rounded-full ${props.class}`}>
+      <Show
+        when={props.streamer.avatar}
+        fallback={
+          <span
+            class={`flex size-full items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring("ring-moss/40")}`}
+          >
+            {props.streamer.name.slice(0, 1).toUpperCase()}
+          </span>
+        }
+      >
+        {(avatar) => (
+          <img
+            src={avatar()}
+            alt=""
+            class={`size-full rounded-full bg-ghost object-cover ${ring("ring-moss")}`}
+          />
+        )}
+      </Show>
+      <Show when={props.icon}>
+        {(icon) => (
+          <img
+            src={moblinIconUrl(icon())}
+            alt=""
+            class="absolute -right-3 -bottom-2 h-1/2 w-auto drop-shadow-md"
+          />
+        )}
+      </Show>
+    </span>
   );
 }
 
@@ -1391,7 +1407,11 @@ function StreamerHeader(props: {
             >
               {(current) => (
                 <>
-                  <Avatar streamer={current().streamer} class="size-28 text-5xl sm:size-32" />
+                  <Avatar
+                    streamer={current().streamer}
+                    icon={current().profile.icon}
+                    class="relative size-28 text-5xl sm:size-32"
+                  />
                   <ChannelLink streamer={current().streamer} />
                   <Greeting profile={current().profile} />
                 </>
@@ -1410,6 +1430,7 @@ function StreamerHeader(props: {
             <div class="flex items-start justify-between gap-4 px-4 sm:px-6">
               <Avatar
                 streamer={banner().streamer}
+                icon={banner().profile.icon}
                 cutout
                 class="relative -mt-10 size-20 text-3xl sm:-mt-12 sm:size-24 sm:text-4xl"
               />

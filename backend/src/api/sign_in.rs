@@ -585,6 +585,7 @@ mod tests {
                 "accent": "pink",
                 "font": null,
                 "image": null,
+                "icon": null,
             })
         );
         let response = client

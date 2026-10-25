@@ -36,6 +36,7 @@ pub(super) struct ListedStreamer {
 pub(super) struct PageAddress {
     platform: &'static str,
     login: String,
+    icon: Option<String>,
 }
 
 pub(super) async fn handle_streamers(State(api): State<Arc<Api>>) -> Json<StreamersResponse> {
@@ -62,10 +63,11 @@ fn page_address(api: &Api, streamer: &Streamer) -> Option<PageAddress> {
             ),
             store::Platform::YouTube => return None,
         };
-        api.accounts.page_of_login(platform, &login)?;
+        let id = api.accounts.page_of_login(platform, &login)?;
         Some(PageAddress {
             platform: platform.name(),
             login,
+            icon: api.pages.icon(&id),
         })
     })
 }
@@ -181,7 +183,11 @@ pub(super) async fn handle_remote_control_streamer(
         };
         api.accounts.seen_device(&page, &device);
         api.counters.bump("moblinConnections");
-        api.remote_control.serve(connection, socket).await;
+        api.remote_control
+            .serve(connection, socket, |icon| {
+                api.pages.set_icon(&page, icon.id)
+            })
+            .await;
         api.accounts.left_device(&page, &device);
     }))
 }
@@ -299,11 +305,55 @@ mod tests {
         assert_eq!(
             pages().await,
             vec![
-                json!({"platform": "twitch", "login": "anna"}),
-                json!({"platform": "twitch", "login": "erik"}),
+                json!({"platform": "twitch", "login": "anna", "icon": null}),
+                json!({"platform": "twitch", "login": "erik", "icon": null}),
                 Value::Null
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn moblins_icon_is_shown_on_the_page_and_in_the_list() {
+        let (address, api) = start_api(None).await;
+        let (_, key, id) = streamer(&address, &api).await;
+        api.store.streamer_live(vec![Channel {
+            platform: Platform::Twitch,
+            name: "Erik".to_string(),
+        }]);
+        let icon = async || {
+            let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
+            let (_, list) = get_json(&address, "/streamers").await;
+            assert_eq!(list["streamers"][0]["page"]["icon"], profile["icon"]);
+            profile["icon"].clone()
+        };
+        assert_eq!(icon().await, Value::Null);
+        let mut socket = connect(&address, &key).await;
+        for moblin in ["AppIconKing", "AppIconNope"] {
+            socket
+                .send(Message::text(
+                    json!({"event": {"data": {"icon": {"id": moblin}}}}).to_string(),
+                ))
+                .await
+                .unwrap();
+        }
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        assert_eq!(icon().await, json!("king"));
+        socket.close(None).await.unwrap();
+        assert_eq!(icon().await, json!("king"));
+        let response = reqwest::get(format!("http://{address}/icons/king"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], "image/png");
+        assert!(response.bytes().await.unwrap().starts_with(b"\x89PNG"));
+        let response = reqwest::get(format!("http://{address}/icons/nope"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

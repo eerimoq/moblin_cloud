@@ -217,6 +217,7 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_effect_capture),
         )
         .route("/effects/{id}", get(handle_effect_media))
+        .route("/icons/{id}", get(handle_icon))
         .route("/pages/{id}/spin", get(handle_spin))
         .route("/pages/{id}/spin/orders", post(handle_spin_order))
         .route(

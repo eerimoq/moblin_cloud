@@ -377,6 +377,26 @@ impl Pages {
         Ok(version)
     }
 
+    pub fn icon(&self, id: &str) -> Option<String> {
+        self.database
+            .lock()
+            .prepare_cached("SELECT icon FROM page_icons WHERE id = ?1")
+            .and_then(|mut statement| statement.query_row([id], |row| row.get(0)).optional())
+            .unwrap_or_else(|error| {
+                warn!("failed to read the icon of page {id}: {error:#}");
+                None
+            })
+    }
+
+    pub fn set_icon(&self, id: &str, icon: &str) {
+        if let Err(error) = self.database.lock().execute(
+            "INSERT OR REPLACE INTO page_icons (id, icon) VALUES (?1, ?2)",
+            params![id, icon],
+        ) {
+            warn!("failed to save the icon of page {id}: {error:#}");
+        }
+    }
+
     pub fn remove_image(&self, id: &str) -> Result<(), SettingsError> {
         self.database
             .lock()

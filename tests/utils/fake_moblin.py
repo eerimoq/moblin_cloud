@@ -34,6 +34,7 @@ class FakeMoblin:
         self.key = key
         self.device_id = device_id or str(uuid.uuid4()).upper()
         self.wheel: dict | None = None
+        self.icon = "AppIcon"
         self.refuse_tips = False
         self.handled_request_ids: set[str] = set()
         self._stopped = threading.Event()
@@ -94,6 +95,7 @@ class FakeMoblin:
             elif "identified" in message:
                 if name == "cloud":
                     self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
+                    self.send(websocket, {"event": {"data": {"icon": {"id": self.icon}}}})
             elif "request" in message:
                 request = message["request"]
                 result, data = self.handle(request["data"])
@@ -108,6 +110,13 @@ class FakeMoblin:
             websocket = self._websockets.get("cloud")
         if websocket is not None:
             self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
+
+    def change_icon(self, icon: str):
+        self.icon = icon
+        with self._lock:
+            websocket = self._websockets.get("cloud")
+        if websocket is not None:
+            self.send(websocket, {"event": {"data": {"icon": {"id": self.icon}}}})
 
     def send(self, websocket: ClientConnection, message: dict):
         websocket.send(json.dumps(message))

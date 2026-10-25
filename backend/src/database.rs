@@ -91,6 +91,10 @@ impl Database {
                      version TEXT NOT NULL,
                      data BLOB NOT NULL
                  );
+                 CREATE TABLE IF NOT EXISTS page_icons (
+                     id TEXT PRIMARY KEY,
+                     icon TEXT NOT NULL
+                 );
                  CREATE TABLE IF NOT EXISTS orders (
                      id TEXT PRIMARY KEY,
                      streamer TEXT NOT NULL,
