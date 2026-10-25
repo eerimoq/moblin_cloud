@@ -1243,61 +1243,50 @@ function SoundInfo(props: {
 
 type Streamer = Identity & { platform: Platform };
 
-function Avatar(props: {
-  streamer: Streamer;
-  icon?: string | null;
-  class: string;
-  cutout?: boolean;
-}) {
+function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) {
   const ring = (color: string) =>
     props.cutout ? "ring-4 ring-page" : `ring-4 ${color} ring-offset-4 ring-offset-page`;
   return (
-    <span class={`shrink-0 rounded-full ${props.class}`}>
-      <Show
-        when={props.streamer.avatar}
-        fallback={
-          <span
-            class={`flex size-full items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring("ring-moss/40")}`}
-          >
-            {props.streamer.name.slice(0, 1).toUpperCase()}
-          </span>
-        }
-      >
-        {(avatar) => (
-          <img
-            src={avatar()}
-            alt=""
-            class={`size-full rounded-full bg-ghost object-cover ${ring("ring-moss")}`}
-          />
-        )}
-      </Show>
-      <Show when={props.icon}>
-        {(icon) => (
-          <img
-            src={moblinIconUrl(icon())}
-            alt=""
-            class="absolute -right-3 -bottom-2 h-1/2 w-auto drop-shadow-md"
-          />
-        )}
-      </Show>
-    </span>
+    <Show
+      when={props.streamer.avatar}
+      fallback={
+        <span
+          class={`flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring("ring-moss/40")} ${props.class}`}
+        >
+          {props.streamer.name.slice(0, 1).toUpperCase()}
+        </span>
+      }
+    >
+      {(avatar) => (
+        <img
+          src={avatar()}
+          alt=""
+          class={`shrink-0 rounded-full bg-ghost object-cover ${ring("ring-moss")} ${props.class}`}
+        />
+      )}
+    </Show>
   );
 }
 
-function ChannelLink(props: { streamer: Streamer }) {
+function ChannelLink(props: { streamer: Streamer; icon: string | null }) {
   return (
-    <a
-      href={channelUrl(props.streamer.platform, props.streamer.login)}
-      target="_blank"
-      rel="noopener"
-      class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
-    >
-      <Icon
-        name={props.streamer.platform}
-        class={`size-5 shrink-0 ${props.streamer.platform === "twitch" ? "text-twitch" : "text-kick"}`}
-      />
-      <span class="truncate">{channelText(props.streamer.platform, props.streamer.login)}</span>
-    </a>
+    <span class="inline-flex max-w-full min-w-0 items-center gap-2.5">
+      <a
+        href={channelUrl(props.streamer.platform, props.streamer.login)}
+        target="_blank"
+        rel="noopener"
+        class="inline-flex min-w-0 items-center gap-1.5 text-[17px] font-semibold text-ink-2 transition-colors hover:text-ink"
+      >
+        <Icon
+          name={props.streamer.platform}
+          class={`size-5 shrink-0 ${props.streamer.platform === "twitch" ? "text-twitch" : "text-kick"}`}
+        />
+        <span class="truncate">{channelText(props.streamer.platform, props.streamer.login)}</span>
+      </a>
+      <Show when={props.icon}>
+        {(icon) => <img src={moblinIconUrl(icon())} alt="" class="h-6 w-auto shrink-0" />}
+      </Show>
+    </span>
   );
 }
 
@@ -1407,12 +1396,8 @@ function StreamerHeader(props: {
             >
               {(current) => (
                 <>
-                  <Avatar
-                    streamer={current().streamer}
-                    icon={current().profile.icon}
-                    class="relative size-28 text-5xl sm:size-32"
-                  />
-                  <ChannelLink streamer={current().streamer} />
+                  <Avatar streamer={current().streamer} class="size-28 text-5xl sm:size-32" />
+                  <ChannelLink streamer={current().streamer} icon={current().profile.icon} />
                   <Greeting profile={current().profile} />
                 </>
               )}
@@ -1430,12 +1415,11 @@ function StreamerHeader(props: {
             <div class="flex items-start justify-between gap-4 px-4 sm:px-6">
               <Avatar
                 streamer={banner().streamer}
-                icon={banner().profile.icon}
                 cutout
                 class="relative -mt-10 size-20 text-3xl sm:-mt-12 sm:size-24 sm:text-4xl"
               />
               <div class="mt-3 min-w-0">
-                <ChannelLink streamer={banner().streamer} />
+                <ChannelLink streamer={banner().streamer} icon={banner().profile.icon} />
               </div>
             </div>
             <Show when={banner().profile.message}>
