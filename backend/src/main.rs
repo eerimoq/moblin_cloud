@@ -260,7 +260,7 @@ async fn main() -> Result<()> {
     let database = Database::open(cli.database.as_deref())?;
     let store = Arc::new(Store::new(cli.max_streamers, database.clone()));
     let accounts = Accounts::new(database.clone());
-    let remote_control = Streamers::new();
+    let remote_control = Streamers::new(Duration::from_secs(60));
     let twitch = match (cli.twitch_client_id, cli.twitch_client_secret) {
         (Some(client_id), Some(client_secret)) => Some(Arc::new(Twitch::new(
             client.clone(),

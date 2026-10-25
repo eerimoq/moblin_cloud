@@ -76,6 +76,7 @@ class StreamerConnection:
         self.connection = connection
         self.key = key
         self.upstream: ClientConnection | None = None
+        self.stopped = False
         self.identified = threading.Event()
         self._own_lock = threading.Lock()
         self._own: dict[int, tuple[threading.Event, list]] = {}
@@ -144,7 +145,10 @@ class StreamerConnection:
         except ConnectionClosed:
             pass
         finally:
-            self.upstream.close()
+            if self.stopped or self.connection.close_code == 1000:
+                self.upstream.close()
+            else:
+                self.upstream.close(1001)
             thread.join(timeout=5)
 
     def _relay_from_backend(self):
@@ -413,13 +417,20 @@ class Moblin:
             cloud = self._cloud
         for connection in [control, cloud]:
             if connection is not None:
+                connection.stopped = True
                 connection.connection.close()
         return control, cloud
+
+    def _stop_cloud(self):
+        with self._lock:
+            if self._cloud is not None:
+                self._cloud.stopped = True
 
     def connect_to_backend(self, key: str, wheel: list[dict] | None = None):
         """Gives Moblin the Moblin Cloud key from the dashboard, like a streamer pasting it into Moblin."""
         with self._lock:
             self._wheel = None
+        self._stop_cloud()
         self.import_settings(key, wheel)
         control, cloud = self._reconnect()
         self.wait_for_control_connection(other_than=control)
@@ -444,6 +455,7 @@ class Moblin:
     def disconnect_from_backend(self):
         if self.connected_key() is None:
             return
+        self._stop_cloud()
         self.import_settings(None)
         control, _ = self._reconnect()
         self.wait_for_control_connection(other_than=control)
@@ -455,7 +467,7 @@ class Moblin:
         with self._lock:
             connection = self._cloud
         if connection is not None:
-            connection.connection.close()
+            connection.connection.close(1001)
         return connection
 
     def wheel(self) -> dict | None:

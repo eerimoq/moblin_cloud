@@ -233,6 +233,7 @@ class AccountDevices(AccountTestCase):
                         "id": f"DEVICE-{number}",
                         "name": f"Moblin {number}",
                         "connected": True,
+                        "reconnecting": False,
                         "wheel": False,
                         "lastSeen": None,
                     }

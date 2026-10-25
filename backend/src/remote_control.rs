@@ -11,7 +11,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Notify, mpsc, oneshot};
-use tokio::time::{Instant, sleep_until, timeout, timeout_at};
+use tokio::time::{Instant, sleep, sleep_until, timeout, timeout_at};
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -134,6 +134,7 @@ struct Session {
     next_request_id: u64,
     pending: HashMap<u64, oneshot::Sender<Outcome>>,
     wheel: Option<Wheel>,
+    reconnecting: bool,
 }
 
 #[derive(Default)]
@@ -162,6 +163,7 @@ impl Sessions {
 pub struct Device {
     pub id: String,
     pub wheel: bool,
+    pub reconnecting: bool,
 }
 
 pub struct Connection {
@@ -174,6 +176,7 @@ pub struct Connection {
 pub struct Streamers {
     random: SystemRandom,
     sessions: Mutex<Sessions>,
+    linger: Duration,
     pub connected: Notify,
 }
 
@@ -193,10 +196,11 @@ pub async fn refuse(mut socket: WebSocket) {
 }
 
 impl Streamers {
-    pub fn new() -> Self {
+    pub fn new(linger: Duration) -> Self {
         Self {
             random: SystemRandom::new(),
             sessions: Mutex::new(Sessions::default()),
+            linger,
             connected: Notify::new(),
         }
     }
@@ -242,8 +246,9 @@ impl Streamers {
             .unwrap()
             .by_page
             .values()
-            .map(Vec::len)
-            .sum()
+            .flatten()
+            .filter(|session| !session.reconnecting)
+            .count()
     }
 
     pub fn devices(&self, page: &str) -> Vec<Device> {
@@ -260,6 +265,7 @@ impl Streamers {
             .map(|session| Device {
                 id: session.device.clone(),
                 wheel: wheel == Some(session.number),
+                reconnecting: session.reconnecting,
             })
             .collect()
     }
@@ -311,16 +317,23 @@ impl Streamers {
         sessions.next_number += 1;
         let number = sessions.next_number;
         let (sender, receiver) = mpsc::unbounded_channel();
-        let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
-        page_sessions.retain(|session| session.device != device);
-        page_sessions.push(Session {
+        let mut session = Session {
             device: device.to_string(),
             number,
             sender,
             next_request_id: 0,
             pending: HashMap::new(),
             wheel: None,
-        });
+            reconnecting: false,
+        };
+        let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
+        match page_sessions.iter_mut().find(|old| old.device == device) {
+            Some(old) => {
+                session.wheel = old.wheel.take();
+                *old = session;
+            }
+            None => page_sessions.push(session),
+        }
         Some(Connection {
             page: page.to_string(),
             device: device.to_string(),
@@ -339,6 +352,7 @@ impl Streamers {
         let identified = MessageToStreamer::Identified {
             result: Outcome::Ok {},
         };
+        let mut stopped = false;
         if send(&mut socket, &identified).await.is_ok() {
             info!("remote control streamer {page} device {device} connected");
             self.connected.notify_one();
@@ -364,13 +378,21 @@ impl Streamers {
                                     break;
                                 }
                             }
-                            Message::Close(_) => break,
+                            Message::Close(frame) => {
+                                stopped = frame.is_some_and(|frame| frame.code == 1000);
+                                break;
+                            }
                             _ => {}
                         }
                     }
                     _ = sleep_until(deadline) => break,
                 }
             }
+        }
+        drop(receiver);
+        if !stopped && self.left(&page, &device, number) {
+            info!("remote control streamer {page} device {device} reconnecting");
+            sleep(self.linger).await;
         }
         self.remove(&page, &device, number);
         info!("remote control streamer {page} device {device} disconnected");
@@ -409,6 +431,16 @@ impl Streamers {
             _ => {}
         }
         Ok(())
+    }
+
+    fn left(&self, page: &str, device: &str, number: u64) -> bool {
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(session) = sessions.get_mut(page, device, Some(number)) else {
+            return false;
+        };
+        session.reconnecting = true;
+        session.pending.clear();
+        true
     }
 
     fn remove(&self, page: &str, device: &str, number: u64) {
@@ -461,6 +493,7 @@ impl Streamers {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions
                 .get_mut(page, device, None)
+                .filter(|session| !session.reconnecting)
                 .ok_or(RequestError::Offline)?;
             session.next_request_id += 1;
             let request_id = session.next_request_id;
@@ -660,7 +693,7 @@ mod tests {
 
     #[test]
     fn keys_and_page_ids_are_random() {
-        let streamers = Streamers::new();
+        let streamers = Streamers::new(Duration::ZERO);
         let key = streamers.new_key();
         assert_eq!(key.len(), 36);
         assert_eq!(

@@ -6,6 +6,7 @@ export type Device = {
   id: string;
   name: string;
   connected: boolean;
+  reconnecting: boolean;
   wheel: boolean;
   lastSeen: number | null;
 };

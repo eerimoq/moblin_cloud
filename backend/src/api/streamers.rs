@@ -336,11 +336,11 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "b", "name": "Moblin 2", "connected": true, "wheel": false, "lastSeen": null},
-                {"id": "c", "name": "Moblin 3", "connected": true, "wheel": false, "lastSeen": null},
-                {"id": "d", "name": "Moblin 4", "connected": true, "wheel": false, "lastSeen": null},
-                {"id": "e", "name": "Moblin 5", "connected": true, "wheel": false, "lastSeen": null},
-                {"id": "a", "name": "Moblin 1", "connected": true, "wheel": false, "lastSeen": null},
+                {"id": "a", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
+                {"id": "b", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
+                {"id": "c", "name": "Moblin 3", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
+                {"id": "d", "name": "Moblin 4", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
+                {"id": "e", "name": "Moblin 5", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
             ])
         );
         assert_eq!(api.remote_control.connected_count(), 5);
@@ -366,7 +366,7 @@ mod tests {
         let response = rename("b", &"x".repeat(31)).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let account: Value = rename("b", " Backup ").await.unwrap().json().await.unwrap();
-        assert_eq!(account["devices"][0]["name"], "Backup");
+        assert_eq!(account["devices"][1]["name"], "Backup");
         let response = rename("b", " ").await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let remove = |device: &str| {
@@ -443,8 +443,8 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "main", "name": "Moblin 1", "connected": true, "wheel": false, "lastSeen": null},
-                {"id": "other", "name": "Moblin 2", "connected": true, "wheel": true, "lastSeen": null},
+                {"id": "main", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
+                {"id": "other", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": true, "lastSeen": null},
             ])
         );
         let spin_url = format!("http://{address}/pages/{id}/spin");

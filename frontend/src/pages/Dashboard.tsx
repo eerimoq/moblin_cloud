@@ -2337,8 +2337,12 @@ function MoblinSettings(props: {
     await run(() => props.onRemove(device.id));
   };
   const gets = (device: Device) =>
-    device.connected
-      ? [device.wheel ? t("Wheel of luck") : null, t("Message")]
+    device.connected || device.reconnecting
+      ? [
+          device.reconnecting ? t("Reconnecting") : null,
+          device.wheel ? t("Wheel of luck") : null,
+          t("Message"),
+        ]
           .filter((text) => text !== null)
           .join(" · ")
       : t("Last seen {time}", { time: timeAgo(device.lastSeen ?? 0) });
@@ -2405,8 +2409,14 @@ function MoblinSettings(props: {
               {(device) => (
                 <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
                   <span
-                    class={`size-2.5 shrink-0 rounded-full ${device.connected ? "bg-leaf" : "bg-muted"}`}
-                    title={device.connected ? t("Connected") : t("Not connected")}
+                    class={`size-2.5 shrink-0 rounded-full ${device.connected ? "bg-leaf" : device.reconnecting ? "bg-amber" : "bg-muted"}`}
+                    title={
+                      device.connected
+                        ? t("Connected")
+                        : device.reconnecting
+                          ? t("Reconnecting")
+                          : t("Not connected")
+                    }
                   />
                   <Show
                     when={renaming() === device.id}
@@ -2422,7 +2432,7 @@ function MoblinSettings(props: {
                         >
                           {t("Rename")}
                         </button>
-                        <Show when={!device.connected}>
+                        <Show when={!device.connected && !device.reconnecting}>
                           <button
                             type="button"
                             class="text-[15px] font-semibold text-danger hover:underline disabled:opacity-60"

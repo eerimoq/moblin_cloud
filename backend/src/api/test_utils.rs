@@ -52,6 +52,17 @@ pub(crate) async fn start_api_with(
     kick: Option<KickApp>,
     pages: Option<Pages>,
 ) -> (String, Arc<Api>) {
+    start_api_lingering(paypal, stripe, twitch, kick, pages, Duration::ZERO).await
+}
+
+pub(crate) async fn start_api_lingering(
+    paypal: Option<PayPal>,
+    stripe: Option<Stripe>,
+    twitch: Option<OAuthApp>,
+    kick: Option<KickApp>,
+    pages: Option<Pages>,
+    linger: Duration,
+) -> (String, Arc<Api>) {
     let database = Database::memory();
     let pages = pages.unwrap_or_else(|| Pages::new(database.clone()));
     let api = Arc::new(Api {
@@ -59,7 +70,7 @@ pub(crate) async fn start_api_with(
         challenges: Challenges::new(),
         app_attest: None,
         live: None,
-        remote_control: Streamers::new(),
+        remote_control: Streamers::new(linger),
         pages,
         paypal,
         stripe,

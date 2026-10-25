@@ -106,6 +106,8 @@ mod tests {
     use futures_util::SinkExt;
     use serde_json::{Value, json};
     use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
     use crate::api::test_utils::*;
     use crate::payments::Stage;
@@ -233,6 +235,103 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert_eq!(wheel().await, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn sessions_wait_for_the_device_to_reconnect() {
+        let (address, api) =
+            start_api_lingering(None, None, None, None, None, Duration::from_secs(60)).await;
+        let client = reqwest::Client::new();
+        let (session, key, id) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        let options = json!([{"text": "Yes", "weight": 1}]);
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": options}}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket
+            .send(Message::text(json!({"ping": {}}).to_string()))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+        drop(socket);
+        for _ in 0..100 {
+            if api.remote_control.connected_count() == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(api.remote_control.connected_count(), 0);
+        let account = account_of(&address, &session).await;
+        assert_eq!(account["devices"][0]["connected"], false);
+        assert_eq!(account["devices"][0]["reconnecting"], true);
+        assert_eq!(account["devices"][0]["wheel"], true);
+        let public: Value = reqwest::get(format!("http://{address}/pages/{id}/spin"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(public["wheel"], json!({"options": options}));
+        assert_eq!(public["connected"], true);
+        let response = client
+            .post(format!("http://{address}/account/test/spin"))
+            .bearer_auth(&session)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let response = client
+            .post(format!("http://{address}/account/devices/A/remove"))
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let mut socket = connect(&address, &key).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"]["tip"]["kind"]["wheelOfLuck"]["count"],
+            1
+        );
+        let account = account_of(&address, &session).await;
+        assert_eq!(account["devices"][0]["connected"], true);
+        assert_eq!(account["devices"][0]["reconnecting"], false);
+        assert_eq!(account["devices"][0]["wheel"], true);
+        socket
+            .close(Some(CloseFrame {
+                code: CloseCode::Away,
+                reason: "".into(),
+            }))
+            .await
+            .unwrap();
+        for _ in 0..100 {
+            if api.remote_control.connected_count() == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(api.remote_control.connected_count(), 0);
+        assert!(api.remote_control.is_connected(&id));
+        let mut socket = connect(&address, &key).await;
+        socket
+            .close(Some(CloseFrame {
+                code: CloseCode::Normal,
+                reason: "".into(),
+            }))
+            .await
+            .unwrap();
+        for _ in 0..100 {
+            if !api.remote_control.is_connected(&id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!api.remote_control.is_connected(&id));
     }
 
     #[tokio::test]

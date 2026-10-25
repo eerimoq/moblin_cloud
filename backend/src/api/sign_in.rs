@@ -910,7 +910,7 @@ mod tests {
             challenges: Challenges::new(),
             app_attest: None,
             live: None,
-            remote_control: Streamers::new(),
+            remote_control: Streamers::new(std::time::Duration::ZERO),
             pages: Pages::new(database.clone()),
             paypal: None,
             stripe: None,

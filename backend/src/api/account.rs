@@ -94,6 +94,7 @@ pub(super) struct DeviceResponse {
     id: String,
     name: String,
     connected: bool,
+    reconnecting: bool,
     wheel: bool,
     last_seen: Option<u64>,
 }
@@ -117,7 +118,8 @@ fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
                 .find(|known| known.id == device.id)
                 .map(|known| known.name.clone())
                 .unwrap_or_else(|| "Moblin".to_string()),
-            connected: true,
+            connected: !device.reconnecting,
+            reconnecting: device.reconnecting,
             wheel: device.wheel,
             last_seen: None,
         })
@@ -130,6 +132,7 @@ fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
                 id: known.id,
                 name: known.name,
                 connected: false,
+                reconnecting: false,
                 wheel: false,
                 last_seen: Some(known.last_seen),
             }),

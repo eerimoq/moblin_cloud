@@ -262,6 +262,7 @@ impl Deliveries {
                         let connected: Vec<String> = streamers
                             .devices(page)
                             .into_iter()
+                            .filter(|device| !device.reconnecting)
                             .map(|device| device.id)
                             .filter(|device| !delivery.delivered.contains(device))
                             .collect();
