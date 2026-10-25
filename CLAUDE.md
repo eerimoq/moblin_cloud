@@ -28,7 +28,7 @@ just test           # cargo test (backend only; the frontend has no tests)
 
 Run a single backend test: `cd backend && cargo test store::tests::list_is_capped` (tests are inline `#[cfg(test)]` modules per file; the API's are under each `api/*.rs`, e.g. `cargo test api::tips::tests`, sharing `start_api_with`, the socket helpers and the fake PayPal, Stripe, Twitch and Kick servers in `api/test_utils.rs` and `api/test_utils/`).
 
-Development needs two terminals:
+`just run` starts everything in one terminal: `backend-run`, `frontend-run`, then signs in as `admin` on the fake Twitch and runs `fake-moblin-run`. Otherwise development needs two terminals:
 
 ```
 just backend-run    # starts the fake Twitch, then cargo run --allow-unattested with backend/database.sqlite, then seeds fake streamers via scripts/seed_backend.py

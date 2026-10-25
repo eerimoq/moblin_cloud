@@ -80,7 +80,8 @@ backend-seed:
 backend-seed-forever interval="2":
 	python3 scripts/seed_backend.py --forever {{interval}}
 
-# Connects the fake Moblin to the running `just backend-run` as the admin user's Moblin.
+# Connects the fake Moblin to the running `just backend-run` as the admin user's Moblin, always as the
+# same device, so the dashboard lists it once. Pass --device-id to connect another one.
 fake-moblin-run *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -89,7 +90,24 @@ fake-moblin-run *args:
 		echo "No Moblin Cloud key for the admin user. Sign in as admin at http://localhost:5173/dashboard/ first." >&2
 		exit 1
 	fi
-	python3 -m tests.utils.fake_moblin http://localhost:8080 --key "$key" {{args}}
+	python3 -m tests.utils.fake_moblin http://localhost:8080 --key "$key" --device-id FAKE-MOBLIN {{args}}
+
+# Runs the backend, the frontend and the fake Moblin connected as the admin user's Moblin, which
+# it signs in first, for trying the whole system at http://localhost:5173.
+run:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	trap 'kill $(jobs -p)' EXIT
+	just backend-run &
+	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
+	just frontend-run &
+	cookies=$(mktemp)
+	authorize=$(curl -sf -c "$cookies" -o /dev/null -w '%{redirect_url}' localhost:8080/auth/twitch/login)
+	callback=$(curl -sf -o /dev/null -w '%{redirect_url}' -G "$authorize" --data-urlencode login=admin)
+	curl -sf -b "$cookies" -o /dev/null "${callback/localhost:5173\/api/localhost:8080}"
+	rm "$cookies"
+	just fake-moblin-run &
+	wait
 
 backend-docker-build:
 	docker build -t moblin-website-backend backend
