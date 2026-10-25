@@ -2340,8 +2340,9 @@ function MoblinSettings(props: {
     device.connected || device.reconnecting
       ? [
           device.reconnecting ? t("Reconnecting") : null,
-          device.wheel ? t("Wheel of luck") : null,
           t("Message"),
+          device.wheel ? t("Wheel of luck") : null,
+          t("Effect"),
         ]
           .filter((text) => text !== null)
           .join(" · ")
