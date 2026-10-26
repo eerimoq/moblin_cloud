@@ -606,7 +606,7 @@ function CheerCard(props: {
           {(streamer) => (
             <Avatar
               streamer={streamer()}
-              class="absolute -top-18 left-1/2 size-36 -translate-x-1/2 text-5xl shadow-xl"
+              class="absolute -top-16.5 left-1/2 size-33 -translate-x-1/2 text-5xl shadow-xl"
             />
           )}
         </Show>
@@ -1279,7 +1279,8 @@ function SoundInfo(props: {
 type Streamer = Identity & { platform: Platform };
 
 function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) {
-  const ring = () => (props.cutout ? "ring-4 ring-page" : "");
+  const ring = () =>
+    props.cutout ? "ring-4 ring-page" : "ring-2 ring-moss ring-offset-4 ring-offset-page";
   return (
     <Show
       when={props.streamer.avatar}
@@ -1435,7 +1436,7 @@ function StreamerHeader(props: {
             >
               {(current) => (
                 <>
-                  <Avatar streamer={current().streamer} class="size-32 text-5xl sm:size-36" />
+                  <Avatar streamer={current().streamer} class="size-29 text-5xl sm:size-33" />
                   <ChannelLink streamer={current().streamer} />
                   <MoblinIcon icon={current().profile.icon} class="h-8" />
                   <Greeting profile={current().profile} />
