@@ -10,6 +10,7 @@ use crate::accounts::AccountStats;
 use crate::counters::Counter;
 use crate::deliveries;
 use crate::requests::RequestStats;
+use crate::traffic::TrafficStats;
 
 use super::*;
 
@@ -61,6 +62,7 @@ pub(super) struct DatabaseStats {
 #[serde(rename_all = "camelCase")]
 pub(super) struct MoblinStats {
     connected_devices: usize,
+    messages: TrafficStats,
 }
 
 #[derive(Serialize)]
@@ -98,6 +100,7 @@ pub(super) async fn handle_admin_stats(
         ),
         moblin: MoblinStats {
             connected_devices: api.remote_control.connected_count(),
+            messages: api.remote_control.traffic.stats(),
         },
         pending: PendingStats {
             orders: api.orders.unfinished(),
@@ -124,7 +127,7 @@ mod tests {
         let url = format!("http://{address}/admin/stats");
         let response = client.get(&url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        let (session, _, _) = streamer(&address, &api).await;
+        let (session, key, _) = streamer(&address, &api).await;
         let response = client.get(&url).bearer_auth(&session).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let account: Value = client
@@ -151,10 +154,39 @@ mod tests {
         assert_eq!(account["admin"], true);
         api.counters.bump("tipOrders");
         api.counters.bump("tipOrders");
+        let _socket = connect(&address, &key).await;
         let response = client.get(&url).bearer_auth(&admin).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let mut stats: Value = response.json().await.unwrap();
         let server = stats.as_object_mut().unwrap().remove("server").unwrap();
+        let mut messages = stats["moblin"]
+            .as_object_mut()
+            .unwrap()
+            .remove("messages")
+            .unwrap();
+        for kinds in ["sent", "received"] {
+            for kind in messages[kinds].as_array_mut().unwrap() {
+                assert!(
+                    kind.as_object_mut()
+                        .unwrap()
+                        .remove("bytes")
+                        .unwrap()
+                        .as_u64()
+                        .unwrap()
+                        > 0
+                );
+            }
+        }
+        assert_eq!(
+            messages,
+            json!({
+                "sent": [
+                    {"kind": "hello", "messages": 1},
+                    {"kind": "identified", "messages": 1},
+                ],
+                "received": [{"kind": "identify", "messages": 1}],
+            })
+        );
         assert_eq!(server["version"], "dev");
         assert_eq!(server["started"], 0);
         assert!(server["now"].as_u64().unwrap() > 0);
@@ -165,11 +197,12 @@ mod tests {
         assert_eq!(
             server["requests"],
             json!({
-                "total": 4,
-                "statuses": {"200": 2, "401": 1, "403": 1},
+                "total": 5,
+                "statuses": {"101": 1, "200": 2, "401": 1, "403": 1},
                 "endpoints": [
                     {"path": "/account", "total": 2, "statuses": {"200": 2}},
                     {"path": "/admin/stats", "total": 2, "statuses": {"401": 1, "403": 1}},
+                    {"path": "/remote-control/streamer/{key}", "total": 1, "statuses": {"101": 1}},
                 ],
             })
         );
@@ -177,10 +210,13 @@ mod tests {
             stats,
             json!({
                 "accounts": {"total": 2, "paypal": 0, "stripe": 0, "premium": 1},
-                "moblin": {"connectedDevices": 0},
+                "moblin": {"connectedDevices": 1},
                 "pending": {"orders": 0, "deliveries": 0},
                 "database": { "bytes": 0 },
-                "counters": [{"name": "tipOrders", "today": 2, "week": 2, "total": 2}],
+                "counters": [
+                    {"name": "moblinConnections", "today": 1, "week": 1, "total": 1},
+                    {"name": "tipOrders", "today": 2, "week": 2, "total": 2},
+                ],
             })
         );
     }

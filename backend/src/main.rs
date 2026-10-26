@@ -21,6 +21,7 @@ mod requests;
 mod store;
 mod stripe;
 mod subscribers;
+mod traffic;
 mod twitch;
 
 use std::net::SocketAddr;

@@ -206,7 +206,10 @@ export type AdminStats = {
     };
   };
   accounts: { total: number; paypal: number; stripe: number; premium: number };
-  moblin: { connectedDevices: number };
+  moblin: {
+    connectedDevices: number;
+    messages: Record<"sent" | "received", { kind: string; messages: number; bytes: number }[]>;
+  };
   pending: { orders: number; deliveries: number };
   database: { bytes: number };
   counters: { name: string; today: number; week: number; total: number }[];

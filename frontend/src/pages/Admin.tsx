@@ -580,6 +580,61 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
   );
 }
 
+function MessageTable(props: {
+  title: string;
+  hint: string;
+  kinds: AdminStats["moblin"]["messages"]["sent"];
+}) {
+  return (
+    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+      <table class="w-full">
+        <thead>
+          <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+            <th class="px-4 pt-3 pb-2 text-left sm:px-5">
+              {props.title}
+              <Info>{props.hint}</Info>
+            </th>
+            <th class="w-24 px-2 pt-3 pb-2 text-right sm:px-4">Messages</th>
+            <th class="w-24 px-2 pt-3 pb-2 text-right sm:px-4">Bytes</th>
+          </tr>
+        </thead>
+        <tbody class="border-t-[1.5px] border-line [&>tr:first-child>td]:pt-3 [&>tr:last-child>td]:pb-3">
+          <Show
+            when={props.kinds.length > 0}
+            fallback={
+              <tr>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={3}>
+                  No messages yet.
+                </td>
+              </tr>
+            }
+          >
+            <For each={props.kinds}>
+              {(kind) => (
+                <tr
+                  class={
+                    kind.kind === "invalid" || kind.kind === "response:error"
+                      ? "text-amber-ink"
+                      : ""
+                  }
+                >
+                  <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">{kind.kind}</td>
+                  <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
+                    {format(kind.messages)}
+                  </td>
+                  <td class="px-2 py-0.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
+                    {formatBytes(kind.bytes)}
+                  </td>
+                </tr>
+              )}
+            </For>
+          </Show>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Section(props: { id: string; title: string; hint?: string; children: JSX.Element }) {
   return (
     <section id={props.id} class="flex scroll-mt-24 flex-col gap-3">
@@ -978,6 +1033,18 @@ function Loaded(props: { stats: AdminStats }) {
                 ),
               ]}
             />
+            <div class="grid gap-4 lg:grid-cols-2">
+              <MessageTable
+                title="Sent to Moblin"
+                hint="Remote control messages sent on Moblin's WebSocket connections since the backend started, per request: tips, status and settings requests for the device page, controls and so on. Counted in memory, so a restart starts over."
+                kinds={props.stats.moblin.messages.sent}
+              />
+              <MessageTable
+                title="Received from Moblin"
+                hint="Remote control messages Moblin sent since the backend started, per event, with responses split by their result and messages that could not be read as invalid. Counted in memory, so a restart starts over."
+                kinds={props.stats.moblin.messages.received}
+              />
+            </div>
           </Section>
           <Section id="server" title="Server" hint="The backend at api.moblin.app, right now.">
             <div class="flex flex-col gap-4">

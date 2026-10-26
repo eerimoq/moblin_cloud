@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::app_attest::{AppAttest, Attestation, base64};
 use crate::challenges::Challenges;
-use crate::remote_control;
 use crate::store::{self, Channel, Streamer};
 
 use super::*;
@@ -170,7 +169,7 @@ pub(super) async fn handle_remote_control_streamer(
         };
         let Some(device) = identity.device else {
             api.counters.bump("moblinConnectionsFailed:no-device-id");
-            remote_control::refuse(socket).await;
+            api.remote_control.refuse(socket).await;
             return;
         };
         if let Some(app_attest) = &api.app_attest {
@@ -190,7 +189,7 @@ pub(super) async fn handle_remote_control_streamer(
                         .bump(&format!("moblinAttestationsFailed:{reason}"));
                     if api.require_attested_moblin {
                         api.counters.bump("moblinConnectionsFailed:unattested");
-                        remote_control::refuse(socket).await;
+                        api.remote_control.refuse(socket).await;
                         return;
                     }
                 }
@@ -200,7 +199,7 @@ pub(super) async fn handle_remote_control_streamer(
             info!("remote control streamer {page} device {device} rejected, too many devices");
             api.counters
                 .bump("moblinConnectionsFailed:too-many-devices");
-            remote_control::refuse(socket).await;
+            api.remote_control.refuse(socket).await;
             return;
         };
         api.accounts.seen_device(&page, &device);

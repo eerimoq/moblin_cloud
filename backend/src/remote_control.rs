@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use crate::app_attest::Attestation;
 use crate::icons::{self, Icon};
+use crate::traffic::Traffic;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -504,10 +505,17 @@ pub struct Streamers {
     sessions: Arc<Mutex<Sessions>>,
     linger: Duration,
     pub connected: Notify,
+    pub traffic: Traffic,
 }
 
-async fn send(socket: &mut WebSocket, message: &MessageToStreamer) -> Result<()> {
-    let text = serde_json::to_string(message)?;
+async fn send(
+    socket: &mut WebSocket,
+    message: &MessageToStreamer,
+    traffic: &Traffic,
+) -> Result<()> {
+    let message = serde_json::to_value(message)?;
+    let text = message.to_string();
+    traffic.sent(&message, text.len());
     socket.send(Message::Text(text.into())).await?;
     Ok(())
 }
@@ -529,15 +537,6 @@ async fn poll_status(sessions: Arc<Mutex<Sessions>>, page: String, device: Strin
     }
 }
 
-pub async fn refuse(mut socket: WebSocket) {
-    let refused = MessageToStreamer::Identified {
-        result: Outcome::Error {},
-    };
-    if send(&mut socket, &refused).await.is_ok() {
-        let _ = socket.send(Message::Close(None)).await;
-    }
-}
-
 impl Streamers {
     pub fn new(linger: Duration) -> Self {
         Self {
@@ -545,6 +544,7 @@ impl Streamers {
             sessions: Arc::new(Mutex::new(Sessions::default())),
             linger,
             connected: Notify::new(),
+            traffic: Traffic::default(),
         }
     }
 
@@ -573,6 +573,15 @@ impl Streamers {
                 .map(|byte| format!("{byte:02x}"))
                 .collect(),
         )
+    }
+
+    pub async fn refuse(&self, mut socket: WebSocket) {
+        let refused = MessageToStreamer::Identified {
+            result: Outcome::Error {},
+        };
+        if send(&mut socket, &refused, &self.traffic).await.is_ok() {
+            let _ = socket.send(Message::Close(None)).await;
+        }
     }
 
     pub fn disconnect(&self, page: &str) {
@@ -628,13 +637,16 @@ impl Streamers {
                 salt: BASE64_STANDARD.encode(salt),
             },
         };
-        send(socket, &hello).await?;
+        send(socket, &hello, &self.traffic).await?;
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             let message = timeout_at(deadline, socket.recv())
                 .await
                 .context("no identify")?
                 .context("closed")??;
+            if let Message::Text(text) = &message {
+                self.traffic.received(text.as_str());
+            }
             if let Message::Text(text) = message
                 && let Ok(MessageToAssistant::Identify {
                     streamer_id,
@@ -713,7 +725,7 @@ impl Streamers {
             result: Outcome::Ok {},
         };
         let mut stopped = false;
-        if send(&mut socket, &identified).await.is_ok() {
+        if send(&mut socket, &identified, &self.traffic).await.is_ok() {
             info!("remote control streamer {page} device {device} connected");
             self.connected.notify_one();
             self.resume_watching(&page, &device, number);
@@ -724,7 +736,7 @@ impl Streamers {
                         let Some(message) = message else {
                             break;
                         };
-                        if send(&mut socket, &message).await.is_err() {
+                        if send(&mut socket, &message, &self.traffic).await.is_err() {
                             break;
                         }
                     }
@@ -735,6 +747,7 @@ impl Streamers {
                         deadline = Instant::now() + Duration::from_secs(60);
                         match message {
                             Message::Text(text) => {
+                                self.traffic.received(text.as_str());
                                 if self.handle(&page, &device, number, text.as_str(), &mut socket, &on_icon).await.is_err() {
                                     break;
                                 }
@@ -769,7 +782,9 @@ impl Streamers {
         on_icon: &impl Fn(&'static Icon),
     ) -> Result<()> {
         match serde_json::from_str(text) {
-            Ok(MessageToAssistant::Ping {}) => send(socket, &MessageToStreamer::Pong {}).await?,
+            Ok(MessageToAssistant::Ping {}) => {
+                send(socket, &MessageToStreamer::Pong {}, &self.traffic).await?
+            }
             Ok(MessageToAssistant::Response {
                 id: request_id,
                 result,
