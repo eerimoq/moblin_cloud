@@ -2,59 +2,33 @@ python_dirs := "tests scripts"
 
 config_dir := ".config"
 
-style:
-	cd frontend && oxfmt
-	cd backend && cargo fmt
-	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}}
-	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}}
+[private]
+default:
+	@just --list
 
-style-check:
-	cd frontend && oxfmt --check
-	cd backend && cargo fmt --check
-	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}} --check
-	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}} --check
-
-lint:
-	cd frontend && oxlint --deny-warnings
-	cd backend && cargo clippy --all-targets -- -D warnings
-	pylint --rcfile {{config_dir}}/pylintrc {{python_dirs}}
-	ruff check --config {{config_dir}}/ruff.toml {{python_dirs}}
-	mypy --config-file {{config_dir}}/mypy.ini {{python_dirs}}
-
-spell-check:
-	codespell
-
-test:
-	cd backend && cargo test
-
-# Runs the backend system tests, see tests/README.md.
-system-test *args:
-	python3 -m tests.test {{args}}
-
-# Copies Moblin settings that connect its remote control streamer to the system tests.
-system-test-generate-device-settings-clipboard:
-	python3 -m tests.generate_device_settings
-
-system-test-generate-device-settings-stdout:
-	python3 -m tests.generate_device_settings --force-stdout
-
-npm-latest-args := "python -c \"import json,sys; print(' '.join(f'{d}@latest' for d in json.load(open('package.json'))[sys.argv[1]]))\""
-
-update-dependencies:
-	cd frontend && npm install $({{npm-latest-args}} dependencies)
-	cd frontend && npm install --save-dev $({{npm-latest-args}} devDependencies)
-
-frontend-run:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	cd frontend
-	npm run dev
-
-# Runs the backend and fills it with a few streamers, for developing the website.
 # Signing in goes through the fake Twitch in tests/utils/fake_twitch.py and the fake Kick in
 # tests/utils/fake_kick.py, which sign in as any made-up user, each with its own account until
 # linked: admin is an admin, premium a premium account, normal neither, on both.
-backend-run *args:
+[group('dev')]
+[doc("Runs the backend, the frontend and the fake Moblin as the admin user's, at http://localhost:5173.")]
+dev:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
+	just dev-backend &
+	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
+	just dev-frontend &
+	cookies=$(mktemp)
+	authorize=$(curl -sf -c "$cookies" -o /dev/null -w '%{redirect_url}' localhost:8080/auth/twitch/login)
+	callback=$(curl -sf -o /dev/null -w '%{redirect_url}' -G "$authorize" --data-urlencode login=admin)
+	curl -sf -b "$cookies" -o /dev/null "${callback/localhost:5173\/api/localhost:8080}"
+	rm "$cookies"
+	just dev-fake-moblin &
+	wait
+
+[group('dev')]
+[doc("Runs the backend with the fake Twitch and Kick and fills it with a few made-up streamers.")]
+dev-backend *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	python3 -m tests.utils.fake_twitch --port 8081 &
@@ -64,25 +38,18 @@ backend-run *args:
 	cargo build
 	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins fake-admin,kick:fake-admin --premium-accounts fake-premium,kick:fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
-	just backend-seed
+	python3 ../scripts/seed_backend.py
 	wait
 
-# Runs the backend on all interfaces, accepting attested live posts from Moblin builds
-# installed by Xcode, for testing with a phone on the same network.
-backend-run-attested *args:
-	cd backend && cargo run -q -- --listen 0.0.0.0:8080 --app-attest-environment development {{args}}
+[group('dev')]
+[doc("Runs the frontend's dev server at http://localhost:5173, talking to dev-backend.")]
+dev-frontend:
+	cd frontend && npm run dev
 
-# Tells the backend that a few made-up streamers went live.
-backend-seed:
-	python3 scripts/seed_backend.py
-
-# Keeps telling the backend that new made-up streamers went live, for testing that the website updates.
-backend-seed-forever interval="2":
-	python3 scripts/seed_backend.py --forever {{interval}}
-
-# Connects the fake Moblin to the running `just backend-run` as the admin user's Moblin, always as the
-# same device, so the dashboard lists it once. Pass --device-id to connect another one.
-fake-moblin-run *args:
+# Always connects as the same device, so the dashboard lists it once.
+[group('dev')]
+[doc("Connects the fake Moblin to dev-backend as the admin user's Moblin. Pass --device-id for another device.")]
+dev-fake-moblin *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	key=$(sqlite3 "backend/${DATABASE:-./database.sqlite}" "select moblin_key from accounts join identities on identities.account = accounts.id where platform = 'twitch' and user_id = 'fake-admin'")
@@ -92,44 +59,68 @@ fake-moblin-run *args:
 	fi
 	python3 -m tests.utils.fake_moblin http://localhost:8080 --key "$key" --device-id FAKE-MOBLIN {{args}}
 
-# Runs the backend, the frontend and the fake Moblin connected as the admin user's Moblin, which
-# it signs in first, for trying the whole system at http://localhost:5173.
-run:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
-	just backend-run &
-	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
-	just frontend-run &
-	cookies=$(mktemp)
-	authorize=$(curl -sf -c "$cookies" -o /dev/null -w '%{redirect_url}' localhost:8080/auth/twitch/login)
-	callback=$(curl -sf -o /dev/null -w '%{redirect_url}' -G "$authorize" --data-urlencode login=admin)
-	curl -sf -b "$cookies" -o /dev/null "${callback/localhost:5173\/api/localhost:8080}"
-	rm "$cookies"
-	just fake-moblin-run &
-	wait
+[group('check')]
+style:
+	cd frontend && oxfmt
+	cd backend && cargo fmt
+	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}}
+	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}}
 
-backend-docker-build:
-	docker build -t moblin-website-backend backend
+[group('check')]
+style-check:
+	cd frontend && oxfmt --check
+	cd backend && cargo fmt --check
+	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}} --check
+	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}} --check
 
-backend-docker-run *args: backend-docker-build
-	docker run --rm -it --init -p 8080:8080 moblin-website-backend {{args}}
+[group('check')]
+lint:
+	cd frontend && oxlint --deny-warnings
+	cd backend && cargo clippy --all-targets -- -D warnings
+	pylint --rcfile {{config_dir}}/pylintrc {{python_dirs}}
+	ruff check --config {{config_dir}}/ruff.toml {{python_dirs}}
+	mypy --config-file {{config_dir}}/mypy.ini {{python_dirs}}
 
-# Regenerates the settings reference on the docs page from a Moblin checkout.
-docs-generate moblin="../moblin":
-	python3 scripts/generate_docs.py {{moblin}} frontend/src/data/docs/settings.json
-	cd frontend && oxfmt src/data/docs/settings.json
+[group('check')]
+spell-check:
+	codespell
 
-# Translates new strings of the website to all languages with Claude.
+[group('check')]
+test:
+	cd backend && cargo test
+
+[group('check')]
+[doc("Runs the backend system tests, see tests/README.md.")]
+system-test *args:
+	python3 -m tests.test {{args}}
+
+[group('check')]
+[doc("Copies Moblin settings that connect it to the system tests to the clipboard. Pass --force-stdout to print them.")]
+system-test-device-settings *args:
+	python3 -m tests.generate_device_settings {{args}}
+
+npm-latest-args := "python -c \"import json,sys; print(' '.join(f'{d}@latest' for d in json.load(open('package.json'))[sys.argv[1]]))\""
+
+[group('maintenance')]
+[doc("Updates the frontend's npm dependencies to their latest versions.")]
+update-dependencies:
+	cd frontend && npm install $({{npm-latest-args}} dependencies)
+	cd frontend && npm install --save-dev $({{npm-latest-args}} devDependencies)
+
+[group('maintenance')]
+[doc("Translates new strings of the website to all languages with Claude.")]
 machine-translate:
 	python3 scripts/translate.py
 	cd frontend && oxfmt src/locales
 
-# Renders a 108 card deck of the trading cards as 300 dpi PNGs with bleed, sized for poker cards at makeplayingcards.com.
+[group('maintenance')]
+[doc("Regenerates the settings reference on the docs page from a Moblin checkout.")]
+docs-generate moblin="../moblin":
+	python3 scripts/generate_docs.py {{moblin}} frontend/src/data/docs/settings.json
+	cd frontend && oxfmt src/data/docs/settings.json
+
+[group('maintenance')]
+[doc("Renders a 108 card deck of the trading cards as 300 dpi PNGs with bleed, for makeplayingcards.com.")]
 cards-print out="cards-print":
 	cd frontend && npm run build
 	cd frontend && node scripts/print-cards.ts {{absolute_path(out)}}
-
-# Pretends to be a Moblin streamer connected over remote control, for developing tips and wheel spins on the page.
-backend-fake-streamer *key:
-	python3 scripts/remote_control_streamer.py {{key}}

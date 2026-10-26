@@ -35,7 +35,7 @@ export default defineConfig({
   ],
   server: {
     host: true,
-    // Talk to a local backend (`just backend-run`) during development.
+    // Talk to a local backend (`just dev-backend`) during development.
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8080",
