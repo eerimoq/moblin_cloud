@@ -8,12 +8,13 @@ use base64::Engine;
 use base64::prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD};
 use log::info;
 use ring::rand::{SecureRandom, SystemRandom};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, sleep, sleep_until, timeout, timeout_at};
 use uuid::Uuid;
 
+use crate::app_attest::Attestation;
 use crate::icons::{self, Icon};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -57,6 +58,8 @@ enum MessageToAssistant {
     #[serde(rename_all = "camelCase")]
     Identify {
         streamer_id: Option<String>,
+        #[serde(default, deserialize_with = "lenient_attestation")]
+        app_attest: Option<Attestation>,
     },
     Response {
         id: u64,
@@ -67,6 +70,13 @@ enum MessageToAssistant {
         data: Event,
     },
     Ping {},
+}
+
+fn lenient_attestation<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Attestation>, D::Error> {
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value.map(|value| serde_json::from_value(value).unwrap_or_default()))
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -167,6 +177,12 @@ pub struct Device {
     pub id: String,
     pub wheel: bool,
     pub reconnecting: bool,
+}
+
+pub struct Identity {
+    pub device: Option<String>,
+    pub challenge: [u8; 64],
+    pub app_attest: Option<Attestation>,
 }
 
 pub struct Connection {
@@ -278,7 +294,7 @@ impl Streamers {
         sessions.wheel(page).map(|session| session.device.clone())
     }
 
-    pub async fn identify(&self, socket: &mut WebSocket) -> Result<Option<String>> {
+    pub async fn identify(&self, socket: &mut WebSocket) -> Result<Identity> {
         let challenge = self.random_bytes::<64>().context("no randomness")?;
         let salt = self.random_bytes::<64>().context("no randomness")?;
         let hello = MessageToStreamer::Hello {
@@ -296,10 +312,16 @@ impl Streamers {
                 .context("no identify")?
                 .context("closed")??;
             if let Message::Text(text) = message
-                && let Ok(MessageToAssistant::Identify { streamer_id }) =
-                    serde_json::from_str(text.as_str())
+                && let Ok(MessageToAssistant::Identify {
+                    streamer_id,
+                    app_attest,
+                }) = serde_json::from_str(text.as_str())
             {
-                return Ok(streamer_id.filter(|id| (1..=100).contains(&id.len())));
+                return Ok(Identity {
+                    device: streamer_id.filter(|id| (1..=100).contains(&id.len())),
+                    challenge,
+                    app_attest,
+                });
             }
         }
     }
@@ -615,12 +637,50 @@ mod tests {
         assert_eq!(
             decode(r#"{"identify":{"streamerId":"ABC","authentication":"x"}}"#),
             MessageToAssistant::Identify {
-                streamer_id: Some("ABC".to_string())
+                streamer_id: Some("ABC".to_string()),
+                app_attest: None,
             }
         );
         assert_eq!(
             decode(r#"{"identify":{"authentication":"x"}}"#),
-            MessageToAssistant::Identify { streamer_id: None }
+            MessageToAssistant::Identify {
+                streamer_id: None,
+                app_attest: None,
+            }
+        );
+        assert_eq!(
+            decode(
+                r#"{"identify":{"streamerId":"ABC","authentication":"x","appAttest":{"keyId":"k","attestation":"a","attestationChallenge":"c","assertion":"s"}}}"#
+            ),
+            MessageToAssistant::Identify {
+                streamer_id: Some("ABC".to_string()),
+                app_attest: Some(Attestation {
+                    key_id: Some("k".to_string()),
+                    attestation: Some("a".to_string()),
+                    attestation_challenge: Some("c".to_string()),
+                    assertion: Some("s".to_string()),
+                }),
+            }
+        );
+        for malformed in [
+            r#"{"identify":{"streamerId":"ABC","authentication":"x","appAttest":{}}}"#,
+            r#"{"identify":{"streamerId":"ABC","authentication":"x","appAttest":{"keyId":1}}}"#,
+            r#"{"identify":{"streamerId":"ABC","authentication":"x","appAttest":"x"}}"#,
+        ] {
+            assert_eq!(
+                decode(malformed),
+                MessageToAssistant::Identify {
+                    streamer_id: Some("ABC".to_string()),
+                    app_attest: Some(Attestation::default()),
+                }
+            );
+        }
+        assert_eq!(
+            decode(r#"{"identify":{"streamerId":"ABC","authentication":"x","appAttest":null}}"#),
+            MessageToAssistant::Identify {
+                streamer_id: Some("ABC".to_string()),
+                app_attest: None,
+            }
         );
         assert_eq!(
             decode(r#"{"response":{"id":1,"result":{"ok":{}}}}"#),

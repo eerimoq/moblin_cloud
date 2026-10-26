@@ -34,6 +34,9 @@ const reasonLabels: Record<string, string> = {
   "unknown-key": "Unknown or replaced key",
   "no-device-id": "No device id",
   "too-many-devices": "More than 5 devices",
+  unattested: "No valid App Attest",
+  missing: "No attestation (older Moblin)",
+  invalid: "Attestation failed",
   "feature-off": "Turned off on the page",
   offline: "Streamer offline",
   "no-wheel": "No wheel in Moblin",
@@ -800,7 +803,13 @@ function Loaded(props: { stats: AdminStats }) {
                   "moblinConnections",
                   "Connections",
                   "Moblin connecting to Moblin Cloud with the key of an account.",
-                  ["unknown-key", "no-device-id", "too-many-devices"],
+                  ["unknown-key", "no-device-id", "too-many-devices", "unattested"],
+                ),
+                counters().step(
+                  "moblinAttestations",
+                  "App Attest",
+                  "Moblin proving it is the Moblin app when it connects. Connections without one are only counted here until the backend is started with --require-attested-moblin, which refuses them.",
+                  ["missing", "invalid"],
                 ),
               ]}
             />

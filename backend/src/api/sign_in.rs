@@ -910,6 +910,7 @@ mod tests {
             store: Arc::new(Store::new(6, Database::memory())),
             challenges: Challenges::new(),
             app_attest: None,
+            require_attested_moblin: false,
             live: None,
             remote_control: Streamers::new(std::time::Duration::ZERO),
             pages: Pages::new(database.clone()),

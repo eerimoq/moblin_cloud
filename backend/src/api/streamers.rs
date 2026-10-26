@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, State, WebSocketUpgrade};
@@ -11,7 +11,7 @@ use base64::prelude::BASE64_STANDARD;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
-use crate::app_attest::AppAttest;
+use crate::app_attest::{AppAttest, Attestation, base64};
 use crate::challenges::Challenges;
 use crate::remote_control;
 use crate::store::{self, Channel, Streamer};
@@ -119,9 +119,8 @@ pub(super) async fn handle_challenge(
 pub(super) struct LiveRequest {
     channels: Vec<Channel>,
     challenge: Option<String>,
-    key_id: Option<String>,
-    attestation: Option<String>,
-    attestation_challenge: Option<String>,
+    #[serde(flatten)]
+    app_attest: Attestation,
 }
 
 pub(super) async fn handle_streamers_live(
@@ -162,18 +161,41 @@ pub(super) async fn handle_remote_control_streamer(
         return Err(StatusCode::NOT_FOUND);
     };
     Ok(upgrade.on_upgrade(move |mut socket| async move {
-        let device = match api.remote_control.identify(&mut socket).await {
-            Ok(Some(device)) => device,
-            Ok(None) => {
-                api.counters.bump("moblinConnectionsFailed:no-device-id");
-                remote_control::refuse(socket).await;
-                return;
-            }
+        let identity = match api.remote_control.identify(&mut socket).await {
+            Ok(identity) => identity,
             Err(error) => {
                 info!("remote control streamer {page} failed to identify: {error:#}");
                 return;
             }
         };
+        let Some(device) = identity.device else {
+            api.counters.bump("moblinConnectionsFailed:no-device-id");
+            remote_control::refuse(socket).await;
+            return;
+        };
+        if let Some(app_attest) = &api.app_attest {
+            let attested = match &identity.app_attest {
+                Some(attestation) => app_attest
+                    .verify(attestation, &identity.challenge)
+                    .map_err(|error| ("invalid", error)),
+                None => Err(("missing", anyhow!("no app attest in identify"))),
+            };
+            match attested {
+                Ok(()) => api.counters.bump("moblinAttestations"),
+                Err((reason, error)) => {
+                    info!(
+                        "remote control streamer {page} device {device} is not attested: {error:#}"
+                    );
+                    api.counters
+                        .bump(&format!("moblinAttestationsFailed:{reason}"));
+                    if api.require_attested_moblin {
+                        api.counters.bump("moblinConnectionsFailed:unattested");
+                        remote_control::refuse(socket).await;
+                        return;
+                    }
+                }
+            }
+        }
         let Some(connection) = api.remote_control.connect(&page, &device) else {
             info!("remote control streamer {page} device {device} rejected, too many devices");
             api.counters
@@ -205,25 +227,15 @@ fn verify(
         .to_str()
         .ok()
         .context("assertion is not text")?;
-    let assertion = base64(assertion).context("assertion")?;
-    let key_id = base64(request.key_id.as_deref().context("no key id")?).context("key id")?;
-    let attestation =
-        base64(request.attestation.as_deref().context("no attestation")?).context("attestation")?;
-    let attestation_challenge = base64(
-        request
-            .attestation_challenge
-            .as_deref()
-            .context("no attestation challenge")?,
-    )
-    .context("attestation challenge")?;
     let challenge =
         base64(request.challenge.as_deref().context("no challenge")?).context("challenge")?;
-    let public_key = app_attest
-        .verify_attestation(&attestation, &key_id, &attestation_challenge)
-        .context("bad attestation")?;
-    app_attest
-        .verify_assertion(&assertion, body, &public_key)
-        .context("bad assertion")?;
+    app_attest.verify(
+        &Attestation {
+            assertion: Some(assertion.to_string()),
+            ..request.app_attest.clone()
+        },
+        body,
+    )?;
     anyhow::ensure!(
         challenges.consume(&challenge),
         "the challenge is unknown, used or expired"
@@ -231,12 +243,9 @@ fn verify(
     Ok(())
 }
 
-pub(super) fn base64(text: &str) -> Result<Vec<u8>> {
-    BASE64_STANDARD.decode(text).context("not base64")
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
     use axum::http::StatusCode;
@@ -244,7 +253,9 @@ mod tests {
     use serde_json::{Value, json};
     use tokio_tungstenite::tungstenite::Message;
 
+    use crate::api::Api;
     use crate::api::test_utils::*;
+    use crate::app_attest::{AppAttest, Environment};
     use crate::deliveries;
     use crate::store::{Channel, Platform};
 
@@ -455,6 +466,85 @@ mod tests {
         let devices = account["devices"].as_array().unwrap();
         assert_eq!(devices.len(), 4);
         assert!(devices.iter().all(|device| device["id"] != "b"));
+    }
+
+    async fn start_attested(require: bool) -> (String, Arc<Api>) {
+        let mut api = build_api(None, None, None, None, None, Duration::ZERO);
+        api.app_attest = Some(AppAttest::new(
+            "35MFYY2JY5.co.chiff.attestation-test",
+            Environment::Development,
+        ));
+        api.require_attested_moblin = require;
+        start_api_built(api).await
+    }
+
+    fn bogus_identify(device: &str) -> Value {
+        json!({"identify": {"streamerId": device, "authentication": "x", "appAttest": {
+            "keyId": "eA==", "attestation": "eA==", "attestationChallenge": "eA==", "assertion": "eA=="
+        }}})
+    }
+
+    async fn connect_with(address: &str, key: &str, identify: Value) -> Socket {
+        let (mut socket, _) = tokio_tungstenite::connect_async(format!(
+            "ws://{address}/remote-control/streamer/{key}"
+        ))
+        .await
+        .unwrap();
+        receive(&mut socket).await;
+        socket
+            .send(Message::text(identify.to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            receive(&mut socket).await,
+            json!({"identified": {"result": {"ok": {}}}})
+        );
+        socket
+    }
+
+    fn count(api: &Api, name: &str) -> Option<u64> {
+        api.counters
+            .all()
+            .into_iter()
+            .find(|counter| counter.name == name)
+            .map(|counter| counter.total)
+    }
+
+    #[tokio::test]
+    async fn unattested_moblins_are_counted_until_required() {
+        let (address, api) = start_attested(false).await;
+        let (_, key, id) = streamer(&address, &api).await;
+        let _plain = connect_as(&address, &key, "a").await;
+        let _bogus = connect_with(&address, &key, bogus_identify("b")).await;
+        let _malformed = connect_with(
+            &address,
+            &key,
+            json!({"identify": {"streamerId": "c", "authentication": "x", "appAttest": {"keyId": 1}}}),
+        )
+        .await;
+        assert_eq!(api.remote_control.devices(&id).len(), 3);
+        assert_eq!(count(&api, "moblinConnections"), Some(3));
+        assert_eq!(count(&api, "moblinAttestations"), None);
+        assert_eq!(count(&api, "moblinAttestationsFailed:missing"), Some(1));
+        assert_eq!(count(&api, "moblinAttestationsFailed:invalid"), Some(2));
+    }
+
+    #[tokio::test]
+    async fn unattested_moblins_are_refused_when_required() {
+        let (address, api) = start_attested(true).await;
+        let (_, key, id) = streamer(&address, &api).await;
+        refused(
+            &address,
+            &key,
+            json!({"identify": {"streamerId": "a", "authentication": "x"}}),
+        )
+        .await;
+        refused(&address, &key, bogus_identify("a")).await;
+        assert!(!api.remote_control.is_connected(&id));
+        assert_eq!(count(&api, "moblinConnections"), None);
+        assert_eq!(count(&api, "moblinConnectionsFailed:unattested"), Some(2));
+        assert_eq!(count(&api, "moblinAttestationsFailed:missing"), Some(1));
+        assert_eq!(count(&api, "moblinAttestationsFailed:invalid"), Some(1));
     }
 
     async fn send_event(socket: &mut Socket, event: Value) {

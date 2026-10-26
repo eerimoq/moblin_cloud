@@ -63,12 +63,24 @@ pub(crate) async fn start_api_lingering(
     pages: Option<Pages>,
     linger: Duration,
 ) -> (String, Arc<Api>) {
+    start_api_built(build_api(paypal, stripe, twitch, kick, pages, linger)).await
+}
+
+pub(crate) fn build_api(
+    paypal: Option<PayPal>,
+    stripe: Option<Stripe>,
+    twitch: Option<OAuthApp>,
+    kick: Option<KickApp>,
+    pages: Option<Pages>,
+    linger: Duration,
+) -> Api {
     let database = Database::memory();
     let pages = pages.unwrap_or_else(|| Pages::new(database.clone()));
-    let api = Arc::new(Api {
+    Api {
         store: Arc::new(Store::new(6, Database::memory())),
         challenges: Challenges::new(),
         app_attest: None,
+        require_attested_moblin: false,
         live: None,
         remote_control: Streamers::new(linger),
         pages,
@@ -93,7 +105,11 @@ pub(crate) async fn start_api_lingering(
         premium_accounts: vec!["premium".to_string()],
         started: 0,
         tests: Mutex::default(),
-    });
+    }
+}
+
+pub(crate) async fn start_api_built(api: Api) -> (String, Arc<Api>) {
+    let api = Arc::new(api);
     tokio::spawn({
         let api = api.clone();
         async move { api.deliveries.run(&api.remote_control).await }

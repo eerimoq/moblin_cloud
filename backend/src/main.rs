@@ -161,9 +161,13 @@ struct Cli {
     /// URL of the website.
     #[arg(long, env = "FRONTEND_URL", default_value = "https://moblin.app")]
     frontend_url: String,
-    /// Accept live posts without App Attest, for development.
+    /// Accept live posts and Moblin Cloud connections without App Attest, for development.
     #[arg(long)]
     allow_unattested: bool,
+    /// Refuse Moblin Cloud connections without a valid App Attest. Without it they are only
+    /// counted, for the admin page.
+    #[arg(long, env = "REQUIRE_ATTESTED_MOBLIN")]
+    require_attested_moblin: bool,
     /// Base URL of the OAuth and Helix endpoints to sign in with instead of Twitch's, for a
     /// fake Twitch in development and tests. No client ID and secret are needed to sign in then.
     #[arg(long, value_name = "URL")]
@@ -292,13 +296,18 @@ async fn main() -> Result<()> {
     );
     tokio::spawn(async move { live_status.run().await });
     let app_attest = if cli.allow_unattested {
-        warn!("accepting live posts from anyone");
+        warn!("accepting live posts and Moblin Cloud connections from anyone");
         None
     } else {
         info!(
             "accepting live posts from {} in the {:?} App Attest environment",
             cli.app_id, cli.app_attest_environment
         );
+        if cli.require_attested_moblin {
+            info!("refusing Moblin Cloud connections without App Attest");
+        } else {
+            info!("counting Moblin Cloud connections without App Attest");
+        }
         Some(AppAttest::new(&cli.app_id, cli.app_attest_environment))
     };
     let pages = Pages::new(database.clone());
@@ -380,6 +389,7 @@ async fn main() -> Result<()> {
         store,
         challenges: Challenges::new(),
         app_attest,
+        require_attested_moblin: cli.require_attested_moblin,
         live: twitch.map(|twitch| Live::new(twitch, cli.twitch_live_channel)),
         remote_control,
         pages,

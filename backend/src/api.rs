@@ -70,6 +70,7 @@ pub struct Api {
     pub store: Arc<Store>,
     pub challenges: Challenges,
     pub app_attest: Option<AppAttest>,
+    pub require_attested_moblin: bool,
     pub live: Option<Live>,
     pub remote_control: Streamers,
     pub pages: Pages,

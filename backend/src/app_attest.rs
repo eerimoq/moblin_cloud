@@ -8,6 +8,10 @@ use x509_parser::oid_registry::asn1_rs::oid;
 use x509_parser::pem::parse_x509_pem;
 use x509_parser::prelude::FromDer;
 
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+use serde::Deserialize;
+
 const ROOT_CA_PEM: &[u8] = include_bytes!("apple_app_attestation_root_ca.pem");
 const NONCE_EXTENSION_PREFIX: &[u8] = &[0x30, 0x24, 0xA1, 0x22, 0x04, 0x20];
 
@@ -28,6 +32,15 @@ impl Environment {
 
 pub type PublicKey = Vec<u8>;
 
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attestation {
+    pub key_id: Option<String>,
+    pub attestation: Option<String>,
+    pub attestation_challenge: Option<String>,
+    pub assertion: Option<String>,
+}
+
 pub struct AppAttest {
     app_id_hash: [u8; 32],
     environment: Environment,
@@ -39,6 +52,33 @@ impl AppAttest {
             app_id_hash: sha256(&[app_id.as_bytes()]),
             environment,
         }
+    }
+
+    pub fn verify(&self, attestation: &Attestation, client_data: &[u8]) -> Result<()> {
+        let key_id =
+            base64(attestation.key_id.as_deref().context("no key id")?).context("key id")?;
+        let attested = base64(
+            attestation
+                .attestation
+                .as_deref()
+                .context("no attestation")?,
+        )
+        .context("attestation")?;
+        let challenge = base64(
+            attestation
+                .attestation_challenge
+                .as_deref()
+                .context("no attestation challenge")?,
+        )
+        .context("attestation challenge")?;
+        let assertion = base64(attestation.assertion.as_deref().context("no assertion")?)
+            .context("assertion")?;
+        let public_key = self
+            .verify_attestation(&attested, &key_id, &challenge)
+            .context("bad attestation")?;
+        self.verify_assertion(&assertion, client_data, &public_key)
+            .context("bad assertion")?;
+        Ok(())
     }
 
     pub fn verify_attestation(
@@ -226,6 +266,10 @@ fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value> {
         .with_context(|| format!("no {name} field"))
 }
 
+pub fn base64(text: &str) -> Result<Vec<u8>> {
+    BASE64_STANDARD.decode(text).context("not base64")
+}
+
 fn sha256(parts: &[&[u8]]) -> [u8; 32] {
     let mut context = ring::digest::Context::new(&SHA256);
     for part in parts {
@@ -237,8 +281,6 @@ fn sha256(parts: &[&[u8]]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine;
-    use base64::prelude::BASE64_STANDARD;
     use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair, KeyPair};
 
     const APP_ID: &str = "35MFYY2JY5.co.chiff.attestation-test";
@@ -280,6 +322,40 @@ mod tests {
             .verify_attestation(&attestation(), &base64(KEY_ID), ATTESTATION_CHALLENGE)
             .unwrap();
         assert_eq!(public_key, hex(PUBLIC_KEY));
+    }
+
+    fn fields() -> Attestation {
+        Attestation {
+            key_id: Some(KEY_ID.to_string()),
+            attestation: Some(
+                include_str!("testdata/attestation.base64")
+                    .trim()
+                    .to_string(),
+            ),
+            attestation_challenge: Some(BASE64_STANDARD.encode(ATTESTATION_CHALLENGE)),
+            assertion: Some(include_str!("testdata/assertion.base64").trim().to_string()),
+        }
+    }
+
+    #[test]
+    fn verifies_attestation_and_assertion_together() {
+        app_attest()
+            .verify(&fields(), ASSERTION_CLIENT_DATA)
+            .unwrap();
+        let result = app_attest().verify(&fields(), b"other client data");
+        assert_eq!(error(result), "bad assertion: bad signature");
+        let mut fields_without_assertion = fields();
+        fields_without_assertion.assertion = None;
+        let result = app_attest().verify(&fields_without_assertion, ASSERTION_CLIENT_DATA);
+        assert_eq!(error(result), "no assertion");
+        let mut fields_with_bad_key_id = fields();
+        fields_with_bad_key_id.key_id = Some("not base64!".to_string());
+        let result = app_attest().verify(&fields_with_bad_key_id, ASSERTION_CLIENT_DATA);
+        assert!(error(result).starts_with("key id: not base64"));
+        let mut fields_with_other_key_id = fields();
+        fields_with_other_key_id.key_id = Some(BASE64_STANDARD.encode([0; 32]));
+        let result = app_attest().verify(&fields_with_other_key_id, ASSERTION_CLIENT_DATA);
+        assert!(error(result).starts_with("bad attestation: "));
     }
 
     #[test]
