@@ -1279,14 +1279,14 @@ function SoundInfo(props: {
 type Streamer = Identity & { platform: Platform };
 
 function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) {
-  const ring = (color: string) =>
-    props.cutout ? "ring-4 ring-page" : `ring-4 ${color} ring-offset-4 ring-offset-page`;
+  const ring = () =>
+    props.cutout ? "ring-4 ring-page" : "ring-4 ring-moss ring-offset-4 ring-offset-page";
   return (
     <Show
       when={props.streamer.avatar}
       fallback={
         <span
-          class={`flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring("ring-moss/40")} ${props.class}`}
+          class={`flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring()} ${props.class}`}
         >
           {props.streamer.name.slice(0, 1).toUpperCase()}
         </span>
@@ -1296,7 +1296,7 @@ function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) 
         <img
           src={avatar()}
           alt=""
-          class={`shrink-0 rounded-full bg-ghost object-cover ${ring("ring-moss")} ${props.class}`}
+          class={`shrink-0 rounded-full bg-ghost object-cover ${ring()} ${props.class}`}
         />
       )}
     </Show>
