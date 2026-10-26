@@ -442,6 +442,144 @@ function StepTable(props: { steps: Step[] }) {
   );
 }
 
+const statusLabels: Record<number, string> = {
+  101: "WebSocket connected",
+  200: "OK",
+  202: "Accepted",
+  303: "Redirected",
+  400: "Bad request",
+  401: "Not signed in",
+  403: "Forbidden",
+  404: "Not found",
+  405: "Method not allowed",
+  409: "Conflict",
+  413: "Too large",
+  415: "Unsupported type",
+  422: "Unreadable request",
+  429: "Too many requests",
+  500: "Backend error",
+  502: "Provider failed",
+  503: "Unavailable",
+};
+
+function StatusTable(props: { statuses: (readonly [number, number])[]; total: number }) {
+  return (
+    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+      <table class="w-full">
+        <thead>
+          <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+            <th class="px-4 pt-3 pb-2 text-left sm:px-5">Status</th>
+            <th class="w-24 px-2 pt-3 pb-2 text-right sm:px-4">Requests</th>
+            <th class="w-16 px-2 pt-3 pb-2 text-right sm:px-4">Share</th>
+          </tr>
+        </thead>
+        <tbody class="border-t-[1.5px] border-line [&>tr:first-child>td]:pt-3 [&>tr:last-child>td]:pb-3">
+          <Show
+            when={props.statuses.length > 0}
+            fallback={
+              <tr>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={3}>
+                  No requests yet.
+                </td>
+              </tr>
+            }
+          >
+            <For each={props.statuses}>
+              {([status, count]) => (
+                <tr class={status >= 500 ? "text-amber-ink" : ""}>
+                  <td class="px-4 py-0.5 text-[14px] sm:px-5">
+                    <span class="font-mono">{status}</span>
+                    <span class="ml-2 text-ink-2">{statusLabels[status] ?? ""}</span>
+                  </td>
+                  <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
+                    {format(count)}
+                  </td>
+                  <td class="px-2 py-0.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
+                    {((count / props.total) * 100).toFixed(1)}%
+                  </td>
+                </tr>
+              )}
+            </For>
+          </Show>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const statusesFrom = (statuses: Record<string, number>, from: number) =>
+  Object.entries(statuses).reduce(
+    (sum, [status, count]) =>
+      Number(status) >= from && Number(status) < from + 100 ? sum + count : sum,
+    0,
+  );
+
+function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["endpoints"] }) {
+  return (
+    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+      <table class="w-full">
+        <thead>
+          <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+            <th class="px-4 pt-3 pb-2 text-left sm:px-5">
+              Endpoint
+              <Info>
+                The route each request matched, so every page id counts under the same row. Requests
+                that match no route are the * row.
+              </Info>
+            </th>
+            <th class="w-20 px-2 pt-3 pb-2 text-right sm:w-24 sm:px-4">Requests</th>
+            <th class="w-14 px-2 pt-3 pb-2 text-right sm:w-20 sm:px-4">4xx</th>
+            <th class="w-14 px-2 pt-3 pb-2 text-right sm:w-20 sm:px-4">5xx</th>
+          </tr>
+        </thead>
+        <tbody class="border-t-[1.5px] border-line [&>tr:first-child>td]:pt-3 [&>tr:last-child>td]:pb-3">
+          <Show
+            when={props.endpoints.length > 0}
+            fallback={
+              <tr>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={4}>
+                  No requests yet.
+                </td>
+              </tr>
+            }
+          >
+            <For each={props.endpoints}>
+              {(endpoint) => {
+                const clientErrors = () => statusesFrom(endpoint.statuses, 400);
+                const serverErrors = () => statusesFrom(endpoint.statuses, 500);
+                return (
+                  <tr>
+                    <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">
+                      {endpoint.path}
+                    </td>
+                    <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
+                      {format(endpoint.total)}
+                    </td>
+                    <td
+                      class={`px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4 ${
+                        clientErrors() === 0 ? "text-muted/40" : ""
+                      }`}
+                    >
+                      {format(clientErrors())}
+                    </td>
+                    <td
+                      class={`px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4 ${
+                        serverErrors() === 0 ? "text-muted/40" : "font-bold text-amber"
+                      }`}
+                    >
+                      {format(serverErrors())}
+                    </td>
+                  </tr>
+                );
+              }}
+            </For>
+          </Show>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Section(props: { id: string; title: string; hint?: string; children: JSX.Element }) {
   return (
     <section id={props.id} class="flex scroll-mt-24 flex-col gap-3">
@@ -668,11 +806,19 @@ function Loaded(props: { stats: AdminStats }) {
       id: "server",
       label: "Server",
       caption: props.stats.server.version,
-      attention: integrations().some(([, , on]) => !on),
+      attention: integrations().some(([, , on]) => !on) || serverErrors() > 0,
     },
   ];
 
   const server = () => props.stats.server;
+
+  const statuses = () =>
+    Object.entries(server().requests.statuses)
+      .map(([status, count]) => [Number(status), count] as const)
+      .sort((a, b) => a[0] - b[0]);
+
+  const serverErrors = () =>
+    statuses().reduce((sum, [status, count]) => (status >= 500 ? sum + count : sum), 0);
 
   const integrations = () =>
     [
@@ -840,6 +986,21 @@ function Loaded(props: { stats: AdminStats }) {
                   )}
                 </For>
               </div>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <Tile
+                  label="Requests"
+                  value={format(server().requests.total)}
+                  hint="HTTP requests answered since the backend started, Moblin's WebSocket connections included. Counted in memory, so a restart starts over."
+                />
+                <Tile
+                  label="Server errors"
+                  value={format(serverErrors())}
+                  hint="Requests answered with a 5xx status since the backend started."
+                  attention={serverErrors() > 0}
+                />
+              </div>
+              <StatusTable statuses={statuses()} total={server().requests.total} />
+              <EndpointTable endpoints={server().requests.endpoints} />
             </div>
           </Section>
         </div>

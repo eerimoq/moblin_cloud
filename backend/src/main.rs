@@ -17,6 +17,7 @@ mod payments;
 mod paypal;
 mod profiles;
 mod remote_control;
+mod requests;
 mod store;
 mod stripe;
 mod subscribers;
@@ -51,6 +52,7 @@ use crate::payments::Orders;
 use crate::paypal::PayPal;
 use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
+use crate::requests::Requests;
 use crate::store::Store;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
@@ -406,6 +408,7 @@ async fn main() -> Result<()> {
         premium_accounts: cli.premium_accounts,
         started: crate::deliveries::now(),
         tests: Mutex::default(),
+        requests: Requests::default(),
     });
     tokio::spawn({
         let api = api.clone();

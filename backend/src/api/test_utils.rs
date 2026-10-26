@@ -19,6 +19,7 @@ use crate::pages::Pages;
 use crate::payments::Orders;
 use crate::paypal::PayPal;
 use crate::remote_control::Streamers;
+use crate::requests::Requests;
 use crate::store::Store;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
@@ -105,6 +106,7 @@ pub(crate) fn build_api(
         premium_accounts: vec!["premium".to_string()],
         started: 0,
         tests: Mutex::default(),
+        requests: Requests::default(),
     }
 }
 

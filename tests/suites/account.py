@@ -406,8 +406,19 @@ class AccountAdmin(AccountTestCase):
         stats = admin.admin_stats()
         self.assert_equal(sorted(stats), ["accounts", "counters", "database", "moblin", "pending", "server"])
         server = stats["server"]
-        self.assert_equal(sorted(server), ["integrations", "memory", "now", "started", "version"])
+        self.assert_equal(sorted(server), ["integrations", "memory", "now", "requests", "started", "version"])
         self.assert_true(0 < server["started"] <= server["now"])
+        served = server["requests"]
+        self.assert_equal(sorted(served), ["endpoints", "statuses", "total"])
+        self.assert_equal(sum(endpoint["total"] for endpoint in served["endpoints"]), served["total"])
+        stats_endpoint = next(e for e in served["endpoints"] if e["path"] == "/admin/stats")
+        self.assert_equal(sorted(stats_endpoint), ["path", "statuses", "total"])
+        self.assert_true(stats_endpoint["statuses"]["401"] >= 1)
+        self.assert_equal(sum(served["statuses"].values()), served["total"])
+        self.assert_true(served["statuses"]["401"] >= 1)
+        self.assert_true(served["statuses"]["403"] >= 1)
+        before = served["total"]
+        self.assert_true(admin.admin_stats()["server"]["requests"]["total"] > before)
         self.assert_equal(sorted(server["integrations"]), ["appAttest", "kick", "paypal", "stripe", "twitch"])
         self.assert_equal(sorted(stats["accounts"]), ["paypal", "premium", "stripe", "total"])
         self.assert_true(stats["accounts"]["total"] >= 2)

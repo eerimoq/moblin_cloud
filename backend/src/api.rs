@@ -8,7 +8,7 @@ use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Json, Router, middleware};
 use log::warn;
 use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
@@ -25,6 +25,7 @@ use crate::pages::Pages;
 use crate::payments::Orders;
 use crate::paypal::PayPal;
 use crate::remote_control::Streamers;
+use crate::requests::Requests;
 use crate::store::Store;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
@@ -87,6 +88,7 @@ pub struct Api {
     pub premium_accounts: Vec<String>,
     pub started: u64,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
+    pub requests: Requests,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -226,6 +228,10 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_spin_capture),
         )
         .layer(cors)
+        .layer(middleware::from_fn_with_state(
+            api.clone(),
+            crate::requests::count,
+        ))
         .with_state(api)
 }
 

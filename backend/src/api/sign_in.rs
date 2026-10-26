@@ -356,6 +356,7 @@ mod tests {
     use crate::pages::Pages;
     use crate::payments::Orders;
     use crate::remote_control::Streamers;
+    use crate::requests::Requests;
     use crate::store::Store;
     use crate::subscribers::Allowances;
 
@@ -935,6 +936,7 @@ mod tests {
             premium_accounts: Vec::new(),
             started: 0,
             tests: Mutex::default(),
+            requests: Requests::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());

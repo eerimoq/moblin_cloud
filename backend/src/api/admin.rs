@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::accounts::AccountStats;
 use crate::counters::Counter;
 use crate::deliveries;
+use crate::requests::RequestStats;
 
 use super::*;
 
@@ -31,6 +32,7 @@ pub(super) struct ServerStats {
     now: u64,
     memory: Option<u64>,
     integrations: Integrations,
+    requests: RequestStats,
 }
 
 #[derive(Serialize)]
@@ -85,6 +87,7 @@ pub(super) async fn handle_admin_stats(
                 paypal: api.paypal.is_some(),
                 stripe: api.stripe.is_some(),
             },
+            requests: api.requests.stats(),
         },
         accounts: api.accounts.stats(
             &api.admins
@@ -158,6 +161,17 @@ mod tests {
         assert_eq!(
             server["integrations"],
             json!({"twitch": false, "kick": false, "appAttest": false, "paypal": false, "stripe": false})
+        );
+        assert_eq!(
+            server["requests"],
+            json!({
+                "total": 4,
+                "statuses": {"200": 2, "401": 1, "403": 1},
+                "endpoints": [
+                    {"path": "/account", "total": 2, "statuses": {"200": 2}},
+                    {"path": "/admin/stats", "total": 2, "statuses": {"401": 1, "403": 1}},
+                ],
+            })
         );
         assert_eq!(
             stats,
