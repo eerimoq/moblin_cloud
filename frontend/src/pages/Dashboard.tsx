@@ -1,10 +1,11 @@
-import { createMemo, createSignal, For, Index, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
 import { poll } from "../poll";
 import { copyText } from "../components/CopyButton";
 import Icon, { type IconName } from "../components/Icon";
+import Modal, { ask } from "../components/Modal";
 import { createRecent, Latest, timeAgo } from "../components/Latest";
 import {
   AccountMenu,
@@ -331,7 +332,7 @@ function createProviderActions(
   const check = (quiet: boolean) => run(() => provider.check(props.session), !quiet);
 
   const disconnect = async () => {
-    if (confirm(provider.confirmText)) {
+    if (await ask(provider.confirmText, t("Disconnect"))) {
       await run(() => provider.disconnect(props.session));
     }
   };
@@ -2124,26 +2125,6 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
   );
 }
 
-function Modal(props: { ref: (dialog: HTMLDialogElement) => void; children: JSX.Element }) {
-  let dialog: HTMLDialogElement | undefined;
-  return (
-    <dialog
-      ref={(element) => {
-        dialog = element;
-        props.ref(element);
-      }}
-      class="m-auto w-[calc(100%-2rem)] max-w-md rounded-3xl border-[1.5px] border-line bg-card p-6 text-ink backdrop:bg-black/60 sm:p-8"
-      onClick={(event) => {
-        if (event.target === dialog) {
-          dialog?.close();
-        }
-      }}
-    >
-      {props.children}
-    </dialog>
-  );
-}
-
 function Moderated(props: { session: string; channel: Moderating; onSignOut: () => void }) {
   const [account, setAccount] = createSignal<Account | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -2292,11 +2273,12 @@ function MoblinSettings(props: {
   };
   const newKey = async () => {
     if (
-      !confirm(
+      !(await ask(
         t(
           "Every device disconnects and the current Moblin Cloud key stops working. Paste the new one in Moblin on each device to reconnect.",
         ),
-      )
+        t("Reset key"),
+      ))
     ) {
       return;
     }
@@ -2325,12 +2307,13 @@ function MoblinSettings(props: {
   };
   const remove = async (device: Device) => {
     if (
-      !confirm(
+      !(await ask(
         t(
           "Remove {name} from the list? Tips stop waiting for it. If it connects again, it is added back.",
           { name: device.name },
         ),
-      )
+        t("Remove"),
+      ))
     ) {
       return;
     }

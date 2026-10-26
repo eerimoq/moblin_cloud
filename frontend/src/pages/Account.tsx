@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { asset } from "../asset";
 import BrandIcon from "../components/BrandIcon";
+import { ask } from "../components/Modal";
 import {
   AccountMenu,
   Band,
@@ -161,11 +162,12 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
   const [error, setError] = createSignal<string | null>(null);
   const remove = async () => {
     if (
-      !confirm(
+      !(await ask(
         t(
           "Your account is deleted with its tip page, Moblin devices, settings and history. This can't be undone.",
         ),
-      )
+        t("Delete account"),
+      ))
     ) {
       return;
     }
