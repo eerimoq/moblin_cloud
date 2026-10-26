@@ -2423,28 +2423,32 @@ function MoblinSettings(props: {
                     when={renaming() === device.id}
                     fallback={
                       <>
-                        <span class="flex min-w-0 flex-1 flex-col">
-                          <span class="break-words font-semibold">{device.name}</span>
-                          <span class="text-[15px] text-muted">{gets(device)}</span>
+                        <span class="min-w-0 flex-1 font-semibold break-words sm:truncate">
+                          {device.name}
                         </span>
-                        <button
-                          type="button"
-                          class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
-                          disabled={props.busy}
-                          onClick={() => startRenaming(device)}
-                        >
-                          {t("Rename")}
-                        </button>
-                        <Show when={!device.connected && !device.reconnecting}>
+                        <span class="basis-full pl-[22px] text-[15px] text-muted sm:basis-auto sm:pl-0">
+                          {gets(device)}
+                        </span>
+                        <span class="flex basis-full gap-3 pl-[22px] sm:basis-auto sm:pl-0">
                           <button
                             type="button"
-                            class="text-[15px] font-semibold text-danger hover:underline disabled:opacity-60"
+                            class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
                             disabled={props.busy}
-                            onClick={() => void remove(device)}
+                            onClick={() => startRenaming(device)}
                           >
-                            {t("Remove")}
+                            {t("Rename")}
                           </button>
-                        </Show>
+                          <Show when={!device.connected && !device.reconnecting}>
+                            <button
+                              type="button"
+                              class="text-[15px] font-semibold text-danger hover:underline disabled:opacity-60"
+                              disabled={props.busy}
+                              onClick={() => void remove(device)}
+                            >
+                              {t("Remove")}
+                            </button>
+                          </Show>
+                        </span>
                       </>
                     }
                   >
