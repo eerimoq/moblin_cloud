@@ -1,53 +1,29 @@
 # Moblin website
 
-Landing page for Moblin and the rest of the Moblin family: Mobcam, Moblink and
-the remote control relays, plus the streamer pages where viewers tip, spin the
-wheel and request songs.
+Landing page for Moblin and its companion apps, plus the streamer pages where
+viewers tip and spin the wheel.
 
-- `frontend/` is the website, a static SolidJS + TypeScript + Tailwind site
-  deployed to GitHub Pages on every push to `main`.
-- `backend/` is a small Rust service deployed at `https://api.moblin.app`.
+- `frontend/` is the website (SolidJS, TypeScript and Tailwind), deployed to
+  GitHub Pages on every push to `main`.
+- `backend/` is a Rust service deployed at `https://api.moblin.app`.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) and npm
-- [Rust](https://rustup.rs/)
-- [just](https://github.com/casey/just)
-- Python 3 with `pip install -r requirements.txt`
-- For the checks: `oxfmt`, `oxlint` and `codespell`
+Node.js, Rust, [just](https://github.com/casey/just), Python 3 with
+`pip install -r requirements.txt`, and `oxfmt`, `oxlint` and `codespell` for
+the checks.
 
 ## Develop
 
-Install the frontend dependencies once:
-
 ```
-cd frontend
-npm install
+cd frontend && npm install
+just dev
 ```
 
-Then run the backend and the frontend in two terminals:
-
-```
-just dev-backend
-just dev-frontend
-```
-
-and open http://localhost:5173. The backend runs in development mode: it is
-filled with made-up streamers and signs in with a fake Twitch and a fake Kick
-(`tests/utils/fake_twitch.py` and `tests/utils/fake_kick.py`, started by
-`just dev-backend`), so no credentials are needed. Sign in at
-http://localhost:5173/dashboard/ and the fake asks which made-up user to
-sign in as (the same login on Twitch and Kick is two different users until
-linked in the dashboard's Linked accounts section): `admin` is an admin,
-`premium` a premium account, `normal` neither, a login ending in 1, 2 or 3
-is a subscriber (of that tier on Twitch), and moderators are any logins the
-streamer adds in the dashboard's Moderators section, on Twitch and on Kick.
-Each login has
-its own account, so sign out and sign in as another to switch; to have two
-signed in at once, use a private window or another browser profile, as a
-browser holds one session. To try a streamer page, sign in as `admin` and run
-`just dev-fake-moblin` to connect a made-up Moblin. `just dev` does all of
-this in one terminal.
+and open http://localhost:5173. It runs the backend with made-up streamers, the
+frontend and a fake Moblin. Signing in goes through a fake Twitch and Kick that
+take any login: `admin` is an admin, `premium` a premium account and a login
+ending in 1, 2 or 3 a subscriber. Run `just` for the other recipes.
 
 ## Checks
 
@@ -58,4 +34,4 @@ just spell-check
 just test
 ```
 
-CI runs the same commands. Run `just` to list the other recipes, grouped by what they are for.
+CI runs the same commands.
