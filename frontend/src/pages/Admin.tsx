@@ -957,6 +957,25 @@ function Loaded(props: { stats: AdminStats }) {
                   "Moblin proving it is the Moblin app when it connects. Connections without one are only counted here until the backend is started with --require-attested-moblin, which refuses them.",
                   ["missing", "invalid"],
                 ),
+                counters().step(
+                  "deviceControls",
+                  "Controls",
+                  "The streamer or a moderator controlling a device from its device page: going live, muting, switching scene and so on. Watching a device's status is not counted.",
+                  [
+                    "account",
+                    "not-moderator",
+                    "not-found",
+                    "offline",
+                    "invalid-control",
+                    "moblin-timeout",
+                    "moblin-error",
+                  ],
+                  {
+                    "not-found": "Device not in the list",
+                    offline: "Device not connected",
+                    "invalid-control": "Unknown control or id",
+                  },
+                ),
               ]}
             />
           </Section>

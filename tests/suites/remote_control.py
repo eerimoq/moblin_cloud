@@ -185,6 +185,46 @@ class RemoteControlDevices(RemoteControlTestCase):
             self.second.stop()
 
 
+class RemoteControlDeviceStatus(RemoteControlTestCase):
+    """Watch a device's status on its device page, which Moblin pushes while someone watches, and control it."""
+
+    login = "status"
+
+    def run(self):
+        self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
+        self.wait_until(self.connected, "Moblin to connect")
+        page_id = self.dashboard.page_id()
+        device = self.dashboard.account()["devices"][0]["id"]
+        events = self.dashboard.device_events(page_id, device)
+        try:
+            name, snapshot = events.next()
+            self.assert_equal(name, "snapshot")
+            self.assert_true(snapshot["connected"])
+            state = events.wait_for("state")
+            self.assert_in("muted", state["data"])
+            settings = events.wait_for("settings")
+            self.assert_true(len(settings["data"]["scenes"]) > 0)
+            status = events.wait_for("status")
+            self.assert_in("audioInfo", status["topRight"])
+            if self.moblin.is_fake():
+                self.assert_equal(status["sample"]["bonding"][0]["name"], "Cellular")
+            elif not self.context.interactive:
+                return
+            self.dashboard.control_device(page_id, device, {"setMute": {"on": True}})
+            self.wait_until(
+                lambda: events.wait_for("state")["data"].get("muted") is True, "the mute to be reported"
+            )
+            self.dashboard.control_device(page_id, device, {"setMute": {"on": False}})
+            self.wait_until(
+                lambda: events.wait_for("state")["data"].get("muted") is False, "the unmute to be reported"
+            )
+            self.assert_backend_error(
+                422, lambda: self.dashboard.control_device(page_id, device, {"tip": {"name": "x"}})
+            )
+        finally:
+            events.close()
+
+
 def tests(context: Context):
     return [
         RemoteControlConnects(context),
@@ -196,4 +236,5 @@ def tests(context: Context):
         RemoteControlTestDeliveries(context),
         RemoteControlNoWheel(context),
         RemoteControlDevices(context),
+        RemoteControlDeviceStatus(context),
     ]

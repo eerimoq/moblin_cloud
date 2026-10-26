@@ -42,6 +42,130 @@ export type Moderating = {
   kick: Identity | null;
 };
 
+export type StatusItem = { message: string; ok?: boolean };
+
+export type AudioLevel = { muted: object } | { unknown: object } | { value: { _0: number } };
+
+export type TopLeftItem =
+  | "stream"
+  | "camera"
+  | "mic"
+  | "zoom"
+  | "obs"
+  | "events"
+  | "chat"
+  | "viewers";
+
+export type TopRightItem =
+  | "audioLevel"
+  | "rtmpServer"
+  | "remoteControl"
+  | "gameController"
+  | "bitrate"
+  | "uptime"
+  | "location"
+  | "srtla"
+  | "srtlaRtts"
+  | "recording"
+  | "replay"
+  | "browserWidgets"
+  | "moblink"
+  | "djiDevices"
+  | "systemMonitor";
+
+export type StatusGeneral = {
+  batteryCharging?: boolean;
+  batteryLevel?: number;
+  flame?: "White" | "Yellow" | "Red";
+  wiFiSsid?: string;
+  isLive?: boolean;
+  isRecording?: boolean;
+  isMuted?: boolean;
+};
+
+export type StatusTopRight = {
+  audioInfo?: { audioLevel: AudioLevel; numberOfAudioChannels: number };
+  bitrateInfo?: { bitsPerSecond: number; totalBytes: number };
+  bondingInfo?: { name: string; bytesPerSecond: number; rtt?: number }[];
+} & Partial<Record<TopRightItem, StatusItem>>;
+
+export type DeviceStatus = {
+  general: StatusGeneral;
+  topLeft: Partial<Record<TopLeftItem, StatusItem>>;
+  topRight: StatusTopRight;
+};
+
+export type Named = { id: string; name: string };
+
+export type DeviceSettings = {
+  streams: Named[];
+  scenes: Named[];
+  autoSceneSwitchers?: Named[];
+  bitratePresets: { id: string; bitrate: number }[];
+  mics: Named[];
+  srt: {
+    connectionPrioritiesEnabled: boolean;
+    connectionPriorities: { id: string; name: string; priority: number; enabled: boolean }[];
+  };
+};
+
+export type DeviceState = {
+  scene?: string;
+  autoSceneSwitcher?: { id?: string };
+  mic?: string;
+  bitrate?: string;
+  zoom?: number;
+  zoomPresets?: Named[];
+  zoomPreset?: string;
+  streaming?: boolean;
+  recording?: boolean;
+  previewStream?: boolean;
+  muted?: boolean;
+  stealthMode?: boolean;
+  torchOn?: boolean;
+  batteryCharging?: boolean;
+};
+
+export type Sample = {
+  at: number;
+  bitrate: number | null;
+  totalBytes: number | null;
+  bonding: { name: string; bytesPerSecond: number; rtt: number | null }[];
+};
+
+export type DeviceSnapshot = {
+  name: string;
+  connected: boolean;
+  status: DeviceStatus;
+  state: DeviceState;
+  settings: DeviceSettings | null;
+  history: Sample[];
+};
+
+export type StatusUpdate = {
+  general: StatusGeneral | null;
+  topLeft: DeviceStatus["topLeft"] | null;
+  topRight: StatusTopRight | null;
+  sample: Sample | null;
+};
+
+export type Control =
+  | { setRecord: { on: boolean } }
+  | { setLive: { on: boolean } }
+  | { setMute: { on: boolean } }
+  | { setStealthMode: { on: boolean } }
+  | { setTorch: { on: boolean } }
+  | { setZoom: { x: number } }
+  | { setZoomPreset: { id: string } }
+  | { setScene: { id: string } }
+  | { setBitratePreset: { id: string } }
+  | { setMic: { id: string } }
+  | { setSrtConnectionPriority: { id: string; priority: number; enabled: boolean } }
+  | { setSrtConnectionPrioritiesEnabled: { enabled: boolean } }
+  | { reloadBrowserWidgets: object }
+  | { instantReplay: object }
+  | { saveReplay: object };
+
 export type Recent = {
   id: string;
   at: number;
@@ -245,6 +369,15 @@ export const renameDevice = (session: string, device: string, name: string) =>
 
 export const removeDevice = (session: string, device: string) =>
   call<Account>(`/account/devices/${encodeURIComponent(device)}/remove`, session, post());
+
+const devicePath = (page: string, device: string) =>
+  `${accountPath(page)}/devices/${encodeURIComponent(device)}`;
+
+export const deviceEventsUrl = (page: string, device: string) =>
+  `${backendUrl}${devicePath(page, device)}/events`;
+
+export const controlDevice = (session: string, page: string, device: string, control: Control) =>
+  call<object>(`${devicePath(page, device)}/control`, session, post(control));
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>("/account/paypal/connect", session, post())).url;

@@ -24,7 +24,9 @@ export default defineConfig({
           }
           if (
             req.url &&
-            new RegExp(`^${base}(dashboard/twitch|twitch|kick)/[^/?.]+/?(\\?.*)?$`).test(req.url)
+            new RegExp(
+              `^${base}((dashboard/twitch|twitch|kick)/[^/?.]+|device/[^/?]+/[^/?]+)/?(\\?.*)?$`,
+            ).test(req.url)
           ) {
             req.url = `${base}404.html`;
           }
@@ -48,6 +50,11 @@ export default defineConfig({
         selfHandleResponse: true,
         configure: (proxy) => {
           proxy.on("proxyRes", (proxyRes, req, res) => {
+            if (proxyRes.headers["content-type"]?.startsWith("text/event-stream")) {
+              res.writeHead(proxyRes.statusCode ?? 500, proxyRes.headers);
+              proxyRes.pipe(res);
+              return;
+            }
             const chunks: Buffer[] = [];
             proxyRes.on("data", (chunk) => chunks.push(chunk));
             proxyRes.on("end", () => {

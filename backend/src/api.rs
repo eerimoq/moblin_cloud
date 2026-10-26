@@ -11,6 +11,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router, middleware};
 use log::warn;
 use serde_json::Value;
+use tokio::sync::watch;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::accounts::{Account, Accounts, Page, Platform};
@@ -33,6 +34,7 @@ use crate::subscribers::Allowances;
 mod account;
 mod admin;
 mod banner;
+mod devices;
 mod effects;
 mod moderators;
 mod orders;
@@ -52,6 +54,7 @@ mod tips;
 use account::*;
 use admin::*;
 use banner::*;
+use devices::*;
 use effects::*;
 use moderators::*;
 pub use orders::settle_orders;
@@ -89,6 +92,7 @@ pub struct Api {
     pub started: u64,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
     pub requests: Requests,
+    pub stopping: watch::Sender<bool>,
 }
 
 pub fn router(api: Arc<Api>) -> Router {
@@ -172,6 +176,14 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_moderator_resend),
         )
         .route("/account/pages/{id}", get(handle_moderator_account))
+        .route(
+            "/account/pages/{id}/devices/{device}/events",
+            get(handle_device_events),
+        )
+        .route(
+            "/account/pages/{id}/devices/{device}/control",
+            post(handle_device_control),
+        )
         .route(
             "/account/pages/{id}/settings",
             post(handle_moderator_settings),

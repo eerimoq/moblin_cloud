@@ -122,7 +122,7 @@ pub(super) async fn handle_moderator_account(
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         key: None,
-        devices: Vec::new(),
+        devices: devices(&api, &id),
         settings: without_payments(settings_response(&api, id.clone(), settings)).0,
         admin: false,
         premium: streamer_is_premium(&api, &id),

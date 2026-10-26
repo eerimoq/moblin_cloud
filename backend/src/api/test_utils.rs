@@ -107,6 +107,7 @@ pub(crate) fn build_api(
         started: 0,
         tests: Mutex::default(),
         requests: Requests::default(),
+        stopping: tokio::sync::watch::channel(false).0,
     }
 }
 

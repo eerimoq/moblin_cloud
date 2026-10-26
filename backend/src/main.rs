@@ -409,6 +409,7 @@ async fn main() -> Result<()> {
         started: crate::deliveries::now(),
         tests: Mutex::default(),
         requests: Requests::default(),
+        stopping: tokio::sync::watch::channel(false).0,
     });
     tokio::spawn({
         let api = api.clone();
@@ -419,7 +420,11 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("failed to listen on {}", cli.listen))?;
     info!("listening on http://{}", cli.listen);
-    serve(listener, api::router(api), shutdown_signal()).await?;
+    serve(listener, api::router(api.clone()), async move {
+        shutdown_signal().await;
+        api.stopping.send_replace(true);
+    })
+    .await?;
     info!("stopped");
     Ok(())
 }

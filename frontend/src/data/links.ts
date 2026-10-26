@@ -1,3 +1,4 @@
+import { asset } from "../asset";
 import { t } from "../i18n";
 
 export const links = {
@@ -48,9 +49,13 @@ export const pages = {
   cards: "/cards/",
   dashboard: "/dashboard/",
   account: "/account/",
+  device: "/device/",
   admin: "/admin/",
   terms: "/terms/",
 } as const;
+
+export const deviceUrl = (page: string, device: string) =>
+  `${asset(pages.device)}${encodeURIComponent(page)}/${encodeURIComponent(device)}`;
 
 export const platforms = [
   { name: "Twitch", icon: "twitch" },

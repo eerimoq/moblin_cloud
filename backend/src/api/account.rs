@@ -91,9 +91,9 @@ pub(super) fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct DeviceResponse {
-    id: String,
-    name: String,
-    connected: bool,
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) connected: bool,
     reconnecting: bool,
     wheel: bool,
     last_seen: Option<u64>,
@@ -106,7 +106,7 @@ pub(super) fn device_name(names: &HashMap<String, String>, device: &str) -> Stri
         .unwrap_or_else(|| "Moblin".to_string())
 }
 
-fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
+pub(super) fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
     let known = api.accounts.known_devices(page);
     let connected = api.remote_control.devices(page);
     let mut devices: Vec<DeviceResponse> = connected

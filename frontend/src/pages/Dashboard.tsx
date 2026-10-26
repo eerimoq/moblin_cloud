@@ -1,12 +1,19 @@
-import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
 import { poll } from "../poll";
 import { copyText } from "../components/CopyButton";
-import Icon, { type IconName } from "../components/Icon";
+import Icon from "../components/Icon";
 import Modal, { ask } from "../components/Modal";
 import { createRecent, Latest, timeAgo } from "../components/Latest";
+import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
+import {
+  channelKey,
+  moderatedChannelKey,
+  rememberChannel,
+  StreamerPicker,
+} from "../components/HeaderPickers";
 import {
   AccountMenu,
   Band,
@@ -51,7 +58,7 @@ import {
   type SettingsChanges,
 } from "../data/account";
 import { BackendError } from "../data/backend";
-import { links, pages } from "../data/links";
+import { deviceUrl, links, pages } from "../data/links";
 import {
   accentAttributes,
   accents,
@@ -1762,13 +1769,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
     );
 
   const payments = () => settings().paypal || settings().stripe;
-  const sections: {
-    id: string;
-    label: string;
-    icon: IconName;
-    shown: () => boolean;
-    status: () => { on: boolean; text: string } | null;
-  }[] = [
+  const sections: (Section & { shown: () => boolean })[] = [
     {
       id: "page",
       label: t("Tip page"),
@@ -1815,7 +1816,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
       id: "moblin",
       label: "Moblin",
       icon: "smartphone",
-      shown: () => !moderating(),
+      shown: () => true,
       status: () => connectedOrNot(settings().connected),
     },
   ];
@@ -1825,97 +1826,17 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
     search.has("merchantIdInPayPal") || search.has("stripe") || location.hash === "#paypal"
       ? "payments"
       : location.hash.slice(1);
-  const [chosen, setChosen] = createSignal(initial);
-  const active = () =>
-    visible().some((section) => section.id === chosen()) ? chosen() : visible()[0].id;
-  const select = (id: string) => {
-    const url = `${location.pathname}${location.search}#${id}`;
-    if (id === active()) {
-      history.replaceState(null, "", url);
-    } else {
-      scrollTo({ top: 0, behavior: "instant" });
-      history.pushState(null, "", url);
-    }
-    setChosen(id);
-  };
-  const onPopState = () => {
-    scrollTo({ top: 0, behavior: "instant" });
-    setChosen(location.hash.slice(1));
-  };
-  addEventListener("popstate", onPopState);
-  onCleanup(() => removeEventListener("popstate", onPopState));
-  const current = () => visible().find((section) => section.id === active())!;
-  const [menuOpen, setMenuOpen] = createSignal(false);
+  const { active, select } = createSectionChoice(visible, initial);
   const paid = (configured: boolean) => settings().payable || configured;
 
   return (
     <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
-      <nav
-        aria-label={t("Dashboard")}
-        class="overflow-hidden rounded-2xl border border-line bg-card lg:sticky lg:top-[calc(4.5rem+1px+3rem)] lg:flex lg:max-h-[calc(100dvh-4.5rem-1px-6rem)] lg:flex-col lg:overflow-y-auto lg:rounded-none lg:border-0 lg:bg-transparent"
-      >
-        <button
-          type="button"
-          aria-expanded={menuOpen()}
-          onClick={() => setMenuOpen(!menuOpen())}
-          class="flex w-full items-center gap-3 px-4 py-3 text-left text-ink lg:hidden"
-        >
-          <Icon name={current().icon} class="size-5 shrink-0" />
-          <span class="font-display text-[17px] font-semibold">{current().label}</span>
-          <Show when={current().status()}>
-            {(status) => (
-              <span class="ml-auto flex items-center gap-1.5 pl-1 text-[13px] text-muted">
-                <span
-                  class={`size-2 shrink-0 rounded-full ${status().on ? "bg-leaf" : "bg-muted/50"}`}
-                />
-                {status().text}
-              </span>
-            )}
-          </Show>
-          <Icon
-            name="chevron-down"
-            class={`size-5 shrink-0 text-muted transition-transform ${menuOpen() ? "rotate-180" : ""} ${current().status() ? "" : "ml-auto"}`}
-          />
-        </button>
-        <div
-          class="divide-line flex flex-col divide-y border-t border-line lg:contents"
-          classList={{ hidden: !menuOpen() }}
-        >
-          <For each={visible()}>
-            {(section) => (
-              <button
-                type="button"
-                aria-current={active() === section.id ? "page" : undefined}
-                onClick={() => {
-                  select(section.id);
-                  setMenuOpen(false);
-                }}
-                class="flex items-center gap-3 px-4 py-2.5 text-left transition-colors lg:rounded-2xl lg:border-[1.5px] lg:py-3 lg:whitespace-nowrap"
-                classList={{
-                  "bg-ghost text-ink lg:border-line lg:bg-card": active() === section.id,
-                  "text-ink-2 hover:bg-ghost-hover hover:text-ink lg:border-transparent lg:hover:bg-ghost":
-                    active() !== section.id,
-                }}
-              >
-                <Icon name={section.icon} class="size-5 shrink-0" />
-                <span class="font-display text-[16px] font-semibold lg:text-[17px]">
-                  {section.label}
-                </span>
-                <Show when={section.status()}>
-                  {(status) => (
-                    <span class="ml-auto flex items-center gap-1.5 pl-1 text-[13px] text-muted">
-                      <span
-                        class={`size-2 shrink-0 rounded-full ${status().on ? "bg-leaf" : "bg-muted/50"}`}
-                      />
-                      {status().text}
-                    </span>
-                  )}
-                </Show>
-              </button>
-            )}
-          </For>
-        </div>
-      </nav>
+      <SectionMenu
+        label={t("Dashboard")}
+        sections={visible()}
+        active={active()}
+        onSelect={select}
+      />
       <div class="min-w-0">
         <div hidden={active() !== "page"} class="flex flex-col gap-6">
           <Show when={!moderating()}>
@@ -2110,15 +2031,24 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
           </div>
         </Show>
         <div hidden={active() !== "moblin"}>
-          <MoblinSettings
-            account={account()}
-            busy={busy()}
-            onNewKey={() => busyWith(() => newMoblinKey(props.session), setAccount)}
-            onRename={(device, name) =>
-              busyWith(() => renameDevice(props.session, device, name), setAccount)
+          <Show
+            when={moderating()}
+            fallback={
+              <MoblinSettings
+                account={account()}
+                busy={busy()}
+                onNewKey={() => busyWith(() => newMoblinKey(props.session), setAccount)}
+                onRename={(device, name) =>
+                  busyWith(() => renameDevice(props.session, device, name), setAccount)
+                }
+                onRemove={(device) =>
+                  busyWith(() => removeDevice(props.session, device), setAccount)
+                }
+              />
             }
-            onRemove={(device) => busyWith(() => removeDevice(props.session, device), setAccount)}
-          />
+          >
+            <ModeratedDevices account={account()} />
+          </Show>
         </div>
       </div>
     </div>
@@ -2164,10 +2094,6 @@ function Moderated(props: { session: string; channel: Moderating; onSignOut: () 
     </Show>
   );
 }
-
-const moderatedChannelKey = "moderatedChannel";
-
-const channelKey = (channel: Moderating) => `${channel.platform}/${channel.login}`;
 
 function readModeratedChannel() {
   const fromUrl = location.pathname
@@ -2319,18 +2245,6 @@ function MoblinSettings(props: {
     }
     await run(() => props.onRemove(device.id));
   };
-  const gets = (device: Device) =>
-    device.connected || device.reconnecting
-      ? [
-          device.reconnecting ? t("Reconnecting") : null,
-          t("Message"),
-          device.wheel ? t("Wheel of luck") : null,
-          t("Effect"),
-        ]
-          .filter((text) => text !== null)
-          .join(" · ")
-      : t("Last seen {time}", { time: timeAgo(device.lastSeen ?? 0) });
-
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Moblin</h2>
@@ -2388,90 +2302,69 @@ function MoblinSettings(props: {
           when={props.account.devices.length > 0}
           fallback={<p class="text-muted">{t("No device has connected yet.")}</p>}
         >
-          <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
-            <For each={props.account.devices}>
-              {(device) => (
-                <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-                  <span
-                    class={`size-2.5 shrink-0 rounded-full ${device.connected ? "bg-leaf" : device.reconnecting ? "bg-amber" : "bg-muted"}`}
-                    title={
-                      device.connected
-                        ? t("Connected")
-                        : device.reconnecting
-                          ? t("Reconnecting")
-                          : t("Not connected")
-                    }
-                  />
-                  <Show
-                    when={renaming() === device.id}
-                    fallback={
-                      <>
-                        <span class="min-w-0 flex-1 font-semibold break-words sm:truncate">
-                          {device.name}
-                        </span>
-                        <span class="basis-full pl-[22px] text-[15px] text-muted sm:basis-auto sm:pl-0">
-                          {gets(device)}
-                        </span>
-                        <span class="flex basis-full gap-3 pl-[22px] sm:basis-auto sm:pl-0">
-                          <button
-                            type="button"
-                            class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
-                            disabled={props.busy}
-                            onClick={() => startRenaming(device)}
-                          >
-                            {t("Rename")}
-                          </button>
-                          <Show when={!device.connected && !device.reconnecting}>
-                            <button
-                              type="button"
-                              class="text-[15px] font-semibold text-danger hover:underline disabled:opacity-60"
-                              disabled={props.busy}
-                              onClick={() => void remove(device)}
-                            >
-                              {t("Remove")}
-                            </button>
-                          </Show>
-                        </span>
-                      </>
-                    }
-                  >
-                    <form
-                      class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
-                      onSubmit={(event) => rename(event, device.id)}
+          <DeviceList devices={props.account.devices}>
+            {(device) => (
+              <Show
+                when={renaming() === device.id}
+                fallback={
+                  <DeviceRow device={device} page={props.account.settings.id}>
+                    <button
+                      type="button"
+                      class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
+                      disabled={props.busy}
+                      onClick={() => startRenaming(device)}
                     >
-                      <input
-                        type="text"
-                        maxLength={30}
-                        aria-label={t("Device name")}
-                        placeholder={t("Device name")}
-                        value={name()}
-                        onInput={(event) => setName(event.currentTarget.value)}
-                        class={`${inputClass} max-w-64`}
-                      />
-                      <button
-                        type="submit"
-                        class={smallButtonClass}
-                        disabled={props.busy || name().trim() === ""}
-                      >
-                        {t("Save")}
-                      </button>
+                      {t("Rename")}
+                    </button>
+                    <Show when={!device.connected && !device.reconnecting}>
                       <button
                         type="button"
-                        class={smallButtonClass}
-                        onClick={() => setRenaming(null)}
+                        class="text-[15px] font-semibold text-danger hover:underline disabled:opacity-60"
+                        disabled={props.busy}
+                        onClick={() => void remove(device)}
                       >
-                        {t("Cancel")}
+                        {t("Remove")}
                       </button>
-                    </form>
-                  </Show>
-                </li>
-              )}
-            </For>
-          </ul>
+                    </Show>
+                  </DeviceRow>
+                }
+              >
+                <form
+                  class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+                  onSubmit={(event) => rename(event, device.id)}
+                >
+                  <input
+                    type="text"
+                    maxLength={30}
+                    aria-label={t("Device name")}
+                    placeholder={t("Device name")}
+                    value={name()}
+                    onInput={(event) => setName(event.currentTarget.value)}
+                    class={`${inputClass} max-w-64`}
+                  />
+                  <button
+                    type="submit"
+                    class={smallButtonClass}
+                    disabled={props.busy || name().trim() === ""}
+                  >
+                    {t("Save")}
+                  </button>
+                  <button type="button" class={smallButtonClass} onClick={() => setRenaming(null)}>
+                    {t("Cancel")}
+                  </button>
+                </form>
+              </Show>
+            )}
+          </DeviceList>
         </Show>
         <p class="text-[15px] text-muted">
           {t(
             "Wheel spins go to the first device with a wheel picked in Moblin's Moblin Cloud settings. Other tips go to every device.",
+          )}
+        </p>
+        <p class="text-[15px] text-muted">
+          {t(
+            "Open a device's status to see how it is doing and mute it. Your moderators can too, from their dashboard.",
           )}
         </p>
       </div>
@@ -2487,6 +2380,87 @@ function MoblinSettings(props: {
           </button>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+const deviceGets = (device: Device) =>
+  device.connected || device.reconnecting
+    ? [
+        device.reconnecting ? t("Reconnecting") : null,
+        t("Message"),
+        device.wheel ? t("Wheel of luck") : null,
+        t("Effect"),
+      ]
+        .filter((text) => text !== null)
+        .join(" · ")
+    : t("Last seen {time}", { time: timeAgo(device.lastSeen ?? 0) });
+
+function DeviceList(props: { devices: Device[]; children: (device: Device) => JSX.Element }) {
+  return (
+    <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
+      <For each={props.devices}>
+        {(device) => (
+          <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+            {props.children(device)}
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+}
+
+function DeviceRow(props: { device: Device; page: string; children?: JSX.Element }) {
+  return (
+    <>
+      <span
+        class={`size-2.5 shrink-0 rounded-full ${props.device.connected ? "bg-leaf" : props.device.reconnecting ? "bg-amber" : "bg-muted"}`}
+        title={
+          props.device.connected
+            ? t("Connected")
+            : props.device.reconnecting
+              ? t("Reconnecting")
+              : t("Not connected")
+        }
+      />
+      <span class="min-w-0 flex-1 font-semibold break-words sm:truncate">{props.device.name}</span>
+      <span class="basis-full pl-[22px] text-[15px] text-muted sm:basis-auto sm:pl-0">
+        {deviceGets(props.device)}
+      </span>
+      <span class="flex basis-full gap-3 pl-[22px] sm:basis-auto sm:pl-0">
+        <a
+          href={deviceUrl(props.page, props.device.id)}
+          class="text-[15px] font-semibold text-leaf hover:underline"
+        >
+          {t("Status")}
+        </a>
+        {props.children}
+      </span>
+    </>
+  );
+}
+
+function ModeratedDevices(props: { account: Account }) {
+  return (
+    <div class={cardClass}>
+      <h2 class="text-[23px] font-semibold">Moblin</h2>
+      <p class="text-ink-2">
+        {t("The devices running Moblin that this streamer has connected to Moblin Cloud.")}
+      </p>
+      <div class="flex flex-col gap-2">
+        <h3 class="text-[15px] font-semibold text-ink-2">{t("Devices")}</h3>
+        <Show
+          when={props.account.devices.length > 0}
+          fallback={<p class="text-muted">{t("No device has connected yet.")}</p>}
+        >
+          <DeviceList devices={props.account.devices}>
+            {(device) => <DeviceRow device={device} page={props.account.settings.id} />}
+          </DeviceList>
+        </Show>
+        <p class="text-[15px] text-muted">
+          {t("Open a device's status to see how it is doing and mute it.")}
+        </p>
+      </div>
     </div>
   );
 }
@@ -2542,30 +2516,6 @@ function GoPremium(props: { ref: (dialog: HTMLDialogElement) => void }) {
 const smallButtonClass =
   "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
 
-function PickedAvatar(props: { picked: { name: string; avatar: string | null } }) {
-  return (
-    <span aria-hidden="true" class="pointer-events-none absolute top-1/2 left-1.5 -translate-y-1/2">
-      <Show
-        when={props.picked.avatar}
-        fallback={
-          <span class="flex size-8 items-center justify-center rounded-full bg-moss font-display text-sm font-semibold text-white">
-            {props.picked.name.slice(0, 1).toUpperCase()}
-          </span>
-        }
-      >
-        {(avatar) => (
-          <img
-            src={avatar()}
-            alt=""
-            referrerpolicy="no-referrer"
-            class="size-8 rounded-full bg-ghost object-cover"
-          />
-        )}
-      </Show>
-    </span>
-  );
-}
-
 export default function Dashboard() {
   const { session, loading, signInFailed, signOut } = createAccountSession();
 
@@ -2577,9 +2527,7 @@ export default function Dashboard() {
       ? `${pages.dashboard}${platform}/${encodeURIComponent(login)}`
       : pages.dashboard;
     history.replaceState(null, "", `${asset(path)}${location.search}${location.hash}`);
-    try {
-      sessionStorage.setItem(moderatedChannelKey, key);
-    } catch {}
+    rememberChannel(key);
   };
   const channel = (account: Account) => {
     const [platform, login] = chosenChannel().split("/", 2) as [Platform, string | undefined];
@@ -2612,33 +2560,11 @@ export default function Dashboard() {
                 <GoPremium ref={(element) => (premiumDialog = element)} />
               </Show>
               <Show when={current().account.moderating.length > 0}>
-                <div class="relative min-w-0">
-                  <PickedAvatar picked={channel(current().account) ?? current().account} />
-                  <select
-                    aria-label={t("Streamer")}
-                    class={`${ghostButtonClass} h-11! w-full cursor-pointer appearance-none truncate pr-10! pl-12! text-base! max-sm:w-11 max-sm:px-0! max-sm:text-transparent max-sm:[&>option]:text-ink`}
-                    value={(() => {
-                      const picked = channel(current().account);
-                      return picked ? channelKey(picked) : "";
-                    })()}
-                    onChange={(event) => chooseChannel(event.currentTarget.value)}
-                  >
-                    <option value="">{t("You")}</option>
-                    <For each={current().account.moderating}>
-                      {(channel) => (
-                        <option value={channelKey(channel)}>
-                          {channel.platform === "kick"
-                            ? t("{name} on Kick", { name: channel.name })
-                            : channel.name}
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                  <Icon
-                    name="chevron-down"
-                    class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-2 max-sm:hidden"
-                  />
-                </div>
+                <StreamerPicker
+                  account={current().account}
+                  picked={channel(current().account)}
+                  onPick={chooseChannel}
+                />
               </Show>
               <Show when={current().account.admin}>
                 <a

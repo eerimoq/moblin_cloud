@@ -47,6 +47,14 @@
   --font-title: var(--font-display);
 }
 
+/* Chart series colors, outside @theme so they are kept without a utility using them. */
+:root {
+  --color-chart-1: #d95926;
+  --color-chart-2: #199e70;
+  --color-chart-3: #3987e5;
+  --color-chart-4: #c98500;
+}
+
 /* Light theme: same tokens, different values, chosen by the browser setting. */
 @media (prefers-color-scheme: light) {
   :root {
@@ -63,6 +71,10 @@
     --color-moss-bright: #0c8a18;
     --color-leaf: #0a7a1c;
     --color-leaf-bright: #08601a;
+    --color-chart-1: #eb6834;
+    --color-chart-2: #1baf7a;
+    --color-chart-3: #2a78d6;
+    --color-chart-4: #eda100;
     --color-ghost: #ffffff;
     --color-ghost-hover: #f0efe8;
     --color-ghost-line: #d8d9cf;

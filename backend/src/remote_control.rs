@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::Duration;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket};
@@ -10,7 +10,7 @@ use log::info;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use tokio::sync::{Notify, mpsc, oneshot};
+use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use tokio::time::{Instant, sleep, sleep_until, timeout, timeout_at};
 use uuid::Uuid;
 
@@ -82,8 +82,21 @@ fn lenient_attestation<'de, D: Deserializer<'de>>(
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Event {
-    WheelOfLuck { wheel: Option<Wheel> },
-    Icon { id: String },
+    WheelOfLuck {
+        wheel: Option<Wheel>,
+    },
+    Icon {
+        id: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Status {
+        general: Option<Value>,
+        top_left: Option<Value>,
+        top_right: Option<Value>,
+    },
+    State {
+        data: Value,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,6 +136,266 @@ enum Request {
         kind: TipKind,
         request_id: String,
     },
+    GetSettings {},
+    GetStatus {},
+    StartStatus {
+        interval: u32,
+        filter: StatusFilter,
+    },
+    StopStatus {},
+    #[serde(untagged)]
+    Control(Control),
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StatusFilter {
+    top_right: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Control {
+    SetRecord {
+        on: bool,
+    },
+    SetLive {
+        on: bool,
+    },
+    SetMute {
+        on: bool,
+    },
+    SetStealthMode {
+        on: bool,
+    },
+    SetTorch {
+        on: bool,
+    },
+    SetZoom {
+        x: f32,
+    },
+    SetZoomPreset {
+        id: Uuid,
+    },
+    SetScene {
+        id: Uuid,
+    },
+    SetBitratePreset {
+        id: Uuid,
+    },
+    SetMic {
+        id: String,
+    },
+    SetSrtConnectionPriority {
+        id: Uuid,
+        priority: i32,
+        enabled: bool,
+    },
+    SetSrtConnectionPrioritiesEnabled {
+        enabled: bool,
+    },
+    ReloadBrowserWidgets {},
+    InstantReplay {},
+    SaveReplay {},
+}
+
+impl Control {
+    fn changes_settings(&self) -> bool {
+        matches!(
+            self,
+            Self::SetSrtConnectionPriority { .. } | Self::SetSrtConnectionPrioritiesEnabled { .. }
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BondingSample {
+    name: String,
+    bytes_per_second: u64,
+    rtt: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sample {
+    at: u64,
+    bitrate: Option<i64>,
+    total_bytes: Option<i64>,
+    bonding: Vec<BondingSample>,
+}
+
+impl Sample {
+    fn of(top_right: &Value) -> Self {
+        Self {
+            at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|since| since.as_millis() as u64)
+                .unwrap_or(0),
+            bitrate: top_right["bitrateInfo"]["bitsPerSecond"].as_i64(),
+            total_bytes: top_right["bitrateInfo"]["totalBytes"].as_i64(),
+            bonding: top_right["bondingInfo"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|connection| {
+                    Some(BondingSample {
+                        name: connection["name"].as_str()?.to_string(),
+                        bytes_per_second: connection["bytesPerSecond"].as_u64()?,
+                        rtt: connection["rtt"].as_i64(),
+                    })
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Update {
+    #[serde(rename_all = "camelCase")]
+    Status {
+        general: Option<Value>,
+        top_left: Option<Value>,
+        top_right: Option<Value>,
+        sample: Option<Sample>,
+    },
+    State {
+        data: Value,
+    },
+    Settings {
+        data: Value,
+    },
+    Connection {
+        connected: bool,
+    },
+}
+
+impl Update {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Status { .. } => "status",
+            Self::State { .. } => "state",
+            Self::Settings { .. } => "settings",
+            Self::Connection { .. } => "connection",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Snapshot {
+    pub connected: bool,
+    pub status: Value,
+    pub state: Value,
+    pub settings: Option<Value>,
+    pub history: Vec<Sample>,
+}
+
+struct Monitor {
+    id: u64,
+    watchers: usize,
+    polling: bool,
+    status: Value,
+    state: Value,
+    settings: Option<Value>,
+    history: VecDeque<Sample>,
+    events: broadcast::Sender<Arc<Update>>,
+}
+
+impl Default for Monitor {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            watchers: 0,
+            polling: false,
+            status: empty_status(),
+            state: Value::Object(Default::default()),
+            settings: None,
+            history: VecDeque::new(),
+            events: broadcast::channel(256).0,
+        }
+    }
+}
+
+fn empty_status() -> Value {
+    serde_json::json!({"general": {}, "topLeft": {}, "topRight": {}})
+}
+
+impl Monitor {
+    fn publish(&self, update: Update) {
+        let _ = self.events.send(Arc::new(update));
+    }
+
+    fn merge_status(
+        &mut self,
+        general: Option<Value>,
+        top_left: Option<Value>,
+        top_right: Option<Value>,
+        sampled: bool,
+    ) {
+        for (name, part) in [
+            ("general", &general),
+            ("topLeft", &top_left),
+            ("topRight", &top_right),
+        ] {
+            if let Some(part) = part.as_ref().filter(|part| part.is_object()) {
+                self.status[name] = part.clone();
+            }
+        }
+        let sample = top_right
+            .as_ref()
+            .filter(|part| sampled && part.is_object())
+            .map(Sample::of);
+        if let Some(sample) = &sample {
+            if self.history.len() >= 600 {
+                self.history.pop_front();
+            }
+            self.history.push_back(sample.clone());
+        }
+        self.publish(Update::Status {
+            general,
+            top_left,
+            top_right,
+            sample,
+        });
+    }
+
+    fn snapshot(&self, connected: bool) -> Snapshot {
+        Snapshot {
+            connected,
+            status: self.status.clone(),
+            state: self.state.clone(),
+            settings: self.settings.clone(),
+            history: self.history.iter().cloned().collect(),
+        }
+    }
+}
+
+pub struct Watch {
+    pub snapshot: Snapshot,
+    pub events: broadcast::Receiver<Arc<Update>>,
+    _guard: WatchGuard,
+}
+
+struct WatchGuard {
+    sessions: Arc<Mutex<Sessions>>,
+    page: String,
+    device: String,
+    monitor: u64,
+}
+
+impl Drop for WatchGuard {
+    fn drop(&mut self) {
+        let mut sessions = self.sessions.lock().unwrap();
+        if let Some(session) = sessions.watched_mut(&self.page, &self.device, self.monitor) {
+            session.monitor.watchers = session.monitor.watchers.saturating_sub(1);
+            if session.monitor.watchers == 0 && session.status_requested {
+                session.status_requested = false;
+                session.send(Request::StopStatus {});
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -145,9 +418,38 @@ struct Session {
     number: u64,
     sender: mpsc::UnboundedSender<MessageToStreamer>,
     next_request_id: u64,
-    pending: HashMap<u64, oneshot::Sender<Outcome>>,
+    pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
     wheel: Option<Wheel>,
     reconnecting: bool,
+    status_requested: bool,
+    monitor: Monitor,
+}
+
+impl Session {
+    fn send(&mut self, data: Request) -> u64 {
+        self.next_request_id += 1;
+        let request_id = self.next_request_id;
+        let _ = self.sender.send(MessageToStreamer::Request {
+            id: request_id,
+            data,
+        });
+        request_id
+    }
+
+    fn start_status(&mut self) {
+        if self.reconnecting {
+            return;
+        }
+        if !self.status_requested {
+            self.status_requested = true;
+            self.send(Request::StartStatus {
+                interval: 1,
+                filter: StatusFilter { top_right: true },
+            });
+            self.send(Request::GetStatus {});
+        }
+        self.send(Request::GetSettings {});
+    }
 }
 
 #[derive(Default)]
@@ -161,6 +463,11 @@ impl Sessions {
         self.by_page.get_mut(page)?.iter_mut().find(|session| {
             session.device == device && number.is_none_or(|number| session.number == number)
         })
+    }
+
+    fn watched_mut(&mut self, page: &str, device: &str, monitor: u64) -> Option<&mut Session> {
+        self.get_mut(page, device, None)
+            .filter(|session| session.monitor.id == monitor)
     }
 
     fn wheel(&self, page: &str) -> Option<&Session> {
@@ -194,7 +501,7 @@ pub struct Connection {
 
 pub struct Streamers {
     random: SystemRandom,
-    sessions: Mutex<Sessions>,
+    sessions: Arc<Mutex<Sessions>>,
     linger: Duration,
     pub connected: Notify,
 }
@@ -203,6 +510,23 @@ async fn send(socket: &mut WebSocket, message: &MessageToStreamer) -> Result<()>
     let text = serde_json::to_string(message)?;
     socket.send(Message::Text(text.into())).await?;
     Ok(())
+}
+
+async fn poll_status(sessions: Arc<Mutex<Sessions>>, page: String, device: String, monitor: u64) {
+    loop {
+        sleep(Duration::from_secs(5)).await;
+        let mut sessions = sessions.lock().unwrap();
+        let Some(session) = sessions.watched_mut(&page, &device, monitor) else {
+            break;
+        };
+        if session.monitor.watchers == 0 {
+            session.monitor.polling = false;
+            break;
+        }
+        if !session.reconnecting {
+            session.send(Request::GetStatus {});
+        }
+    }
 }
 
 pub async fn refuse(mut socket: WebSocket) {
@@ -218,7 +542,7 @@ impl Streamers {
     pub fn new(linger: Duration) -> Self {
         Self {
             random: SystemRandom::new(),
-            sessions: Mutex::new(Sessions::default()),
+            sessions: Arc::new(Mutex::new(Sessions::default())),
             linger,
             connected: Notify::new(),
         }
@@ -350,11 +674,17 @@ impl Streamers {
             pending: HashMap::new(),
             wheel: None,
             reconnecting: false,
+            status_requested: false,
+            monitor: Monitor {
+                id: number,
+                ..Monitor::default()
+            },
         };
         let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
         match page_sessions.iter_mut().find(|old| old.device == device) {
             Some(old) => {
                 session.wheel = old.wheel.take();
+                session.monitor = std::mem::take(&mut old.monitor);
                 *old = session;
             }
             None => page_sessions.push(session),
@@ -386,6 +716,7 @@ impl Streamers {
         if send(&mut socket, &identified).await.is_ok() {
             info!("remote control streamer {page} device {device} connected");
             self.connected.notify_one();
+            self.resume_watching(&page, &device, number);
             let mut deadline = Instant::now() + Duration::from_secs(60);
             loop {
                 tokio::select! {
@@ -442,13 +773,67 @@ impl Streamers {
             Ok(MessageToAssistant::Response {
                 id: request_id,
                 result,
-                ..
+                data,
+            }) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
+                    if let Some(settings) = data
+                        .as_ref()
+                        .and_then(|data| data.get("getSettings"))
+                        .and_then(|settings| settings.get("data"))
+                        .filter(|settings| settings.is_object())
+                    {
+                        session.monitor.settings = Some(settings.clone());
+                        session.monitor.publish(Update::Settings {
+                            data: settings.clone(),
+                        });
+                    }
+                    if let Some(status) = data
+                        .as_ref()
+                        .and_then(|data| data.get("getStatus"))
+                        .filter(|status| status.is_object())
+                    {
+                        session.monitor.merge_status(
+                            status.get("general").cloned(),
+                            status.get("topLeft").cloned(),
+                            status.get("topRight").cloned(),
+                            false,
+                        );
+                    }
+                    if let Some(pending) = session.pending.remove(&request_id) {
+                        let _ = pending.send((result, data));
+                    }
+                }
+            }
+            Ok(MessageToAssistant::Event {
+                data:
+                    Event::Status {
+                        general,
+                        top_left,
+                        top_right,
+                    },
+            }) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
+                    session
+                        .monitor
+                        .merge_status(general, top_left, top_right, true);
+                }
+            }
+            Ok(MessageToAssistant::Event {
+                data: Event::State { data },
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(session) = sessions.get_mut(page, device, Some(number))
-                    && let Some(pending) = session.pending.remove(&request_id)
+                    && let Some(changes) = data.as_object()
                 {
-                    let _ = pending.send(result);
+                    let monitor = &mut session.monitor;
+                    if let Some(state) = monitor.state.as_object_mut() {
+                        for (key, value) in changes {
+                            state.insert(key.clone(), value.clone());
+                        }
+                    }
+                    monitor.publish(Update::State { data });
                 }
             }
             Ok(MessageToAssistant::Event {
@@ -477,8 +862,79 @@ impl Streamers {
             return false;
         };
         session.reconnecting = true;
+        session.status_requested = false;
         session.pending.clear();
+        if session.monitor.watchers > 0 {
+            session
+                .monitor
+                .publish(Update::Connection { connected: false });
+        }
         true
+    }
+
+    fn resume_watching(&self, page: &str, device: &str, number: u64) {
+        let mut sessions = self.sessions.lock().unwrap();
+        if let Some(session) = sessions.get_mut(page, device, Some(number))
+            && session.monitor.watchers > 0
+        {
+            session.start_status();
+            session
+                .monitor
+                .publish(Update::Connection { connected: true });
+        }
+    }
+
+    pub fn watch(&self, (page, device): (&str, &str)) -> Result<Watch, RequestError> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get_mut(page, device, None)
+            .ok_or(RequestError::Offline)?;
+        session.monitor.watchers += 1;
+        session.start_status();
+        if !session.monitor.polling {
+            session.monitor.polling = true;
+            tokio::spawn(poll_status(
+                self.sessions.clone(),
+                page.to_string(),
+                device.to_string(),
+                session.monitor.id,
+            ));
+        }
+        Ok(Watch {
+            snapshot: session.monitor.snapshot(!session.reconnecting),
+            events: session.monitor.events.subscribe(),
+            _guard: WatchGuard {
+                sessions: self.sessions.clone(),
+                page: page.to_string(),
+                device: device.to_string(),
+                monitor: session.monitor.id,
+            },
+        })
+    }
+
+    pub async fn control(
+        &self,
+        (page, device): (&str, &str),
+        control: Control,
+    ) -> Result<(), RequestError> {
+        let changes_settings = control.changes_settings();
+        self.request(
+            (page, device),
+            Request::Control(control),
+            Duration::from_secs(5),
+        )
+        .await?;
+        if changes_settings
+            && let Some(session) = self
+                .sessions
+                .lock()
+                .unwrap()
+                .get_mut(page, device, None)
+                .filter(|session| session.monitor.watchers > 0)
+        {
+            session.send(Request::GetSettings {});
+        }
+        Ok(())
     }
 
     fn remove(&self, page: &str, device: &str, number: u64) {
@@ -526,27 +982,22 @@ impl Streamers {
         (page, device): (&str, &str),
         data: Request,
         wait: Duration,
-    ) -> Result<(), RequestError> {
+    ) -> Result<Option<Value>, RequestError> {
         let (number, request_id, receiver) = {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions
                 .get_mut(page, device, None)
                 .filter(|session| !session.reconnecting)
                 .ok_or(RequestError::Offline)?;
-            session.next_request_id += 1;
-            let request_id = session.next_request_id;
+            if session.sender.is_closed() {
+                return Err(RequestError::Offline);
+            }
             let (sender, receiver) = oneshot::channel();
+            let request_id = session.send(data);
             session.pending.insert(request_id, sender);
-            session
-                .sender
-                .send(MessageToStreamer::Request {
-                    id: request_id,
-                    data,
-                })
-                .map_err(|_| RequestError::Offline)?;
             (session.number, request_id, receiver)
         };
-        let result = match timeout(wait, receiver).await {
+        let (result, data) = match timeout(wait, receiver).await {
             Ok(Ok(response)) => response,
             Ok(Err(_)) => return Err(RequestError::Offline),
             Err(_) => {
@@ -560,7 +1011,7 @@ impl Streamers {
         if result != (Outcome::Ok {}) {
             return Err(RequestError::Failed);
         }
-        Ok(())
+        Ok(data)
     }
 }
 
@@ -629,6 +1080,68 @@ mod tests {
             tip(9, TipKind::WheelOfLuck { count: 3 }),
             r#"{"request":{"id":9,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"wheelOfLuck":{"count":3}},"requestId":"ORDER1"}}}}"#
         );
+        let request = |id, data| encode(&MessageToStreamer::Request { id, data });
+        assert_eq!(
+            request(10, Request::GetSettings {}),
+            r#"{"request":{"id":10,"data":{"getSettings":{}}}}"#
+        );
+        assert_eq!(
+            request(
+                11,
+                Request::StartStatus {
+                    interval: 1,
+                    filter: StatusFilter { top_right: true }
+                }
+            ),
+            r#"{"request":{"id":11,"data":{"startStatus":{"interval":1,"filter":{"topRight":true}}}}}"#
+        );
+        assert_eq!(
+            request(12, Request::StopStatus {}),
+            r#"{"request":{"id":12,"data":{"stopStatus":{}}}}"#
+        );
+        assert_eq!(
+            request(19, Request::GetStatus {}),
+            r#"{"request":{"id":19,"data":{"getStatus":{}}}}"#
+        );
+        let control = |id, control| request(id, Request::Control(control));
+        assert_eq!(
+            control(13, Control::SetMute { on: true }),
+            r#"{"request":{"id":13,"data":{"setMute":{"on":true}}}}"#
+        );
+        assert_eq!(
+            control(14, Control::SetZoom { x: 2.5 }),
+            r#"{"request":{"id":14,"data":{"setZoom":{"x":2.5}}}}"#
+        );
+        assert_eq!(
+            control(
+                15,
+                Control::SetScene {
+                    id: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F".parse().unwrap()
+                }
+            ),
+            r#"{"request":{"id":15,"data":{"setScene":{"id":"e621e1f8-c36c-495a-93fc-0c247a3e6e5f"}}}}"#
+        );
+        assert_eq!(
+            control(
+                17,
+                Control::SetSrtConnectionPriority {
+                    id: "0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60".parse().unwrap(),
+                    priority: 3,
+                    enabled: false
+                }
+            ),
+            r#"{"request":{"id":17,"data":{"setSrtConnectionPriority":{"id":"0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60","priority":3,"enabled":false}}}}"#
+        );
+        assert_eq!(
+            control(18, Control::ReloadBrowserWidgets {}),
+            r#"{"request":{"id":18,"data":{"reloadBrowserWidgets":{}}}}"#
+        );
+        assert!(serde_json::from_str::<Control>(r#"{"setAutoSceneSwitcher":{}}"#).is_err());
+        assert!(serde_json::from_str::<Control>(r#"{"setStream":{"id":"A"}}"#).is_err());
+        assert!(serde_json::from_str::<Control>(r#"{"setScene":{"id":"C2"}}"#).is_err());
+        assert!(serde_json::from_str::<Control>(r#"{"setMic":{"id":"bt"}}"#).is_ok());
+        assert!(serde_json::from_str::<Control>(r#"{"getStatus":{}}"#).is_err());
+        assert!(serde_json::from_str::<Control>(r#"{"tip":{}}"#).is_err());
     }
 
     #[test]
@@ -690,6 +1203,26 @@ mod tests {
                 data: None,
             }
         );
+        assert_eq!(
+            decode(
+                r#"{"response":{"id":2,"result":{"ok":{}},"data":{"getSettings":{"data":{"streams":[{"id":"A","name":"Twitch"}],"scenes":[],"bitratePresets":[],"mics":[],"srt":{"connectionPrioritiesEnabled":false,"connectionPriorities":[]}}}}}}"#
+            ),
+            MessageToAssistant::Response {
+                id: 2,
+                result: Outcome::Ok {},
+                data: Some(serde_json::json!({
+                    "getSettings": {
+                        "data": {
+                            "streams": [{"id": "A", "name": "Twitch"}],
+                            "scenes": [],
+                            "bitratePresets": [],
+                            "mics": [],
+                            "srt": {"connectionPrioritiesEnabled": false, "connectionPriorities": []},
+                        }
+                    }
+                })),
+            }
+        );
     }
 
     #[test]
@@ -729,12 +1262,73 @@ mod tests {
                 },
             }
         );
+        assert_eq!(
+            decode(
+                r#"{"event":{"data":{"status":{"topRight":{"bitrate":{"message":"5.2 Mbps (1.2 GB)","ok":true},"bitrateInfo":{"bitsPerSecond":5200000,"totalBytes":1200000000},"bondingInfo":[{"name":"Cellular","bytesPerSecond":400000,"rtt":45},{"name":"WiFi","bytesPerSecond":250000}]}}}}}"#
+            ),
+            MessageToAssistant::Event {
+                data: Event::Status {
+                    general: None,
+                    top_left: None,
+                    top_right: Some(serde_json::json!({
+                        "bitrate": {"message": "5.2 Mbps (1.2 GB)", "ok": true},
+                        "bitrateInfo": {"bitsPerSecond": 5200000, "totalBytes": 1200000000u64},
+                        "bondingInfo": [
+                            {"name": "Cellular", "bytesPerSecond": 400000, "rtt": 45},
+                            {"name": "WiFi", "bytesPerSecond": 250000},
+                        ],
+                    })),
+                },
+            }
+        );
+        assert_eq!(
+            decode(
+                r#"{"event":{"data":{"state":{"data":{"muted":true,"autoSceneSwitcher":{}}}}}}"#
+            ),
+            MessageToAssistant::Event {
+                data: Event::State {
+                    data: serde_json::json!({"muted": true, "autoSceneSwitcher": {}}),
+                },
+            }
+        );
         assert!(
             serde_json::from_str::<MessageToAssistant>(
-                r#"{"event":{"data":{"log":{"entry":"x"}}}}"#
+                r#"{"event":{"data":{"stats":{"data":{}}}}}"#
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn samples_are_taken_from_the_top_right_status() {
+        let sample = Sample::of(&serde_json::json!({
+            "bitrateInfo": {"bitsPerSecond": 5200000, "totalBytes": 1200000000u64},
+            "bondingInfo": [
+                {"name": "Cellular", "bytesPerSecond": 400000, "rtt": 45},
+                {"name": "WiFi", "bytesPerSecond": 250000},
+                {"bytesPerSecond": 1},
+            ],
+        }));
+        assert_eq!(sample.bitrate, Some(5_200_000));
+        assert_eq!(sample.total_bytes, Some(1_200_000_000));
+        assert_eq!(
+            sample.bonding,
+            vec![
+                BondingSample {
+                    name: "Cellular".to_string(),
+                    bytes_per_second: 400_000,
+                    rtt: Some(45),
+                },
+                BondingSample {
+                    name: "WiFi".to_string(),
+                    bytes_per_second: 250_000,
+                    rtt: None,
+                },
+            ]
+        );
+        let empty = Sample::of(&serde_json::json!({"uptime": {"message": "1:00:00"}}));
+        assert_eq!(empty.bitrate, None);
+        assert!(empty.bonding.is_empty());
     }
 
     #[test]
@@ -773,6 +1367,35 @@ mod tests {
             .len(),
             100
         );
+    }
+
+    #[tokio::test]
+    async fn watchers_of_a_removed_session_leave_the_next_one_alone() {
+        let streamers = Streamers::new(Duration::ZERO);
+        let old = streamers.connect("page", "device").unwrap();
+        let stale = streamers.watch(("page", "device")).unwrap();
+        streamers.remove("page", "device", old.number);
+        let mut new = streamers.connect("page", "device").unwrap();
+        let watch = streamers.watch(("page", "device")).unwrap();
+        drop(stale);
+        let watchers = |streamers: &Streamers| {
+            streamers
+                .sessions
+                .lock()
+                .unwrap()
+                .get_mut("page", "device", None)
+                .map(|session| session.monitor.watchers)
+        };
+        assert_eq!(watchers(&streamers), Some(1));
+        let mut sent = vec![];
+        while let Ok(message) = new.receiver.try_recv() {
+            sent.push(encode(&message));
+        }
+        assert!(sent.iter().any(|message| message.contains("startStatus")));
+        assert!(!sent.iter().any(|message| message.contains("stopStatus")));
+        drop(watch);
+        assert_eq!(watchers(&streamers), Some(0));
+        assert!(encode(&new.receiver.try_recv().unwrap()).contains("stopStatus"));
     }
 
     #[test]

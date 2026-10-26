@@ -1,4 +1,6 @@
+import json as jsonlib
 import logging
+import time
 from urllib.parse import parse_qs
 from urllib.parse import quote
 from urllib.parse import urlsplit
@@ -25,13 +27,18 @@ class Client:
         self.url = url
         self.session = session
 
-    def request(self, method: str, path: str, json=None, headers: dict | None = None) -> requests.Response:
+    def request(
+        self, method: str, path: str, json=None, headers: dict | None = None, stream: bool = False
+    ) -> requests.Response:
         headers = {"origin": FRONTEND_URL, **(headers or {})}
         if self.session is not None:
             headers["authorization"] = f"Bearer {self.session}"
         LOGGER.debug("%s %s %s", method, path, json)
-        response = requests.request(method, f"{self.url}{path}", json=json, headers=headers, timeout=TIMEOUT)
-        LOGGER.debug("%s %s -> %s %s", method, path, response.status_code, response.text)
+        response = requests.request(
+            method, f"{self.url}{path}", json=json, headers=headers, timeout=TIMEOUT, stream=stream
+        )
+        if not stream:
+            LOGGER.debug("%s %s -> %s %s", method, path, response.status_code, response.text)
         return response
 
     def call(self, method: str, path: str, json=None):
@@ -238,6 +245,18 @@ class Dashboard(Client):
     def moderated_account(self, page_id: str) -> dict:
         return self.get(f"/account/pages/{quote(page_id, safe='')}")
 
+    def device_events(self, page_id: str, device: str) -> "DeviceEvents":
+        path = f"/account/pages/{quote(page_id, safe='')}/devices/{quote(device, safe='')}/events"
+        response = self.request("GET", path, headers={"accept": "text/event-stream"}, stream=True)
+        if not response.ok:
+            raise BackendError(response.status_code, response.text)
+        return DeviceEvents(response)
+
+    def control_device(self, page_id: str, device: str, control: dict) -> dict:
+        return self.post(
+            f"/account/pages/{quote(page_id, safe='')}/devices/{quote(device, safe='')}/control", control
+        )
+
     def moderated_settings(self, page_id: str, **changes) -> dict:
         """Saves the moderated page's settings with some changed, like the moderator's dashboard does."""
         settings = self.moderated_account(page_id)["settings"]
@@ -339,3 +358,41 @@ class Subscriber(Viewer):
 
     def spin_wheel(self, message: str | None = None) -> dict:
         return self.post(self._path("/spin/subscriber"), {"message": message})
+
+
+class DeviceEvents:
+    """The server-sent events of a device page, read one at a time."""
+
+    def __init__(self, response: requests.Response):
+        self._response = response
+        self._lines = response.iter_lines(decode_unicode=True)
+
+    def next(self, timeout: float = 10) -> tuple[str, dict]:
+        """The next event with data as (name, data), skipping keep alive comments."""
+        deadline = time.monotonic() + timeout
+        name = "message"
+        data: list[str] = []
+        for raw in self._lines:
+            line = raw if isinstance(raw, str) else raw.decode()
+            if time.monotonic() > deadline:
+                raise TimeoutError("No event in time.")
+            if line.startswith("event:"):
+                name = line[6:].strip()
+            elif line.startswith("data:"):
+                data.append(line[5:].strip())
+            elif line == "":
+                if data:
+                    return name, jsonlib.loads("\n".join(data))
+                name = "message"
+        raise EOFError("The event stream ended.")
+
+    def wait_for(self, name: str, timeout: float = 10) -> dict:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            event, data = self.next(timeout)
+            if event == name:
+                return data
+        raise TimeoutError(f"No {name} event in time.")
+
+    def close(self):
+        self._response.close()
