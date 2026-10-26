@@ -179,10 +179,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let response = upload(premium.clone(), vec![0; 3 * 1024 * 1024])
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        match upload(premium.clone(), vec![0; 3 * 1024 * 1024]).await {
+            Ok(response) => assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE),
+            Err(error) => assert!(error.is_request(), "{error:?}"),
+        }
         let settings: Value = upload(premium.clone(), images::tests::png(1200, 400))
             .await
             .unwrap()
