@@ -143,9 +143,34 @@ function takeViewerSignIn(): { viewer: string | null; failed: string | null; sec
   return { viewer, failed, section };
 }
 
+const draftKey = "viewerSignInDraft";
+
+type Draft = {
+  page?: string;
+  name?: string;
+  tip?: { choice: number | "other"; other: string; message: string };
+  spin?: { spins: number; price: number; message: string };
+  effect?: { effect: string | null; message: string };
+};
+
+function takeDraft(): Draft {
+  try {
+    const saved = sessionStorage.getItem(draftKey);
+    sessionStorage.removeItem(draftKey);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+}
+
+const draft = takeDraft();
+
+const restored = (id: string): Draft => (draft.page === id ? draft : {});
+
 function signInAsViewer(platform: Platform, id: string, section: Section) {
   try {
     sessionStorage.setItem(sectionKey, section);
+    sessionStorage.setItem(draftKey, JSON.stringify({ ...draft, page: id }));
   } catch {}
   location.href = viewerSignInUrl(platform, id);
 }
@@ -883,11 +908,17 @@ function TipJar(props: {
   onError: (error: unknown) => void;
   onPaid: (text: string) => void;
 }) {
+  const saved = restored(props.id).tip;
   const [choice, setChoice] = createSignal<number | "other">(
-    props.tips.amounts[Math.min(1, props.tips.amounts.length - 1)],
+    saved && (saved.choice === "other" || props.tips.amounts.includes(saved.choice))
+      ? saved.choice
+      : props.tips.amounts[Math.min(1, props.tips.amounts.length - 1)],
   );
-  const [other, setOther] = createSignal("");
-  const [message, setMessage] = createSignal("");
+  const [other, setOther] = createSignal(saved?.other ?? "");
+  const [message, setMessage] = createSignal(saved?.message ?? "");
+  createEffect(() => {
+    draft.tip = { choice: choice(), other: other(), message: message() };
+  });
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(null);
   let form: HTMLFormElement | undefined;
@@ -1017,8 +1048,12 @@ function EffectJar(props: {
   onAllowance: () => void;
   signInFailed: string | null;
 }) {
-  const [chosen, setChosen] = createSignal<string | null>(null);
-  const [message, setMessage] = createSignal("");
+  const saved = restored(props.id).effect;
+  const [chosen, setChosen] = createSignal<string | null>(saved?.effect ?? null);
+  const [message, setMessage] = createSignal(saved?.message ?? "");
+  createEffect(() => {
+    draft.effect = { effect: chosen(), message: message() };
+  });
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(
     props.signInFailed ? { text: props.signInFailed } : null,
@@ -1531,8 +1566,17 @@ function SpinWheel(props: {
   onAllowance: () => void;
   signInFailed: string | null;
 }) {
-  const [choice, setChoice] = createSignal(props.spin?.options[0] ?? { spins: 1, price: 0 });
-  const [message, setMessage] = createSignal("");
+  const saved = restored(props.id).spin;
+  const [choice, setChoice] = createSignal(
+    props.spin?.options.find(
+      (option) => option.spins === saved?.spins && option.price === saved.price,
+    ) ??
+      props.spin?.options[0] ?? { spins: 1, price: 0 },
+  );
+  const [message, setMessage] = createSignal(saved?.message ?? "");
+  createEffect(() => {
+    draft.spin = { spins: choice().spins, price: choice().price, message: message() };
+  });
   const [busy, setBusy] = createSignal(false);
   const [result, setResult] = createSignal<Result | null>(
     props.signInFailed ? { text: props.signInFailed } : null,
@@ -1779,7 +1823,10 @@ function WaysToTip(props: {
 function Viewer(props: { id: string | null; platform: Platform | null; login: string | null }) {
   const [id, setId] = createSignal(props.id);
   const [unknown, setUnknown] = createSignal(false);
-  const [name, setName] = createSignal(readName());
+  const [name, setName] = createSignal(draft.name ?? readName());
+  createEffect(() => {
+    draft.name = name();
+  });
   const [subSpins, setSubSpins] = createSignal<Tiers | null>(null, { equals: sameData });
   const [viewer, setViewer] = createSignal<string | null>(null);
   const [spinAllowance, setSpinAllowance] = createSignal<Allowance | null>(null);
