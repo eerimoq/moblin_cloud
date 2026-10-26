@@ -2423,8 +2423,10 @@ function MoblinSettings(props: {
                     when={renaming() === device.id}
                     fallback={
                       <>
-                        <span class="min-w-0 flex-1 truncate font-semibold">{device.name}</span>
-                        <span class="text-[15px] text-muted">{gets(device)}</span>
+                        <span class="flex min-w-0 flex-1 flex-col">
+                          <span class="break-words font-semibold">{device.name}</span>
+                          <span class="text-[15px] text-muted">{gets(device)}</span>
+                        </span>
                         <button
                           type="button"
                           class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
