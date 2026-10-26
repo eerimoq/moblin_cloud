@@ -200,6 +200,11 @@
   }
 }
 
+@utility cutout {
+  filter: drop-shadow(3px 0 0 var(--color-page)) drop-shadow(-3px 0 0 var(--color-page))
+    drop-shadow(0 3px 0 var(--color-page)) drop-shadow(0 -3px 0 var(--color-page));
+}
+
 @utility sticker {
   filter: drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff) drop-shadow(0 2px 0 #fff)
     drop-shadow(0 -2px 0 #fff) drop-shadow(0 10px 18px rgb(0 0 0 / 0.45));
