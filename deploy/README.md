@@ -2,7 +2,8 @@
 
 Runs your own copy of the website and its backend on one server with Docker
 Compose, from the published images: the backend, the frontend in Caddy,
-which serves the website on plain HTTP and proxies `/api` to the backend, and
+which serves the website on plain HTTP and proxies `/api` to the backend at
+`BACKEND_HOST` (`backend:8080` by default), and
 in front of them the stock Caddy image, which gets the certificate from Let's
 Encrypt and serves HTTPS.
 
