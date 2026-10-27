@@ -205,9 +205,6 @@ pub enum Control {
     },
     ReloadBrowserWidgets {},
     InstantReplay {},
-    SetStream {
-        id: Uuid,
-    },
     SetAutoSceneSwitcher {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<Uuid>,

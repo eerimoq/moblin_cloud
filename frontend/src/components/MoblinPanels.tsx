@@ -1,6 +1,5 @@
 import { createSignal, For, Match, Show, Switch } from "solid-js";
 import Icon from "./Icon";
-import { ask } from "./Modal";
 import {
   Choices,
   Empty,
@@ -127,33 +126,6 @@ function Priorities(props: { remote: Remote }) {
   );
 }
 
-const switchStream = async (remote: Remote, id: string) => {
-  const name = remote.settings?.streams.find((stream) => stream.id === id)?.name ?? "";
-  if (
-    !remote.state.streaming ||
-    (await ask(t("Switch this device to the stream {name}?", { name }), t("Switch stream")))
-  ) {
-    await remote.control({ setStream: { id } });
-  }
-};
-
-function Streams(props: { remote: Remote }) {
-  return (
-    <Show when={props.remote.settings} fallback={<Loading />}>
-      {(settings) => (
-        <Choices
-          items={settings().streams}
-          selected={undefined}
-          icon="broadcast"
-          disabled={props.remote.disabled("setStream")}
-          footer={t("Pick a stream to switch the device to it.")}
-          onPick={(id) => void switchStream(props.remote, id)}
-        />
-      )}
-    </Show>
-  );
-}
-
 function AutoSceneSwitchers(props: { remote: Remote }) {
   const switchers = () => props.remote.settings?.autoSceneSwitchers ?? [];
   return (
@@ -204,13 +176,12 @@ function Macros(props: { remote: Remote }) {
   );
 }
 
-type SettingsPage = "root" | "streams" | "macros";
+type SettingsPage = "root" | "macros";
 
 function Settings(props: { remote: Remote; onClose: () => void }) {
   const [page, setPage] = createSignal<SettingsPage>("root");
   const titles = (): Record<SettingsPage, string> => ({
     root: t("Settings"),
-    streams: t("Streams"),
     macros: t("Macros"),
   });
   return (
@@ -222,12 +193,8 @@ function Settings(props: { remote: Remote; onClose: () => void }) {
       <Switch>
         <Match when={page() === "root"}>
           <Group footer={t("Only the settings Moblin shares over remote control are here.")}>
-            <NavRow icon="broadcast" label={t("Streams")} onClick={() => setPage("streams")} />
             <NavRow icon="list" label={t("Macros")} onClick={() => setPage("macros")} />
           </Group>
-        </Match>
-        <Match when={page() === "streams"}>
-          <Streams remote={props.remote} />
         </Match>
         <Match when={page() === "macros"}>
           <Macros remote={props.remote} />

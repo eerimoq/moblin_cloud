@@ -166,7 +166,6 @@ export type Control =
   | { setSrtConnectionPrioritiesEnabled: { enabled: boolean } }
   | { reloadBrowserWidgets: object }
   | { instantReplay: object }
-  | { setStream: { id: string } }
   | { setAutoSceneSwitcher: { id?: string } }
   | { setPreviewStream: { on: boolean } }
   | { setFilter: { filter: Record<MoblinFilter, object>; on: boolean } }

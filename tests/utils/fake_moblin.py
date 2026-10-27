@@ -351,9 +351,6 @@ class FakeMoblin:
                 if priority["id"] == body["id"].upper():
                     priority["priority"] = max(1, min(10, body["priority"]))
                     priority["enabled"] = body["enabled"]
-        elif kind == "setStream":
-            for stream in self.database["streams"]:
-                stream["enabled"] = stream["id"] == body["id"].upper()
         elif kind == "setAutoSceneSwitcher":
             switcher = body.get("id")
             self.database["autoSceneSwitchers"]["switcherId"] = switcher and switcher.upper()
