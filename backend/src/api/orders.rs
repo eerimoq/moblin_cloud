@@ -342,13 +342,9 @@ async fn settle_one(
             info!("{provider} order {order_id} is not captured yet");
         }
         PaymentStatus::NotCaptured => {
-            info!("{provider} order {order_id} was not captured");
-            if let Err(error) = api
-                .orders
-                .transition(order_id, Stage::Capturing, Stage::Created)
-            {
-                warn!("{error:#}");
-            }
+            info!("{provider} order {order_id} was never captured, giving it up");
+            api.orders.remove(order_id);
+            cancel_expired(api, order_id, order).await;
         }
         PaymentStatus::Gone => {
             info!("{provider} order {order_id} is gone");
@@ -360,20 +356,24 @@ async fn settle_one(
 
 pub async fn settle(api: &Api, min_age: Duration) {
     for unsettled in api.orders.unsettled(min_age) {
-        settle_one(api, &unsettled.id, &unsettled.order, true).await;
+        settle_one(api, &unsettled.id, &unsettled.order, unsettled.expired).await;
     }
 }
 
 pub(super) async fn expire_orders(api: &Api) {
     for (order_id, order) in api.orders.expire() {
-        if let Payee::Stripe(account) = &order.payee
-            && let Some(stripe) = &api.stripe
-        {
-            match stripe.cancel(&order_id, account).await {
-                Ok(()) => info!("cancelled expired Stripe payment {order_id}"),
-                Err(error) => {
-                    warn!("cancelling expired Stripe payment {order_id} failed: {error:#}")
-                }
+        cancel_expired(api, &order_id, &order).await;
+    }
+}
+
+async fn cancel_expired(api: &Api, order_id: &str, order: &Order) {
+    if let Payee::Stripe(account) = &order.payee
+        && let Some(stripe) = &api.stripe
+    {
+        match stripe.cancel(order_id, account).await {
+            Ok(()) => info!("cancelled expired Stripe payment {order_id}"),
+            Err(error) => {
+                warn!("cancelling expired Stripe payment {order_id} failed: {error:#}")
             }
         }
     }
@@ -631,11 +631,45 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         settle(&api, Duration::ZERO).await;
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
         *fake.capture_later.lock().unwrap() = false;
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn tried_captures_are_only_given_up_after_a_lookup() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.capture_later.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        api.orders.age("ORDER1", 4 * 60 * 60);
+        expire_orders(&api).await;
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        *fake.captured.lock().unwrap() = true;
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn tried_captures_never_completed_are_given_up_after_three_hours() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.capture_later.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        api.orders.age("ORDER1", 2 * 60 * 60);
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        api.orders.age("ORDER1", 2 * 60 * 60);
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1"), None);
+        assert!(api.deliveries.pending().is_empty());
     }
 
     #[tokio::test]

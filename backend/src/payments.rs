@@ -153,6 +153,7 @@ impl Stage {
 pub struct Unsettled {
     pub id: String,
     pub order: Order,
+    pub expired: bool,
 }
 
 pub struct Orders {
@@ -312,23 +313,33 @@ impl Orders {
         let database = self.database.lock();
         let rows = database
             .prepare_cached(
-                "SELECT id, details FROM orders WHERE state = 'capturing' AND updated_at <= ?1 ORDER BY updated_at",
+                "SELECT id, details, created_at < ?2 FROM orders WHERE state = 'capturing' AND updated_at <= ?1 ORDER BY updated_at",
             )
             .and_then(|mut statement| {
                 statement
-                    .query_map([now().saturating_sub(min_age.as_secs())], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })?
+                    .query_map(
+                        params![
+                            now().saturating_sub(min_age.as_secs()),
+                            now().saturating_sub(3 * 60 * 60)
+                        ],
+                        |row| {
+                            Ok((
+                                row.get::<_, String>(0)?,
+                                row.get::<_, String>(1)?,
+                                row.get::<_, bool>(2)?,
+                            ))
+                        },
+                    )?
                     .collect::<rusqlite::Result<Vec<_>>>()
             });
         match rows {
             Ok(rows) => rows
                 .into_iter()
-                .filter_map(|(id, details)| {
+                .filter_map(|(id, details, expired)| {
                     let order = serde_json::from_str(&details)
                         .map_err(|error| warn!("failed to parse order {id}: {error}"))
                         .ok()?;
-                    Some(Unsettled { id, order })
+                    Some(Unsettled { id, order, expired })
                 })
                 .collect(),
             Err(error) => {
@@ -467,6 +478,7 @@ mod tests {
             vec![Unsettled {
                 id: "ORDER1".to_string(),
                 order: order(),
+                expired: false,
             }]
         );
         assert!(orders.unsettled(Duration::from_secs(60)).is_empty());
