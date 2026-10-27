@@ -75,6 +75,8 @@ const topRightItems: [TopRightItem, string][] = [
 
 const emptyStatus = (): DeviceStatus => ({ general: {}, topLeft: {}, topRight: {} });
 
+const filled = <T extends object>(part: T) => (Object.keys(part).length > 0 ? part : undefined);
+
 const historyWindow = 10 * 60 * 1000;
 
 const formatBits = (bitsPerSecond: number) =>
@@ -921,10 +923,25 @@ function DeviceView(props: {
             const snapshot = data as DeviceSnapshot;
             setLoaded(true);
             setConnected(snapshot.connected);
-            setStatus(snapshot.status);
-            setState(snapshot.state);
-            setSettings(snapshot.settings);
-            setHistory(snapshot.history);
+            if (snapshot.connected) {
+              setStatus((current) => ({
+                general: filled(snapshot.status.general) ?? current.general,
+                topLeft: filled(snapshot.status.topLeft) ?? current.topLeft,
+                topRight: filled(snapshot.status.topRight) ?? current.topRight,
+              }));
+              setState((current) => ({ ...current, ...snapshot.state }));
+              setSettings((current) => snapshot.settings ?? current);
+            } else {
+              setStatus(emptyStatus());
+              setState({});
+              setSettings(snapshot.settings);
+            }
+            setHistory((current) => {
+              const first = snapshot.history[0]?.at ?? Number.POSITIVE_INFINITY;
+              return [...current.filter((sample) => sample.at < first), ...snapshot.history].slice(
+                -600,
+              );
+            });
             break;
           }
           case "status": {
