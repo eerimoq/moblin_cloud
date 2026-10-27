@@ -995,8 +995,8 @@ function DeviceView(props: {
   const online = () => connected() && streaming();
   const sections: Section[] = [
     {
-      id: "screen",
-      label: t("Screen"),
+      id: "phone",
+      label: t("Phone"),
       icon: "screen",
       status: () => ({ on: online(), text: online() ? t("Connected") : t("Not connected") }),
     },
@@ -1030,7 +1030,7 @@ function DeviceView(props: {
   const { active, select } = createSectionChoice(() => sections);
 
   createEffect(() => {
-    if (active() !== "screen") {
+    if (active() !== "phone") {
       return;
     }
     const stop = subscribe(devicePreviewUrl(props.page, props.device), props.session, {
@@ -1075,9 +1075,9 @@ function DeviceView(props: {
             onSelect={select}
           />
           <div class="min-w-0">
-            <div hidden={active() !== "screen"}>
+            <div hidden={active() !== "phone"}>
               <div class={cardClass}>
-                <h2 class="text-[23px] font-semibold">{t("Screen")}</h2>
+                <h2 class="text-[23px] font-semibold">{t("Phone")}</h2>
                 <p class="text-[15px] text-ink-2">
                   {t(
                     "What the Moblin app shows on the device, with the same buttons to control it.",
