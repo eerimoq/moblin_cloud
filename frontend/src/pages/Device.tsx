@@ -886,11 +886,11 @@ function DeviceView(props: {
   session: string;
   page: string;
   device: string;
-  name: string | undefined;
+  nameOf: (device: string) => string | undefined;
   onSignOut: () => void;
 }) {
   const [loaded, setLoaded] = createSignal(false);
-  const [name, setName] = createSignal("");
+  const [shown, setShown] = createSignal({ device: "", name: "" });
   const [connected, setConnected] = createSignal(false);
   const [streaming, setStreaming] = createSignal(false);
   const [status, setStatus] = createSignal<DeviceStatus>(emptyStatus());
@@ -899,15 +899,24 @@ function DeviceView(props: {
   const [history, setHistory] = createSignal<Sample[]>([]);
   const [pending, setPending] = createSignal<string[]>([]);
 
-  onMount(() => {
-    const stop = subscribe(deviceEventsUrl(props.page, props.device), props.session, {
+  createEffect(() => {
+    let fresh = true;
+    const device = props.device;
+    const stop = subscribe(deviceEventsUrl(props.page, device), props.session, {
       onOpen: () => setStreaming(true),
       onEvent: (kind, data) => {
         switch (kind) {
           case "snapshot": {
             const snapshot = data as DeviceSnapshot;
+            if (fresh) {
+              fresh = false;
+              setStatus(emptyStatus());
+              setState({});
+              setSettings(null);
+              setHistory([]);
+            }
             setLoaded(true);
-            setName(snapshot.name);
+            setShown({ device, name: snapshot.name });
             setConnected(snapshot.connected);
             if (snapshot.connected) {
               setStatus((current) => ({
@@ -1027,7 +1036,7 @@ function DeviceView(props: {
               <Icon name="smartphone" class="size-8" />
             </span>
             <span class="font-display text-2xl font-semibold text-ink">
-              {t("{name} is not connected", { name: props.name ?? name() })}
+              {t("{name} is not connected", { name: props.nameOf(shown().device) ?? shown().name })}
             </span>
             <span class="text-[15px] text-ink-2">
               {t("This page updates as soon as it connects again.")}
@@ -1075,6 +1084,22 @@ export default function DevicePage(props: { page: string; device: string }) {
     }
   });
 
+  const [device, setDevice] = createSignal(props.device);
+  const onPopState = () => {
+    const match = location.pathname.match(/\/device\/[^/]+\/([^/]+)\/?$/);
+    if (match) {
+      setDevice(decodeURIComponent(match[1]!));
+    }
+  };
+  addEventListener("popstate", onPopState);
+  onCleanup(() => removeEventListener("popstate", onPopState));
+  const pick = (picked: string) => {
+    if (picked !== device()) {
+      history.pushState(null, "", `${deviceUrl(props.page, picked)}${location.hash}`);
+      setDevice(picked);
+    }
+  };
+
   const [devices, setDevices] = createSignal<Device[]>([]);
   createEffect(() => {
     const current = session();
@@ -1108,11 +1133,7 @@ export default function DevicePage(props: { page: string; device: string }) {
         <Show when={session()}>
           {(current) => (
             <div class="ml-auto flex min-w-0 items-center gap-3">
-              <DevicePicker
-                devices={devices()}
-                picked={props.device}
-                onPick={(device) => location.assign(deviceUrl(props.page, device))}
-              />
+              <DevicePicker devices={devices()} picked={device()} onPick={pick} />
               <Show when={current().account.moderating.length > 0}>
                 <StreamerPicker
                   account={current().account}
@@ -1149,8 +1170,8 @@ export default function DevicePage(props: { page: string; device: string }) {
                 <DeviceView
                   session={current.session}
                   page={props.page}
-                  device={props.device}
-                  name={devices().find((device) => device.id === props.device)?.name}
+                  device={device()}
+                  nameOf={(id) => devices().find((candidate) => candidate.id === id)?.name}
                   onSignOut={signOut}
                 />
               )}
