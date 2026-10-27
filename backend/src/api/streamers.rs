@@ -369,6 +369,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_frontends_origin_is_allowed() {
+        let mut api = build_api(None, None, None, None, None, Duration::ZERO);
+        api.auth.frontend_url = "https://example.com/cloud".to_string();
+        let (address, _) = start_api_built(api).await;
+        let allowed = async |origin: &str| {
+            let response = reqwest::Client::new()
+                .get(format!("http://{address}/streamers"))
+                .header("origin", origin)
+                .send()
+                .await
+                .unwrap();
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .map(|value| value.to_str().unwrap().to_string())
+        };
+        for origin in ["https://example.com", "https://moblin.app"] {
+            assert_eq!(
+                allowed(origin).await,
+                Some("https://example.com".to_string())
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn up_to_5_devices_connect_with_one_key() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();

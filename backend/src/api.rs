@@ -99,8 +99,12 @@ pub struct Api {
 }
 
 pub fn router(api: Arc<Api>) -> Router {
+    let origin = reqwest::Url::parse(&api.auth.frontend_url)
+        .expect("the frontend URL is not a URL")
+        .origin()
+        .ascii_serialization();
     let cors = CorsLayer::new()
-        .allow_origin(HeaderValue::from_static("https://moblin.app"))
+        .allow_origin(HeaderValue::from_str(&origin).expect("the frontend URL is not an origin"))
         .allow_methods([Method::GET, Method::POST])
         .allow_headers(Any);
     Router::new()

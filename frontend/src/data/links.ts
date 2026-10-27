@@ -2,7 +2,7 @@ import { asset } from "../asset";
 import { t } from "../i18n";
 
 export const links = {
-  api: "https://api.moblin.app",
+  api: import.meta.env.VITE_API_URL ?? "https://api.moblin.app",
   appStore: "https://apps.apple.com/app/id6466745933",
   testFlight: "https://testflight.apple.com/join/PDpxEaGh",
   discord: "https://discord.gg/kh3KMng4JV",
