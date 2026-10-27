@@ -12,8 +12,8 @@ and 443. Then, on the server:
 
 ```
 mkdir moblin-cloud && cd moblin-cloud
-curl -O https://raw.githubusercontent.com/eerimoq/moblin_website/main/deploy/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/eerimoq/moblin_website/main/deploy/.env.example
+curl -O https://raw.githubusercontent.com/eerimoq/moblin_cloud/main/deploy/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/eerimoq/moblin_cloud/main/deploy/.env.example
 mkdir data
 sudo chown 65532:65532 data
 ```

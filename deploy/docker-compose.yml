@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/eerimoq/moblin_website-backend:${VERSION:-latest}
+    image: ghcr.io/eerimoq/moblin_cloud-backend:${VERSION:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -10,7 +10,7 @@ services:
     volumes:
       - ./data:/data
   frontend:
-    image: ghcr.io/eerimoq/moblin_website-frontend:${VERSION:-latest}
+    image: ghcr.io/eerimoq/moblin_cloud-frontend:${VERSION:-latest}
     restart: unless-stopped
     ports:
       - "80:80"
