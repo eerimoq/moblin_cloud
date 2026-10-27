@@ -10,7 +10,7 @@ projects live here:
 - `frontend/` — a static site (SolidJS + TypeScript + Tailwind v4 + Vite), deployed to GitHub Pages.
 - `backend/` — a small Rust (axum) service deployed at `https://api.moblin.app` as a Docker image. It serves the "Streamers" list and the "Erik is live on Twitch" status.
 
-`deploy/` runs a copy of both on one server with Docker Compose, from the images the deploy workflow publishes on every tag: the backend and the frontend (`frontend/Dockerfile`, the built site in Caddy, which proxies `/api` to the backend, `frontend/Caddyfile`); see its README.
+`deploy/` runs a copy of both on one server with Docker Compose, from the images the deploy workflow publishes on every tag: the backend and the frontend (`frontend/Dockerfile`, the built site in Caddy on plain HTTP, which proxies `/api` to the backend, `frontend/Caddyfile`, behind the stock Caddy image, which gets the certificate and serves HTTPS); see its README.
 
 `README.md` only covers getting started; the deploy flow, App Attest and the Twitch and PayPal setup are described below and in the code.
 

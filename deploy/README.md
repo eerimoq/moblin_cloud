@@ -1,9 +1,10 @@
 # Deploy
 
 Runs your own copy of the website and its backend on one server with Docker
-Compose, from the published images: the backend, and the frontend in Caddy,
-which serves the website, proxies `/api` to the backend and gets certificates
-from Let's Encrypt.
+Compose, from the published images: the backend, the frontend in Caddy,
+which serves the website on plain HTTP and proxies `/api` to the backend, and
+in front of them the stock Caddy image, which gets the certificate from Let's
+Encrypt and serves HTTPS.
 
 ## Server
 

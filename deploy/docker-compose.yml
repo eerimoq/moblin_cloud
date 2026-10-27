@@ -12,12 +12,14 @@ services:
   frontend:
     image: ghcr.io/eerimoq/moblin_cloud-frontend:${VERSION:-latest}
     restart: unless-stopped
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${DOMAIN} --to frontend:80
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
-    environment:
-      DOMAIN: ${DOMAIN}
     volumes:
       - caddy:/data
 volumes:
