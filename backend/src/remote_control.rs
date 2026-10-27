@@ -328,6 +328,12 @@ impl Monitor {
         let _ = self.events.send(Arc::new(update));
     }
 
+    fn disconnected(&mut self) {
+        self.status = empty_status();
+        self.state = Value::Object(Default::default());
+        self.publish(Update::Connection { connected: false });
+    }
+
     fn merge_status(
         &mut self,
         general: Option<Value>,
@@ -488,7 +494,7 @@ impl Sessions {
         if !session.reconnecting
             && let Some(monitor) = self.monitor_mut(page, &session.device)
         {
-            monitor.publish(Update::Connection { connected: false });
+            monitor.disconnected();
         }
     }
 
@@ -906,7 +912,7 @@ impl Streamers {
         session.status_requested = false;
         session.pending.clear();
         if let Some(monitor) = sessions.monitor_mut(page, device) {
-            monitor.publish(Update::Connection { connected: false });
+            monitor.disconnected();
         }
         self.changes.notify(page, Change::Page);
         true
@@ -1453,6 +1459,38 @@ mod tests {
         drop(watch);
         assert_eq!(watchers(&streamers), None);
         assert!(new.receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_disconnect_forgets_the_status_and_state() {
+        let streamers = Streamers::new(Duration::ZERO);
+        let old = streamers.connect("page", "device").unwrap();
+        let watch = streamers.watch(("page", "device"));
+        let on_icon = |_: &'static Icon| {};
+        streamers.handle(
+            "page",
+            "device",
+            old.number,
+            r#"{"event":{"data":{"status":{"general":{"batteryLevel":50},"topRight":{}}}}}"#,
+            &on_icon,
+        );
+        streamers.handle(
+            "page",
+            "device",
+            old.number,
+            r#"{"event":{"data":{"state":{"data":{"streaming":true}}}}}"#,
+            &on_icon,
+        );
+        let snapshot = streamers.watch(("page", "device")).snapshot;
+        assert_eq!(snapshot.status["general"]["batteryLevel"], 50);
+        assert_eq!(snapshot.state["streaming"], true);
+        assert_eq!(snapshot.history.len(), 1);
+        streamers.remove("page", "device", old.number);
+        let snapshot = streamers.watch(("page", "device")).snapshot;
+        assert_eq!(snapshot.status, empty_status());
+        assert_eq!(snapshot.state, serde_json::json!({}));
+        assert_eq!(snapshot.history.len(), 1);
+        drop(watch);
     }
 
     #[test]

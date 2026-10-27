@@ -486,7 +486,7 @@ function Items(props: { items: [ItemKey, string][]; of: Partial<Record<ItemKey, 
 const onOff = (on: boolean | undefined) =>
   on === undefined ? null : on ? { text: t("On"), tone: "on" as const } : { text: t("Off") };
 
-function StatusCard(props: { status: DeviceStatus }) {
+function StatusCard(props: { status: DeviceStatus; connected: boolean }) {
   const general = () => props.status.general;
   const flame = () => {
     switch (general().flame) {
@@ -538,7 +538,18 @@ function StatusCard(props: { status: DeviceStatus }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{t("Status")}</h2>
-      <Show when={!empty()} fallback={<Spinner />}>
+      <Show
+        when={!empty()}
+        fallback={
+          props.connected ? (
+            <Spinner />
+          ) : (
+            <p class="py-6 text-center text-[15px] text-muted">
+              {t("This Moblin is not connected.")}
+            </p>
+          )
+        }
+      >
         <div class="grid gap-3 sm:grid-cols-3">
           <For each={tiles()}>
             {([label, value]) => <Tile label={label} value={value.text} tone={value.tone} />}
@@ -951,9 +962,15 @@ function DeviceView(props: {
           case "settings":
             setSettings((data as { data: DeviceSettings }).data);
             break;
-          case "connection":
-            setConnected((data as { connected: boolean }).connected);
+          case "connection": {
+            const connected = (data as { connected: boolean }).connected;
+            setConnected(connected);
+            if (!connected) {
+              setStatus(emptyStatus());
+              setState({});
+            }
             break;
+          }
           default:
             break;
         }
@@ -1047,7 +1064,7 @@ function DeviceView(props: {
               />
             </div>
             <div hidden={active() !== "status"}>
-              <StatusCard status={status()} />
+              <StatusCard status={status()} connected={online()} />
             </div>
             <div hidden={active() !== "graphs"}>
               <Graphs history={history()} />
