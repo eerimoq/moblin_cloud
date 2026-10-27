@@ -25,7 +25,7 @@ export default defineConfig({
           if (
             req.url &&
             new RegExp(
-              `^${base}((dashboard/twitch|twitch|kick)/[^/?.]+|device/[^/?]+/[^/?]+)/?(\\?.*)?$`,
+              `^${base}((dashboard/twitch|twitch|kick)/[^/?.]+|device/[^/?]+(/[^/?]+)?)/?(\\?.*)?$`,
             ).test(req.url)
           ) {
             req.url = `${base}404.html`;

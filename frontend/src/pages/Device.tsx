@@ -26,7 +26,6 @@ import {
   deviceEventsUrl,
   type Account,
   type Device,
-  type Moderating,
   type AudioLevel,
   type Control,
   type DeviceSettings,
@@ -1086,9 +1085,9 @@ export default function DevicePage(props: { page: string; device: string }) {
 
   const [device, setDevice] = createSignal(props.device);
   const onPopState = () => {
-    const match = location.pathname.match(/\/device\/[^/]+\/([^/]+)\/?$/);
+    const match = location.pathname.match(/\/device\/[^/]+(?:\/([^/]+))?\/?$/);
     if (match) {
-      setDevice(decodeURIComponent(match[1]!));
+      setDevice(decodeURIComponent(match[1] ?? ""));
     }
   };
   addEventListener("popstate", onPopState);
@@ -1115,9 +1114,10 @@ export default function DevicePage(props: { page: string; device: string }) {
 
   const channel = (account: Account) =>
     account.moderating.find((channel) => channel.id === props.page) ?? null;
-  const dashboardOf = (picked: Moderating | null) =>
-    asset(picked ? `${pages.dashboard}${channelKey(picked)}` : pages.dashboard);
-  const dashboard = (account: Account) => dashboardOf(channel(account));
+  const dashboard = (account: Account) => {
+    const picked = channel(account);
+    return asset(picked ? `${pages.dashboard}${channelKey(picked)}` : pages.dashboard);
+  };
 
   createEffect(() => {
     const current = session();
@@ -1133,7 +1133,9 @@ export default function DevicePage(props: { page: string; device: string }) {
         <Show when={session()}>
           {(current) => (
             <div class="ml-auto flex min-w-0 items-center gap-3">
-              <DevicePicker devices={devices()} picked={device()} onPick={pick} />
+              <Show when={devices().length > 0}>
+                <DevicePicker devices={devices()} picked={device()} onPick={pick} />
+              </Show>
               <Show when={current().account.moderating.length > 0}>
                 <StreamerPicker
                   account={current().account}
@@ -1145,13 +1147,9 @@ export default function DevicePage(props: { page: string; device: string }) {
                       null;
                     const page = picked ? picked.id : current().account.settings.id;
                     const first = await fetchAccount(current().session, page)
-                      .then((account) => account.devices[0])
-                      .catch(() => undefined);
-                    location.assign(
-                      first
-                        ? `${deviceUrl(page, first.id)}${location.hash}`
-                        : `${dashboardOf(picked)}#moblin`,
-                    );
+                      .then((account) => account.devices[0]?.id ?? "")
+                      .catch(() => "");
+                    location.assign(`${deviceUrl(page, first)}${location.hash}`);
                   }}
                 />
               </Show>
@@ -1170,7 +1168,7 @@ export default function DevicePage(props: { page: string; device: string }) {
       <main>
         <Band tight>
           <Show when={!loading()} fallback={<Spinner />}>
-            <Show when={session()} keyed>
+            <Show when={device() ? session() : undefined} keyed>
               {(current) => (
                 <DeviceView
                   session={current.session}
