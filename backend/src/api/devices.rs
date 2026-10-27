@@ -229,7 +229,6 @@ mod tests {
                 "status": {"general": {}, "topLeft": {}, "topRight": {}},
                 "state": {},
                 "settings": null,
-                "history": [],
             })
         );
         assert_eq!(
@@ -315,8 +314,6 @@ mod tests {
         assert_eq!(snapshot2["status"]["topLeft"]["camera"]["message"], "Front");
         assert_eq!(snapshot2["state"], json!({"muted": false, "scene": "C2"}));
         assert_eq!(snapshot2["settings"], settings());
-        assert_eq!(snapshot2["history"].as_array().unwrap().len(), 1);
-        assert_eq!(snapshot2["history"][0]["bitrate"], 5200000);
         let _ = snapshot;
         assert_eq!(second.next().await.0, "settings");
         drop(events);

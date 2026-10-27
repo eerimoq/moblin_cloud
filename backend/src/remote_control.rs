@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -292,7 +292,6 @@ pub struct Snapshot {
     pub status: Value,
     pub state: Value,
     pub settings: Option<Value>,
-    pub history: Vec<Sample>,
 }
 
 struct Monitor {
@@ -301,7 +300,6 @@ struct Monitor {
     status: Value,
     state: Value,
     settings: Option<Value>,
-    history: VecDeque<Sample>,
     events: broadcast::Sender<Arc<Update>>,
 }
 
@@ -313,7 +311,6 @@ impl Default for Monitor {
             status: empty_status(),
             state: Value::Object(Default::default()),
             settings: None,
-            history: VecDeque::new(),
             events: broadcast::channel(256).0,
         }
     }
@@ -354,12 +351,6 @@ impl Monitor {
             .as_ref()
             .filter(|part| sampled && part.is_object())
             .map(Sample::of);
-        if let Some(sample) = &sample {
-            if self.history.len() >= 60 {
-                self.history.pop_front();
-            }
-            self.history.push_back(sample.clone());
-        }
         self.publish(Update::Status {
             general,
             top_left,
@@ -374,7 +365,6 @@ impl Monitor {
             status: self.status.clone(),
             state: self.state.clone(),
             settings: self.settings.clone(),
-            history: self.history.iter().cloned().collect(),
         }
     }
 }
@@ -1484,12 +1474,10 @@ mod tests {
         let snapshot = streamers.watch(("page", "device")).snapshot;
         assert_eq!(snapshot.status["general"]["batteryLevel"], 50);
         assert_eq!(snapshot.state["streaming"], true);
-        assert_eq!(snapshot.history.len(), 1);
         streamers.remove("page", "device", old.number);
         let snapshot = streamers.watch(("page", "device")).snapshot;
         assert_eq!(snapshot.status, empty_status());
         assert_eq!(snapshot.state, serde_json::json!({}));
-        assert_eq!(snapshot.history.len(), 1);
         drop(watch);
     }
 

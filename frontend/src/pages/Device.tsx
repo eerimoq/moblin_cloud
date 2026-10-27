@@ -936,12 +936,6 @@ function DeviceView(props: {
               setState({});
               setSettings(snapshot.settings);
             }
-            setHistory((current) => {
-              const first = snapshot.history[0]?.at ?? Number.POSITIVE_INFINITY;
-              return [...current.filter((sample) => sample.at < first), ...snapshot.history].slice(
-                -60,
-              );
-            });
             break;
           }
           case "status": {

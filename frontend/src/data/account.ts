@@ -139,7 +139,6 @@ export type DeviceSnapshot = {
   status: DeviceStatus;
   state: DeviceState;
   settings: DeviceSettings | null;
-  history: Sample[];
 };
 
 export type StatusUpdate = {
