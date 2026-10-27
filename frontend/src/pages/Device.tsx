@@ -6,6 +6,7 @@ import {
   rememberChannel,
   StreamerPicker,
 } from "../components/HeaderPickers";
+import Icon from "../components/Icon";
 import { ask } from "../components/Modal";
 import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
 import {
@@ -886,9 +887,11 @@ function DeviceView(props: {
   session: string;
   page: string;
   device: string;
+  name: string | undefined;
   onSignOut: () => void;
 }) {
   const [loaded, setLoaded] = createSignal(false);
+  const [name, setName] = createSignal("");
   const [connected, setConnected] = createSignal(false);
   const [streaming, setStreaming] = createSignal(false);
   const [status, setStatus] = createSignal<DeviceStatus>(emptyStatus());
@@ -933,6 +936,7 @@ function DeviceView(props: {
           case "snapshot": {
             const snapshot = data as DeviceSnapshot;
             setLoaded(true);
+            setName(snapshot.name);
             setConnected(snapshot.connected);
             if (snapshot.connected) {
               setStatus((current) => ({
@@ -1043,13 +1047,24 @@ function DeviceView(props: {
 
   return (
     <>
-      <Show
-        when={
-          error() ??
-          (loaded() && streaming() && !connected() ? t("This Moblin is not connected.") : null)
-        }
-      >
-        {(message) => <Notice status>{message()}</Notice>}
+      <Show when={error()}>{(message) => <Notice status>{message()}</Notice>}</Show>
+      <Show when={loaded() && streaming() && !connected()}>
+        <div class="cheer-fade fixed inset-0 z-10 flex items-center justify-center bg-page/60 px-4 backdrop-blur-md">
+          <div
+            role="status"
+            class="cheer-pop flex max-w-md flex-col items-center gap-4 rounded-3xl border-[1.5px] border-line bg-card px-10 py-8 text-center shadow-2xl"
+          >
+            <span class="grid size-16 place-items-center rounded-full bg-ghost text-muted">
+              <Icon name="smartphone" class="size-8" />
+            </span>
+            <span class="font-display text-2xl font-semibold text-ink">
+              {t("{name} is not connected", { name: props.name ?? name() })}
+            </span>
+            <span class="text-[15px] text-ink-2">
+              {t("This page updates as soon as it connects again.")}
+            </span>
+          </div>
+        </div>
       </Show>
       <Show when={loaded()}>
         <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
@@ -1166,6 +1181,7 @@ export default function DevicePage(props: { page: string; device: string }) {
                   session={current.session}
                   page={props.page}
                   device={props.device}
+                  name={devices().find((device) => device.id === props.device)?.name}
                   onSignOut={signOut}
                 />
               )}
