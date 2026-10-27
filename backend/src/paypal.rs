@@ -416,6 +416,10 @@ impl PayPal {
                 );
                 Err(CaptureError::Pending)
             }
+            Some("DECLINED" | "FAILED") => {
+                info!("PayPal declined the capture of order {order_id}: {body}");
+                Err(CaptureError::Refused)
+            }
             _ => {
                 warn!("unexpected capture of PayPal order {order_id}: {body}");
                 Err(CaptureError::Unknown)

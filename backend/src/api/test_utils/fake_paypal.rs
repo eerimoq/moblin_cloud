@@ -27,6 +27,7 @@ pub(crate) struct FakePayPal {
     pub(crate) gone: Arc<std::sync::Mutex<bool>>,
     pub(crate) refunds: Arc<std::sync::Mutex<Vec<String>>>,
     pub(crate) refuse_refund: Arc<std::sync::Mutex<bool>>,
+    pub(crate) decline_capture: Arc<std::sync::Mutex<bool>>,
 }
 
 pub(crate) fn new_paypal(url: String) -> PayPal {
@@ -154,6 +155,7 @@ pub(crate) async fn start_paypal() -> (String, FakePayPal) {
                 let captured = fake.captured.clone();
                 let lose_capture = fake.lose_capture.clone();
                 let capture_later = fake.capture_later.clone();
+                let decline_capture = fake.decline_capture.clone();
                 let fail_capture = fake.fail_capture.clone();
                 let refuse_capture = fake.refuse_capture.clone();
                 move |headers: HeaderMap, Path(id): Path<String>| async move {
@@ -190,6 +192,18 @@ pub(crate) async fn start_paypal() -> (String, FakePayPal) {
                         return (
                             StatusCode::UNPROCESSABLE_ENTITY,
                             Json(json!({"details": [{"issue": "ORDER_ALREADY_CAPTURED"}]})),
+                        );
+                    }
+                    if *decline_capture.lock().unwrap() {
+                        return (
+                            StatusCode::CREATED,
+                            Json(json!({
+                                "id": id,
+                                "status": "COMPLETED",
+                                "purchase_units": [{"payments": {"captures": [
+                                    {"id": "CAPTURE1", "status": "DECLINED", "amount": amount},
+                                ]}}],
+                            })),
                         );
                     }
                     if *capture_later.lock().unwrap() {

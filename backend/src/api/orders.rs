@@ -796,6 +796,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn declined_captures_are_refused() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.decline_capture.lock().unwrap() = true;
+        let response = reqwest::Client::new()
+            .post(&capture_url)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "PayPal could not complete the tip."
+        );
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert!(api.deliveries.pending().is_empty());
+    }
+
+    #[tokio::test]
     async fn failed_captures_can_be_retried() {
         let (address, api, fake) = start_paid_fake().await;
         let capture_url = paypal_tip_order(&address, &api).await;
