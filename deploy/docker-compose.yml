@@ -12,6 +12,8 @@ services:
   frontend:
     image: ghcr.io/eerimoq/moblin_cloud-frontend:${VERSION:-latest}
     restart: unless-stopped
+    environment:
+      BACKEND_HOST: backend:8080
   caddy:
     image: caddy:2
     restart: unless-stopped
