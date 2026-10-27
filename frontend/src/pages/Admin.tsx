@@ -342,7 +342,7 @@ function Info(props: { icon?: IconName; label?: string; children: JSX.Element })
       </button>
       <span
         role="tooltip"
-        class={`absolute top-full left-0 z-10 mt-1.5 w-max max-w-[min(24rem,calc(100vw-4rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-left font-body text-[14px] leading-snug font-normal text-ink-2 shadow-xl text-pretty ${
+        class={`absolute top-full left-0 z-10 mt-1.5 w-max max-w-[min(24rem,calc(100vw-4rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-left font-body text-[14px] leading-snug font-normal tracking-normal text-ink-2 normal-case shadow-xl text-pretty ${
           open() ? "block" : "hidden peer-hover:block peer-focus-visible:block"
         }`}
       >
