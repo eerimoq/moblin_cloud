@@ -635,7 +635,7 @@ export default function MoblinScreen(props: {
                 <div class="flex min-h-0 flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]">
                   <For each={rows()}>
                     {(row) => (
-                      <div class="flex items-end justify-end gap-[8px]">
+                      <div class="flex items-start justify-end gap-[8px]">
                         <For each={row}>
                           {(button) =>
                             button ? quickButton(button, 40) : <span style={{ width: `${40}px` }} />
