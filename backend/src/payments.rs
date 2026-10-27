@@ -112,7 +112,6 @@ pub fn insert_captured(connection: &Connection, id: &str, order: &Order) -> rusq
 #[derive(Debug, PartialEq)]
 pub enum CaptureError {
     NotApproved,
-    AlreadyCaptured,
     Pending,
     Refused,
     Unknown,
@@ -159,8 +158,9 @@ impl Stage {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Unsettled {
+pub struct Saved {
     pub id: String,
+    pub stage: Stage,
     pub order: Order,
     pub late: bool,
 }
@@ -175,16 +175,7 @@ impl Orders {
     }
 
     pub fn make_room(&self) -> Result<()> {
-        let unfinished: u64 = self
-            .database
-            .lock()
-            .query_row(
-                "SELECT (SELECT count(*) FROM orders WHERE state = 'created') + (SELECT count(*) FROM orders WHERE state = 'capturing')",
-                [],
-                |row| row.get(0),
-            )
-            .context("failed to count orders")?;
-        if unfinished >= 10000 {
+        if self.unfinished() >= 10000 {
             bail!("too many unfinished payments");
         }
         Ok(())
@@ -224,47 +215,44 @@ impl Orders {
         self.database
             .lock()
             .execute(
-                "INSERT OR REPLACE INTO orders (id, streamer, state, created_at, updated_at, details, kind) VALUES (?1, ?2, 'created', ?3, ?3, ?4, ?5)",
+                "INSERT INTO orders (id, streamer, state, created_at, updated_at, details, kind) VALUES (?1, ?2, 'created', ?3, ?3, ?4, ?5)",
                 params![id, order.streamer, now(), serde_json::to_string(order)?, order.item.kind()],
             )
             .with_context(|| format!("failed to save order {id}"))?;
         Ok(())
     }
 
-    pub fn get(&self, id: &str) -> Option<(Stage, Order)> {
+    pub fn get(&self, id: &str) -> Option<Saved> {
         let row = self
             .database
             .lock()
             .query_row(
-                "SELECT state, details FROM orders WHERE id = ?1",
-                [id],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                "SELECT state, details, created_at < ?2 FROM orders WHERE id = ?1",
+                params![id, now().saturating_sub(DEADLINE)],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, bool>(2)?,
+                    ))
+                },
             )
             .optional();
         match row {
-            Ok(Some((state, details))) => Some((
-                Stage::parse(&state)?,
-                serde_json::from_str(&details)
+            Ok(Some((state, details, late))) => Some(Saved {
+                id: id.to_string(),
+                stage: Stage::parse(&state)?,
+                order: serde_json::from_str(&details)
                     .map_err(|error| warn!("failed to parse order {id}: {error}"))
                     .ok()?,
-            )),
+                late,
+            }),
             Ok(None) => None,
             Err(error) => {
                 warn!("failed to read order {id}: {error:#}");
                 None
             }
         }
-    }
-
-    pub fn late(&self, id: &str) -> bool {
-        self.database
-            .lock()
-            .query_row(
-                "SELECT created_at < ?2 FROM orders WHERE id = ?1",
-                params![id, now().saturating_sub(DEADLINE)],
-                |row| row.get(0),
-            )
-            .unwrap_or(false)
     }
 
     pub fn transition(&self, id: &str, from: Stage, to: Stage) -> Result<bool> {
@@ -319,7 +307,7 @@ impl Orders {
         self.database
             .lock()
             .query_row(
-                "SELECT (SELECT count(*) FROM orders WHERE state = 'created') + (SELECT count(*) FROM orders WHERE state = 'capturing')",
+                "SELECT count(*) FROM orders WHERE state != 'captured'",
                 [],
                 |row| row.get(0),
             )
@@ -329,7 +317,7 @@ impl Orders {
             })
     }
 
-    pub fn unsettled(&self, min_age: Duration) -> Vec<Unsettled> {
+    pub fn unsettled(&self, min_age: Duration) -> Vec<Saved> {
         let database = self.database.lock();
         let rows = database
             .prepare_cached(
@@ -359,7 +347,12 @@ impl Orders {
                     let order = serde_json::from_str(&details)
                         .map_err(|error| warn!("failed to parse order {id}: {error}"))
                         .ok()?;
-                    Some(Unsettled { id, order, late })
+                    Some(Saved {
+                        id,
+                        stage: Stage::Capturing,
+                        order,
+                        late,
+                    })
                 })
                 .collect(),
             Err(error) => {
@@ -490,17 +483,16 @@ mod tests {
                 .unwrap()
         );
         let orders = Orders::new(database);
-        assert_eq!(orders.get("ORDER1"), Some((Stage::Capturing, order())));
+        let saved = Saved {
+            id: "ORDER1".to_string(),
+            stage: Stage::Capturing,
+            order: order(),
+            late: false,
+        };
+        assert_eq!(orders.get("ORDER1"), Some(saved.clone()));
         assert_eq!(orders.get("ORDER2"), None);
         assert_eq!(orders.unfinished(), 1);
-        assert_eq!(
-            orders.unsettled(Duration::ZERO),
-            vec![Unsettled {
-                id: "ORDER1".to_string(),
-                order: order(),
-                late: false,
-            }]
-        );
+        assert_eq!(orders.unsettled(Duration::ZERO), vec![saved]);
         assert!(orders.unsettled(Duration::from_secs(60)).is_empty());
     }
 
@@ -542,7 +534,7 @@ mod tests {
                 .captured("ORDER1", |_| panic!("captured twice"))
                 .unwrap()
         );
-        assert_eq!(orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(orders.get("ORDER1").unwrap().stage, Stage::Captured);
         assert_eq!(orders.unfinished(), 0);
         assert!(orders.unsettled(Duration::ZERO).is_empty());
         orders.remove("ORDER1");
@@ -564,7 +556,7 @@ mod tests {
                 })
                 .is_err()
         );
-        assert_eq!(orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(orders.get("ORDER1").unwrap().stage, Stage::Capturing);
     }
 
     #[test]
@@ -600,8 +592,8 @@ mod tests {
         for id in ["OLD_CAPTURING", "OLD_CAPTURED"] {
             assert_eq!(orders.get(id), None, "{id}");
         }
-        assert_eq!(orders.get("NEW_CAPTURING").unwrap().0, Stage::Capturing);
-        assert_eq!(orders.get("NEW_CAPTURED").unwrap().0, Stage::Captured);
+        assert_eq!(orders.get("NEW_CAPTURING").unwrap().stage, Stage::Capturing);
+        assert_eq!(orders.get("NEW_CAPTURED").unwrap().stage, Stage::Captured);
         assert_eq!(orders.unsettled(Duration::ZERO).len(), 1);
     }
 
@@ -618,8 +610,8 @@ mod tests {
                 [],
             )
             .unwrap();
-        assert!(orders.late("OLD"));
-        assert!(!orders.late("NEW"));
+        assert!(orders.get("OLD").unwrap().late);
+        assert!(!orders.get("NEW").unwrap().late);
         assert_eq!(orders.expire(), vec![("OLD".to_string(), order())]);
         assert_eq!(orders.get("OLD"), None);
         assert!(orders.get("NEW").is_some());

@@ -51,6 +51,7 @@ const reasonLabels: Record<string, string> = {
   provider: "PayPal or Stripe failed",
   expired: "Order unknown or expired",
   "not-approved": "Viewer had not approved the payment",
+  declined: "Provider declined the payment",
   "already-used": "Payment already used",
   pending: "Provider still reviewing the payment",
   unknown: "Provider did not answer, settled later",
@@ -134,8 +135,8 @@ const captureReasons = [
   "payments-unavailable",
   "not-saved",
   "not-approved",
+  "declined",
   "pending",
-  "provider",
   "unknown",
   "crashed",
 ];
@@ -816,6 +817,7 @@ function Loaded(props: { stats: AdminStats }) {
   const provider = ({ slug, label }: (typeof providers)[number]): Step[] => {
     const labels = {
       provider: `${label} failed`,
+      declined: `${label} declined the payment`,
       pending: `${label} still reviewing the payment`,
       unknown: `${label} did not answer, settled later`,
     };
@@ -831,7 +833,7 @@ function Loaded(props: { stats: AdminStats }) {
         `${slug}Payments`,
         "Payments",
         `Payments ${label} completed, however they were found. Only what happened after ${label} was asked to capture counts as failed here.`,
-        ["not-approved", "pending", "provider", "unknown", "expired"],
+        ["not-approved", "declined", "pending", "unknown", "expired"],
         labels,
       ),
       counters().step(

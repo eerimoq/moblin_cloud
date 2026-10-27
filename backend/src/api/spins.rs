@@ -163,7 +163,7 @@ mod tests {
             response.text().await.unwrap(),
             "The streamer's wheel is gone, so your tip was not taken."
         );
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Created);
         assert!(api.deliveries.pending().is_empty());
         let mut socket = connect(&address, &key).await;
         socket.send(Message::text(wheel.to_string())).await.unwrap();

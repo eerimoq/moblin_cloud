@@ -209,7 +209,9 @@ pub(super) fn resend(
     order_id: &str,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let order = match api.orders.get(order_id) {
-        Some((Stage::Captured, order)) if order.streamer == page => order,
+        Some(saved) if saved.stage == Stage::Captured && saved.order.streamer == page => {
+            saved.order
+        }
         _ => {
             return Err(failure(
                 "not-found",

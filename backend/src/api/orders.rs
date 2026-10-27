@@ -134,14 +134,6 @@ pub(super) fn expired() -> Failure {
     )
 }
 
-fn provider_failed(provider: &str) -> Failure {
-    failure(
-        "provider",
-        StatusCode::BAD_GATEWAY,
-        &format!("{provider} could not complete the tip."),
-    )
-}
-
 pub(super) fn pending(provider: &str, kind: &str) -> Failure {
     let text = match kind {
         "tip" => format!(
@@ -174,36 +166,23 @@ fn refunded() -> Failure {
 }
 
 async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<(), Failure> {
-    let (stage, order) = api
+    let saved = api
         .orders
         .get(order_id)
-        .filter(|(_, order)| order.streamer == id && order.item.kind() == kind)
+        .filter(|saved| saved.order.streamer == id && saved.order.item.kind() == kind)
         .ok_or_else(expired)?;
-    let late = api.orders.late(order_id);
-    match stage {
+    let order = &saved.order;
+    match saved.stage {
         Stage::Captured => return Ok(()),
-        Stage::Capturing => {
-            return match settle_one(api, order_id, &order, late).await {
-                Some(PaymentStatus::NotCaptured) if late => Err(too_late()),
-                Some(PaymentStatus::NotCaptured) => {
-                    capture_at_provider(api, order_id, &order, kind).await
-                }
-                status => settled(&order, status),
-            };
-        }
-        Stage::Created if late => return Err(too_late()),
+        Stage::Capturing => match settle_one(api, order_id, order, saved.late).await {
+            Some(PaymentStatus::NotCaptured) if saved.late => return Err(too_late()),
+            Some(PaymentStatus::NotCaptured) => {}
+            status => return settled(order, status),
+        },
+        Stage::Created if saved.late => return Err(too_late()),
         Stage::Created => {}
     }
-    let refusal = if kind == "spin" && api.remote_control.wheel(id).is_none() {
-        Some((
-            "no-wheel",
-            StatusCode::NOT_FOUND,
-            "The streamer's wheel is gone, so your tip was not taken.",
-        ))
-    } else {
-        None
-    };
-    if let Some((reason, status, refusal)) = refusal {
+    if kind == "spin" && api.remote_control.wheel(id).is_none() {
         if let Payee::Stripe(account) = &order.payee
             && let Some(stripe) = &api.stripe
         {
@@ -212,15 +191,11 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
                 warn!("cancelling Stripe payment {order_id} failed: {error:#}");
             }
         }
-        return Err(failure(reason, status, refusal));
-    }
-    let available = match &order.payee {
-        Payee::PayPal(_) => api.paypal.is_some(),
-        Payee::Stripe(_) => api.stripe.is_some(),
-        Payee::Twitch(_) | Payee::Kick => false,
-    };
-    if !available {
-        return Err(payment_unavailable());
+        return Err(failure(
+            "no-wheel",
+            StatusCode::NOT_FOUND,
+            "The streamer's wheel is gone, so your tip was not taken.",
+        ));
     }
     if let Err(error) = api
         .orders
@@ -233,7 +208,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
             "Tips are unavailable right now, so no money was taken. Try again later.",
         ));
     }
-    capture_at_provider(api, order_id, &order, kind).await
+    capture_at_provider(api, order_id, order, kind).await
 }
 
 async fn capture_at_provider(
@@ -255,7 +230,7 @@ async fn capture_at_provider(
         Payee::Twitch(_) | Payee::Kick => return Err(payment_unavailable()),
     };
     let result = match captured {
-        Ok(()) | Err(CaptureError::AlreadyCaptured) => {
+        Ok(()) => {
             info!(
                 "{:?} paid {} {} in {provider} order {order_id}",
                 order.user,
@@ -265,28 +240,18 @@ async fn capture_at_provider(
             record_capture(api, order_id, order);
             Ok(())
         }
-        Err(CaptureError::Unknown) => match settle_one(api, order_id, order, false).await {
-            Some(PaymentStatus::NotCaptured) => settled(order, None),
-            status => settled(order, status),
-        },
-        Err(error) => {
-            if error != CaptureError::Pending
-                && let Err(error) =
-                    api.orders
-                        .transition(order_id, Stage::Capturing, Stage::Created)
-            {
-                warn!("{error:#}");
-            }
-            Err(match error {
-                CaptureError::NotApproved => failure(
-                    "not-approved",
-                    StatusCode::PAYMENT_REQUIRED,
-                    "The tip was not completed.",
-                ),
-                CaptureError::Pending => pending(provider, kind),
-                _ => provider_failed(provider),
-            })
-        }
+        Err(CaptureError::Unknown) => settled(order, settle_one(api, order_id, order, false).await),
+        Err(CaptureError::NotApproved) => Err(failure(
+            "not-approved",
+            StatusCode::PAYMENT_REQUIRED,
+            "The tip was not completed.",
+        )),
+        Err(CaptureError::Pending) => Err(pending(provider, kind)),
+        Err(CaptureError::Refused) => Err(failure(
+            "declined",
+            StatusCode::PAYMENT_REQUIRED,
+            &format!("{provider} declined the payment."),
+        )),
     };
     if let Err(failure) = &result {
         api.counters.bump(&format!(
@@ -303,10 +268,9 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
     match status {
         Some(PaymentStatus::Captured) => Ok(()),
         Some(PaymentStatus::Pending) => Err(pending(provider, order.item.kind())),
-        Some(PaymentStatus::NotCaptured) => Err(provider_failed(provider)),
         Some(PaymentStatus::Gone) => Err(expired()),
         Some(PaymentStatus::Refunded) => Err(refunded()),
-        None => Err(failure(
+        Some(PaymentStatus::NotCaptured) | None => Err(failure(
             "unknown",
             StatusCode::BAD_GATEWAY,
             &format!(
@@ -405,8 +369,8 @@ async fn refund_late(api: &Api, order_id: &str, order: &Order) -> Option<Payment
 }
 
 pub async fn settle(api: &Api, min_age: Duration) {
-    for unsettled in api.orders.unsettled(min_age) {
-        settle_one(api, &unsettled.id, &unsettled.order, unsettled.late).await;
+    for saved in api.orders.unsettled(min_age) {
+        settle_one(api, &saved.id, &saved.order, saved.late).await;
     }
 }
 
@@ -527,7 +491,7 @@ mod tests {
         assert_eq!(*fake.cancelled.lock().unwrap(), ["pi_1"]);
         assert_eq!(api.orders.get("pi_1"), None);
         assert_eq!(api.orders.get("ORDER1"), None);
-        assert_eq!(api.orders.get("pi_2").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("pi_2").unwrap().stage, Stage::Created);
     }
 
     #[tokio::test]
@@ -601,7 +565,7 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Captured);
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
@@ -619,7 +583,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(response.text().await.unwrap(), unknown);
         assert!(api.deliveries.pending().is_empty());
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(response.text().await.unwrap(), unknown);
@@ -630,7 +594,7 @@ mod tests {
         assert!(api.deliveries.pending().is_empty());
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.deliveries.pending().len(), 1);
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Captured);
         assert!(
             api.counters
                 .all()
@@ -664,11 +628,11 @@ mod tests {
             let response = client.post(&capture_url).send().await.unwrap();
             assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
             assert_eq!(response.text().await.unwrap(), unknown);
-            assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+            assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         }
         *fake.captured.lock().unwrap() = true;
         settle(&api, Duration::ZERO).await;
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Captured);
         assert_eq!(api.deliveries.pending().len(), 1);
     }
 
@@ -681,7 +645,7 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         settle(&api, Duration::ZERO).await;
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         *fake.capture_later.lock().unwrap() = false;
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
@@ -718,7 +682,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         api.orders.age("ORDER1", 31 * 60);
         expire_orders(&api).await;
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         *fake.captured.lock().unwrap() = true;
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.orders.get("ORDER1"), None);
@@ -773,7 +737,7 @@ mod tests {
         api.orders.age("ORDER1", 31 * 60);
         *fake.captured.lock().unwrap() = true;
         settle(&api, Duration::ZERO).await;
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Captured);
         assert_eq!(api.deliveries.pending().len(), 1);
     }
 
@@ -787,7 +751,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         api.orders.age("ORDER1", 20 * 60);
         settle(&api, Duration::ZERO).await;
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         api.orders.age("ORDER1", 20 * 60);
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.orders.get("ORDER1"), None);
@@ -805,13 +769,22 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal could not complete the tip."
+            "PayPal declined the payment."
         );
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         assert!(api.deliveries.pending().is_empty());
+        let count = |name: &str| {
+            api.counters
+                .all()
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("tipPaymentsFailed:declined"), 1);
+        assert_eq!(count("paypalPaymentsFailed:declined"), 1);
     }
 
     #[tokio::test]
@@ -827,7 +800,7 @@ mod tests {
             "PayPal did not answer. If the money was taken, the tip will still be shown or the money refunded."
         );
         assert!(api.deliveries.pending().is_empty());
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         *fake.fail_capture.lock().unwrap() = false;
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
@@ -847,7 +820,7 @@ mod tests {
             "Tips are unavailable right now, so no money was taken. Try again later."
         );
         assert!(!*fake.captured.lock().unwrap());
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Created);
         api.orders.read_only(false);
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
@@ -856,20 +829,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refused_captures_go_back_to_created() {
+    async fn refused_captures_can_be_retried() {
         let (address, api, fake) = start_paid_fake().await;
         let capture_url = paypal_tip_order(&address, &api).await;
         *fake.refuse_capture.lock().unwrap() = true;
         let client = reqwest::Client::new();
         let response = client.post(&capture_url).send().await.unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal could not complete the tip."
+            "PayPal declined the payment."
         );
         assert!(api.deliveries.pending().is_empty());
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         assert!(!*fake.captured.lock().unwrap());
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         *fake.refuse_capture.lock().unwrap() = false;
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
@@ -885,7 +860,7 @@ mod tests {
         let client = reqwest::Client::new();
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         *fake.lookups_fail.lock().unwrap() = false;
         *fake.gone.lock().unwrap() = true;
         settle(&api, Duration::ZERO).await;
@@ -929,13 +904,13 @@ mod tests {
             response.text().await.unwrap(),
             "Stripe is still reviewing the tip. If Stripe approves it within half an hour, the tip will be shown and the money reaches the streamer, otherwise the money is refunded."
         );
-        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("pi_1").unwrap().stage, Stage::Capturing);
         settle(&api, Duration::ZERO).await;
         assert!(api.deliveries.pending().is_empty());
         *fake.state.lock().unwrap() = "succeeded";
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.deliveries.pending().len(), 1);
-        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("pi_1").unwrap().stage, Stage::Captured);
     }
 
     #[tokio::test]
@@ -991,7 +966,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Captured);
     }
 
     #[tokio::test]
@@ -1023,12 +998,12 @@ mod tests {
         *fake.lose_capture.lock().unwrap() = true;
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
-        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("pi_1").unwrap().stage, Stage::Capturing);
         *fake.state.lock().unwrap() = "requires_capture";
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
-        assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("pi_1").unwrap().stage, Stage::Captured);
     }
 
     #[tokio::test]
@@ -1043,7 +1018,7 @@ mod tests {
             "PayPal is still reviewing the tip. If PayPal approves it within half an hour, the tip will be shown and the money reaches the streamer, otherwise the money is refunded."
         );
         assert!(api.deliveries.pending().is_empty());
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         settle(&api, Duration::ZERO).await;
@@ -1053,7 +1028,7 @@ mod tests {
         let pending = api.deliveries.pending();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].request_id, "ORDER1");
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Captured);
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }

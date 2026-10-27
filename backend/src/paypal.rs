@@ -400,7 +400,7 @@ impl PayPal {
             info!("PayPal refused to capture order {order_id} ({status}): {issue}");
             return Err(match issue {
                 "ORDER_NOT_APPROVED" | "PAYER_ACTION_REQUIRED" => CaptureError::NotApproved,
-                "ORDER_ALREADY_CAPTURED" => CaptureError::AlreadyCaptured,
+                "ORDER_ALREADY_CAPTURED" => return Ok(()),
                 _ => CaptureError::Refused,
             });
         }

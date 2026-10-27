@@ -230,7 +230,7 @@ impl Stripe {
                 | "requires_confirmation"
                 | "requires_action"
                 | "processing" => CaptureError::NotApproved,
-                "succeeded" => CaptureError::AlreadyCaptured,
+                "succeeded" => return Ok(()),
                 _ => CaptureError::Refused,
             });
         }

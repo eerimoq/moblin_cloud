@@ -198,7 +198,7 @@ mod tests {
                     *fake.refuse_capture.lock().unwrap() = true;
                     assert_eq!(
                         capture().await.status(),
-                        StatusCode::BAD_GATEWAY,
+                        StatusCode::PAYMENT_REQUIRED,
                         "{fault:?}"
                     );
                     not_paid(&api, &fake);
@@ -258,7 +258,7 @@ mod tests {
                 "{fault:?}"
             );
             assert_eq!(
-                api.orders.get("ORDER1").unwrap().0,
+                api.orders.get("ORDER1").unwrap().stage,
                 Stage::Captured,
                 "{fault:?}"
             );
