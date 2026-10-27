@@ -24,6 +24,20 @@ output of `openssl rand -hex 32`, without which everyone is signed out when
 the backend restarts. Uncomment the integrations you set up below. Without
 `VERSION` the latest images are used.
 
+## HTTPS
+
+The `caddy` service terminates TLS: on the first start it gets a certificate
+for `DOMAIN` from Let's Encrypt, which needs ports 80 and 443 reachable from
+the internet, and then renews it, redirects HTTP to HTTPS and forwards
+everything to the frontend. The certificates are kept in the `caddy` volume.
+
+To terminate TLS in a reverse proxy already running on the server instead,
+remove the `caddy` service, publish the frontend with `ports: ["127.0.0.1:8080:80"]`
+and forward the domain to `http://127.0.0.1:8080`. The proxy has to pass
+WebSocket upgrades (Moblin connects to `/api/remote-control/streamer/`) and
+must not buffer responses, since the dashboard and the device page are
+server-sent event streams.
+
 ## Start
 
 ```
