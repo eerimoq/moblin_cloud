@@ -859,22 +859,6 @@ function Controls(props: {
         <button
           type="button"
           class={ghostButtonClass}
-          disabled={disabled("instantReplay")}
-          onClick={() => void props.onControl({ instantReplay: {} })}
-        >
-          {t("Instant replay")}
-        </button>
-        <button
-          type="button"
-          class={ghostButtonClass}
-          disabled={disabled("saveReplay")}
-          onClick={() => void props.onControl({ saveReplay: {} })}
-        >
-          {t("Save replay")}
-        </button>
-        <button
-          type="button"
-          class={ghostButtonClass}
           disabled={disabled("reloadBrowserWidgets")}
           onClick={() => void props.onControl({ reloadBrowserWidgets: {} })}
         >

@@ -162,9 +162,7 @@ export type Control =
   | { setMic: { id: string } }
   | { setSrtConnectionPriority: { id: string; priority: number; enabled: boolean } }
   | { setSrtConnectionPrioritiesEnabled: { enabled: boolean } }
-  | { reloadBrowserWidgets: object }
-  | { instantReplay: object }
-  | { saveReplay: object };
+  | { reloadBrowserWidgets: object };
 
 export type Recent = {
   id: string;
