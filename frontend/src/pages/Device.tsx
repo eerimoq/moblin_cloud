@@ -16,7 +16,6 @@ import {
   CloudHeader,
   ghostButtonClass,
   inputClass,
-  Notice,
   Spinner,
 } from "../components/PageParts";
 import {
@@ -898,39 +897,11 @@ function DeviceView(props: {
   const [state, setState] = createSignal<DeviceState>({});
   const [settings, setSettings] = createSignal<DeviceSettings | null>(null);
   const [history, setHistory] = createSignal<Sample[]>([]);
-  const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal<string[]>([]);
-
-  const failure = (status: number) =>
-    status === 403
-      ? t("You are not a moderator of this streamer anymore.")
-      : status === 404
-        ? t("This Moblin is not in the list.")
-        : status === 409
-          ? t("This Moblin is not connected.")
-          : status === 502
-            ? t("Moblin could not answer. Try again.")
-            : status === 504
-              ? t("Moblin did not answer. Try again.")
-              : null;
-
-  const fail = (error: unknown) => {
-    if (error instanceof BackendError && error.status === 401) {
-      props.onSignOut();
-      return;
-    }
-    setError(
-      (error instanceof BackendError && failure(error.status)) ||
-        t("Something went wrong. Try again."),
-    );
-  };
 
   onMount(() => {
     const stop = subscribe(deviceEventsUrl(props.page, props.device), props.session, {
-      onOpen: () => {
-        setStreaming(true);
-        setError(null);
-      },
+      onOpen: () => setStreaming(true),
       onEvent: (kind, data) => {
         switch (kind) {
           case "snapshot": {
@@ -989,9 +960,7 @@ function DeviceView(props: {
         setStreaming(false);
         if (code === 401) {
           props.onSignOut();
-          return;
         }
-        setError((code && failure(code)) || t("Connection lost. Reconnecting…"));
       },
     });
     onCleanup(stop);
@@ -1006,9 +975,10 @@ function DeviceView(props: {
     setPending((current) => [...current, key]);
     try {
       await controlDevice(props.session, props.page, props.device, control);
-      setError(null);
     } catch (error) {
-      fail(error);
+      if (error instanceof BackendError && error.status === 401) {
+        props.onSignOut();
+      }
     } finally {
       setPending((current) => current.filter((pending) => pending !== key));
     }
@@ -1047,7 +1017,6 @@ function DeviceView(props: {
 
   return (
     <>
-      <Show when={error()}>{(message) => <Notice status>{message()}</Notice>}</Show>
       <Show when={loaded() && streaming() && !connected()}>
         <div class="cheer-fade fixed inset-0 z-10 flex items-center justify-center bg-page/60 px-4 backdrop-blur-md">
           <div
