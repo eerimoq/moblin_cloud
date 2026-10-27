@@ -1,4 +1,4 @@
-name: Deploy backend
+name: Deploy images
 on:
   push:
     tags: ["*"]
@@ -8,6 +8,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [backend, frontend]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -19,17 +22,17 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}-backend
+          images: ghcr.io/${{ github.repository }}-${{ matrix.image }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - uses: docker/build-push-action@v7
         with:
-          context: backend
+          context: ${{ matrix.image }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ steps.meta.outputs.version }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-backend:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-backend:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-${{ matrix.image }}:buildcache,mode=max
