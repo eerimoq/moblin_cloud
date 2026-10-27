@@ -2443,7 +2443,7 @@ function DeviceRow(props: { device: Device; page: string; children?: JSX.Element
           href={deviceUrl(props.page, props.device.id)}
           class="text-[15px] font-semibold text-leaf hover:underline"
         >
-          {t("Status")}
+          {t("Remote control")}
         </a>
         {props.children}
       </span>
