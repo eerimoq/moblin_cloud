@@ -6,6 +6,7 @@ use anyhow::Result;
 use axum::http::StatusCode;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
+use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::*;
@@ -404,4 +405,51 @@ pub(crate) async fn get_json(address: &str, path: &str) -> (StatusCode, Value) {
         .unwrap();
     let status = response.status();
     (status, response.json().await.unwrap_or(Value::Null))
+}
+
+pub(crate) struct Events {
+    pub(crate) response: reqwest::Response,
+    buffer: String,
+}
+
+impl Events {
+    pub(crate) async fn open(client: &reqwest::Client, url: &str, session: &str) -> Self {
+        let response = client.get(url).bearer_auth(session).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["content-type"].to_str().unwrap(),
+            "text/event-stream"
+        );
+        Self {
+            response,
+            buffer: String::new(),
+        }
+    }
+
+    pub(crate) async fn next(&mut self) -> (String, Value) {
+        loop {
+            if let Some(end) = self.buffer.find("\n\n") {
+                let block: String = self.buffer.drain(..end + 2).collect();
+                let mut name = String::new();
+                let mut data = None;
+                for line in block.lines() {
+                    if let Some(value) = line.strip_prefix("event:") {
+                        name = value.trim().to_string();
+                    } else if let Some(value) = line.strip_prefix("data:") {
+                        data = Some(serde_json::from_str(value.trim()).unwrap());
+                    }
+                }
+                if let Some(data) = data {
+                    return (name, data);
+                }
+                continue;
+            }
+            let chunk = timeout(Duration::from_secs(5), self.response.chunk())
+                .await
+                .expect("an event")
+                .unwrap()
+                .expect("an open stream");
+            self.buffer.push_str(std::str::from_utf8(&chunk).unwrap());
+        }
+    }
 }

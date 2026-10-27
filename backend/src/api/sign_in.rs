@@ -317,6 +317,9 @@ pub(super) async fn handle_account_link(
         "Linking took too long. Try again.".to_string(),
     ))?;
     let account = api.accounts.link(&id, &identity).map_err(account_error)?;
+    api.remote_control
+        .changes
+        .notify(&account.page.id, Change::Page);
     info!(
         "{id} linked {} user {} ({})",
         identity.platform.title(),
@@ -334,6 +337,9 @@ pub(super) async fn handle_account_unlink(
     let SignedIn { id, .. } = signed_in(&api, &headers)?;
     let platform = platform_of(&platform)?;
     let account = api.accounts.unlink(&id, platform).map_err(account_error)?;
+    api.remote_control
+        .changes
+        .notify(&account.page.id, Change::Page);
     info!("{id} unlinked {}", platform.title());
     Ok(account_response(&api, account))
 }

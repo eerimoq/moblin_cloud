@@ -2,18 +2,19 @@ export type EventHandler = (name: string, data: unknown) => void;
 
 export type StreamHandlers = {
   onEvent: EventHandler;
-  onError: (status: number | null) => void;
-  onOpen: () => void;
+  onError?: (status: number | null) => void;
+  onOpen?: () => void;
 };
 
-export function subscribe(url: string, token: string, handlers: StreamHandlers): () => void {
+export function subscribe(url: string, token: string | null, handlers: StreamHandlers): () => void {
   let controller: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let refused = false;
   let attempts = 0;
 
   const schedule = () => {
-    if (stopped || document.hidden) {
+    if (stopped || refused || document.hidden) {
       return;
     }
     clearTimeout(timer);
@@ -29,15 +30,19 @@ export function subscribe(url: string, token: string, handlers: StreamHandlers):
     controller = current;
     try {
       const response = await fetch(url, {
-        headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+        headers: {
+          ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+          accept: "text/event-stream",
+        },
         signal: current.signal,
       });
       if (!response.ok || !response.body) {
-        handlers.onError(response.status);
+        refused = response.status >= 400 && response.status < 500;
+        handlers.onError?.(response.status);
         throw new Error(String(response.status));
       }
       attempts = 0;
-      handlers.onOpen();
+      handlers.onOpen?.();
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = "";
       for (;;) {
@@ -55,10 +60,10 @@ export function subscribe(url: string, token: string, handlers: StreamHandlers):
           buffer = buffer.slice(end + 2);
         }
       }
-      handlers.onError(null);
+      handlers.onError?.(null);
     } catch (error) {
       if (!current.signal.aborted && !(error instanceof Error && /^\d+$/.test(error.message))) {
-        handlers.onError(null);
+        handlers.onError?.(null);
       }
     } finally {
       if (controller === current) {
@@ -94,6 +99,7 @@ export function subscribe(url: string, token: string, handlers: StreamHandlers):
       close();
     } else {
       attempts = 0;
+      refused = false;
       void open();
     }
   };
@@ -105,4 +111,23 @@ export function subscribe(url: string, token: string, handlers: StreamHandlers):
     document.removeEventListener("visibilitychange", onVisibility);
     close();
   };
+}
+
+export function subscribeChanges(
+  url: string,
+  token: string | null,
+  refreshes: Record<string, () => void>,
+  onError?: (status: number | null) => void,
+): () => void {
+  let opened = false;
+  return subscribe(url, token, {
+    onOpen: () => {
+      if (opened) {
+        new Set(Object.values(refreshes)).forEach((refresh) => refresh());
+      }
+      opened = true;
+    },
+    onEvent: (name) => refreshes[name]?.(),
+    onError,
+  });
 }

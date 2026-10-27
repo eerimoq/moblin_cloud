@@ -437,6 +437,9 @@ fn record_capture(api: &Api, order_id: &str, order: &Order) {
         Ok(false) => {}
         Ok(true) => {
             api.deliveries.notify();
+            api.remote_control
+                .changes
+                .notify(&order.streamer, Change::Recent);
             info!(
                 "queued {:?} in order {order_id} for remote control streamer {}",
                 order.description(),

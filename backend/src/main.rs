@@ -3,6 +3,7 @@ mod api;
 mod app_attest;
 mod auth;
 mod challenges;
+mod changes;
 mod counters;
 mod database;
 mod deliveries;

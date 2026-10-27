@@ -327,7 +327,9 @@ const accountPath = (page?: string) =>
 export const fetchAccount = (session: string, page?: string) =>
   call<Account>(accountPath(page), session);
 
-export const fetchAdminStats = (session: string) => call<AdminStats>("/admin/stats", session);
+export const adminStatsEventsUrl = `${backendUrl}/admin/stats/events`;
+
+export const pageEventsUrl = (page: string) => `${backendUrl}${accountPath(page)}/events`;
 
 export const fetchRecent = (
   session: string,

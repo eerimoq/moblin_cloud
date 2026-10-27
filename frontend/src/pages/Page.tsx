@@ -19,7 +19,7 @@ import { BackendError, moblinIconUrl } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
 import { fireConfetti } from "../confetti";
-import { poll } from "../poll";
+import { subscribeChanges } from "../sse";
 import {
   cardClass,
   CloseNotice,
@@ -51,6 +51,7 @@ import {
   requestSubscriberSpin,
   streamerEffects,
   streamerProfile,
+  pageEventsUrl,
   streamerSpin,
   streamerTips,
   tierCount,
@@ -2023,6 +2024,13 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
+  const refreshPage = async () => {
+    await Promise.all([refreshTips(), refreshSpin(), refreshEffects()]);
+    if (viewer()) {
+      void refreshAllowances();
+    }
+  };
+
   const spinError = (error: unknown) => {
     if (error instanceof BackendError && [400, 404, 409].includes(error.status)) {
       void refreshSpin();
@@ -2071,14 +2079,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     void refreshTips();
     void refreshSpin();
     void refreshEffects();
-    onCleanup(
-      poll(() => {
-        void refreshSpin();
-        if (viewer() && allowancesMissing()) {
-          void refreshAllowances();
-        }
-      }, 30_000),
-    );
+    if (current) {
+      onCleanup(subscribeChanges(pageEventsUrl(current), null, { page: () => void refreshPage() }));
+    }
   });
 
   return (

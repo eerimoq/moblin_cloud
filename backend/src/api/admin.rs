@@ -76,7 +76,11 @@ pub(super) async fn handle_admin_stats(
     headers: HeaderMap,
 ) -> Result<Json<AdminStatsResponse>, (StatusCode, String)> {
     admin(&api, &headers)?;
-    Ok(Json(AdminStatsResponse {
+    Ok(Json(admin_stats(&api)))
+}
+
+pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
+    AdminStatsResponse {
         server: ServerStats {
             version: option_env!("MOBLIN_WEBSITE_VERSION").unwrap_or("dev"),
             started: api.started,
@@ -110,7 +114,7 @@ pub(super) async fn handle_admin_stats(
             bytes: api.database.size(),
         },
         counters: api.counters.all(),
-    }))
+    }
 }
 
 #[cfg(test)]

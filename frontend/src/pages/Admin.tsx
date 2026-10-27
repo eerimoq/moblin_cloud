@@ -1,6 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import Icon, { type IconName } from "../components/Icon";
-import { poll } from "../poll";
+import { subscribe } from "../sse";
 import {
   AccountMenu,
   Band,
@@ -11,8 +11,7 @@ import {
   Spinner,
   PlatformSignIn,
 } from "../components/PageParts";
-import { createAccountSession, fetchAdminStats, type AdminStats } from "../data/account";
-import { BackendError } from "../data/backend";
+import { adminStatsEventsUrl, createAccountSession, type AdminStats } from "../data/account";
 
 type Counts = { today: number; week: number; total: number };
 
@@ -1121,26 +1120,28 @@ function Stats(props: { session: string; onSignOut: () => void }) {
   const [stats, setStats] = createSignal<AdminStats | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
-  const refresh = async () => {
-    try {
-      setStats(await fetchAdminStats(props.session));
-      setError(null);
-    } catch (error) {
-      if (error instanceof BackendError && error.status === 401) {
-        props.onSignOut();
-        return;
-      }
-      setError(
-        error instanceof BackendError && error.status === 403
-          ? "This account is not an admin."
-          : "The statistics could not be loaded.",
-      );
-    }
-  };
-
   onMount(() => {
-    refresh();
-    onCleanup(poll(refresh, 30_000));
+    onCleanup(
+      subscribe(adminStatsEventsUrl, props.session, {
+        onEvent: (name, data) => {
+          if (name === "stats") {
+            setStats(data as AdminStats);
+            setError(null);
+          }
+        },
+        onError: (status) => {
+          if (status === 401) {
+            props.onSignOut();
+            return;
+          }
+          setError(
+            status === 403
+              ? "This account is not an admin."
+              : "The statistics could not be loaded.",
+          );
+        },
+      }),
+    );
   });
 
   return (

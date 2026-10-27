@@ -210,6 +210,7 @@ pub(super) async fn handle_remote_control_streamer(
             })
             .await;
         api.accounts.left_device(&page, &device);
+        api.remote_control.changes.notify(&page, Change::Page);
     }))
 }
 

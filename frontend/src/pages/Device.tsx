@@ -21,6 +21,7 @@ import {
 import {
   controlDevice,
   fetchAccount,
+  pageEventsUrl,
   createAccountSession,
   deviceEventsUrl,
   type Account,
@@ -41,8 +42,7 @@ import {
 import { BackendError } from "../data/backend";
 import { deviceUrl, pages } from "../data/links";
 import { t } from "../i18n";
-import { poll } from "../poll";
-import { subscribe } from "../sse";
+import { subscribe, subscribeChanges } from "../sse";
 
 const topLeftItems: [TopLeftItem, string][] = [
   ["stream", t("Stream")],
@@ -1077,7 +1077,7 @@ export default function DevicePage(props: { page: string; device: string }) {
           .then((account) => setDevices(account.devices))
           .catch(() => {});
       void refresh();
-      onCleanup(poll(refresh, 30_000));
+      onCleanup(subscribeChanges(pageEventsUrl(props.page), current.session, { account: refresh }));
     }
   });
 

@@ -228,6 +228,7 @@ pub(super) fn resend(
         order.description(),
         order.streamer
     );
+    api.remote_control.changes.notify(page, Change::Recent);
     Ok(accepted())
 }
 

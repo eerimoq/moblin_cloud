@@ -242,6 +242,9 @@ pub(super) async fn handle_account_device_name(
         .rename_device(&account.page.id, &device, name)
         .map_err(account_error)?;
     info!("{id} renamed Moblin device {device}");
+    api.remote_control
+        .changes
+        .notify(&account.page.id, Change::Account);
     Ok(account_response(&api, account))
 }
 
@@ -267,6 +270,9 @@ pub(super) async fn handle_account_device_remove(
         .map_err(account_error)?;
     api.deliveries.notify();
     info!("{id} removed Moblin device {device}");
+    api.remote_control
+        .changes
+        .notify(&account.page.id, Change::Account);
     Ok(account_response(&api, account))
 }
 

@@ -9,6 +9,7 @@ use tokio::sync::Notify;
 use tokio::time::sleep;
 
 use crate::accounts;
+use crate::changes::Change;
 use crate::counters;
 use crate::database::Database;
 use crate::effects;
@@ -276,6 +277,7 @@ impl Deliveries {
                 };
                 if devices.is_empty() && !delivery.delivered.is_empty() {
                     finish(&self.database.lock(), &delivery.request_id);
+                    streamers.changes.notify(page, Change::Recent);
                     continue;
                 }
                 for device in &connected {
@@ -327,6 +329,7 @@ impl Deliveries {
                 }
             };
             self.delivered(&delivery.request_id, counter.as_deref(), &device, &devices);
+            streamers.changes.notify(&page, Change::Recent);
         }
     }
 }

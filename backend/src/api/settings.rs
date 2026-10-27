@@ -269,6 +269,7 @@ async fn update_settings(
         settings.accent,
         settings.font
     );
+    api.remote_control.changes.notify(&id, Change::Page);
     Ok(settings_response(api, id, settings))
 }
 

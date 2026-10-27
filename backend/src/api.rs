@@ -18,6 +18,7 @@ use crate::accounts::{Account, Accounts, Page, Platform};
 use crate::app_attest::AppAttest;
 use crate::auth::Auth;
 use crate::challenges::Challenges;
+use crate::changes::Change;
 use crate::counters::Counters;
 use crate::database::Database;
 use crate::deliveries::Deliveries;
@@ -36,6 +37,7 @@ mod admin;
 mod banner;
 mod devices;
 mod effects;
+mod events;
 mod moderators;
 mod orders;
 mod providers;
@@ -56,6 +58,7 @@ use admin::*;
 use banner::*;
 use devices::*;
 use effects::*;
+use events::*;
 use moderators::*;
 pub use orders::settle_orders;
 use orders::*;
@@ -176,6 +179,7 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_moderator_resend),
         )
         .route("/account/pages/{id}", get(handle_moderator_account))
+        .route("/account/pages/{id}/events", get(handle_page_events))
         .route(
             "/account/pages/{id}/devices/{device}/events",
             get(handle_device_events),
@@ -209,8 +213,10 @@ pub fn router(api: Arc<Api>) -> Router {
             post(handle_moderator_test_effect),
         )
         .route("/admin/stats", get(handle_admin_stats))
+        .route("/admin/stats/events", get(handle_admin_stats_events))
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/image", get(handle_page_image))
+        .route("/pages/{id}/events", get(handle_public_page_events))
         .route(
             "/pages/{id}/spin/subscriber",
             get(handle_subscriber_spin_allowance).post(handle_subscriber_spin),
@@ -284,6 +290,12 @@ pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (Sta
         return Err(not_signed_in());
     }
     Ok(SignedIn { fresh, id, account })
+}
+
+pub(super) fn account_changed(api: &Api, id: &str, change: Change) {
+    if let Some(account) = api.accounts.get(id) {
+        api.remote_control.changes.notify(&account.page.id, change);
+    }
 }
 
 pub(super) fn is_admin(api: &Api, account: &Account) -> bool {

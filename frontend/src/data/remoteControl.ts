@@ -315,6 +315,8 @@ export type Wheel = {
   options: { text: string; weight: number }[];
 };
 
+export const pageEventsUrl = (id: string) => `${backendUrl}/pages/${encodeURIComponent(id)}/events`;
+
 export const streamerSpin = (id: string) =>
   call<{
     spin: PublicSpin | null;

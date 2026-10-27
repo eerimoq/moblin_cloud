@@ -250,6 +250,9 @@ fn queue_for_subscriber(api: &Api, subscriber: &Subscriber, order: &Order) -> Re
         .map_err(not_saved)?
         .ok_or_else(|| subscriber.perk.used_up())?;
     api.deliveries.notify();
+    api.remote_control
+        .changes
+        .notify(&order.streamer, Change::Recent);
     info!(
         "queued {:?} for {} tier {} subscriber {:?} in request {request_id} for remote control streamer {}",
         order.description(),

@@ -83,6 +83,7 @@ pub(super) async fn handle_account_moderator_add(
         moderator.id,
         moderator.login
     );
+    moderators_changed(&api, &account.page.id, platform, &moderator.id);
     Ok(account_response(&api, account))
 }
 
@@ -101,7 +102,15 @@ pub(super) async fn handle_account_moderator_remove(
         .remove_moderator(platform, &broadcaster, &moderator)
         .map_err(account_error)?;
     info!("{id} removed {} moderator {moderator}", platform.title());
+    moderators_changed(&api, &account.page.id, platform, &moderator);
     Ok(account_response(&api, account))
+}
+
+fn moderators_changed(api: &Api, page: &str, platform: Platform, moderator: &str) {
+    api.remote_control.changes.notify(page, Change::Account);
+    if let Some(id) = api.accounts.account_of_identity(platform, moderator) {
+        account_changed(api, &id, Change::Account);
+    }
 }
 
 pub(super) async fn handle_moderator_account(

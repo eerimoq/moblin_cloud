@@ -92,6 +92,7 @@ async fn save_image(
         "{id} uploaded banner image {version} of {} bytes for page {page}",
         image.len()
     );
+    api.remote_control.changes.notify(&page, Change::Page);
     let settings = api.pages.get(&page);
     Ok(settings_response(api, page, settings))
 }
@@ -127,6 +128,7 @@ fn remove_image(
         )
     })?;
     info!("{id} removed the banner image of page {page}");
+    api.remote_control.changes.notify(&page, Change::Page);
     let settings = api.pages.get(&page);
     Ok(settings_response(api, page, settings))
 }

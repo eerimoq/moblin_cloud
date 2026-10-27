@@ -55,6 +55,9 @@ pub(super) async fn handle_account_paypal_connect(
         "{} started connecting PayPal with tracking ID {tracking_id}",
         signed_in.id
     );
+    api.remote_control
+        .changes
+        .notify(&signed_in.account.page.id, Change::Account);
     Ok(Json(SignUpResponse { url }))
 }
 
@@ -95,6 +98,7 @@ pub(super) async fn handle_account_paypal_disconnect(
     let page = account.page.id;
     api.accounts.forget_paypal(&id).map_err(account_error)?;
     info!("{id} disconnected PayPal");
+    api.remote_control.changes.notify(&page, Change::Page);
     let settings = api.pages.get(&page);
     Ok(settings_response(&api, page, settings))
 }
@@ -129,6 +133,7 @@ fn finish_onboarding(
         .connect_paypal(id, tracking_id, seller.merchant_id.clone())
         .map_err(account_error)?;
     info!("{id} connected PayPal merchant {}", seller.merchant_id);
+    account_changed(api, id, Change::Page);
     Ok(())
 }
 
@@ -189,6 +194,7 @@ pub(super) async fn handle_paypal_webhook(
         "MERCHANT.PARTNER-CONSENT.REVOKED" => {
             for id in api.accounts.disconnect_paypal(merchant_id) {
                 info!("{id} was disconnected from PayPal merchant {merchant_id}");
+                account_changed(&api, &id, Change::Page);
             }
         }
         _ => {}
@@ -248,6 +254,9 @@ pub(super) async fn handle_account_stripe_connect(
                 .start_stripe(&id, stripe_account_id.clone())
                 .map_err(account_error)?;
             info!("{id} got Stripe account {stripe_account_id}");
+            api.remote_control
+                .changes
+                .notify(&account.page.id, Change::Account);
             stripe_account_id
         }
     };
@@ -292,6 +301,7 @@ pub(super) async fn handle_account_stripe_check(
             .map_err(account_error)?;
         if ready != account.stripe_ready {
             info!("Stripe account {stripe_account_id} of {id} takes payments: {ready}");
+            api.remote_control.changes.notify(&page, Change::Page);
         }
         if !ready {
             return Err((
@@ -312,6 +322,7 @@ pub(super) async fn handle_account_stripe_disconnect(
     let page = account.page.id;
     api.accounts.forget_stripe(&id).map_err(account_error)?;
     info!("{id} disconnected Stripe");
+    api.remote_control.changes.notify(&page, Change::Page);
     let settings = api.pages.get(&page);
     Ok(settings_response(&api, page, settings))
 }

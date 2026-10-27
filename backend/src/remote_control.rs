@@ -16,6 +16,7 @@ use tokio::time::{Instant, sleep, timeout, timeout_at};
 use uuid::Uuid;
 
 use crate::app_attest::Attestation;
+use crate::changes::{Change, Changes};
 use crate::icons::{self, Icon};
 use crate::traffic::Traffic;
 
@@ -527,6 +528,7 @@ pub struct Streamers {
     linger: Duration,
     pub connected: Notify,
     pub traffic: Traffic,
+    pub changes: Changes,
 }
 
 async fn send(
@@ -567,6 +569,7 @@ impl Streamers {
             linger,
             connected: Notify::new(),
             traffic: Traffic::default(),
+            changes: Changes::default(),
         }
     }
 
@@ -752,6 +755,7 @@ impl Streamers {
         if send(&mut sink, &identified, &self.traffic).await.is_ok() {
             info!("remote control streamer {page} device {device} connected");
             self.connected.notify_one();
+            self.changes.notify(&page, Change::Page);
             self.resume_watching(&page, &device, number);
             let writer = async {
                 while let Some(message) = receiver.recv().await {
@@ -878,6 +882,7 @@ impl Streamers {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(session) = sessions.get_mut(page, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
+                    self.changes.notify(page, Change::Page);
                 }
             }
             Ok(MessageToAssistant::Event {
@@ -903,6 +908,7 @@ impl Streamers {
         if let Some(monitor) = sessions.monitor_mut(page, device) {
             monitor.publish(Update::Connection { connected: false });
         }
+        self.changes.notify(page, Change::Page);
         true
     }
 

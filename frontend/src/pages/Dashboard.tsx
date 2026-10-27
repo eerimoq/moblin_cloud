@@ -2,7 +2,7 @@ import { createMemo, createSignal, For, Index, type JSX, onCleanup, onMount, Sho
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
-import { poll } from "../poll";
+import { subscribeChanges } from "../sse";
 import { copyText } from "../components/CopyButton";
 import Icon from "../components/Icon";
 import Modal, { ask } from "../components/Modal";
@@ -41,6 +41,7 @@ import {
   disconnectPayPal,
   disconnectStripe,
   fetchAccount,
+  pageEventsUrl,
   fetchRecent,
   newMoblinKey,
   removeDevice,
@@ -1744,21 +1745,31 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
       setSettings,
     );
 
+  const refreshAccount = async () => {
+    try {
+      const account = await fetchAccount(props.session, props.page);
+      setAccount(account);
+      setSettings(account.settings);
+    } catch (error) {
+      if (signedOut(error)) {
+        props.onSignOut();
+      }
+    }
+  };
+
   onMount(() => {
     void loadRecent();
     onCleanup(
-      poll(async () => {
-        void loadRecent();
-        try {
-          const account = await fetchAccount(props.session, props.page);
-          setAccount(account);
-          setSettings(account.settings);
-        } catch (error) {
-          if (signedOut(error)) {
+      subscribeChanges(
+        pageEventsUrl(props.page ?? props.account.settings.id),
+        props.session,
+        { account: () => void refreshAccount(), recent: () => void loadRecent() },
+        (status) => {
+          if (status === 401) {
             props.onSignOut();
           }
-        }
-      }, 30_000),
+        },
+      ),
     );
   });
 

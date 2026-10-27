@@ -8,8 +8,11 @@ import { language, t } from "../i18n";
 
 const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
 
+const [now, setNow] = createSignal(Date.now());
+setInterval(() => setNow(Date.now()), 60_000);
+
 export function timeAgo(at: number) {
-  const seconds = Math.max(0, Math.round(Date.now() / 1000 - at));
+  const seconds = Math.max(0, Math.round(now() / 1000 - at));
   if (seconds < 60) {
     return t("Just now");
   }
