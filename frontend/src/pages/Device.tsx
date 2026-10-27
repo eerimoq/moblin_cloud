@@ -77,7 +77,7 @@ const emptyStatus = (): DeviceStatus => ({ general: {}, topLeft: {}, topRight: {
 
 const filled = <T extends object>(part: T) => (Object.keys(part).length > 0 ? part : undefined);
 
-const historyWindow = 10 * 60 * 1000;
+const historyWindow = 60 * 1000;
 
 const formatBits = (bitsPerSecond: number) =>
   bitsPerSecond >= 1_000_000
@@ -86,11 +86,11 @@ const formatBits = (bitsPerSecond: number) =>
 
 const formatMilliseconds = (milliseconds: number) => `${Math.round(milliseconds)} ms`;
 
-const formatTime = (at: number, seconds = true) =>
+const formatTime = (at: number) =>
   new Date(at).toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
-    ...(seconds ? { second: "2-digit" as const } : {}),
+    second: "2-digit",
   });
 
 const connectionColor = (index: number) => `var(--color-chart-${(index % 4) + 1})`;
@@ -251,7 +251,7 @@ function TimeChart(props: {
             <For each={xTicks()}>
               {(at) => (
                 <text x={x(at)} y={height - 6} text-anchor="middle" class="fill-muted text-[11px]">
-                  {formatTime(at, false)}
+                  {formatTime(at)}
                 </text>
               )}
             </For>
@@ -395,7 +395,7 @@ function Graphs(props: { history: Sample[] }) {
 
   return (
     <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Last 10 minutes")}</h2>
+      <h2 class="text-[23px] font-semibold">{t("Last minute")}</h2>
       <TimeChart
         title={t("Bitrate")}
         times={times()}
@@ -939,7 +939,7 @@ function DeviceView(props: {
             setHistory((current) => {
               const first = snapshot.history[0]?.at ?? Number.POSITIVE_INFINITY;
               return [...current.filter((sample) => sample.at < first), ...snapshot.history].slice(
-                -600,
+                -60,
               );
             });
             break;
@@ -953,7 +953,7 @@ function DeviceView(props: {
             }));
             if (update.sample) {
               const sample = update.sample;
-              setHistory((current) => [...current.slice(-599), sample]);
+              setHistory((current) => [...current.slice(-59), sample]);
             }
             break;
           }

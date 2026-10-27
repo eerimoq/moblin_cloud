@@ -355,7 +355,7 @@ impl Monitor {
             .filter(|part| sampled && part.is_object())
             .map(Sample::of);
         if let Some(sample) = &sample {
-            if self.history.len() >= 600 {
+            if self.history.len() >= 60 {
                 self.history.pop_front();
             }
             self.history.push_back(sample.clone());
