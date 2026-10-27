@@ -204,6 +204,7 @@ pub(super) async fn handle_remote_control_streamer(
         };
         api.accounts.seen_device(&page, &device);
         api.counters.bump("moblinConnections");
+        api.deliveries.notify();
         api.remote_control
             .serve(connection, socket, |icon| {
                 api.pages.set_icon(&page, icon.id)

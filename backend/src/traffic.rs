@@ -1,42 +1,38 @@
 use std::collections::HashMap;
-use std::sync::RwLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Default)]
-struct Kinds(RwLock<HashMap<String, [AtomicU64; 2]>>);
+struct Kinds(Mutex<HashMap<String, (u64, u64)>>);
 
 impl Kinds {
     fn record(&self, kind: &str, bytes: usize) {
-        let add = |counts: &[AtomicU64; 2]| {
-            counts[0].fetch_add(1, Ordering::Relaxed);
-            counts[1].fetch_add(bytes as u64, Ordering::Relaxed);
+        let add = |counts: &mut (u64, u64)| {
+            counts.0 += 1;
+            counts.1 += bytes as u64;
         };
-        if let Some(counts) = self.0.read().unwrap().get(kind) {
-            add(counts);
-            return;
+        let mut kinds = self.0.lock().unwrap();
+        match kinds.get_mut(kind) {
+            Some(counts) => add(counts),
+            None => {
+                let kind = if kinds.len() < 100 { kind } else { "other" };
+                add(kinds.entry(kind.to_string()).or_default());
+            }
         }
-        let mut kinds = self.0.write().unwrap();
-        let kind = if kinds.len() < 100 || kinds.contains_key(kind) {
-            kind
-        } else {
-            "other"
-        };
-        add(kinds.entry(kind.to_string()).or_default());
     }
 
     fn stats(&self) -> Vec<MessageKind> {
         let mut kinds: Vec<MessageKind> = self
             .0
-            .read()
+            .lock()
             .unwrap()
             .iter()
-            .map(|(kind, counts)| MessageKind {
+            .map(|(kind, (messages, bytes))| MessageKind {
                 kind: kind.clone(),
-                messages: counts[0].load(Ordering::Relaxed),
-                bytes: counts[1].load(Ordering::Relaxed),
+                messages: *messages,
+                bytes: *bytes,
             })
             .collect();
         kinds.sort_by(|a, b| {

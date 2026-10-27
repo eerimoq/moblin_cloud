@@ -11,7 +11,8 @@ use log::info;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use tokio::sync::{Notify, broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::AbortHandle;
 use tokio::time::{Instant, sleep, timeout, timeout_at};
 use uuid::Uuid;
 
@@ -295,7 +296,7 @@ pub struct Snapshot {
 }
 
 struct Monitor {
-    id: u64,
+    poll: Option<AbortHandle>,
     watchers: usize,
     status: Value,
     state: Value,
@@ -306,7 +307,7 @@ struct Monitor {
 impl Default for Monitor {
     fn default() -> Self {
         Self {
-            id: 0,
+            poll: None,
             watchers: 0,
             status: empty_status(),
             state: Value::Object(Default::default()),
@@ -391,9 +392,13 @@ impl Drop for WatchGuard {
         if monitor.watchers > 0 {
             return;
         }
-        sessions
+        if let Some(poll) = sessions
             .monitors
-            .remove(&(self.page.clone(), self.device.clone()));
+            .remove(&(self.page.clone(), self.device.clone()))
+            .and_then(|monitor| monitor.poll)
+        {
+            poll.abort();
+        }
         if let Some(session) = sessions.get_mut(&self.page, &self.device, None)
             && session.status_requested
         {
@@ -522,7 +527,6 @@ pub struct Streamers {
     random: SystemRandom,
     sessions: Arc<Mutex<Sessions>>,
     linger: Duration,
-    pub connected: Notify,
     pub traffic: Traffic,
     pub changes: Changes,
 }
@@ -539,16 +543,10 @@ async fn send(
     Ok(())
 }
 
-async fn poll_status(sessions: Arc<Mutex<Sessions>>, page: String, device: String, monitor: u64) {
+async fn poll_status(sessions: Arc<Mutex<Sessions>>, page: String, device: String) {
     loop {
         sleep(Duration::from_secs(5)).await;
         let mut sessions = sessions.lock().unwrap();
-        if sessions
-            .monitor_mut(&page, &device)
-            .is_none_or(|watched| watched.id != monitor)
-        {
-            break;
-        }
         if let Some(session) = sessions.get_mut(&page, &device, None)
             && !session.reconnecting
         {
@@ -563,7 +561,6 @@ impl Streamers {
             random: SystemRandom::new(),
             sessions: Arc::new(Mutex::new(Sessions::default())),
             linger,
-            connected: Notify::new(),
             traffic: Traffic::default(),
             changes: Changes::default(),
         }
@@ -750,7 +747,6 @@ impl Streamers {
         let mut stopped = false;
         if send(&mut sink, &identified, &self.traffic).await.is_ok() {
             info!("remote control streamer {page} device {device} connected");
-            self.connected.notify_one();
             self.changes.notify(&page, Change::Page);
             self.resume_watching(&page, &device, number);
             let writer = async {
@@ -930,22 +926,19 @@ impl Streamers {
             }
             None => false,
         };
-        sessions.next_number += 1;
-        let id = sessions.next_number;
         let monitor = sessions
             .monitors
             .entry((page.to_string(), device.to_string()))
-            .or_insert_with(|| {
-                tokio::spawn(poll_status(
-                    self.sessions.clone(),
-                    page.to_string(),
-                    device.to_string(),
-                    id,
-                ));
-                Monitor {
-                    id,
-                    ..Monitor::default()
-                }
+            .or_insert_with(|| Monitor {
+                poll: Some(
+                    tokio::spawn(poll_status(
+                        self.sessions.clone(),
+                        page.to_string(),
+                        device.to_string(),
+                    ))
+                    .abort_handle(),
+                ),
+                ..Monitor::default()
             });
         monitor.watchers += 1;
         Watch {

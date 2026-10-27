@@ -295,7 +295,6 @@ impl Deliveries {
             .await;
             tokio::select! {
                 _ = self.added.notified() => {}
-                _ = streamers.connected.notified() => {}
                 _ = sleep(Duration::from_secs(10)) => {}
             }
         }

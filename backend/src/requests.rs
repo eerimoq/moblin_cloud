@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 
 use axum::extract::{MatchedPath, Request, State};
 use axum::middleware::Next;
@@ -9,11 +8,9 @@ use serde::Serialize;
 
 use crate::api::Api;
 
-type Counts = Box<[AtomicU64; 500]>;
-
 #[derive(Default)]
 pub struct Requests {
-    endpoints: RwLock<HashMap<String, Counts>>,
+    endpoints: Mutex<HashMap<String, BTreeMap<u16, u64>>>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -32,45 +29,30 @@ pub struct Endpoint {
 
 impl Requests {
     pub fn record(&self, path: Option<&str>, status: u16) {
-        let index = usize::from(status.wrapping_sub(100));
-        if index >= 500 {
+        if !(100..600).contains(&status) {
             return;
         }
         let path = path.unwrap_or("*");
-        if let Some(counts) = self.endpoints.read().unwrap().get(path) {
-            counts[index].fetch_add(1, Ordering::Relaxed);
-            return;
+        let mut endpoints = self.endpoints.lock().unwrap();
+        match endpoints.get_mut(path) {
+            Some(statuses) => *statuses.entry(status).or_default() += 1,
+            None => {
+                endpoints.insert(path.to_string(), BTreeMap::from([(status, 1)]));
+            }
         }
-        self.endpoints
-            .write()
-            .unwrap()
-            .entry(path.to_string())
-            .or_insert_with(|| Box::new(std::array::from_fn(|_| AtomicU64::new(0))))[index]
-            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn stats(&self) -> RequestStats {
         let mut endpoints: Vec<Endpoint> = self
             .endpoints
-            .read()
+            .lock()
             .unwrap()
             .iter()
-            .map(|(path, counts)| {
-                let statuses: BTreeMap<u16, u64> = counts
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, count)| {
-                        let count = count.load(Ordering::Relaxed);
-                        (count > 0).then(|| (index as u16 + 100, count))
-                    })
-                    .collect();
-                Endpoint {
-                    path: path.clone(),
-                    total: statuses.values().sum(),
-                    statuses,
-                }
+            .map(|(path, statuses)| Endpoint {
+                path: path.clone(),
+                total: statuses.values().sum(),
+                statuses: statuses.clone(),
             })
-            .filter(|endpoint| endpoint.total > 0)
             .collect();
         endpoints.sort_by(|a, b| b.total.cmp(&a.total).then_with(|| a.path.cmp(&b.path)));
         let mut statuses = BTreeMap::new();
