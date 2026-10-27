@@ -1138,14 +1138,19 @@ export default function DevicePage(props: { page: string; device: string }) {
                 <StreamerPicker
                   account={current().account}
                   picked={channel(current().account)}
-                  onPick={(key) => {
+                  onPick={async (key) => {
                     rememberChannel(key);
+                    const picked =
+                      current().account.moderating.find((channel) => channelKey(channel) === key) ??
+                      null;
+                    const page = picked ? picked.id : current().account.settings.id;
+                    const first = await fetchAccount(current().session, page)
+                      .then((account) => account.devices[0])
+                      .catch(() => undefined);
                     location.assign(
-                      `${dashboardOf(
-                        current().account.moderating.find(
-                          (channel) => channelKey(channel) === key,
-                        ) ?? null,
-                      )}#moblin`,
+                      first
+                        ? `${deviceUrl(page, first.id)}${location.hash}`
+                        : `${dashboardOf(picked)}#moblin`,
                     );
                   }}
                 />
