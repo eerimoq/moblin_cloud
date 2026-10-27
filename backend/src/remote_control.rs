@@ -297,7 +297,6 @@ pub struct Snapshot {
 struct Monitor {
     id: u64,
     watchers: usize,
-    polling: bool,
     status: Value,
     state: Value,
     settings: Option<Value>,
@@ -310,7 +309,6 @@ impl Default for Monitor {
         Self {
             id: 0,
             watchers: 0,
-            polling: false,
             status: empty_status(),
             state: Value::Object(Default::default()),
             settings: None,
@@ -384,18 +382,26 @@ struct WatchGuard {
     sessions: Arc<Mutex<Sessions>>,
     page: String,
     device: String,
-    monitor: u64,
 }
 
 impl Drop for WatchGuard {
     fn drop(&mut self) {
         let mut sessions = self.sessions.lock().unwrap();
-        if let Some(session) = sessions.watched_mut(&self.page, &self.device, self.monitor) {
-            session.monitor.watchers = session.monitor.watchers.saturating_sub(1);
-            if session.monitor.watchers == 0 && session.status_requested {
-                session.status_requested = false;
-                session.send(Request::StopStatus {});
-            }
+        let Some(monitor) = sessions.monitor_mut(&self.page, &self.device) else {
+            return;
+        };
+        monitor.watchers = monitor.watchers.saturating_sub(1);
+        if monitor.watchers > 0 {
+            return;
+        }
+        sessions
+            .monitors
+            .remove(&(self.page.clone(), self.device.clone()));
+        if let Some(session) = sessions.get_mut(&self.page, &self.device, None)
+            && session.status_requested
+        {
+            session.status_requested = false;
+            session.send(Request::StopStatus {});
         }
     }
 }
@@ -424,7 +430,6 @@ struct Session {
     wheel: Option<Wheel>,
     reconnecting: bool,
     status_requested: bool,
-    monitor: Monitor,
 }
 
 impl Session {
@@ -458,6 +463,7 @@ impl Session {
 struct Sessions {
     next_number: u64,
     by_page: HashMap<String, Vec<Session>>,
+    monitors: HashMap<(String, String), Monitor>,
 }
 
 impl Sessions {
@@ -467,9 +473,22 @@ impl Sessions {
         })
     }
 
-    fn watched_mut(&mut self, page: &str, device: &str, monitor: u64) -> Option<&mut Session> {
-        self.get_mut(page, device, None)
-            .filter(|session| session.monitor.id == monitor)
+    fn monitor_mut(&mut self, page: &str, device: &str) -> Option<&mut Monitor> {
+        self.monitors
+            .get_mut(&(page.to_string(), device.to_string()))
+    }
+
+    fn monitor_of(&mut self, page: &str, device: &str, number: u64) -> Option<&mut Monitor> {
+        self.get_mut(page, device, Some(number))?;
+        self.monitor_mut(page, device)
+    }
+
+    fn ended(&mut self, page: &str, session: &Session) {
+        if !session.reconnecting
+            && let Some(monitor) = self.monitor_mut(page, &session.device)
+        {
+            monitor.publish(Update::Connection { connected: false });
+        }
     }
 
     fn wheel(&self, page: &str) -> Option<&Session> {
@@ -526,14 +545,15 @@ async fn poll_status(sessions: Arc<Mutex<Sessions>>, page: String, device: Strin
     loop {
         sleep(Duration::from_secs(5)).await;
         let mut sessions = sessions.lock().unwrap();
-        let Some(session) = sessions.watched_mut(&page, &device, monitor) else {
-            break;
-        };
-        if session.monitor.watchers == 0 {
-            session.monitor.polling = false;
+        if sessions
+            .monitor_mut(&page, &device)
+            .is_none_or(|watched| watched.id != monitor)
+        {
             break;
         }
-        if !session.reconnecting {
+        if let Some(session) = sessions.get_mut(&page, &device, None)
+            && !session.reconnecting
+        {
             session.send(Request::GetStatus {});
         }
     }
@@ -587,7 +607,10 @@ impl Streamers {
     }
 
     pub fn disconnect(&self, page: &str) {
-        self.sessions.lock().unwrap().by_page.remove(page);
+        let mut sessions = self.sessions.lock().unwrap();
+        for session in sessions.by_page.remove(page).into_iter().flatten() {
+            sessions.ended(page, &session);
+        }
     }
 
     pub fn is_connected(&self, page: &str) -> bool {
@@ -690,16 +713,11 @@ impl Streamers {
             wheel: None,
             reconnecting: false,
             status_requested: false,
-            monitor: Monitor {
-                id: number,
-                ..Monitor::default()
-            },
         };
         let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
         match page_sessions.iter_mut().find(|old| old.device == device) {
             Some(old) => {
                 session.wheel = old.wheel.take();
-                session.monitor = std::mem::take(&mut old.monitor);
                 *old = session;
             }
             None => page_sessions.push(session),
@@ -795,15 +813,15 @@ impl Streamers {
                 data,
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
+                if let Some(monitor) = sessions.monitor_of(page, device, number) {
                     if let Some(settings) = data
                         .as_ref()
                         .and_then(|data| data.get("getSettings"))
                         .and_then(|settings| settings.get("data"))
                         .filter(|settings| settings.is_object())
                     {
-                        session.monitor.settings = Some(settings.clone());
-                        session.monitor.publish(Update::Settings {
+                        monitor.settings = Some(settings.clone());
+                        monitor.publish(Update::Settings {
                             data: settings.clone(),
                         });
                     }
@@ -812,16 +830,18 @@ impl Streamers {
                         .and_then(|data| data.get("getStatus"))
                         .filter(|status| status.is_object())
                     {
-                        session.monitor.merge_status(
+                        monitor.merge_status(
                             status.get("general").cloned(),
                             status.get("topLeft").cloned(),
                             status.get("topRight").cloned(),
                             false,
                         );
                     }
-                    if let Some(pending) = session.pending.remove(&request_id) {
-                        let _ = pending.send((result, data));
-                    }
+                }
+                if let Some(session) = sessions.get_mut(page, device, Some(number))
+                    && let Some(pending) = session.pending.remove(&request_id)
+                {
+                    let _ = pending.send((result, data));
                 }
             }
             Ok(MessageToAssistant::Event {
@@ -833,20 +853,17 @@ impl Streamers {
                     },
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
-                    session
-                        .monitor
-                        .merge_status(general, top_left, top_right, true);
+                if let Some(monitor) = sessions.monitor_of(page, device, number) {
+                    monitor.merge_status(general, top_left, top_right, true);
                 }
             }
             Ok(MessageToAssistant::Event {
                 data: Event::State { data },
             }) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.get_mut(page, device, Some(number))
+                if let Some(monitor) = sessions.monitor_of(page, device, number)
                     && let Some(changes) = data.as_object()
                 {
-                    let monitor = &mut session.monitor;
                     if let Some(state) = monitor.state.as_object_mut() {
                         for (key, value) in changes {
                             state.insert(key.clone(), value.clone());
@@ -883,52 +900,61 @@ impl Streamers {
         session.reconnecting = true;
         session.status_requested = false;
         session.pending.clear();
-        if session.monitor.watchers > 0 {
-            session
-                .monitor
-                .publish(Update::Connection { connected: false });
+        if let Some(monitor) = sessions.monitor_mut(page, device) {
+            monitor.publish(Update::Connection { connected: false });
         }
         true
     }
 
     fn resume_watching(&self, page: &str, device: &str, number: u64) {
         let mut sessions = self.sessions.lock().unwrap();
-        if let Some(session) = sessions.get_mut(page, device, Some(number))
-            && session.monitor.watchers > 0
-        {
+        if sessions.monitor_mut(page, device).is_none() {
+            return;
+        }
+        if let Some(session) = sessions.get_mut(page, device, Some(number)) {
             session.start_status();
-            session
-                .monitor
-                .publish(Update::Connection { connected: true });
+        }
+        if let Some(monitor) = sessions.monitor_mut(page, device) {
+            monitor.publish(Update::Connection { connected: true });
         }
     }
 
-    pub fn watch(&self, (page, device): (&str, &str)) -> Result<Watch, RequestError> {
+    pub fn watch(&self, (page, device): (&str, &str)) -> Watch {
         let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions
-            .get_mut(page, device, None)
-            .ok_or(RequestError::Offline)?;
-        session.monitor.watchers += 1;
-        session.start_status();
-        if !session.monitor.polling {
-            session.monitor.polling = true;
-            tokio::spawn(poll_status(
-                self.sessions.clone(),
-                page.to_string(),
-                device.to_string(),
-                session.monitor.id,
-            ));
-        }
-        Ok(Watch {
-            snapshot: session.monitor.snapshot(!session.reconnecting),
-            events: session.monitor.events.subscribe(),
+        let connected = match sessions.get_mut(page, device, None) {
+            Some(session) => {
+                session.start_status();
+                !session.reconnecting
+            }
+            None => false,
+        };
+        sessions.next_number += 1;
+        let id = sessions.next_number;
+        let monitor = sessions
+            .monitors
+            .entry((page.to_string(), device.to_string()))
+            .or_insert_with(|| {
+                tokio::spawn(poll_status(
+                    self.sessions.clone(),
+                    page.to_string(),
+                    device.to_string(),
+                    id,
+                ));
+                Monitor {
+                    id,
+                    ..Monitor::default()
+                }
+            });
+        monitor.watchers += 1;
+        Watch {
+            snapshot: monitor.snapshot(connected),
+            events: monitor.events.subscribe(),
             _guard: WatchGuard {
                 sessions: self.sessions.clone(),
                 page: page.to_string(),
                 device: device.to_string(),
-                monitor: session.monitor.id,
             },
-        })
+        }
     }
 
     pub async fn control(
@@ -943,13 +969,10 @@ impl Streamers {
             Duration::from_secs(5),
         )
         .await?;
+        let mut sessions = self.sessions.lock().unwrap();
         if changes_settings
-            && let Some(session) = self
-                .sessions
-                .lock()
-                .unwrap()
-                .get_mut(page, device, None)
-                .filter(|session| session.monitor.watchers > 0)
+            && sessions.monitor_mut(page, device).is_some()
+            && let Some(session) = sessions.get_mut(page, device, None)
         {
             session.send(Request::GetSettings {});
         }
@@ -958,12 +981,20 @@ impl Streamers {
 
     fn remove(&self, page: &str, device: &str, number: u64) {
         let mut sessions = self.sessions.lock().unwrap();
-        if let Some(page_sessions) = sessions.by_page.get_mut(page) {
-            page_sessions.retain(|session| session.device != device || session.number != number);
-            if page_sessions.is_empty() {
-                sessions.by_page.remove(page);
-            }
+        let Some(page_sessions) = sessions.by_page.get_mut(page) else {
+            return;
+        };
+        let Some(index) = page_sessions
+            .iter()
+            .position(|session| session.device == device && session.number == number)
+        else {
+            return;
+        };
+        let session = page_sessions.remove(index);
+        if page_sessions.is_empty() {
+            sessions.by_page.remove(page);
         }
+        sessions.ended(page, &session);
     }
 
     pub fn wheel(&self, page: &str) -> Option<Wheel> {
@@ -1389,32 +1420,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watchers_of_a_removed_session_leave_the_next_one_alone() {
+    async fn watches_outlive_sessions() {
         let streamers = Streamers::new(Duration::ZERO);
+        let offline = streamers.watch(("page", "device"));
+        assert!(!offline.snapshot.connected);
         let old = streamers.connect("page", "device").unwrap();
-        let stale = streamers.watch(("page", "device")).unwrap();
+        let mut watch = streamers.watch(("page", "device"));
+        assert!(watch.snapshot.connected);
         streamers.remove("page", "device", old.number);
+        assert_eq!(
+            *watch.events.recv().await.unwrap(),
+            Update::Connection { connected: false }
+        );
+        drop(offline);
         let mut new = streamers.connect("page", "device").unwrap();
-        let watch = streamers.watch(("page", "device")).unwrap();
-        drop(stale);
         let watchers = |streamers: &Streamers| {
             streamers
                 .sessions
                 .lock()
                 .unwrap()
-                .get_mut("page", "device", None)
-                .map(|session| session.monitor.watchers)
+                .monitor_mut("page", "device")
+                .map(|monitor| monitor.watchers)
         };
         assert_eq!(watchers(&streamers), Some(1));
-        let mut sent = vec![];
-        while let Ok(message) = new.receiver.try_recv() {
-            sent.push(encode(&message));
-        }
-        assert!(sent.iter().any(|message| message.contains("startStatus")));
-        assert!(!sent.iter().any(|message| message.contains("stopStatus")));
+        assert!(new.receiver.try_recv().is_err());
         drop(watch);
-        assert_eq!(watchers(&streamers), Some(0));
-        assert!(encode(&new.receiver.try_recv().unwrap()).contains("stopStatus"));
+        assert_eq!(watchers(&streamers), None);
+        assert!(new.receiver.try_recv().is_err());
     }
 
     #[test]

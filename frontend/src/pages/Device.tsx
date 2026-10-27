@@ -964,9 +964,6 @@ function DeviceView(props: {
           props.onSignOut();
           return;
         }
-        if (code === 409) {
-          setConnected(false);
-        }
         setError((code && failure(code)) || t("Connection lost. Reconnecting…"));
       },
     });
@@ -1023,7 +1020,14 @@ function DeviceView(props: {
 
   return (
     <>
-      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      <Show
+        when={
+          error() ??
+          (loaded() && streaming() && !connected() ? t("This Moblin is not connected.") : null)
+        }
+      >
+        {(message) => <Notice status>{message()}</Notice>}
+      </Show>
       <Show when={loaded()}>
         <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
           <SectionMenu

@@ -7,8 +7,8 @@ use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use futures_util::Stream;
-use futures_util::stream::unfold;
+use futures_util::stream::{iter, unfold};
+use futures_util::{Stream, StreamExt};
 use log::info;
 use serde::Serialize;
 use serde_json::Value;
@@ -63,7 +63,6 @@ struct Streaming {
     headers: HeaderMap,
     page: String,
     watch: Watch,
-    first: Option<Event>,
     check_at: Instant,
     stopping: watch::Receiver<bool>,
 }
@@ -75,10 +74,7 @@ pub(super) async fn handle_device_events(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
     moderator(&api, &headers, &id)?;
     let known = known_device(&api, &id, &device)?;
-    let watch = api
-        .remote_control
-        .watch((&id, &device))
-        .map_err(request_failure)?;
+    let watch = api.remote_control.watch((&id, &device));
     let first = Event::default()
         .event("snapshot")
         .json_data(SnapshotResponse {
@@ -92,14 +88,10 @@ pub(super) async fn handle_device_events(
         headers,
         page: id,
         watch,
-        first,
         check_at: Instant::now() + Duration::from_secs(60),
         stopping,
     };
     let stream = unfold(streaming, |mut streaming| async move {
-        if let Some(event) = streaming.first.take() {
-            return Some((Ok(event), streaming));
-        }
         let mut stopping = streaming.stopping.clone();
         loop {
             tokio::select! {
@@ -121,7 +113,7 @@ pub(super) async fn handle_device_events(
             }
         }
     });
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok(Sse::new(iter(first.map(Ok)).chain(stream)).keep_alive(KeepAlive::default()))
 }
 
 pub(super) async fn handle_device_control(
@@ -164,6 +156,8 @@ mod tests {
     use serde_json::{Value, json};
     use tokio::time::timeout;
     use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
     use crate::accounts::Platform;
     use crate::api::test_utils::*;
@@ -400,20 +394,50 @@ mod tests {
             response.text().await.unwrap(),
             "This Moblin is not in the list."
         );
+    }
+
+    #[tokio::test]
+    async fn watchers_of_an_offline_device_wait_for_it() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&address, &api).await;
         api.accounts.seen_device(&page, "B");
-        let response = client
-            .get(format!(
-                "http://{address}/account/pages/{page}/devices/B/events"
-            ))
-            .bearer_auth(&session)
-            .send()
+        let url = format!("http://{address}/account/pages/{page}/devices/B/events");
+        let mut events = Events::open(&client, &url, &session).await;
+        let (name, snapshot) = events.next().await;
+        assert_eq!(name, "snapshot");
+        assert_eq!(snapshot["connected"], false);
+        assert_eq!(snapshot["settings"], Value::Null);
+        let mut socket = connect_as(&address, &key, "B").await;
+        answer_monitoring(&mut socket, true).await;
+        assert_eq!(
+            events.next().await,
+            ("connection".to_string(), json!({"connected": true}))
+        );
+        assert_eq!(
+            events.next().await,
+            ("settings".to_string(), json!({"data": settings()}))
+        );
+        socket
+            .send(Message::Close(Some(CloseFrame {
+                code: CloseCode::Normal,
+                reason: "".into(),
+            })))
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_eq!(
-            response.text().await.unwrap(),
-            "This Moblin is not connected."
+            events.next().await,
+            ("connection".to_string(), json!({"connected": false}))
         );
+        let mut second = Events::open(&client, &url, &session).await;
+        let (name, snapshot) = second.next().await;
+        assert_eq!(name, "snapshot");
+        assert_eq!(snapshot["connected"], false);
+        assert_eq!(snapshot["settings"], settings());
+        let mut socket = connect_as(&address, &key, "B").await;
+        answer_monitoring(&mut socket, true).await;
+        assert_eq!(events.next().await.0, "connection");
+        assert_eq!(second.next().await.0, "connection");
     }
 
     #[tokio::test]
