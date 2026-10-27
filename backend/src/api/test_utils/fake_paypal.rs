@@ -19,6 +19,7 @@ pub(crate) struct FakePayPal {
     pub(crate) verification: Arc<std::sync::Mutex<Option<Value>>>,
     pub(crate) captured: Arc<std::sync::Mutex<bool>>,
     pub(crate) lose_capture: Arc<std::sync::Mutex<bool>>,
+    pub(crate) capture_later: Arc<std::sync::Mutex<bool>>,
     pub(crate) fail_capture: Arc<std::sync::Mutex<bool>>,
     pub(crate) lookups_fail: Arc<std::sync::Mutex<bool>>,
     pub(crate) approved: Arc<std::sync::Mutex<bool>>,
@@ -150,6 +151,7 @@ pub(crate) async fn start_paypal() -> (String, FakePayPal) {
                 let order = order.clone();
                 let captured = fake.captured.clone();
                 let lose_capture = fake.lose_capture.clone();
+                let capture_later = fake.capture_later.clone();
                 let fail_capture = fake.fail_capture.clone();
                 let refuse_capture = fake.refuse_capture.clone();
                 move |headers: HeaderMap, Path(id): Path<String>| async move {
@@ -186,6 +188,12 @@ pub(crate) async fn start_paypal() -> (String, FakePayPal) {
                         return (
                             StatusCode::UNPROCESSABLE_ENTITY,
                             Json(json!({"details": [{"issue": "ORDER_ALREADY_CAPTURED"}]})),
+                        );
+                    }
+                    if *capture_later.lock().unwrap() {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"name": "INTERNAL_SERVER_ERROR"})),
                         );
                     }
                     *captured.lock().unwrap() = true;

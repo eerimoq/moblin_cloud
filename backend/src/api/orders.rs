@@ -166,8 +166,12 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
     match stage {
         Stage::Captured => return Ok(()),
         Stage::Capturing => {
-            let status = settle_one(api, order_id, &order).await;
-            return settled(&order, status);
+            return match settle_one(api, order_id, &order, false).await {
+                Some(PaymentStatus::NotCaptured) => {
+                    capture_at_provider(api, order_id, &order, kind).await
+                }
+                status => settled(&order, status),
+            };
         }
         Stage::Created => {}
     }
@@ -242,10 +246,10 @@ async fn capture_at_provider(
             record_capture(api, order_id, order);
             Ok(())
         }
-        Err(CaptureError::Unknown) => {
-            let status = settle_one(api, order_id, order).await;
-            settled(order, status)
-        }
+        Err(CaptureError::Unknown) => match settle_one(api, order_id, order, false).await {
+            Some(PaymentStatus::NotCaptured) => settled(order, None),
+            status => settled(order, status),
+        },
         Err(error) => {
             if error != CaptureError::Pending
                 && let Err(error) =
@@ -297,7 +301,12 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
     }
 }
 
-async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentStatus> {
+async fn settle_one(
+    api: &Api,
+    order_id: &str,
+    order: &Order,
+    give_up: bool,
+) -> Option<PaymentStatus> {
     let provider = order.payee.provider();
     let status = match &order.payee {
         Payee::PayPal(merchant_id) => {
@@ -329,6 +338,9 @@ async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentS
         PaymentStatus::Pending => {
             info!("{provider} is still reviewing order {order_id}");
         }
+        PaymentStatus::NotCaptured if !give_up => {
+            info!("{provider} order {order_id} is not captured yet");
+        }
         PaymentStatus::NotCaptured => {
             info!("{provider} order {order_id} was not captured");
             if let Err(error) = api
@@ -348,7 +360,7 @@ async fn settle_one(api: &Api, order_id: &str, order: &Order) -> Option<PaymentS
 
 pub async fn settle(api: &Api, min_age: Duration) {
     for unsettled in api.orders.unsettled(min_age) {
-        settle_one(api, &unsettled.id, &unsettled.order).await;
+        settle_one(api, &unsettled.id, &unsettled.order, true).await;
     }
 }
 
@@ -592,6 +604,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lost_captures_completed_later_are_delivered() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.capture_later.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let unknown = "PayPal did not answer. If the money was taken, the tip will still be shown.";
+        for _ in 0..2 {
+            let response = client.post(&capture_url).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+            assert_eq!(response.text().await.unwrap(), unknown);
+            assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        }
+        *fake.captured.lock().unwrap() = true;
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
+        assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn lost_captures_never_completed_can_be_captured_again() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.capture_later.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        *fake.capture_later.lock().unwrap() = false;
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(api.deliveries.pending().len(), 1);
+    }
+
+    #[tokio::test]
     async fn failed_captures_can_be_retried() {
         let (address, api, fake) = start_paid_fake().await;
         let capture_url = paypal_tip_order(&address, &api).await;
@@ -601,10 +648,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal could not complete the tip."
+            "PayPal did not answer. If the money was taken, the tip will still be shown."
         );
         assert!(api.deliveries.pending().is_empty());
-        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Created);
+        assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
         *fake.fail_capture.lock().unwrap() = false;
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
