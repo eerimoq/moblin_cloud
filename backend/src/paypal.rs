@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use crate::pages::format_price;
-use crate::payments::{CaptureError, Order, PaymentStatus};
+use crate::payments::{CaptureError, Order, PaymentStatus, RefundError};
 
 pub const LIVE_URL: &str = "https://api-m.paypal.com";
 pub const SANDBOX_URL: &str = "https://api-m.sandbox.paypal.com";
@@ -28,7 +28,10 @@ fn order_body(order: &Order, merchant_id: &str) -> Value {
             "payee": {"merchant_id": merchant_id},
             "description": order.description(),
         }],
-        "application_context": {"shipping_preference": "NO_SHIPPING"},
+        "payment_source": {"paypal": {"experience_context": {
+            "shipping_preference": "NO_SHIPPING",
+            "payment_method_preference": "IMMEDIATE_PAYMENT_REQUIRED",
+        }}},
     })
 }
 
@@ -154,7 +157,7 @@ impl PayPal {
                     "api_integration_preference": {"rest_api_integration": {
                         "integration_method": "PAYPAL",
                         "integration_type": "THIRD_PARTY",
-                        "third_party_details": {"features": ["PAYMENT"]},
+                        "third_party_details": {"features": ["PAYMENT", "REFUND"]},
                     }},
                 }],
                 "products": ["EXPRESS_CHECKOUT"],
@@ -467,6 +470,64 @@ impl PayPal {
             None if body["status"] == "VOIDED" => PaymentStatus::Gone,
             None => PaymentStatus::NotCaptured,
         })
+    }
+
+    pub async fn refund(&self, order_id: &str, merchant_id: &str) -> Result<(), RefundError> {
+        let unknown = |error: anyhow::Error| {
+            warn!("refunding PayPal order {order_id} failed: {error:#}");
+            RefundError::Unknown
+        };
+        check_order_id(order_id).map_err(unknown)?;
+        let token = self.token().await.map_err(unknown)?;
+        let order: Value = async {
+            self.partner(
+                self.client
+                    .get(format!("{}/v2/checkout/orders/{order_id}", self.url)),
+            )
+            .bearer_auth(&token)
+            .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
+            .send()
+            .await
+            .context("failed to look a PayPal order up")?
+            .checked("look an order up")
+            .await?
+            .json()
+            .await
+            .context("unexpected answer to a PayPal order lookup")
+        }
+        .await
+        .map_err(unknown)?;
+        let capture_id = order["purchase_units"][0]["payments"]["captures"][0]["id"]
+            .as_str()
+            .filter(|id| check_order_id(id).is_ok())
+            .ok_or_else(|| unknown(anyhow::anyhow!("no capture in PayPal order {order_id}")))?;
+        let response = self
+            .partner(self.client.post(format!(
+                "{}/v2/payments/captures/{capture_id}/refund",
+                self.url
+            )))
+            .bearer_auth(&token)
+            .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
+            .header("PayPal-Request-Id", format!("refund-{capture_id}"))
+            .json(&json!({}))
+            .send()
+            .await
+            .map_err(|error| unknown(error.into()))?;
+        let status = response.status();
+        let body: Value = response.json().await.unwrap_or_default();
+        if status.is_success() {
+            return Ok(());
+        }
+        let issue = body["details"][0]["issue"].as_str().unwrap_or_default();
+        if issue == "CAPTURE_FULLY_REFUNDED" {
+            return Ok(());
+        }
+        warn!("PayPal refused to refund order {order_id} ({status}): {body}");
+        if status.is_server_error() {
+            Err(RefundError::Unknown)
+        } else {
+            Err(RefundError::Refused)
+        }
     }
 
     async fn post_capture(&self, order_id: &str, merchant_id: &str) -> Result<reqwest::Response> {

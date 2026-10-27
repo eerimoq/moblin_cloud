@@ -19,6 +19,7 @@ pub(crate) struct FakeStripe {
     pub(crate) cancelled: Arc<std::sync::Mutex<Vec<String>>>,
     pub(crate) lose_capture: Arc<std::sync::Mutex<bool>>,
     pub(crate) processing: Arc<std::sync::Mutex<bool>>,
+    pub(crate) refunds: Arc<std::sync::Mutex<Vec<(String, String)>>>,
 }
 
 pub(crate) fn new_stripe(url: String) -> Stripe {
@@ -176,6 +177,20 @@ pub(crate) async fn start_stripe() -> (String, FakeStripe) {
                             "currency": payment["form"]["currency"],
                         })),
                     )
+                }
+            }),
+        )
+        .route(
+            "/v1/refunds",
+            post({
+                let refunds = fake.refunds.clone();
+                move |headers: HeaderMap, body: String| async move {
+                    assert_eq!(headers["stripe-account"], "acct_1");
+                    refunds.lock().unwrap().push((
+                        body,
+                        headers["idempotency-key"].to_str().unwrap().to_string(),
+                    ));
+                    Json(json!({"id": "re_1", "status": "succeeded"}))
                 }
             }),
         )

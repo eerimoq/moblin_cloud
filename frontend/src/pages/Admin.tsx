@@ -31,6 +31,8 @@ const add = (a: Counts, b: Counts): Counts => ({
 });
 
 const reasonLabels: Record<string, string> = {
+  "too-late": "Viewer approved after 30 minutes",
+  refunded: "Paid after 30 minutes, refunded",
   "unknown-key": "Unknown or replaced key",
   "no-device-id": "No device id",
   "too-many-devices": "More than 5 devices",
@@ -127,6 +129,8 @@ type Kind = {
 };
 
 const captureReasons = [
+  "too-late",
+  "refunded",
   "payments-unavailable",
   "not-saved",
   "not-approved",
@@ -757,6 +761,12 @@ function Loaded(props: { stats: AdminStats }) {
         "Completed captures, so the streamer got the money and the request was queued. One order can fail several times before it succeeds.",
         kind.payments,
       ),
+      {
+        label: "Refunded",
+        hint: "Paid after the 30 minute deadline, so the money went back to the viewer instead of the request being queued.",
+        counts: counters().get(`${kind.kind}Refunds`),
+        failures: [],
+      },
       ...(kind.subscribers
         ? [
             counters().step(
@@ -823,6 +833,16 @@ function Loaded(props: { stats: AdminStats }) {
         `Payments ${label} completed, however they were found. Only what happened after ${label} was asked to capture counts as failed here.`,
         ["not-approved", "pending", "provider", "unknown", "expired"],
         labels,
+      ),
+      counters().step(
+        `${slug}Refunds`,
+        "Refunds",
+        `Payments ${label} completed after the 30 minute deadline and refunded. A refund ${label} refused is delivered late instead, and one it did not answer is retried every minute and counts each time.`,
+        ["provider", "unknown"],
+        {
+          provider: `${label} refused, delivered late`,
+          unknown: `${label} did not answer, retried`,
+        },
       ),
     ];
   };

@@ -4,7 +4,7 @@ use reqwest::{Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::payments::{CaptureError, Order, PaymentStatus};
+use crate::payments::{CaptureError, Order, PaymentStatus, RefundError};
 
 pub const URL: &str = "https://api.stripe.com";
 
@@ -306,6 +306,36 @@ impl Stripe {
             )
             .send()
             .await?)
+    }
+
+    pub async fn refund(&self, payment_id: &str, account: &str) -> Result<(), RefundError> {
+        if check_id(payment_id, "pi_").is_err() || check_id(account, "acct_").is_err() {
+            return Err(RefundError::Refused);
+        }
+        let response = self
+            .connected(
+                self.client.post(format!("{}/v1/refunds", self.url)),
+                account,
+            )
+            .header("Idempotency-Key", format!("refund-{payment_id}"))
+            .form(&[("payment_intent", payment_id)])
+            .send()
+            .await
+            .map_err(|error| {
+                warn!("refunding Stripe payment {payment_id} failed: {error:#}");
+                RefundError::Unknown
+            })?;
+        let status = response.status();
+        let body: Value = response.json().await.unwrap_or_default();
+        if status.is_success() || body["error"]["code"] == "charge_already_refunded" {
+            return Ok(());
+        }
+        warn!("Stripe refused to refund payment {payment_id} ({status}): {body}");
+        if status.is_server_error() {
+            Err(RefundError::Unknown)
+        } else {
+            Err(RefundError::Refused)
+        }
     }
 
     pub async fn cancel(&self, payment_id: &str, account: &str) -> Result<()> {

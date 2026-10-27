@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::counters;
 use crate::deliveries;
 use crate::pages::format_price;
-use crate::payments::{CaptureError, Item, Order, Payee, PaymentStatus, Stage};
+use crate::payments::{CaptureError, Item, Order, Payee, PaymentStatus, RefundError, Stage};
 
 use super::*;
 
@@ -145,16 +145,32 @@ fn provider_failed(provider: &str) -> Failure {
 pub(super) fn pending(provider: &str, kind: &str) -> Failure {
     let text = match kind {
         "tip" => format!(
-            "{provider} is still reviewing the tip. If {provider} approves it, the tip will be shown and the money reaches the streamer."
+            "{provider} is still reviewing the tip. If {provider} approves it within half an hour, the tip will be shown and the money reaches the streamer, otherwise the money is refunded."
         ),
         "effect" => format!(
-            "{provider} is still reviewing the tip, so the effect was not played yet. It will be played if {provider} approves it."
+            "{provider} is still reviewing the tip, so the effect was not played yet. It will be played if {provider} approves it within half an hour, otherwise the money is refunded."
         ),
         _ => format!(
-            "{provider} is still reviewing the tip, so the wheel was not spun yet. It will be spun if {provider} approves it."
+            "{provider} is still reviewing the tip, so the wheel was not spun yet. It will be spun if {provider} approves it within half an hour, otherwise the money is refunded."
         ),
     };
     failure("pending", StatusCode::PAYMENT_REQUIRED, &text)
+}
+
+fn too_late() -> Failure {
+    failure(
+        "too-late",
+        StatusCode::GONE,
+        "The tip took too long, so no money was taken. Try again.",
+    )
+}
+
+fn refunded() -> Failure {
+    failure(
+        "refunded",
+        StatusCode::GONE,
+        "The tip took too long, so the money was refunded.",
+    )
 }
 
 async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Result<(), Failure> {
@@ -163,16 +179,19 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         .get(order_id)
         .filter(|(_, order)| order.streamer == id && order.item.kind() == kind)
         .ok_or_else(expired)?;
+    let late = api.orders.late(order_id);
     match stage {
         Stage::Captured => return Ok(()),
         Stage::Capturing => {
-            return match settle_one(api, order_id, &order, false).await {
+            return match settle_one(api, order_id, &order, late).await {
+                Some(PaymentStatus::NotCaptured) if late => Err(too_late()),
                 Some(PaymentStatus::NotCaptured) => {
                     capture_at_provider(api, order_id, &order, kind).await
                 }
                 status => settled(&order, status),
             };
         }
+        Stage::Created if late => return Err(too_late()),
         Stage::Created => {}
     }
     let refusal = if kind == "spin" && api.remote_control.wheel(id).is_none() {
@@ -286,11 +305,12 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
         Some(PaymentStatus::Pending) => Err(pending(provider, order.item.kind())),
         Some(PaymentStatus::NotCaptured) => Err(provider_failed(provider)),
         Some(PaymentStatus::Gone) => Err(expired()),
+        Some(PaymentStatus::Refunded) => Err(refunded()),
         None => Err(failure(
             "unknown",
             StatusCode::BAD_GATEWAY,
             &format!(
-                "{provider} did not answer. If the money was taken, {}.",
+                "{provider} did not answer. If the money was taken, {} or the money refunded.",
                 match order.item.kind() {
                     "tip" => "the tip will still be shown",
                     "effect" => "the effect will still be played",
@@ -301,12 +321,7 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
     }
 }
 
-async fn settle_one(
-    api: &Api,
-    order_id: &str,
-    order: &Order,
-    give_up: bool,
-) -> Option<PaymentStatus> {
+async fn settle_one(api: &Api, order_id: &str, order: &Order, late: bool) -> Option<PaymentStatus> {
     let provider = order.payee.provider();
     let status = match &order.payee {
         Payee::PayPal(merchant_id) => {
@@ -326,6 +341,7 @@ async fn settle_one(
         }
     };
     match status {
+        PaymentStatus::Captured if late => return refund_late(api, order_id, order).await,
         PaymentStatus::Captured => {
             info!(
                 "{:?} paid {} {} in {provider} order {order_id}, found when settling it",
@@ -338,7 +354,7 @@ async fn settle_one(
         PaymentStatus::Pending => {
             info!("{provider} is still reviewing order {order_id}");
         }
-        PaymentStatus::NotCaptured if !give_up => {
+        PaymentStatus::NotCaptured if !late => {
             info!("{provider} order {order_id} is not captured yet");
         }
         PaymentStatus::NotCaptured => {
@@ -346,7 +362,7 @@ async fn settle_one(
             api.orders.remove(order_id);
             cancel_expired(api, order_id, order).await;
         }
-        PaymentStatus::Gone => {
+        PaymentStatus::Gone | PaymentStatus::Refunded => {
             info!("{provider} order {order_id} is gone");
             api.orders.remove(order_id);
         }
@@ -354,9 +370,43 @@ async fn settle_one(
     Some(status)
 }
 
+async fn refund_late(api: &Api, order_id: &str, order: &Order) -> Option<PaymentStatus> {
+    let provider = order.payee.provider();
+    let slug = order.payee.slug();
+    let refunded = match &order.payee {
+        Payee::PayPal(merchant_id) => api.paypal.as_ref()?.refund(order_id, merchant_id).await,
+        Payee::Stripe(account) => api.stripe.as_ref()?.refund(order_id, account).await,
+        Payee::Twitch(_) | Payee::Kick => return None,
+    };
+    match refunded {
+        Ok(()) => {
+            info!(
+                "{:?} paid {} {} in {provider} order {order_id} too late, refunded it",
+                order.user,
+                format_price(order.price),
+                order.currency
+            );
+            api.orders.remove(order_id);
+            api.counters.bump(&format!("{}Refunds", order.item.kind()));
+            api.counters.bump(&format!("{slug}Refunds"));
+            Some(PaymentStatus::Refunded)
+        }
+        Err(RefundError::Refused) => {
+            warn!("{provider} refused to refund order {order_id}, delivering it late");
+            api.counters.bump(&format!("{slug}RefundsFailed:provider"));
+            record_capture(api, order_id, order);
+            Some(PaymentStatus::Captured)
+        }
+        Err(RefundError::Unknown) => {
+            api.counters.bump(&format!("{slug}RefundsFailed:unknown"));
+            None
+        }
+    }
+}
+
 pub async fn settle(api: &Api, min_age: Duration) {
     for unsettled in api.orders.unsettled(min_age) {
-        settle_one(api, &unsettled.id, &unsettled.order, unsettled.expired).await;
+        settle_one(api, &unsettled.id, &unsettled.order, unsettled.late).await;
     }
 }
 
@@ -564,7 +614,7 @@ mod tests {
         *fake.lose_capture.lock().unwrap() = true;
         *fake.lookups_fail.lock().unwrap() = true;
         let client = reqwest::Client::new();
-        let unknown = "PayPal did not answer. If the money was taken, the tip will still be shown.";
+        let unknown = "PayPal did not answer. If the money was taken, the tip will still be shown or the money refunded.";
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(response.text().await.unwrap(), unknown);
@@ -609,7 +659,7 @@ mod tests {
         let capture_url = paypal_tip_order(&address, &api).await;
         *fake.capture_later.lock().unwrap() = true;
         let client = reqwest::Client::new();
-        let unknown = "PayPal did not answer. If the money was taken, the tip will still be shown.";
+        let unknown = "PayPal did not answer. If the money was taken, the tip will still be shown or the money refunded.";
         for _ in 0..2 {
             let response = client.post(&capture_url).send().await.unwrap();
             assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
@@ -639,16 +689,88 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tried_captures_are_only_given_up_after_a_lookup() {
+    async fn captures_after_the_deadline_are_refused() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        api.orders.age("ORDER1", 31 * 60);
+        let response = reqwest::Client::new()
+            .post(&capture_url)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The tip took too long, so no money was taken. Try again."
+        );
+        assert!(!*fake.captured.lock().unwrap());
+        expire_orders(&api).await;
+        assert_eq!(api.orders.get("ORDER1"), None);
+    }
+
+    #[tokio::test]
+    async fn late_payments_are_refunded() {
         let (address, api, fake) = start_paid_fake().await;
         let capture_url = paypal_tip_order(&address, &api).await;
         *fake.capture_later.lock().unwrap() = true;
         let client = reqwest::Client::new();
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-        api.orders.age("ORDER1", 4 * 60 * 60);
+        api.orders.age("ORDER1", 31 * 60);
         expire_orders(&api).await;
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
+        *fake.captured.lock().unwrap() = true;
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("ORDER1"), None);
+        assert!(api.deliveries.pending().is_empty());
+        assert_eq!(*fake.refunds.lock().unwrap(), ["refund-CAPTURE1"]);
+        let counters = api.counters.all();
+        let count = |name: &str| {
+            counters
+                .iter()
+                .find(|counter| counter.name == name)
+                .map_or(0, |counter| counter.total)
+        };
+        assert_eq!(count("tipRefunds"), 1);
+        assert_eq!(count("paypalRefunds"), 1);
+        assert_eq!(count("tipPayments"), 0);
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+    }
+
+    #[tokio::test]
+    async fn late_payments_are_refunded_when_the_viewer_retries() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.capture_later.lock().unwrap() = true;
+        let client = reqwest::Client::new();
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        api.orders.age("ORDER1", 31 * 60);
+        *fake.captured.lock().unwrap() = true;
+        let response = client.post(&capture_url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The tip took too long, so the money was refunded."
+        );
+        assert_eq!(*fake.refunds.lock().unwrap(), ["refund-CAPTURE1"]);
+        assert!(api.deliveries.pending().is_empty());
+    }
+
+    #[tokio::test]
+    async fn late_payments_are_delivered_when_they_cannot_be_refunded() {
+        let (address, api, fake) = start_paid_fake().await;
+        let capture_url = paypal_tip_order(&address, &api).await;
+        *fake.capture_later.lock().unwrap() = true;
+        *fake.refuse_refund.lock().unwrap() = true;
+        let response = reqwest::Client::new()
+            .post(&capture_url)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        api.orders.age("ORDER1", 31 * 60);
         *fake.captured.lock().unwrap() = true;
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Captured);
@@ -656,20 +778,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tried_captures_never_completed_are_given_up_after_three_hours() {
+    async fn tried_captures_never_completed_are_given_up_after_30_minutes() {
         let (address, api, fake) = start_paid_fake().await;
         let capture_url = paypal_tip_order(&address, &api).await;
         *fake.capture_later.lock().unwrap() = true;
         let client = reqwest::Client::new();
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-        api.orders.age("ORDER1", 2 * 60 * 60);
+        api.orders.age("ORDER1", 20 * 60);
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
-        api.orders.age("ORDER1", 2 * 60 * 60);
+        api.orders.age("ORDER1", 20 * 60);
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.orders.get("ORDER1"), None);
         assert!(api.deliveries.pending().is_empty());
+        assert!(fake.refunds.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -682,7 +805,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal did not answer. If the money was taken, the tip will still be shown."
+            "PayPal did not answer. If the money was taken, the tip will still be shown or the money refunded."
         );
         assert!(api.deliveries.pending().is_empty());
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);
@@ -785,7 +908,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             response.text().await.unwrap(),
-            "Stripe is still reviewing the tip. If Stripe approves it, the tip will be shown and the money reaches the streamer."
+            "Stripe is still reviewing the tip. If Stripe approves it within half an hour, the tip will be shown and the money reaches the streamer, otherwise the money is refunded."
         );
         assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Capturing);
         settle(&api, Duration::ZERO).await;
@@ -794,6 +917,47 @@ mod tests {
         settle(&api, Duration::ZERO).await;
         assert_eq!(api.deliveries.pending().len(), 1);
         assert_eq!(api.orders.get("pi_1").unwrap().0, Stage::Captured);
+    }
+
+    #[tokio::test]
+    async fn late_stripe_payments_are_refunded() {
+        let (address, api, fake) = start_stripe_api().await;
+        let (session, _, id) = streamer(&address, &api).await;
+        connect_stripe(&api);
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"currency": "eur", "tips": {"amounts": [500]}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+        let response = client
+            .post(&orders_url)
+            .json(&json!({"amount": 700, "user": "Viewer", "provider": "stripe"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        *fake.state.lock().unwrap() = "requires_capture";
+        *fake.processing.lock().unwrap() = true;
+        let response = client
+            .post(format!("{orders_url}/pi_1/capture"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        api.orders.age("pi_1", 31 * 60);
+        *fake.state.lock().unwrap() = "succeeded";
+        settle(&api, Duration::ZERO).await;
+        assert_eq!(api.orders.get("pi_1"), None);
+        assert!(api.deliveries.pending().is_empty());
+        assert_eq!(
+            *fake.refunds.lock().unwrap(),
+            [("payment_intent=pi_1".to_string(), "refund-pi_1".to_string())]
+        );
     }
 
     #[tokio::test]
@@ -857,7 +1021,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             response.text().await.unwrap(),
-            "PayPal is still reviewing the tip. If PayPal approves it, the tip will be shown and the money reaches the streamer."
+            "PayPal is still reviewing the tip. If PayPal approves it within half an hour, the tip will be shown and the money reaches the streamer, otherwise the money is refunded."
         );
         assert!(api.deliveries.pending().is_empty());
         assert_eq!(api.orders.get("ORDER1").unwrap().0, Stage::Capturing);

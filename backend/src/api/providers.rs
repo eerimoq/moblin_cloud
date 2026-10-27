@@ -546,6 +546,11 @@ mod tests {
         assert_eq!(referral["attribution"], "BN");
         assert_eq!(referral["body"]["tracking_id"], tracking_id.as_str());
         assert_eq!(
+            referral["body"]["operations"][0]["api_integration_preference"]["rest_api_integration"]
+                ["third_party_details"]["features"],
+            json!(["PAYMENT", "REFUND"])
+        );
+        assert_eq!(
             referral["body"]["partner_config_override"]["return_url"],
             "https://moblin.app/dashboard/"
         );

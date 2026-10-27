@@ -118,13 +118,22 @@ pub enum CaptureError {
     Unknown,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum RefundError {
+    Refused,
+    Unknown,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PaymentStatus {
     Captured,
     Pending,
     NotCaptured,
     Gone,
+    Refunded,
 }
+
+const DEADLINE: u64 = 30 * 60;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Stage {
@@ -153,7 +162,7 @@ impl Stage {
 pub struct Unsettled {
     pub id: String,
     pub order: Order,
-    pub expired: bool,
+    pub late: bool,
 }
 
 pub struct Orders {
@@ -189,7 +198,7 @@ impl Orders {
             )
             .and_then(|mut statement| {
                 statement
-                    .query_map([now().saturating_sub(3 * 60 * 60)], |row| {
+                    .query_map([now().saturating_sub(DEADLINE)], |row| {
                         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
@@ -245,6 +254,17 @@ impl Orders {
                 None
             }
         }
+    }
+
+    pub fn late(&self, id: &str) -> bool {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT created_at < ?2 FROM orders WHERE id = ?1",
+                params![id, now().saturating_sub(DEADLINE)],
+                |row| row.get(0),
+            )
+            .unwrap_or(false)
     }
 
     pub fn transition(&self, id: &str, from: Stage, to: Stage) -> Result<bool> {
@@ -320,7 +340,7 @@ impl Orders {
                     .query_map(
                         params![
                             now().saturating_sub(min_age.as_secs()),
-                            now().saturating_sub(3 * 60 * 60)
+                            now().saturating_sub(DEADLINE)
                         ],
                         |row| {
                             Ok((
@@ -335,11 +355,11 @@ impl Orders {
         match rows {
             Ok(rows) => rows
                 .into_iter()
-                .filter_map(|(id, details, expired)| {
+                .filter_map(|(id, details, late)| {
                     let order = serde_json::from_str(&details)
                         .map_err(|error| warn!("failed to parse order {id}: {error}"))
                         .ok()?;
-                    Some(Unsettled { id, order, expired })
+                    Some(Unsettled { id, order, late })
                 })
                 .collect(),
             Err(error) => {
@@ -478,7 +498,7 @@ mod tests {
             vec![Unsettled {
                 id: "ORDER1".to_string(),
                 order: order(),
-                expired: false,
+                late: false,
             }]
         );
         assert!(orders.unsettled(Duration::from_secs(60)).is_empty());
@@ -586,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn created_orders_expire_after_three_hours() {
+    fn created_orders_expire_after_30_minutes() {
         let database = Database::memory();
         let orders = Orders::new(database.clone());
         orders.insert("OLD", &order()).unwrap();
@@ -594,10 +614,12 @@ mod tests {
         database
             .lock()
             .execute(
-                "UPDATE orders SET created_at = created_at - 4 * 60 * 60 WHERE id = 'OLD'",
+                "UPDATE orders SET created_at = created_at - 31 * 60 WHERE id = 'OLD'",
                 [],
             )
             .unwrap();
+        assert!(orders.late("OLD"));
+        assert!(!orders.late("NEW"));
         assert_eq!(orders.expire(), vec![("OLD".to_string(), order())]);
         assert_eq!(orders.get("OLD"), None);
         assert!(orders.get("NEW").is_some());

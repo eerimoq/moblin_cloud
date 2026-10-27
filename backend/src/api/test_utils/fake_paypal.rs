@@ -25,6 +25,8 @@ pub(crate) struct FakePayPal {
     pub(crate) approved: Arc<std::sync::Mutex<bool>>,
     pub(crate) refuse_capture: Arc<std::sync::Mutex<bool>>,
     pub(crate) gone: Arc<std::sync::Mutex<bool>>,
+    pub(crate) refunds: Arc<std::sync::Mutex<Vec<String>>>,
+    pub(crate) refuse_refund: Arc<std::sync::Mutex<bool>>,
 }
 
 pub(crate) fn new_paypal(url: String) -> PayPal {
@@ -214,7 +216,7 @@ pub(crate) async fn start_paypal() -> (String, FakePayPal) {
                             "id": id,
                             "status": "COMPLETED",
                             "purchase_units": [{"payments": {"captures": [
-                                {"status": status, "amount": amount},
+                                {"id": "CAPTURE1", "status": status, "amount": amount},
                             ]}}],
                         })),
                     )
@@ -259,9 +261,33 @@ pub(crate) async fn start_paypal() -> (String, FakePayPal) {
                             "id": id,
                             "status": "COMPLETED",
                             "purchase_units": [{"payments": {"captures": [
-                                {"status": status, "amount": amount},
+                                {"id": "CAPTURE1", "status": status, "amount": amount},
                             ]}}],
                         })),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/v2/payments/captures/{id}/refund",
+            post({
+                let refunds = fake.refunds.clone();
+                let refuse_refund = fake.refuse_refund.clone();
+                move |headers: HeaderMap, Path(id): Path<String>| async move {
+                    assert_eq!(id, "CAPTURE1");
+                    if *refuse_refund.lock().unwrap() {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            Json(json!({"name": "NOT_AUTHORIZED"})),
+                        );
+                    }
+                    refunds
+                        .lock()
+                        .unwrap()
+                        .push(headers["paypal-request-id"].to_str().unwrap().to_string());
+                    (
+                        StatusCode::CREATED,
+                        Json(json!({"id": "REFUND1", "status": "COMPLETED"})),
                     )
                 }
             }),

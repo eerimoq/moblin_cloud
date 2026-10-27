@@ -432,6 +432,13 @@ mod tests {
             sent["purchase_units"][0]["description"],
             "Tip from Viewer: Great stream!"
         );
+        assert_eq!(
+            sent["payment_source"]["paypal"]["experience_context"],
+            json!({
+                "shipping_preference": "NO_SHIPPING",
+                "payment_method_preference": "IMMEDIATE_PAYMENT_REQUIRED",
+            })
+        );
         let response = client
             .post(format!(
                 "http://{address}/pages/{id}/spin/orders/ORDER1/capture"
