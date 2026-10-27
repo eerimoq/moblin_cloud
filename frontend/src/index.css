@@ -41,6 +41,21 @@
   --color-wheel-4: #30d158;
   --color-wheel-5: #ff375f;
   --color-wheel-6: #64d2ff;
+  --color-phone-bezel: #0b0b0c;
+  --color-phone-frame: #3a3c40;
+  --color-phone-screen: #000000;
+  --color-phone-preview: #2c3238;
+  --color-phone-preview-dark: #0d0f11;
+  --color-phone-chip: rgb(0 0 0 / 0.4);
+  --color-phone-button: #3f3f3f;
+  --color-phone-selected: rgb(142 142 147 / 0.6);
+  --color-phone-border: #8e8e93;
+  --color-phone-row: #1c1c1e;
+  --color-phone-separator: #38383a;
+  --color-phone-tint: #0a84ff;
+  --color-phone-switch: #30d158;
+  --color-phone-live: #ff3b30;
+  --color-phone-warn: #ffd60a;
 
   --font-display: "Fredoka", "Arial Rounded MT Bold", "Nunito Sans", sans-serif;
   --font-body: "Nunito Sans", "Helvetica Neue", Arial, sans-serif;

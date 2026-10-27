@@ -185,6 +185,10 @@ pub fn router(api: Arc<Api>) -> Router {
             get(handle_device_events),
         )
         .route(
+            "/account/pages/{id}/devices/{device}/preview",
+            get(handle_device_preview),
+        )
+        .route(
             "/account/pages/{id}/devices/{device}/control",
             post(handle_device_control),
         )

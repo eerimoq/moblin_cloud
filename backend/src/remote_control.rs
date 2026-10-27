@@ -73,6 +73,9 @@ enum MessageToAssistant {
     Event {
         data: Event,
     },
+    Preview {
+        preview: String,
+    },
     Ping {},
 }
 
@@ -147,6 +150,8 @@ enum Request {
         filter: StatusFilter,
     },
     StopStatus {},
+    StartPreview {},
+    StopPreview {},
     #[serde(untagged)]
     Control(Control),
 }
@@ -200,7 +205,50 @@ pub enum Control {
     },
     ReloadBrowserWidgets {},
     InstantReplay {},
-    SaveReplay {},
+    SetStream {
+        id: Uuid,
+    },
+    SetAutoSceneSwitcher {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Uuid>,
+    },
+    SetPreviewStream {
+        on: bool,
+    },
+    SetFilter {
+        filter: Filter,
+        on: bool,
+    },
+    StartMacro {
+        id: Uuid,
+    },
+    StopMacro {
+        id: Uuid,
+    },
+    SetGimbalTracking {
+        on: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Filter {
+    Pixellate {},
+    Movie {},
+    GrayScale {},
+    Sepia {},
+    Triple {},
+    Twin {},
+    FourThree {},
+    Crt {},
+    Pinch {},
+    Whirlpool {},
+    Poll {},
+    BlurFaces {},
+    Privacy {},
+    Beauty {},
+    MoblinInMouth {},
+    CameraMan {},
 }
 
 impl Control {
@@ -370,6 +418,45 @@ impl Monitor {
     }
 }
 
+struct PreviewMonitor {
+    watchers: usize,
+    frame: Option<Arc<str>>,
+    frames: broadcast::Sender<Arc<str>>,
+}
+
+pub struct PreviewWatch {
+    pub frame: Option<Arc<str>>,
+    pub frames: broadcast::Receiver<Arc<str>>,
+    _guard: PreviewGuard,
+}
+
+struct PreviewGuard {
+    sessions: Arc<Mutex<Sessions>>,
+    page: String,
+    device: String,
+}
+
+impl Drop for PreviewGuard {
+    fn drop(&mut self) {
+        let mut sessions = self.sessions.lock().unwrap();
+        let key = (self.page.clone(), self.device.clone());
+        let Some(preview) = sessions.previews.get_mut(&key) else {
+            return;
+        };
+        preview.watchers = preview.watchers.saturating_sub(1);
+        if preview.watchers > 0 {
+            return;
+        }
+        sessions.previews.remove(&key);
+        if let Some(session) = sessions.get_mut(&self.page, &self.device, None)
+            && session.preview_requested
+        {
+            session.preview_requested = false;
+            session.send(Request::StopPreview {});
+        }
+    }
+}
+
 pub struct Watch {
     pub snapshot: Snapshot,
     pub events: broadcast::Receiver<Arc<Update>>,
@@ -432,6 +519,7 @@ struct Session {
     wheel: Option<Wheel>,
     reconnecting: bool,
     status_requested: bool,
+    preview_requested: bool,
 }
 
 impl Session {
@@ -459,6 +547,13 @@ impl Session {
         }
         self.send(Request::GetSettings {});
     }
+
+    fn start_preview(&mut self) {
+        if !self.reconnecting && !self.preview_requested {
+            self.preview_requested = true;
+            self.send(Request::StartPreview {});
+        }
+    }
 }
 
 #[derive(Default)]
@@ -466,6 +561,7 @@ struct Sessions {
     next_number: u64,
     by_page: HashMap<String, Vec<Session>>,
     monitors: HashMap<(String, String), Monitor>,
+    previews: HashMap<(String, String), PreviewMonitor>,
 }
 
 impl Sessions {
@@ -709,6 +805,7 @@ impl Streamers {
             wheel: None,
             reconnecting: false,
             status_requested: false,
+            preview_requested: false,
         };
         let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
         match page_sessions.iter_mut().find(|old| old.device == device) {
@@ -868,6 +965,19 @@ impl Streamers {
                     monitor.publish(Update::State { data });
                 }
             }
+            Ok(MessageToAssistant::Preview { preview }) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                if preview.len() <= 2_000_000
+                    && sessions.get_mut(page, device, Some(number)).is_some()
+                    && let Some(watched) = sessions
+                        .previews
+                        .get_mut(&(page.to_string(), device.to_string()))
+                {
+                    let frame: Arc<str> = preview.into();
+                    watched.frame = Some(frame.clone());
+                    let _ = watched.frames.send(frame);
+                }
+            }
             Ok(MessageToAssistant::Event {
                 data: Event::WheelOfLuck { wheel },
             }) => {
@@ -896,6 +1006,7 @@ impl Streamers {
         };
         session.reconnecting = true;
         session.status_requested = false;
+        session.preview_requested = false;
         session.pending.clear();
         if let Some(monitor) = sessions.monitor_mut(page, device) {
             monitor.disconnected();
@@ -906,6 +1017,13 @@ impl Streamers {
 
     fn resume_watching(&self, page: &str, device: &str, number: u64) {
         let mut sessions = self.sessions.lock().unwrap();
+        if sessions
+            .previews
+            .contains_key(&(page.to_string(), device.to_string()))
+            && let Some(session) = sessions.get_mut(page, device, Some(number))
+        {
+            session.start_preview();
+        }
         if sessions.monitor_mut(page, device).is_none() {
             return;
         }
@@ -945,6 +1063,31 @@ impl Streamers {
             snapshot: monitor.snapshot(connected),
             events: monitor.events.subscribe(),
             _guard: WatchGuard {
+                sessions: self.sessions.clone(),
+                page: page.to_string(),
+                device: device.to_string(),
+            },
+        }
+    }
+
+    pub fn watch_preview(&self, (page, device): (&str, &str)) -> PreviewWatch {
+        let mut sessions = self.sessions.lock().unwrap();
+        if let Some(session) = sessions.get_mut(page, device, None) {
+            session.start_preview();
+        }
+        let preview = sessions
+            .previews
+            .entry((page.to_string(), device.to_string()))
+            .or_insert_with(|| PreviewMonitor {
+                watchers: 0,
+                frame: None,
+                frames: broadcast::channel(4).0,
+            });
+        preview.watchers += 1;
+        PreviewWatch {
+            frame: preview.frame.clone(),
+            frames: preview.frames.subscribe(),
+            _guard: PreviewGuard {
                 sessions: self.sessions.clone(),
                 page: page.to_string(),
                 device: device.to_string(),
@@ -1181,7 +1324,34 @@ mod tests {
             control(18, Control::ReloadBrowserWidgets {}),
             r#"{"request":{"id":18,"data":{"reloadBrowserWidgets":{}}}}"#
         );
-        assert!(serde_json::from_str::<Control>(r#"{"setAutoSceneSwitcher":{}}"#).is_err());
+        assert_eq!(
+            control(
+                19,
+                serde_json::from_str(r#"{"setAutoSceneSwitcher":{}}"#).unwrap()
+            ),
+            r#"{"request":{"id":19,"data":{"setAutoSceneSwitcher":{}}}}"#
+        );
+        assert_eq!(
+            control(
+                20,
+                Control::SetFilter {
+                    filter: Filter::GrayScale {},
+                    on: true
+                }
+            ),
+            r#"{"request":{"id":20,"data":{"setFilter":{"filter":{"grayScale":{}},"on":true}}}}"#
+        );
+        assert_eq!(
+            encode(&MessageToStreamer::Request {
+                id: 24,
+                data: Request::StartPreview {},
+            }),
+            r#"{"request":{"id":24,"data":{"startPreview":{}}}}"#
+        );
+        assert!(
+            serde_json::from_str::<Control>(r#"{"setFilter":{"filter":"movie","on":true}}"#)
+                .is_err()
+        );
         assert!(serde_json::from_str::<Control>(r#"{"setStream":{"id":"A"}}"#).is_err());
         assert!(serde_json::from_str::<Control>(r#"{"setScene":{"id":"C2"}}"#).is_err());
         assert!(serde_json::from_str::<Control>(r#"{"setMic":{"id":"bt"}}"#).is_ok());
@@ -1192,6 +1362,12 @@ mod tests {
     #[test]
     fn messages_to_assistant_match_moblin() {
         assert_eq!(decode(r#"{"ping":{}}"#), MessageToAssistant::Ping {});
+        assert_eq!(
+            decode(r#"{"preview":{"preview":"/9j/"}}"#),
+            MessageToAssistant::Preview {
+                preview: "/9j/".to_string()
+            }
+        );
         assert_eq!(
             decode(r#"{"identify":{"streamerId":"ABC","authentication":"x"}}"#),
             MessageToAssistant::Identify {

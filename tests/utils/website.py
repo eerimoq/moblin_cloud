@@ -252,6 +252,13 @@ class Dashboard(Client):
             raise BackendError(response.status_code, response.text)
         return DeviceEvents(response)
 
+    def device_preview(self, page_id: str, device: str) -> "DeviceEvents":
+        path = f"/account/pages/{quote(page_id, safe='')}/devices/{quote(device, safe='')}/preview"
+        response = self.request("GET", path, headers={"accept": "text/event-stream"}, stream=True)
+        if not response.ok:
+            raise BackendError(response.status_code, response.text)
+        return DeviceEvents(response)
+
     def control_device(self, page_id: str, device: str, control: dict) -> dict:
         return self.post(
             f"/account/pages/{quote(page_id, safe='')}/devices/{quote(device, safe='')}/control", control

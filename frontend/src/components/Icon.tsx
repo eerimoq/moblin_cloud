@@ -44,7 +44,39 @@ export type IconName =
   | "shield"
   | "user"
   | "sign-out"
-  | "chart";
+  | "chart"
+  | "screen"
+  | "broadcast"
+  | "camera"
+  | "mic"
+  | "mic-off"
+  | "search"
+  | "server"
+  | "megaphone"
+  | "speedometer"
+  | "connection"
+  | "record"
+  | "location"
+  | "gamepad"
+  | "cpu"
+  | "moblink"
+  | "flashlight"
+  | "stealth"
+  | "reload"
+  | "gear"
+  | "flame"
+  | "bolt"
+  | "waveform"
+  | "chevron-left"
+  | "chevron-right"
+  | "film"
+  | "moon"
+  | "grid"
+  | "square"
+  | "shuffle"
+  | "list"
+  | "target"
+  | "video";
 
 type Props = {
   name: IconName;
@@ -258,6 +290,125 @@ export default function Icon(props: Props) {
         </Match>
         <Match when={props.name === "eye-off"}>
           <path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.4 3.4M6.6 6.6C3.7 8.5 2 12 2 12s3.5 7 10 7c1.9 0 3.5-.6 4.9-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
+        </Match>
+        <Match when={props.name === "screen"}>
+          <rect x="2" y="6" width="20" height="12" rx="3" />
+          <path d="M5.5 10v4" />
+        </Match>
+        <Match when={props.name === "broadcast"}>
+          <circle cx="12" cy="12" r="1.5" />
+          <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" />
+        </Match>
+        <Match when={props.name === "camera"}>
+          <path d="M3 8h4l2-3h6l2 3h4v11H3V8Z" />
+          <circle cx="12" cy="13" r="3.5" />
+        </Match>
+        <Match when={props.name === "mic"}>
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" />
+        </Match>
+        <Match when={props.name === "mic-off"}>
+          <path d="M15 10V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 4.6 2.5M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M9 21h6M3 3l18 18" />
+        </Match>
+        <Match when={props.name === "search"}>
+          <circle cx="11" cy="11" r="6" />
+          <path d="m20 20-4.5-4.5" />
+        </Match>
+        <Match when={props.name === "server"}>
+          <rect x="4" y="4" width="16" height="7" rx="1.5" />
+          <rect x="4" y="13" width="16" height="7" rx="1.5" />
+          <path d="M8 7.5h.01M8 16.5h.01" />
+        </Match>
+        <Match when={props.name === "megaphone"}>
+          <path d="M4 10v4h3l8 4V6l-8 4H4Z" />
+          <path d="M18.5 9a4 4 0 0 1 0 6" />
+        </Match>
+        <Match when={props.name === "speedometer"}>
+          <path d="M4.5 18a8.5 8.5 0 1 1 15 0" />
+          <path d="m12 14 4-5" />
+          <circle cx="12" cy="14" r="1" />
+        </Match>
+        <Match when={props.name === "connection"}>
+          <path d="M5 19v-3M10 19v-6M15 19V9M20 19V5" />
+        </Match>
+        <Match when={props.name === "record"}>
+          <circle cx="12" cy="12" r="8.5" />
+          <circle cx="12" cy="12" r="4" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "location"}>
+          <path d="M12 21s-6.5-5.5-6.5-11a6.5 6.5 0 0 1 13 0c0 5.5-6.5 11-6.5 11Z" />
+          <circle cx="12" cy="10" r="2.5" />
+        </Match>
+        <Match when={props.name === "gamepad"}>
+          <path d="M7 8h10a4 4 0 0 1 4 4v2.5a2.5 2.5 0 0 1-4.6 1.4L15 14H9l-1.4 1.9A2.5 2.5 0 0 1 3 14.5V12a4 4 0 0 1 4-4Z" />
+          <path d="M8 10.5v3M6.5 12h3M15.5 11h.01M17.5 13h.01" />
+        </Match>
+        <Match when={props.name === "cpu"}>
+          <rect x="6" y="6" width="12" height="12" rx="2" />
+          <path d="M10 10h4v4h-4zM9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" />
+        </Match>
+        <Match when={props.name === "moblink"}>
+          <rect x="3" y="3" width="11" height="7" rx="1.5" />
+          <rect x="10" y="14" width="11" height="7" rx="1.5" />
+          <path d="M8.5 10v7.5H10" />
+        </Match>
+        <Match when={props.name === "flashlight"}>
+          <path d="M7 3h10v4l-2.5 3.5V21h-5V10.5L7 7V3ZM7 7h10" />
+          <path d="M12 13v2.5" />
+        </Match>
+        <Match when={props.name === "stealth"}>
+          <path d="M3 17h18M6.5 17a5.5 5.5 0 0 1 11 0M12 5v3M5.6 9.6l1.4 1.4M18.4 9.6 17 11M8 21h8" />
+        </Match>
+        <Match when={props.name === "reload"}>
+          <path d="M20 12a8 8 0 1 1-2.3-5.7M20 3.5V8h-4.5" />
+        </Match>
+        <Match when={props.name === "gear"}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+        </Match>
+        <Match when={props.name === "flame"}>
+          <path d="M12 21.5a6.5 6.5 0 0 0 6.5-6.5c0-4.5-3.5-7-4.5-12-2.5 2-4 4.5-4 7-1-.8-1.8-2-2-3-2 2-2.5 5-2.5 8a6.5 6.5 0 0 0 6.5 6.5Z" />
+        </Match>
+        <Match when={props.name === "bolt"}>
+          <path d="M13 2.5 4.5 14H11l-1 7.5L18.5 10H12l1-7.5Z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "waveform"}>
+          <path d="M3 10.5v3M7 7v10M11 3.5v17M15 7.5v9M19 10v4" />
+        </Match>
+        <Match when={props.name === "chevron-left"}>
+          <path d="m15 5-7 7 7 7" />
+        </Match>
+        <Match when={props.name === "chevron-right"}>
+          <path d="m9 5 7 7-7 7" />
+        </Match>
+        <Match when={props.name === "film"}>
+          <rect x="4" y="3" width="16" height="18" rx="2" />
+          <path d="M8 3v18M16 3v18M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4" />
+        </Match>
+        <Match when={props.name === "moon"}>
+          <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
+        </Match>
+        <Match when={props.name === "grid"}>
+          <rect x="4" y="4" width="16" height="16" rx="1.5" />
+          <path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16" />
+        </Match>
+        <Match when={props.name === "square"}>
+          <rect x="5" y="5" width="14" height="14" rx="1.5" />
+        </Match>
+        <Match when={props.name === "shuffle"}>
+          <path d="M3 7h3.5c4 0 6 10 10 10H21M18 14l3 3-3 3M3 17h3.5c1.5 0 2.7-1.4 3.7-3.2M13.8 10.2c1-1.8 2.2-3.2 3.7-3.2H21M18 4l3 3-3 3" />
+        </Match>
+        <Match when={props.name === "list"}>
+          <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+        </Match>
+        <Match when={props.name === "target"}>
+          <circle cx="12" cy="12" r="8" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" />
+        </Match>
+        <Match when={props.name === "video"}>
+          <rect x="3" y="6" width="13" height="12" rx="2" />
+          <path d="m16 10.5 5-3v9l-5-3" />
         </Match>
       </Switch>
     </svg>

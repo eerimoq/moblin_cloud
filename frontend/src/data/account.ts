@@ -124,6 +124,9 @@ export type DeviceState = {
   stealthMode?: boolean;
   torchOn?: boolean;
   batteryCharging?: boolean;
+  gimbalTracking?: boolean;
+  filters?: unknown[];
+  macros?: { id: string; name: string; running: boolean }[];
 };
 
 export type Sample = {
@@ -161,7 +164,33 @@ export type Control =
   | { setMic: { id: string } }
   | { setSrtConnectionPriority: { id: string; priority: number; enabled: boolean } }
   | { setSrtConnectionPrioritiesEnabled: { enabled: boolean } }
-  | { reloadBrowserWidgets: object };
+  | { reloadBrowserWidgets: object }
+  | { instantReplay: object }
+  | { setStream: { id: string } }
+  | { setAutoSceneSwitcher: { id?: string } }
+  | { setPreviewStream: { on: boolean } }
+  | { setFilter: { filter: Record<MoblinFilter, object>; on: boolean } }
+  | { startMacro: { id: string } }
+  | { stopMacro: { id: string } }
+  | { setGimbalTracking: { on: boolean } };
+
+export type MoblinFilter =
+  | "pixellate"
+  | "movie"
+  | "grayScale"
+  | "sepia"
+  | "triple"
+  | "twin"
+  | "fourThree"
+  | "crt"
+  | "pinch"
+  | "whirlpool"
+  | "poll"
+  | "blurFaces"
+  | "privacy"
+  | "beauty"
+  | "moblinInMouth"
+  | "cameraMan";
 
 export type Recent = {
   id: string;
@@ -377,6 +406,9 @@ const devicePath = (page: string, device: string) =>
 
 export const deviceEventsUrl = (page: string, device: string) =>
   `${backendUrl}${devicePath(page, device)}/events`;
+
+export const devicePreviewUrl = (page: string, device: string) =>
+  `${backendUrl}${devicePath(page, device)}/preview`;
 
 export const controlDevice = (session: string, page: string, device: string, control: Control) =>
   call<object>(`${devicePath(page, device)}/control`, session, post(control));

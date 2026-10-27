@@ -1,3 +1,5 @@
+import systest
+
 from ..utils.context import Context
 from ..utils.fake_moblin import FakeMoblin
 from ..utils.moblin import Moblin
@@ -225,6 +227,37 @@ class RemoteControlDeviceStatus(RemoteControlTestCase):
             events.close()
 
 
+class RemoteControlDeviceScreen(RemoteControlTestCase):
+    """Set a filter on a device and show its preview on its device page, as the fake Moblin does until
+    Moblin Cloud forwards these requests."""
+
+    login = "screen"
+
+    def run(self):
+        if not self.moblin.is_fake():
+            raise systest.TestCaseSkippedError("Only the fake Moblin has the device screen's protocol yet.")
+        self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
+        self.wait_until(self.connected, "Moblin to connect")
+        page_id = self.dashboard.page_id()
+        device = self.dashboard.account()["devices"][0]["id"]
+        events = self.dashboard.device_events(page_id, device)
+        try:
+            self.dashboard.control_device(
+                page_id, device, {"setFilter": {"filter": {"grayScale": {}}, "on": True}}
+            )
+            self.wait_until(
+                lambda: {"grayScale": {}} in (events.wait_for("state")["data"].get("filters") or []),
+                "the filter to be reported",
+            )
+        finally:
+            events.close()
+        preview = self.dashboard.device_preview(page_id, device)
+        try:
+            self.assert_true(len(preview.wait_for("frame")["image"]) > 0)
+        finally:
+            preview.close()
+
+
 def tests(context: Context):
     return [
         RemoteControlConnects(context),
@@ -237,4 +270,5 @@ def tests(context: Context):
         RemoteControlNoWheel(context),
         RemoteControlDevices(context),
         RemoteControlDeviceStatus(context),
+        RemoteControlDeviceScreen(context),
     ]

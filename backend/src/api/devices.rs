@@ -16,7 +16,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
 
-use crate::remote_control::{Control, RequestError, Snapshot, Watch};
+use crate::remote_control::{Control, PreviewWatch, RequestError, Snapshot, Watch};
 
 use super::*;
 
@@ -109,6 +109,69 @@ pub(super) async fn handle_device_events(
                         return None;
                     }
                     streaming.check_at = Instant::now() + Duration::from_secs(60);
+                }
+            }
+        }
+    });
+    Ok(Sse::new(iter(first.map(Ok)).chain(stream)).keep_alive(KeepAlive::default()))
+}
+
+#[derive(Serialize)]
+struct Frame<'a> {
+    image: &'a str,
+}
+
+fn frame_event(image: &str) -> Option<Event> {
+    Event::default()
+        .event("frame")
+        .json_data(Frame { image })
+        .ok()
+}
+
+struct Previewing {
+    api: Arc<Api>,
+    headers: HeaderMap,
+    page: String,
+    watch: PreviewWatch,
+    check_at: Instant,
+    stopping: watch::Receiver<bool>,
+}
+
+pub(super) async fn handle_device_preview(
+    State(api): State<Arc<Api>>,
+    Path((id, device)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
+    moderator(&api, &headers, &id)?;
+    known_device(&api, &id, &device)?;
+    let watch = api.remote_control.watch_preview((&id, &device));
+    let first = watch.frame.as_deref().and_then(frame_event);
+    let stopping = api.stopping.subscribe();
+    let previewing = Previewing {
+        api,
+        headers,
+        page: id,
+        watch,
+        check_at: Instant::now() + Duration::from_secs(60),
+        stopping,
+    };
+    let stream = unfold(previewing, |mut previewing| async move {
+        let mut stopping = previewing.stopping.clone();
+        loop {
+            tokio::select! {
+                received = previewing.watch.frames.recv() => {
+                    match received {
+                        Ok(frame) => return Some((Ok(frame_event(&frame)?), previewing)),
+                        Err(RecvError::Lagged(_)) => {}
+                        Err(RecvError::Closed) => return None,
+                    }
+                }
+                _ = stopping.wait_for(|stopping| *stopping) => return None,
+                _ = sleep_until(previewing.check_at) => {
+                    if moderator(&previewing.api, &previewing.headers, &previewing.page).is_err() {
+                        return None;
+                    }
+                    previewing.check_at = Instant::now() + Duration::from_secs(60);
                 }
             }
         }
@@ -486,6 +549,38 @@ mod tests {
         let (name, event) = events.next().await;
         assert_eq!(name, "settings");
         assert_eq!(event["data"]["srt"]["connectionPrioritiesEnabled"], true);
+    }
+
+    #[tokio::test]
+    async fn watchers_get_the_preview() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
+        let mut preview = Events::open(&client, &url, &session).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"startPreview": {}}));
+        answer(&mut socket, &request, Value::Null).await;
+        socket
+            .send(Message::text(
+                json!({"preview": {"preview": "/9j/1"}}).to_string(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            preview.next().await,
+            ("frame".to_string(), json!({"image": "/9j/1"}))
+        );
+        let mut second = Events::open(&client, &url, &session).await;
+        assert_eq!(
+            second.next().await,
+            ("frame".to_string(), json!({"image": "/9j/1"}))
+        );
+        drop(preview);
+        drop(second);
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"stopPreview": {}}));
     }
 
     #[tokio::test]

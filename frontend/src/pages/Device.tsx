@@ -7,6 +7,7 @@ import {
   StreamerPicker,
 } from "../components/HeaderPickers";
 import Icon from "../components/Icon";
+import MoblinScreen from "../components/MoblinScreen";
 import { ask } from "../components/Modal";
 import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
 import {
@@ -24,6 +25,7 @@ import {
   pageEventsUrl,
   createAccountSession,
   deviceEventsUrl,
+  devicePreviewUrl,
   type Account,
   type Device,
   type AudioLevel,
@@ -39,6 +41,7 @@ import {
   type TopRightItem,
 } from "../data/account";
 import { BackendError } from "../data/backend";
+import { formatBits } from "../data/moblin";
 import { deviceUrl, pages } from "../data/links";
 import { t } from "../i18n";
 import { subscribe, subscribeChanges } from "../sse";
@@ -86,10 +89,7 @@ const filled = <T extends object>(part: T) => (Object.keys(part).length > 0 ? pa
 
 const historyWindow = 60 * 1000;
 
-const formatBits = (bitsPerSecond: number) =>
-  bitsPerSecond >= 1_000_000
-    ? `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbps`
-    : `${Math.round(bitsPerSecond / 1000)} kbps`;
+const perItem = ["setSrtConnectionPriority", "startMacro", "stopMacro"];
 
 const formatMilliseconds = (milliseconds: number) => `${Math.round(milliseconds)} ms`;
 
@@ -895,6 +895,7 @@ function DeviceView(props: {
   const [status, setStatus] = createSignal<DeviceStatus>(emptyStatus());
   const [state, setState] = createSignal<DeviceState>({});
   const [settings, setSettings] = createSignal<DeviceSettings | null>(null);
+  const [preview, setPreview] = createSignal<string | null>(null);
   const [history, setHistory] = createSignal<Sample[]>([]);
   const [pending, setPending] = createSignal<string[]>([]);
 
@@ -957,6 +958,7 @@ function DeviceView(props: {
             if (!connected) {
               setStatus(emptyStatus());
               setState({});
+              setPreview(null);
             }
             break;
           }
@@ -976,10 +978,8 @@ function DeviceView(props: {
 
   const control = async (control: Control) => {
     const kind = Object.keys(control)[0] ?? "";
-    const key =
-      "setSrtConnectionPriority" in control
-        ? `${kind}:${control.setSrtConnectionPriority.id}`
-        : kind;
+    const body = Object.values(control)[0] as { id?: string };
+    const key = perItem.includes(kind) ? `${kind}:${body.id}` : kind;
     setPending((current) => [...current, key]);
     try {
       await controlDevice(props.session, props.page, props.device, control);
@@ -994,6 +994,12 @@ function DeviceView(props: {
 
   const online = () => connected() && streaming();
   const sections: Section[] = [
+    {
+      id: "screen",
+      label: t("Screen"),
+      icon: "screen",
+      status: () => ({ on: online(), text: online() ? t("Connected") : t("Not connected") }),
+    },
     {
       id: "controls",
       label: t("Controls"),
@@ -1022,6 +1028,23 @@ function DeviceView(props: {
     },
   ];
   const { active, select } = createSectionChoice(() => sections);
+
+  createEffect(() => {
+    if (active() !== "screen") {
+      return;
+    }
+    const stop = subscribe(devicePreviewUrl(props.page, props.device), props.session, {
+      onEvent: (kind, data) => {
+        if (kind === "frame") {
+          setPreview((data as { image: string }).image);
+        }
+      },
+    });
+    onCleanup(() => {
+      stop();
+      setPreview(null);
+    });
+  });
 
   return (
     <>
@@ -1052,6 +1075,26 @@ function DeviceView(props: {
             onSelect={select}
           />
           <div class="min-w-0">
+            <div hidden={active() !== "screen"}>
+              <div class={cardClass}>
+                <h2 class="text-[23px] font-semibold">{t("Screen")}</h2>
+                <p class="text-[15px] text-ink-2">
+                  {t(
+                    "What the Moblin app shows on the device, with the same buttons to control it.",
+                  )}
+                </p>
+                <MoblinScreen
+                  page={props.page}
+                  state={state()}
+                  status={status()}
+                  settings={settings()}
+                  preview={preview()}
+                  connected={online()}
+                  pending={pending()}
+                  onControl={control}
+                />
+              </div>
+            </div>
             <div hidden={active() !== "controls"}>
               <Controls
                 state={state()}

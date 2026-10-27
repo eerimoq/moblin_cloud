@@ -6,12 +6,18 @@ import io
 import json
 import logging
 import random
+import struct
 import threading
+import time
 import uuid
 import zipfile
+import zlib
+from typing import Any
 
 from websockets.sync.client import ClientConnection
 from websockets.sync.client import connect
+
+from .fake_moblin_database import database
 
 LOGGER = logging.getLogger(__name__)
 
@@ -20,6 +26,19 @@ def wheel_of(options: list[dict] | None) -> dict | None:
     if options is None:
         return None
     return {"options": [{"text": option["text"], "weight": option["weight"]} for option in options]}
+
+
+def png(width: int, height: int, rows: bytes) -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows, 6))
+        + chunk(b"IEND", b"")
+    )
 
 
 class FakeMoblin:
@@ -38,9 +57,26 @@ class FakeMoblin:
         self.icon = "AppIcon"
         self.ids = {
             name: str(uuid.uuid4()).upper()
-            for name in ["C1", "C2", "B1", "B2", "Z1", "Z2", "P1", "P2", "S1", "S2", "A1"]
+            for name in [
+                "C1",
+                "C2",
+                "C3",
+                "B1",
+                "B2",
+                "Z1",
+                "Z2",
+                "P1",
+                "P2",
+                "S1",
+                "S2",
+                "A1",
+                "M1",
+                "M2",
+            ]
         }
-        self.state = {
+        self.database = database(self.ids, self.icon)
+        self.filters: dict[str, bool] = {}
+        self.state: dict[str, Any] = {
             "scene": self.ids["C1"],
             "autoSceneSwitcher": {},
             "mic": "built-in",
@@ -51,9 +87,16 @@ class FakeMoblin:
             "debugLogging": False,
             "streaming": True,
             "recording": False,
+            "previewStream": False,
             "muted": False,
             "stealthMode": False,
             "torchOn": False,
+            "gimbalTracking": False,
+            "filters": [],
+            "macros": [
+                {"id": macro["id"], "name": macro["name"], "running": False}
+                for macro in self.database["macros"]["macros"]
+            ],
         }
         self.priorities_enabled = False
         self.priorities = [
@@ -64,6 +107,8 @@ class FakeMoblin:
         self.refuse_tips = False
         self._status_requested = threading.Event()
         self._status_thread: threading.Thread | None = None
+        self._preview_requested = threading.Event()
+        self._preview_thread: threading.Thread | None = None
         self.handled_request_ids: set[str] = set()
         self._stopped = threading.Event()
         self._lock = threading.Lock()
@@ -80,6 +125,7 @@ class FakeMoblin:
     def stop(self):
         self._stopped.set()
         self._status_requested.clear()
+        self._preview_requested.clear()
         self.close("control")
         self.close("cloud")
         for thread in self._threads:
@@ -116,6 +162,7 @@ class FakeMoblin:
                         self._websockets.pop(name, None)
                     if name == "cloud":
                         self._status_requested.clear()
+                        self._preview_requested.clear()
             self._stopped.wait(1)
 
     def serve(self, name: str, websocket: ClientConnection):
@@ -144,6 +191,7 @@ class FakeMoblin:
 
     def change_icon(self, icon: str):
         self.icon = icon
+        self.database["iconImage"] = icon
         with self._lock:
             websocket = self._websockets.get("cloud")
         if websocket is not None:
@@ -153,22 +201,38 @@ class FakeMoblin:
         with self._lock:
             websocket.send(json.dumps(message))
 
-    def send_event(self, data: dict):
+    def send_cloud(self, message: dict):
         with self._lock:
             websocket = self._websockets.get("cloud")
         if websocket is not None:
-            self.send(websocket, {"event": {"data": data}})
+            try:
+                self.send(websocket, message)
+            except Exception as error:
+                LOGGER.debug("Could not send: %s", error)
+
+    def send_event(self, data: dict):
+        self.send_cloud({"event": {"data": data}})
 
     def change_state(self, **changes):
         self.state.update(changes)
         if self._status_requested.is_set():
             self.send_event({"state": {"data": changes}})
 
+    def enabled_stream(self) -> dict:
+        return next(stream for stream in self.database["streams"] if stream["enabled"])
+
     def settings(self) -> dict:
         return {
-            "streams": [{"id": self.ids["S1"], "name": "Twitch"}, {"id": self.ids["S2"], "name": "Kick"}],
-            "scenes": [{"id": self.ids["C1"], "name": "Main"}, {"id": self.ids["C2"], "name": "BRB"}],
-            "autoSceneSwitchers": [{"id": self.ids["A1"], "name": "Evening"}],
+            "streams": [{"id": stream["id"], "name": stream["name"]} for stream in self.database["streams"]],
+            "scenes": [
+                {"id": scene["id"], "name": scene["name"]}
+                for scene in self.database["scenes"]
+                if scene["enabled"]
+            ],
+            "autoSceneSwitchers": [
+                {"id": switcher["id"], "name": switcher["name"]}
+                for switcher in self.database["autoSceneSwitchers"]["switchers"]
+            ],
             "bitratePresets": [
                 {"id": self.ids["B1"], "bitrate": 5000000},
                 {"id": self.ids["B2"], "bitrate": 2500000},
@@ -183,6 +247,44 @@ class FakeMoblin:
     def run_status(self):
         while self._status_requested.is_set() and not self._stopped.is_set():
             self.send_event({"status": {"topRight": self.status()["topRight"]}})
+            self._stopped.wait(1)
+
+    def frame(self) -> bytes:
+        width, height = 256, 144
+        scene = self.state["scene"]
+        top, bottom = (
+            ((40, 30, 70), (120, 40, 160)) if scene == self.ids["C2"] else ((70, 130, 200), (40, 90, 50))
+        )
+        light = 40 if self.state["torchOn"] else 0
+        line = int(time.time() * 40) % width
+        bar_width = max(2, int(6 * float(self.state["zoom"])))
+        canvas = bytearray()
+        for y in range(height):
+            mix = y / (height - 1)
+            pixel = bytes(min(255, int(top[i] + (bottom[i] - top[i]) * mix) + light) for i in range(3))
+            canvas += (
+                pixel * line
+                + b"\xff\xff\xff" * min(bar_width, width - line)
+                + pixel * max(0, width - line - bar_width)
+            )
+        rows = bytearray()
+        for y in range(height):
+            row = canvas[3 * width * y : 3 * width * (y + 1)]
+            if self.filters.get("grayScale") or self.filters.get("sepia"):
+                for x in range(width):
+                    gray = sum(row[3 * x : 3 * x + 3]) // 3
+                    if self.filters.get("sepia"):
+                        row[3 * x : 3 * x + 3] = bytes((min(255, gray + 40), min(255, gray + 20), gray))
+                    else:
+                        row[3 * x : 3 * x + 3] = bytes((gray, gray, gray))
+            if self.filters.get("movie") and (y < 18 or y >= height - 18):
+                row = bytearray(3 * width)
+            rows += b"\x00" + row
+        return png(width, height, bytes(rows))
+
+    def run_preview(self):
+        while self._preview_requested.is_set() and not self._stopped.is_set():
+            self.send_cloud({"preview": {"preview": base64.b64encode(self.frame()).decode()}})
             self._stopped.wait(1)
 
     def handle(self, data: dict) -> tuple[dict, dict | None]:
@@ -201,6 +303,13 @@ class FakeMoblin:
                 self._status_thread.start()
         elif kind == "stopStatus":
             self._status_requested.clear()
+        elif kind == "startPreview":
+            self._preview_requested.set()
+            if self._preview_thread is None or not self._preview_thread.is_alive():
+                self._preview_thread = threading.Thread(target=self.run_preview, daemon=True)
+                self._preview_thread.start()
+        elif kind == "stopPreview":
+            self._preview_requested.clear()
         elif kind == "tip" and "message" in body["kind"] and self.refuse_tips:
             LOGGER.debug("Refusing tip %s", body)
             return {"error": {}}, None
@@ -213,10 +322,10 @@ class FakeMoblin:
                     self.handled_request_ids.add(request_id)
                 LOGGER.debug("Got %s %s", kind, body)
         else:
-            self.control(kind, body)
+            return self.control(kind, body)
         return {"ok": {}}, None
 
-    def control(self, kind: str, body: dict):
+    def control(self, kind: str, body: dict) -> tuple[dict, dict | None]:
         LOGGER.debug("Control %s %s", kind, body)
         self.controls.append({kind: body})
         changes = {
@@ -226,10 +335,12 @@ class FakeMoblin:
             "setStealthMode": lambda: {"stealthMode": body["on"]},
             "setTorch": lambda: {"torchOn": body["on"]},
             "setZoom": lambda: {"zoom": body["x"]},
-            "setZoomPreset": lambda: {"zoomPreset": body["id"].upper()},
+            "setZoomPreset": lambda: self.zoom_preset(body["id"].upper()),
             "setScene": lambda: {"scene": body["id"].upper()},
             "setMic": lambda: {"mic": body["id"]},
             "setBitratePreset": lambda: {"bitrate": body["id"].upper()},
+            "setGimbalTracking": lambda: {"gimbalTracking": body["on"]},
+            "setPreviewStream": lambda: {"previewStream": body["on"]},
         }
         if kind in changes:
             self.change_state(**changes[kind]())
@@ -240,12 +351,43 @@ class FakeMoblin:
                 if priority["id"] == body["id"].upper():
                     priority["priority"] = max(1, min(10, body["priority"]))
                     priority["enabled"] = body["enabled"]
+        elif kind == "setStream":
+            for stream in self.database["streams"]:
+                stream["enabled"] = stream["id"] == body["id"].upper()
+        elif kind == "setAutoSceneSwitcher":
+            switcher = body.get("id")
+            self.database["autoSceneSwitchers"]["switcherId"] = switcher and switcher.upper()
+            self.change_state(autoSceneSwitcher={"id": switcher.upper()} if switcher else {})
+        elif kind == "setFilter":
+            self.filters[next(iter(body["filter"]))] = body["on"]
+            pairs: list[Any] = []
+            for name, on in self.filters.items():
+                pairs += [{name: {}}, on]
+            self.change_state(filters=pairs)
+        elif kind in ("startMacro", "stopMacro"):
+            macros = [
+                {
+                    **macro,
+                    "running": macro["running"]
+                    if macro["id"] != body["id"].upper()
+                    else kind == "startMacro",
+                }
+                for macro in self.state["macros"]
+            ]
+            self.change_state(macros=macros)
+        return {"ok": {}}, None
+
+    def zoom_preset(self, preset: str) -> dict:
+        zoom = next((item["x"] for item in self.database["zoom"]["back"] if item["id"] == preset), 1.0)
+        return {"zoomPreset": preset, "zoom": float(zoom)}
 
     def status(self) -> dict:
         live = self.state["streaming"]
         top_right: dict = {
             "audioInfo": {
-                "audioLevel": {"muted": {}} if self.state["muted"] else {"value": {"_0": -23.5}},
+                "audioLevel": {"muted": {}}
+                if self.state["muted"]
+                else {"value": {"_0": -23.5 + random.uniform(-6, 6)}},
                 "numberOfAudioChannels": 1,
             },
         }
@@ -279,10 +421,11 @@ class FakeMoblin:
                 "isMuted": self.state["muted"],
             },
             "topLeft": {
-                "stream": {"message": "Twitch", "ok": True},
+                "stream": {"message": self.enabled_stream()["name"], "ok": True},
                 "camera": {"message": "Back", "ok": True},
-                "mic": {"message": "Built-in", "ok": True},
+                "mic": {"message": "Built-in" if self.state["mic"] == "built-in" else "Headset", "ok": True},
                 "zoom": {"message": f"{self.state['zoom']:.1f}x", "ok": True},
+                "chat": {"message": "Connected", "ok": True},
                 "viewers": {"message": "12", "ok": True},
             },
             "topRight": top_right,
