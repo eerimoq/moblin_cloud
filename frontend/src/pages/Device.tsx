@@ -75,6 +75,14 @@ const topRightItems: [TopRightItem, string][] = [
 
 const emptyStatus = (): DeviceStatus => ({ general: {}, topLeft: {}, topRight: {} });
 
+const emptySettings: DeviceSettings = {
+  streams: [],
+  scenes: [],
+  bitratePresets: [],
+  mics: [],
+  srt: { connectionPrioritiesEnabled: false, connectionPriorities: [] },
+};
+
 const filled = <T extends object>(part: T) => (Object.keys(part).length > 0 ? part : undefined);
 
 const historyWindow = 60 * 1000;
@@ -715,7 +723,10 @@ function Controls(props: {
           onToggle={(on) => void props.onControl({ setTorch: { on } })}
         />
       </div>
-      <Show when={props.settings} fallback={<Spinner />}>
+      <Show
+        when={props.settings ?? (props.connected ? null : emptySettings)}
+        fallback={<Spinner />}
+      >
         {(settings) => (
           <>
             <div class="grid gap-4 sm:grid-cols-2">
