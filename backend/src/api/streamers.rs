@@ -559,6 +559,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_moblin_that_stops_reading_is_disconnected() {
+        let (address, api) = start_api(None).await;
+        let (_, key, id) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        let api_tips = api.clone();
+        let page = id.clone();
+        tokio::spawn(async move {
+            for number in 0..50 {
+                let api = api_tips.clone();
+                let page = page.clone();
+                tokio::spawn(async move {
+                    let _ = api
+                        .remote_control
+                        .tip(
+                            (&page, "A"),
+                            "Erik".to_string(),
+                            "x".repeat(1_000_000),
+                            crate::remote_control::TipKind::WheelOfLuck { count: 1 },
+                            number.to_string(),
+                        )
+                        .await;
+                });
+            }
+        });
+        for _ in 0..30 {
+            if !api.remote_control.is_connected(&id) {
+                return;
+            }
+            socket
+                .send(Message::text(json!({"ping": {}}).to_string()))
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        panic!("still connected");
+    }
+
+    #[tokio::test]
     async fn spins_go_to_the_first_device_with_a_wheel_and_tips_to_all() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();

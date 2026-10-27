@@ -6,12 +6,13 @@ use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket};
 use base64::Engine;
 use base64::prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD};
+use futures_util::{Sink, SinkExt, StreamExt};
 use log::info;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
-use tokio::time::{Instant, sleep, sleep_until, timeout, timeout_at};
+use tokio::time::{Instant, sleep, timeout, timeout_at};
 use uuid::Uuid;
 
 use crate::app_attest::Attestation;
@@ -498,6 +499,7 @@ pub struct Connection {
     device: String,
     number: u64,
     receiver: mpsc::UnboundedReceiver<MessageToStreamer>,
+    replies: mpsc::WeakUnboundedSender<MessageToStreamer>,
 }
 
 pub struct Streamers {
@@ -509,7 +511,7 @@ pub struct Streamers {
 }
 
 async fn send(
-    socket: &mut WebSocket,
+    socket: &mut (impl Sink<Message, Error = axum::Error> + Unpin),
     message: &MessageToStreamer,
     traffic: &Traffic,
 ) -> Result<()> {
@@ -678,6 +680,7 @@ impl Streamers {
         sessions.next_number += 1;
         let number = sessions.next_number;
         let (sender, receiver) = mpsc::unbounded_channel();
+        let replies = sender.downgrade();
         let mut session = Session {
             device: device.to_string(),
             number,
@@ -706,13 +709,14 @@ impl Streamers {
             device: device.to_string(),
             number,
             receiver,
+            replies,
         })
     }
 
     pub async fn serve(
         &self,
         connection: Connection,
-        mut socket: WebSocket,
+        socket: WebSocket,
         on_icon: impl Fn(&'static Icon),
     ) {
         let Connection {
@@ -720,47 +724,50 @@ impl Streamers {
             device,
             number,
             mut receiver,
+            replies,
         } = connection;
+        let (mut sink, mut stream) = socket.split();
         let identified = MessageToStreamer::Identified {
             result: Outcome::Ok {},
         };
         let mut stopped = false;
-        if send(&mut socket, &identified, &self.traffic).await.is_ok() {
+        if send(&mut sink, &identified, &self.traffic).await.is_ok() {
             info!("remote control streamer {page} device {device} connected");
             self.connected.notify_one();
             self.resume_watching(&page, &device, number);
-            let mut deadline = Instant::now() + Duration::from_secs(60);
-            loop {
-                tokio::select! {
-                    message = receiver.recv() => {
-                        let Some(message) = message else {
-                            break;
-                        };
-                        if send(&mut socket, &message, &self.traffic).await.is_err() {
-                            break;
-                        }
+            let writer = async {
+                while let Some(message) = receiver.recv().await {
+                    let sent = send(&mut sink, &message, &self.traffic);
+                    if !matches!(timeout(Duration::from_secs(10), sent).await, Ok(Ok(()))) {
+                        break;
                     }
-                    message = socket.recv() => {
-                        let Some(Ok(message)) = message else {
-                            break;
-                        };
-                        deadline = Instant::now() + Duration::from_secs(60);
-                        match message {
-                            Message::Text(text) => {
-                                self.traffic.received(text.as_str());
-                                if self.handle(&page, &device, number, text.as_str(), &mut socket, &on_icon).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Message::Close(frame) => {
-                                stopped = frame.is_some_and(|frame| frame.code == 1000);
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ = sleep_until(deadline) => break,
                 }
+            };
+            let reader = async {
+                while let Ok(Some(Ok(message))) =
+                    timeout(Duration::from_secs(60), stream.next()).await
+                {
+                    match message {
+                        Message::Text(text) => {
+                            self.traffic.received(text.as_str());
+                            if let Some(reply) =
+                                self.handle(&page, &device, number, text.as_str(), &on_icon)
+                                && let Some(replies) = replies.upgrade()
+                            {
+                                let _ = replies.send(reply);
+                            }
+                        }
+                        Message::Close(frame) => {
+                            return frame.is_some_and(|frame| frame.code == 1000);
+                        }
+                        _ => {}
+                    }
+                }
+                false
+            };
+            tokio::select! {
+                _ = writer => {}
+                closed = reader => stopped = closed,
             }
         }
         drop(receiver);
@@ -772,19 +779,16 @@ impl Streamers {
         info!("remote control streamer {page} device {device} disconnected");
     }
 
-    async fn handle(
+    fn handle(
         &self,
         page: &str,
         device: &str,
         number: u64,
         text: &str,
-        socket: &mut WebSocket,
         on_icon: &impl Fn(&'static Icon),
-    ) -> Result<()> {
+    ) -> Option<MessageToStreamer> {
         match serde_json::from_str(text) {
-            Ok(MessageToAssistant::Ping {}) => {
-                send(socket, &MessageToStreamer::Pong {}, &self.traffic).await?
-            }
+            Ok(MessageToAssistant::Ping {}) => return Some(MessageToStreamer::Pong {}),
             Ok(MessageToAssistant::Response {
                 id: request_id,
                 result,
@@ -868,7 +872,7 @@ impl Streamers {
             }
             _ => {}
         }
-        Ok(())
+        None
     }
 
     fn left(&self, page: &str, device: &str, number: u64) -> bool {
