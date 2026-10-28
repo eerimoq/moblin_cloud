@@ -3,8 +3,8 @@ import time
 import requests
 
 from ..utils.context import Context
+from ..utils.frontend import Dashboard
 from ..utils.test_case import TestCase
-from ..utils.website import Dashboard
 from .account import session_issued_at
 
 TIPS = {"amounts": [500, 100, 100, 1000]}
@@ -65,7 +65,7 @@ class PayPalPaidSettings(TestCase):
         self.assert_equal(
             settings["spin"]["options"], [{"spins": 1, "price": 200}, {"spins": 3, "price": 500}]
         )
-        viewer = self.website.viewer(settings["id"])
+        viewer = self.frontend.viewer(settings["id"])
         client_id = self.backend.fake_paypal.config["client-id"]
         stripe = public_stripe(self.context, settings)
         self.assert_equal(
@@ -127,7 +127,7 @@ class PayPalDisconnect(TestCase):
         settings = dashboard.disconnect_paypal()
         self.assert_is_none(settings["merchantId"])
         self.assert_false(settings["paypalPending"])
-        viewer = self.website.viewer(page_id)
+        viewer = self.frontend.viewer(page_id)
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin()["spin"], None)
         self.assert_backend_error(

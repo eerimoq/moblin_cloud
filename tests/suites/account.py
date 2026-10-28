@@ -14,8 +14,8 @@ from websockets.sync.client import connect
 from ..utils.backend import SESSION_SECRET
 from ..utils.config import FRONTEND_URL
 from ..utils.context import Context
+from ..utils.frontend import Dashboard
 from ..utils.test_case import TestCase
-from ..utils.website import Dashboard
 
 RE_MOBLIN_CLOUD_KEY = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
@@ -72,12 +72,12 @@ class AccountSignIn(AccountTestCase):
     """Sign in with Twitch from the dashboard and get the account with its page."""
 
     def run(self):
-        callback_url, browser = self.website.start_sign_in("signin")
+        callback_url, browser = self.frontend.start_sign_in("signin")
         self.assert_true(callback_url.startswith(f"{self.backend.url}/auth/twitch/callback?"))
         self.assert_in("moblin_sign_in_state", browser.cookies)
-        dashboard_url = self.website.finish_sign_in(callback_url, browser)
+        dashboard_url = self.frontend.finish_sign_in(callback_url, browser)
         self.assert_true(dashboard_url.startswith(f"{FRONTEND_URL}/dashboard/#session="))
-        account = self.website.dashboard_of(dashboard_url).account()
+        account = self.frontend.dashboard_of(dashboard_url).account()
         self.assert_equal(
             {key: account[key] for key in account if key != "settings"},
             {
@@ -112,16 +112,16 @@ class AccountSignInFromAnotherBrowser(AccountTestCase):
     """Fail to sign in when the callback is opened in another browser than the one that started it, or twice."""
 
     def run(self):
-        callback_url, _ = self.website.start_sign_in("otherbrowser")
-        dashboard_url = self.website.finish_sign_in(callback_url, requests.Session())
+        callback_url, _ = self.frontend.start_sign_in("otherbrowser")
+        dashboard_url = self.frontend.finish_sign_in(callback_url, requests.Session())
         self.assert_equal(dashboard_url, f"{FRONTEND_URL}/dashboard/#signInFailed")
-        callback_url, browser = self.website.start_sign_in("twice")
-        self.website.finish_sign_in(callback_url, browser)
+        callback_url, browser = self.frontend.start_sign_in("twice")
+        self.frontend.finish_sign_in(callback_url, browser)
         replaying = requests.Session()
         replaying.headers["cookie"] = f"moblin_sign_in_state={callback_url.split('state=')[1]}"
-        dashboard_url = self.website.finish_sign_in(callback_url, replaying)
+        dashboard_url = self.frontend.finish_sign_in(callback_url, replaying)
         self.assert_equal(dashboard_url, f"{FRONTEND_URL}/dashboard/#signInFailed")
-        dashboard_url = self.website.finish_sign_in(f"{self.backend.url}/auth/twitch/callback", browser)
+        dashboard_url = self.frontend.finish_sign_in(f"{self.backend.url}/auth/twitch/callback", browser)
         self.assert_equal(dashboard_url, f"{FRONTEND_URL}/dashboard/#signInFailed")
 
 
@@ -174,9 +174,9 @@ class AccountPageAtSignIn(AccountTestCase):
         if self.context.config.twitch_sign_in() == "fake":
             self.assert_equal(self.sign_in("createpage").account(), account)
         page_id = settings["id"]
-        self.assert_equal(self.website.id_of_twitch_login(account["twitch"]["login"]), page_id)
-        self.assert_equal(self.website.id_of_twitch_login(account["twitch"]["login"].upper()), page_id)
-        profile = self.website.viewer(page_id).profile()
+        self.assert_equal(self.frontend.id_of_twitch_login(account["twitch"]["login"]), page_id)
+        self.assert_equal(self.frontend.id_of_twitch_login(account["twitch"]["login"].upper()), page_id)
+        profile = self.frontend.viewer(page_id).profile()
         self.assert_equal(profile["twitch"], account["twitch"])
         self.assert_equal(profile["kick"], None)
 
@@ -188,8 +188,8 @@ class AccountUnknownPage(TestCase):
     """Answer not found for pages and logins nobody has."""
 
     def run(self):
-        self.assert_backend_error(404, lambda: self.website.id_of_twitch_login("nobody_has_this_login"))
-        viewer = self.website.viewer("AAAAAAAAAAAAAAAA")
+        self.assert_backend_error(404, lambda: self.frontend.id_of_twitch_login("nobody_has_this_login"))
+        viewer = self.frontend.viewer("AAAAAAAAAAAAAAAA")
         self.assert_backend_error(404, viewer.profile)
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin(), {"spin": None, "subSpins": None, "wheel": None, "connected": False})
@@ -304,13 +304,13 @@ class AccountDelete(AccountTestCase):
         self.assert_signed_out(second)
         self.assert_backend_error(401, first.delete_account, "not signed in")
         self.assert_false(streamer_connects(port, key))
-        self.assert_backend_error(404, lambda: self.website.id_of_twitch_login("delete"))
-        self.assert_backend_error(404, lambda: self.website.get(f"/pages/{page_id}"))
+        self.assert_backend_error(404, lambda: self.frontend.id_of_twitch_login("delete"))
+        self.assert_backend_error(404, lambda: self.frontend.get(f"/pages/{page_id}"))
         third = self.sign_in("delete")
         account = third.account()
         self.assert_not_equal(account["settings"]["id"], page_id)
         self.assert_equal(account["settings"].get("message"), None)
-        self.assert_equal(self.website.id_of_twitch_login("delete"), account["settings"]["id"])
+        self.assert_equal(self.frontend.id_of_twitch_login("delete"), account["settings"]["id"])
 
 
 class AccountPageLook(AccountTestCase):
@@ -323,7 +323,7 @@ class AccountPageLook(AccountTestCase):
         self.assert_equal(settings["message"], "Thanks for watching.")
         self.assert_equal(settings["accent"], "purple")
         self.assert_equal(settings["font"], "serif")
-        profile = self.website.viewer(page_id).profile()
+        profile = self.frontend.viewer(page_id).profile()
         self.assert_equal(profile["message"], "Thanks for watching.")
         self.assert_equal(profile["accent"], "purple")
         self.assert_equal(profile["font"], "serif")
@@ -374,7 +374,7 @@ class AccountPaidFeaturesNeedPayments(AccountTestCase):
                 lambda changes=changes: dashboard.save_settings(**changes),
                 "connect PayPal or Stripe first",
             )
-        viewer = self.website.viewer(page_id)
+        viewer = self.frontend.viewer(page_id)
         self.assert_equal(viewer.tips(), None)
         self.assert_equal(viewer.spin()["spin"], None)
 
@@ -431,7 +431,7 @@ class AccountAdmin(AccountTestCase):
 
 
 class AccountCors(TestCase):
-    """Only let https://moblin.app call the backend from a browser."""
+    """Only let https://cloud.moblin.app call the backend from a browser."""
 
     def run(self):
         for origin in [FRONTEND_URL, "https://evil.example"]:

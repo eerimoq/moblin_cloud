@@ -7,23 +7,23 @@ from .backend import Backend
 from .browser import Browser
 from .config import FRONTEND_URL
 from .config import Config
+from .frontend import Dashboard
+from .frontend import Frontend
 from .moblin import Moblin
 from .paypal import PayPal
 from .stripe import Stripe
 from .utils import manual_requirement
-from .website import Dashboard
-from .website import Website
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Context:
-    """Everything the tests share: the backend, the website talking to it, a browser and Moblin."""
+    """Everything the tests share: the backend, the frontend talking to it, a browser and Moblin."""
 
     def __init__(self, config: Config, backend: Backend, moblin: Moblin | None, interactive: bool):
         self.config = config
         self.backend = backend
-        self.website = Website(backend.url)
+        self.frontend = Frontend(backend.url)
         self.moblin = moblin
         self.interactive = interactive
         self.paypal = PayPal(backend.fake_paypal.url)
@@ -42,7 +42,7 @@ class Context:
 
     def sign_in(self, login: str = "streamer") -> Dashboard:
         if self.config.twitch_sign_in() == "fake":
-            return self.website.fake_sign_in(login)
+            return self.frontend.fake_sign_in(login)
         return self._twitch_sign_in()
 
     def _twitch_sign_in(self) -> Dashboard:
@@ -53,7 +53,7 @@ class Context:
 
         if self.interactive:
             manual_requirement(LOGGER, "Sign in with Twitch in the opened browser if asked to")
-        return self.website.dashboard_of(self.browser().run(job))
+        return self.frontend.dashboard_of(self.browser().run(job))
 
     def page_with_paypal(self, dashboard: Dashboard) -> dict:
         """Connects a PayPal seller to the signed in streamer's page, if not already."""

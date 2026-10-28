@@ -7,7 +7,7 @@ import requests
 
 from .fake_paypal import CLIENT_ID
 from .fake_paypal import CLIENT_SECRET
-from .website import follow_onboarding
+from .frontend import follow_onboarding
 
 TEST_CARD = {"number": "4111111111111111", "expiry": "2030-12", "security_code": "123", "name": "Test Viewer"}
 

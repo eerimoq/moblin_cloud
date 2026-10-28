@@ -51,7 +51,7 @@ BATCH_SIZE = 25
 WORKERS = 4
 
 SYSTEM_PROMPT = """\
-You translate Moblin Cloud, the website of Moblin, a free and open source iOS app for IRL live \
+You translate Moblin Cloud, the web service of Moblin, a free and open source iOS app for IRL live \
 streaming to Twitch, YouTube, Kick and others, where streamers get a page on which viewers tip \
 them and spin a wheel of luck, paying with PayPal or Stripe, and a dashboard where they manage it \
 and their Moblin devices. Use the \

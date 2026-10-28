@@ -139,7 +139,7 @@ struct Cli {
     /// URL of this backend.
     #[arg(long, env = "BACKEND_URL")]
     backend_url: String,
-    /// URL of the website.
+    /// URL of the frontend.
     #[arg(long, env = "FRONTEND_URL")]
     frontend_url: String,
     /// Accept Moblin Cloud connections without App Attest, for development.
@@ -171,7 +171,7 @@ fn http_client() -> Client {
             env!("CARGO_PKG_NAME"),
             "/",
             env!("CARGO_PKG_VERSION"),
-            " (+https://moblin.app)"
+            " (+https://cloud.moblin.app)"
         ))
         .timeout(TIMEOUT)
         .build()

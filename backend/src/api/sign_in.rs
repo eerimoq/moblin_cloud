@@ -412,7 +412,7 @@ mod tests {
                 .unwrap(),
         );
         let session = page
-            .strip_prefix("https://moblin.app/dashboard/#session=")
+            .strip_prefix("https://cloud.moblin.app/dashboard/#session=")
             .unwrap()
             .to_string();
         create_account(&api, "1", "One", "one");
@@ -455,7 +455,7 @@ mod tests {
                 .unwrap(),
         );
         assert!(
-            again.starts_with("https://moblin.app/dashboard/#session="),
+            again.starts_with("https://cloud.moblin.app/dashboard/#session="),
             "{again}"
         );
         assert!(api.accounts.moderates(Platform::Twitch, "42", "1"));
@@ -468,7 +468,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/dashboard/#signInFailed"
+            "https://cloud.moblin.app/dashboard/#signInFailed"
         );
         let response = client
             .get(format!("http://{address}/auth/twitch/login"))
@@ -493,7 +493,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/dashboard/#signInFailed"
+            "https://cloud.moblin.app/dashboard/#signInFailed"
         );
         let response = client
             .get(format!("http://{address}/account"))
@@ -619,7 +619,7 @@ mod tests {
 
     fn link_of(account: &str) -> String {
         account
-            .strip_prefix("https://moblin.app/account/#link=")
+            .strip_prefix("https://cloud.moblin.app/account/#link=")
             .unwrap_or_else(|| panic!("{account}"))
             .to_string()
     }
@@ -650,7 +650,7 @@ mod tests {
                 "moblin_sign_in_state=other"
             )
             .await,
-            "https://moblin.app/dashboard/#signInFailed"
+            "https://cloud.moblin.app/dashboard/#signInFailed"
         );
         let session = session_of(&flow.sign_in("kick", "kick-a").await);
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
@@ -728,7 +728,7 @@ mod tests {
         assert_eq!(account_of(&address, &again).await["settings"]["id"], id);
         assert_eq!(
             flow.sign_in("kick", "unknown").await,
-            "https://moblin.app/dashboard/#signInFailed"
+            "https://cloud.moblin.app/dashboard/#signInFailed"
         );
         let other = session_of(&flow.sign_in("kick", "kick-b").await);
         let other = account_of(&address, &other).await;
@@ -795,7 +795,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
             flow.link("kick", "unknown").await,
-            "https://moblin.app/account/#linkFailed"
+            "https://cloud.moblin.app/account/#linkFailed"
         );
         let token = link_of(&flow.link("kick", "kick-a").await);
         assert_eq!(api.auth.link_of(&token).unwrap().user_id, "123".to_string());
@@ -924,7 +924,7 @@ mod tests {
             auth: Auth::new(
                 reqwest::Client::new(),
                 "http://localhost".to_string(),
-                "https://moblin.app".to_string(),
+                "https://cloud.moblin.app".to_string(),
                 Some(twitch_app(&twitch)),
                 None,
                 Some("secret"),

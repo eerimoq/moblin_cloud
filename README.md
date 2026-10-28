@@ -3,7 +3,7 @@
 The streamer pages where viewers tip and spin the wheel, and the dashboard
 where streamers manage them and their Moblin devices.
 
-- `frontend/` is the website (SolidJS, TypeScript and Tailwind), deployed to
+- `frontend/` is the site (SolidJS, TypeScript and Tailwind), deployed to
   GitHub Pages on every push to `main`.
 - `backend/` is a Rust service deployed at `https://cloud-api.moblin.app`.
 - `deploy/` runs your own copy of both on one server, see

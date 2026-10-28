@@ -106,7 +106,7 @@ update-dependencies:
 	cd frontend && npm install --save-dev $({{npm-latest-args}} devDependencies)
 
 [group('maintenance')]
-[doc("Translates new strings of the website to all languages with Claude.")]
+[doc("Translates new strings of the frontend to all languages with Claude.")]
 machine-translate:
 	python3 scripts/translate.py
 	cd frontend && oxfmt src/locales

@@ -4,8 +4,8 @@ import systest
 from systest import wait_until
 
 from .context import Context
-from .website import BackendError
-from .website import Dashboard
+from .frontend import BackendError
+from .frontend import Dashboard
 
 
 class TestCase(systest.TestCase):
@@ -13,7 +13,7 @@ class TestCase(systest.TestCase):
         super().__init__(name)
         self.context = context
         self.backend = context.backend
-        self.website = context.website
+        self.frontend = context.frontend
 
     def skip_if_no_twitch(self):
         if self.context.config.twitch() is None:

@@ -3,12 +3,12 @@ from urllib.parse import urlsplit
 
 from ..utils.config import FRONTEND_URL
 from ..utils.context import Context
+from ..utils.frontend import Client
+from ..utils.frontend import Subscriber
+from ..utils.frontend import viewer_of
 from ..utils.moblin import Moblin
 from ..utils.moblin import wheel_option
 from ..utils.test_case import TestCase
-from ..utils.website import Client
-from ..utils.website import Subscriber
-from ..utils.website import viewer_of
 
 WHEEL = [wheel_option("Dance"), wheel_option("Sing")]
 
@@ -24,7 +24,7 @@ class SubscribersTestCase(TestCase):
         self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in()
         self.page_id = self.dashboard.page_id()
-        self.viewer = self.website.viewer(self.page_id)
+        self.viewer = self.frontend.viewer(self.page_id)
 
     def teardown(self):
         if hasattr(self, "dashboard"):
@@ -36,7 +36,7 @@ class SubscribersTestCase(TestCase):
         return self.context.moblin
 
     def subscriber(self, login: str) -> Subscriber:
-        return self.website.subscriber(self.page_id, login)
+        return self.frontend.subscriber(self.page_id, login)
 
     def connect_moblin(self, wheel: list[dict] | None = None):
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), wheel)
@@ -53,8 +53,8 @@ class SubscribersSignIn(SubscribersTestCase):
 
     def run(self):
         login = self.dashboard.account()["twitch"]["login"]
-        self.assert_backend_error(404, lambda: self.website.start_viewer_sign_in("no-such-page"))
-        page_url = self.website.fake_viewer_sign_in(self.page_id, "signin2")
+        self.assert_backend_error(404, lambda: self.frontend.start_viewer_sign_in("no-such-page"))
+        page_url = self.frontend.fake_viewer_sign_in(self.page_id, "signin2")
         self.assert_true(page_url.startswith(f"{FRONTEND_URL}/twitch/{login}#viewer="), page_url)
         subscriber = self.subscriber("signin2")
         self.assert_equal(
@@ -62,15 +62,15 @@ class SubscribersSignIn(SubscribersTestCase):
             {"platform": "twitch", "name": "signin2", "tier": 2, "allowance": 0, "left": 0},
         )
         self.assert_equal(self.subscriber("signinviewer").spins()["tier"], None)
-        response = Client(self.website.url, subscriber.token).request("GET", "/account")
+        response = Client(self.frontend.url, subscriber.token).request("GET", "/account")
         self.assert_equal(response.status_code, 401)
-        other = self.website.fake_sign_in("otherstreamer")
-        stranger = Subscriber(self.website.url, other.page_id(), subscriber.token)
+        other = self.frontend.fake_sign_in("otherstreamer")
+        stranger = Subscriber(self.frontend.url, other.page_id(), subscriber.token)
         self.assert_backend_error(401, stranger.spins, "Sign in again.")
-        callback_url, browser = self.website.start_viewer_sign_in(self.page_id, "signin3")
+        callback_url, browser = self.frontend.start_viewer_sign_in(self.page_id, "signin3")
         state = parse_qs(urlsplit(callback_url).query)["state"][0]
-        cancelled = self.website.finish_sign_in(
-            f"{self.website.url}/auth/twitch/callback?error=access_denied&state={state}", browser
+        cancelled = self.frontend.finish_sign_in(
+            f"{self.frontend.url}/auth/twitch/callback?error=access_denied&state={state}", browser
         )
         self.assert_equal(cancelled, f"{FRONTEND_URL}/twitch/{login}#viewerSignInFailed=twitch")
         self.assert_equal(viewer_of(cancelled), None)

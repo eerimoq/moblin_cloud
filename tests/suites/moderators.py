@@ -1,8 +1,8 @@
 from ..utils.context import Context
 from ..utils.fake_twitch import user_id_of
+from ..utils.frontend import Dashboard
 from ..utils.moblin import Moblin
 from ..utils.test_case import TestCase
-from ..utils.website import Dashboard
 
 NOT_MODERATOR = "Only the streamer and the moderators they turned on can do this."
 
@@ -20,7 +20,7 @@ class ModeratorsTestCase(TestCase):
         self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.page_id = self.dashboard.page_id()
-        self.viewer = self.website.viewer(self.page_id)
+        self.viewer = self.frontend.viewer(self.page_id)
         self.moderator_login = f"mod_{self.login}"
         self.moderator = self.sign_in(self.moderator_login)
         self.moderator_id = user_id_of(self.moderator_login)
@@ -112,7 +112,7 @@ class ModeratorsAdded(ModeratorsTestCase):
             400, lambda: self.moderator.moderated_recent(self.page_id, "bogus"), "Unknown kind."
         )
         self.assert_backend_error(
-            401, lambda: Dashboard(self.website.url, "garbage").moderated_recent(self.page_id, "tip")
+            401, lambda: Dashboard(self.frontend.url, "garbage").moderated_recent(self.page_id, "tip")
         )
         other = self.sign_in("otherstreamer")
         self.assert_backend_error(403, lambda: other.moderated_test_tip(self.page_id), NOT_MODERATOR)

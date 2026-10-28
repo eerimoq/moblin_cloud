@@ -21,7 +21,7 @@ class BackendError(Exception):
 
 
 class Client:
-    """Talks to the backend like the website's JavaScript does, from https://moblin.app."""
+    """Talks to the backend like the frontend's JavaScript does, from https://cloud.moblin.app."""
 
     def __init__(self, url: str, session: str | None = None):
         self.url = url
@@ -54,8 +54,8 @@ class Client:
         return self.call("POST", path, json)
 
 
-class Website(Client):
-    """The public parts of the website: the home page and the streamer list."""
+class Frontend(Client):
+    """The public parts of the frontend: the streamer pages and signing in."""
 
     def viewer(self, page_id: str) -> "Viewer":
         return Viewer(self.url, page_id)
@@ -135,7 +135,7 @@ def follow_onboarding(url: str) -> str:
 
 
 class Dashboard(Client):
-    """A streamer signed in at https://moblin.app/dashboard/."""
+    """A streamer signed in at https://cloud.moblin.app/dashboard/."""
 
     def account(self) -> dict:
         return self.get("/account")
@@ -300,7 +300,7 @@ class Dashboard(Client):
 
 
 class Viewer(Client):
-    """A viewer on a streamer's page, https://moblin.app/twitch/<login>."""
+    """A viewer on a streamer's page, https://cloud.moblin.app/twitch/<login>."""
 
     def __init__(self, url: str, page_id: str):
         super().__init__(url)

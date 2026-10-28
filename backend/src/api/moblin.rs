@@ -123,8 +123,8 @@ mod tests {
         assert_eq!(
             body,
             json!({
-                "twitch:erik": {"url": "https://moblin.app/twitch/erik", "icon": null},
-                "twitch:anna": {"url": "https://moblin.app/twitch/anna", "icon": null},
+                "twitch:erik": {"url": "https://cloud.moblin.app/twitch/erik", "icon": null},
+                "twitch:anna": {"url": "https://cloud.moblin.app/twitch/anna", "icon": null},
             })
         );
     }
@@ -192,7 +192,7 @@ mod tests {
                 .get("access-control-allow-origin")
                 .map(|value| value.to_str().unwrap().to_string())
         };
-        for origin in ["https://example.com", "https://moblin.app"] {
+        for origin in ["https://example.com", "https://cloud.moblin.app"] {
             assert_eq!(
                 allowed(origin).await,
                 Some("https://example.com".to_string())

@@ -365,7 +365,7 @@ mod tests {
         };
         let page = sign_in(&id).await;
         let session = page
-            .strip_prefix("https://moblin.app/twitch/erik#viewer=")
+            .strip_prefix("https://cloud.moblin.app/twitch/erik#viewer=")
             .unwrap();
         let viewer = api.auth.viewer_of(session).unwrap();
         assert_eq!(
@@ -383,14 +383,14 @@ mod tests {
         let other = other.as_str();
         let page = sign_in(other).await;
         let session = page
-            .strip_prefix("https://moblin.app/twitch/other#viewer=")
+            .strip_prefix("https://cloud.moblin.app/twitch/other#viewer=")
             .unwrap();
         assert_eq!(api.auth.viewer_of(session).unwrap().tier, None);
         let third = create_account(&api, "3", "Third", "third").page.id;
         let third = third.as_str();
         assert_eq!(
             sign_in(third).await,
-            "https://moblin.app/twitch/third#viewerSignInFailed=twitch"
+            "https://cloud.moblin.app/twitch/third#viewerSignInFailed=twitch"
         );
         let response = client
             .get(format!("http://{address}/auth/twitch/login?page={id}"))
@@ -415,7 +415,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/twitch/erik#viewerSignInFailed=twitch"
+            "https://cloud.moblin.app/twitch/erik#viewerSignInFailed=twitch"
         );
         let response = client
             .get(format!("http://{address}/auth/twitch/login?page={id}"))
@@ -440,7 +440,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/twitch/erik#viewerSignInFailed=twitch"
+            "https://cloud.moblin.app/twitch/erik#viewerSignInFailed=twitch"
         );
         assert_eq!(
             location(
@@ -452,7 +452,7 @@ mod tests {
                     .await
                     .unwrap()
             ),
-            "https://moblin.app/dashboard/#signInFailed"
+            "https://cloud.moblin.app/dashboard/#signInFailed"
         );
     }
 
@@ -702,7 +702,7 @@ mod tests {
             flow.finish("kick", code, &query["state"], &cookie).await
         };
         let viewer_of = |page: &str| {
-            page.strip_prefix("https://moblin.app/kick/kickerik#viewer=")
+            page.strip_prefix("https://cloud.moblin.app/kick/kickerik#viewer=")
                 .unwrap_or_else(|| panic!("{page}"))
                 .to_string()
         };
@@ -748,11 +748,11 @@ mod tests {
         assert_eq!(api.auth.viewer_of(&lapsed).unwrap().tier, None);
         assert_eq!(
             viewer_sign_in("kick-broken").await,
-            "https://moblin.app/kick/kickerik#viewerCheckFailed"
+            "https://cloud.moblin.app/kick/kickerik#viewerCheckFailed"
         );
         assert_eq!(
             viewer_sign_in("unknown").await,
-            "https://moblin.app/kick/kickerik#viewerSignInFailed=kick"
+            "https://cloud.moblin.app/kick/kickerik#viewerSignInFailed=kick"
         );
         let (query, _) = flow.start(&format!("/auth/kick/login?page={id}")).await;
         assert_eq!(
@@ -763,7 +763,7 @@ mod tests {
                 "moblin_sign_in_state=other"
             )
             .await,
-            "https://moblin.app/kick/kickerik#viewerSignInFailed=kick"
+            "https://cloud.moblin.app/kick/kickerik#viewerSignInFailed=kick"
         );
         let spin = async |session: &str| {
             client

@@ -2,7 +2,7 @@ import requests
 
 from .fake_stripe import SECRET_KEY
 from .fake_stripe import TEST_CARD
-from .website import follow_onboarding
+from .frontend import follow_onboarding
 
 
 class Stripe:

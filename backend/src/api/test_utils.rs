@@ -89,7 +89,7 @@ pub(crate) fn build_api(
         auth: Auth::new(
             reqwest::Client::new(),
             "http://localhost".to_string(),
-            "https://moblin.app".to_string(),
+            "https://cloud.moblin.app".to_string(),
             twitch,
             kick,
             Some("secret"),
@@ -376,7 +376,7 @@ impl SignInFlow {
 
 pub(crate) fn session_of(dashboard: &str) -> String {
     dashboard
-        .strip_prefix("https://moblin.app/dashboard/#session=")
+        .strip_prefix("https://cloud.moblin.app/dashboard/#session=")
         .unwrap_or_else(|| panic!("{dashboard}"))
         .to_string()
 }

@@ -387,7 +387,7 @@ mod tests {
         assert_eq!(link["account"], "acct_1");
         assert_eq!(
             link["use_case"]["account_onboarding"]["return_url"],
-            "https://moblin.app/dashboard/?stripe"
+            "https://cloud.moblin.app/dashboard/?stripe"
         );
         let response = post("/account/stripe/check").send().await.unwrap();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -563,7 +563,7 @@ mod tests {
         );
         assert_eq!(
             referral["body"]["partner_config_override"]["return_url"],
-            "https://moblin.app/dashboard/"
+            "https://cloud.moblin.app/dashboard/"
         );
         let account: Value = client
             .get(format!("http://{address}/account"))

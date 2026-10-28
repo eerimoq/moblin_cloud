@@ -2,7 +2,7 @@
 
 Runs your own copy of Moblin Cloud and its backend on one server with Docker
 Compose, from the published images: the backend, the frontend in Caddy,
-which serves the website on plain HTTP and proxies `/api` to the backend at
+which serves the site on plain HTTP and proxies `/api` to the backend at
 `BACKEND_HOST` (`backend:8080` by default), and
 in front of them the stock Caddy image, which gets the certificate from Let's
 Encrypt and serves HTTPS.
@@ -58,6 +58,17 @@ Everything is optional, but nobody can sign in without Twitch or Kick.
 - Kick: the same at https://kick.com/settings/developer with
   `https://example.com/api/auth/kick/callback`, and `KICK_CLIENT_ID` and
   `KICK_CLIENT_SECRET`.
+- PayPal: a PayPal partner REST app, with `PAYPAL_CLIENT_ID`,
+  `PAYPAL_CLIENT_SECRET` and the partner's merchant ID as `PAYPAL_PARTNER_ID`;
+  `PAYPAL_ATTRIBUTION_ID` is the partner's BN code. Subscribe a webhook at
+  `https://example.com/api/paypal/webhooks` to `MERCHANT.ONBOARDING.COMPLETED`
+  and `MERCHANT.PARTNER-CONSENT.REVOKED` and set `PAYPAL_WEBHOOK_ID` to its ID.
+  `PAYPAL_SANDBOX=true` uses PayPal's sandbox.
+- Stripe: a Stripe Connect platform, with `STRIPE_SECRET_KEY` and
+  `STRIPE_PUBLISHABLE_KEY`. A test mode key takes test payments.
+- `ADMINS` and `PREMIUM_ACCOUNTS`: comma separated Twitch user IDs, or
+  `kick:<Kick user ID>`, of the accounts that see the admin page and of those
+  that get the premium features. Admins are premium too.
 
 Every setting is an environment variable in `.env`; the backend lists them
 all with their defaults:

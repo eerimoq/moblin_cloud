@@ -1,14 +1,15 @@
 Black box system tests of the backend. They build and start the backend, then use its API
-like the website does: a streamer signs in and manages the page in the dashboard, and viewers
+like the frontend does: a streamer signs in and manages the page in the dashboard, and viewers
 tip and spin the wheel on the page. Payments go through fake PayPal and Stripe servers.
 Everything but the frontend is tested.
 
 The streamer's Moblin is the fake one in `tests/utils/fake_moblin.py` by default, which speaks
 Moblin's remote control protocol, both as its remote control streamer and as Moblin Cloud.
 Give `--device` to test with a real Moblin device instead. Streamers and viewers sign in with
-the fake Twitch in `tests/utils/fake_twitch.py` by default, which the backend is pointed at with
-`--twitch-sign-in-url` and which signs any made-up login in; `just dev-backend` starts the same
-one for development.
+the fake Twitch in `tests/utils/fake_twitch.py` and the fake Kick in `tests/utils/fake_kick.py`
+by default, which the backend is pointed at with `--twitch-sign-in-url` and
+`--kick-sign-in-url` and which sign any made-up login in; `just dev-backend` starts the same
+ones for development.
 
 All commands below are run from the repository root.
 
@@ -24,7 +25,7 @@ playwright install chromium
 The tests run on this machine with the fake Moblin without a configuration. For Twitch or a real
 Moblin device, copy `tests/config.example.toml` to `tests/config.toml` and modify it
 to match your test setup. `tests/config.toml` is used if it exists, otherwise
-`$XDG_CONFIG_HOME/moblin-website/tests/config.toml`.
+`$XDG_CONFIG_HOME/moblin-cloud/tests/config.toml`.
 
 Without `[twitch]` the Twitch lookups are skipped, and without `--device` the tests needing a real
 Moblin.

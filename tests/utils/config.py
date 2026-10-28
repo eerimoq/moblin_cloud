@@ -5,13 +5,13 @@ from xdg_base_dirs import xdg_config_home
 
 from .utils import TEST_DIR
 
-FRONTEND_URL = "https://moblin.app"
+FRONTEND_URL = "https://cloud.moblin.app"
 REMOTE_CONTROL_PASSWORD = "1234"
 WEB_REMOTE_CONTROL_PORT = 1180
 
 
 def find_config_toml() -> Path | None:
-    paths = [TEST_DIR / "config.toml", xdg_config_home() / "moblin-website" / "tests" / "config.toml"]
+    paths = [TEST_DIR / "config.toml", xdg_config_home() / "moblin-cloud" / "tests" / "config.toml"]
     for path in paths:
         if path.exists():
             return path

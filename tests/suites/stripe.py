@@ -1,8 +1,8 @@
 import time
 
 from ..utils.context import Context
+from ..utils.frontend import Dashboard
 from ..utils.test_case import TestCase
-from ..utils.website import Dashboard
 from .account import session_issued_at
 
 TIPS = {"amounts": [500, 100]}
@@ -61,7 +61,7 @@ class StripeNotForPagesWithoutIt(TestCase):
     def run(self):
         dashboard = self.sign_in("stripepending")
         page_id = dashboard.page_id()
-        viewer = self.website.viewer(page_id)
+        viewer = self.frontend.viewer(page_id)
         self.assert_equal(viewer.tips(), None)
         self.context.page_with_paypal(dashboard)
         dashboard.save_settings(tips=TIPS)
@@ -93,7 +93,7 @@ class StripePaidSettings(TestCase):
         settings = self.context.page_with_stripe(dashboard)
         account_id = settings["stripeAccountId"]
         dashboard.save_settings(currency="sek", tips=TIPS)
-        viewer = self.website.viewer(settings["id"])
+        viewer = self.frontend.viewer(settings["id"])
         tips = viewer.tips()
         assert tips is not None
         self.assert_equal(tips["amounts"], [100, 500])

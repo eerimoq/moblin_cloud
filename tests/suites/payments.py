@@ -4,10 +4,10 @@ from collections.abc import Callable
 
 from ..utils.context import Context
 from ..utils.fake_moblin import FakeMoblin
+from ..utils.frontend import BackendError
 from ..utils.moblin import Moblin
 from ..utils.moblin import wheel_option
 from ..utils.test_case import TestCase
-from ..utils.website import BackendError
 
 LOGGER = logging.getLogger(__name__)
 TIPS = {"amounts": [100, 700]}
@@ -33,7 +33,7 @@ class PaymentTestCase(TestCase):
         else:
             self.settings = self.context.page_with_paypal(self.dashboard)
             self.merchant_id = self.settings["merchantId"]
-        self.viewer = self.website.viewer(self.settings["id"])
+        self.viewer = self.frontend.viewer(self.settings["id"])
         self.dashboard.save_settings()
         self.dashboard.save_settings(currency="USD")
 
@@ -123,7 +123,7 @@ class PaymentsTipNotApproved(PaymentTestCase):
         )
         gone = "This tip is unknown or expired, so no money was taken."
         self.assert_backend_error(410, lambda: self.capture(self.viewer.capture_spin, order_id), gone)
-        other = self.website.viewer("AAAAAAAAAAAAAAAA")
+        other = self.frontend.viewer("AAAAAAAAAAAAAAAA")
         self.assert_backend_error(410, lambda: other.capture_tip(order_id), gone)
         self.assert_backend_error(410, lambda: self.viewer.capture_tip("UNKNOWN123"), gone)
         self.assert_backend_error(410, lambda: self.viewer.capture_tip("pi_unknown"), gone)
