@@ -33,6 +33,7 @@ import {
   createAccountSession,
   type Moderator,
   removeModerator,
+  setModeratorPreview,
   type Moderating,
   checkPayPal,
   checkStripe,
@@ -1133,7 +1134,8 @@ function ModeratorSettings(props: {
     <section class={cardClass}>
       <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
       <p class="text-ink-2">
-        {t("Moderators can manage your dashboard, except payments, moderators and Moblin.")}
+        {t("Moderators can manage your dashboard, except payments, moderators and Moblin.")}{" "}
+        {t("They see your stream preview only when you turn it on for them.")}
       </p>
       <For each={linked()}>
         {(platform) => (
@@ -1217,6 +1219,9 @@ function ModeratorList(props: {
                 <th scope="col" class="px-4 py-2.5">
                   {t("Username")}
                 </th>
+                <th scope="col" class="w-24 px-2 py-2.5 text-center">
+                  {t("Preview")}
+                </th>
                 <th scope="col" class="w-14">
                   <span class="sr-only">{t("Remove")}</span>
                 </th>
@@ -1228,6 +1233,28 @@ function ModeratorList(props: {
                   <tr class="border-t-[1.5px] border-line odd:bg-well even:bg-card">
                     <td class="truncate px-4 py-2 font-semibold">{moderator.name}</td>
                     <td class="truncate px-4 py-2 text-ink-2">{moderator.login}</td>
+                    <td class="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={moderator.preview}
+                        disabled={busy()}
+                        aria-label={t("Let {name} see the stream preview", {
+                          name: moderator.name,
+                        })}
+                        onChange={async (event) => {
+                          const input = event.currentTarget;
+                          const on = input.checked;
+                          if (
+                            !(await run(() =>
+                              setModeratorPreview(props.session, props.platform, moderator.id, on),
+                            ))
+                          ) {
+                            input.checked = moderator.preview;
+                          }
+                        }}
+                        class="size-5 accent-moss"
+                      />
+                    </td>
                     <td class="py-1 pr-2">
                       <button
                         type="button"

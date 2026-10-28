@@ -142,7 +142,7 @@ pub(super) async fn handle_device_preview(
     Path((id, device)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    moderator(&api, &headers, &id)?;
+    previewer(&api, &headers, &id)?;
     known_device(&api, &id, &device)?;
     let watch = api.remote_control.watch_preview((&id, &device));
     let first = watch.frame.as_deref().and_then(frame_event);
@@ -168,7 +168,7 @@ pub(super) async fn handle_device_preview(
                 }
                 _ = stopping.wait_for(|stopping| *stopping) => return None,
                 _ = sleep_until(previewing.check_at) => {
-                    if moderator(&previewing.api, &previewing.headers, &previewing.page).is_err() {
+                    if previewer(&previewing.api, &previewing.headers, &previewing.page).is_err() {
                         return None;
                     }
                     previewing.check_at = Instant::now() + Duration::from_secs(60);
@@ -581,6 +581,104 @@ mod tests {
         drop(second);
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], json!({"stopPreview": {}}));
+    }
+
+    #[tokio::test]
+    async fn moderators_get_the_preview_only_when_allowed() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        create_account(&api, "21", "Mod 21", "mod21");
+        api.accounts
+            .add_moderator(
+                Platform::Twitch,
+                "1",
+                &twitch_moderator("21", "mod21", "Mod 21"),
+            )
+            .unwrap();
+        let moderator = api.auth.session("21", 0);
+        let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
+        let allowed = async |session: &str| {
+            client
+                .get(format!("http://{address}/account/pages/{page}"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()["preview"]
+                .clone()
+        };
+        let allow = async |moderator: &str, on: bool| {
+            client
+                .post(format!(
+                    "http://{address}/account/moderators/twitch/{moderator}/preview"
+                ))
+                .bearer_auth(&session)
+                .json(&json!({"on": on}))
+                .send()
+                .await
+                .unwrap()
+        };
+        assert_eq!(allowed(&session).await, true);
+        assert_eq!(allowed(&moderator).await, false);
+        let response = client
+            .get(&url)
+            .bearer_auth(&moderator)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer has not let you see the stream preview."
+        );
+        let response = client
+            .post(format!(
+                "http://{address}/account/moderators/twitch/21/preview"
+            ))
+            .bearer_auth(&moderator)
+            .json(&json!({"on": true}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(allow("22", true).await.status(), StatusCode::NOT_FOUND);
+        let response = allow("21", true).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["twitchModerators"],
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": true}])
+        );
+        assert_eq!(allowed(&moderator).await, true);
+        let mut preview = Events::open(&client, &url, &moderator).await;
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"startPreview": {}}));
+        answer(&mut socket, &request, Value::Null).await;
+        socket
+            .send(Message::text(
+                json!({"preview": {"preview": "/9j/1"}}).to_string(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            preview.next().await,
+            ("frame".to_string(), json!({"image": "/9j/1"}))
+        );
+        drop(preview);
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"stopPreview": {}}));
+        assert_eq!(allow("21", false).await.status(), StatusCode::OK);
+        assert_eq!(allowed(&moderator).await, false);
+        let response = client
+            .get(&url)
+            .bearer_auth(&moderator)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

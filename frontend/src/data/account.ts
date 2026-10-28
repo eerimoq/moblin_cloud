@@ -21,6 +21,7 @@ export type Account = {
   settings: Settings;
   admin: boolean;
   premium: boolean;
+  preview: boolean;
   moderating: Moderating[];
   twitchModerators: Moderator[];
   kickModerators: Moderator[];
@@ -30,6 +31,7 @@ export type Moderator = {
   id: string;
   login: string;
   name: string;
+  preview: boolean;
 };
 
 export type Moderating = {
@@ -379,6 +381,18 @@ export const removeModerator = (session: string, platform: Platform, moderator: 
     `/account/moderators/${platform}/${encodeURIComponent(moderator)}/remove`,
     session,
     post(),
+  );
+
+export const setModeratorPreview = (
+  session: string,
+  platform: Platform,
+  moderator: string,
+  on: boolean,
+) =>
+  call<Account>(
+    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/preview`,
+    session,
+    post({ on }),
   );
 
 export const linkAccount = (session: string, token: string) =>

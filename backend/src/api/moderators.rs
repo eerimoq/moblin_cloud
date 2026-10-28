@@ -16,6 +16,11 @@ pub(super) struct ModeratorRequest {
     username: String,
 }
 
+#[derive(Deserialize)]
+pub(super) struct PreviewRequest {
+    on: bool,
+}
+
 pub(super) async fn handle_account_moderator_add(
     State(api): State<Arc<Api>>,
     Path(platform): Path<String>,
@@ -106,6 +111,30 @@ pub(super) async fn handle_account_moderator_remove(
     Ok(account_response(&api, account))
 }
 
+pub(super) async fn handle_account_moderator_preview(
+    State(api): State<Arc<Api>>,
+    Path((platform, moderator)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<PreviewRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let platform = platform_of(&platform)?;
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let broadcaster = account
+        .identity(platform)
+        .map(|identity| identity.user_id.clone())
+        .ok_or_else(|| platform_needed(platform))?;
+    api.accounts
+        .set_moderator_preview(platform, &broadcaster, &moderator, request.on)
+        .map_err(account_error)?;
+    info!(
+        "{id} turned the preview {} for {} moderator {moderator}",
+        if request.on { "on" } else { "off" },
+        platform.title()
+    );
+    moderators_changed(&api, &account.page.id, platform, &moderator);
+    Ok(account_response(&api, account))
+}
+
 fn moderators_changed(api: &Api, page: &str, platform: Platform, moderator: &str) {
     api.remote_control.changes.notify(page, Change::Account);
     if let Some(id) = api.accounts.account_of_identity(platform, moderator) {
@@ -118,7 +147,7 @@ pub(super) async fn handle_moderator_account(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, Failure> {
-    moderator(&api, &headers, &id)?;
+    let signed_in = moderator(&api, &headers, &id)?;
     let account = api.accounts.of_page(&id).ok_or(failure(
         "not-found",
         StatusCode::NOT_FOUND,
@@ -135,6 +164,7 @@ pub(super) async fn handle_moderator_account(
         settings: without_payments(settings_response(&api, id.clone(), settings)).0,
         admin: false,
         premium: streamer_is_premium(&api, &id),
+        preview: may_preview(&api, &signed_in.account, &id),
         twitch_moderators: Vec::new(),
         kick_moderators: Vec::new(),
         moderating: Vec::new(),
@@ -235,7 +265,7 @@ mod tests {
         let account: Value = response.json().await.unwrap();
         assert_eq!(
             account["kickModerators"],
-            json!([{"id": "9", "login": "bob", "name": "bob"}])
+            json!([{"id": "9", "login": "bob", "name": "bob", "preview": false}])
         );
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
         assert_eq!(token["grant_type"], "client_credentials");
@@ -274,7 +304,7 @@ mod tests {
         );
         assert_eq!(
             account_of(&address, &session).await["kickModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert"}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false}])
         );
         let response = dashboard(&moderator).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -365,7 +395,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "9", "login": "bob", "name": "Bob"}])
+            json!([{"id": "9", "login": "bob", "name": "Bob", "preview": false}])
         );
         assert!(api.accounts.moderates(Platform::Twitch, "9", "1"));
         create_account(&api, "9", "Robert", "robert");
@@ -375,7 +405,7 @@ mod tests {
         assert_eq!(account["moderating"][0]["platform"], "twitch");
         assert_eq!(
             account_of(&address, &session).await["twitchModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert"}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false}])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
@@ -480,7 +510,7 @@ mod tests {
             assert_eq!(
                 response.json::<Value>().await.unwrap()["twitchModerators"],
                 if enabled {
-                    json!([{"id": "21", "login": "mod21", "name": "Mod 21"}])
+                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false}])
                 } else {
                     json!([])
                 }

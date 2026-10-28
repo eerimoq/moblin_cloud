@@ -168,6 +168,10 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/moderators/{platform}/{moderator}/remove",
             post(handle_account_moderator_remove),
         )
+        .route(
+            "/account/moderators/{platform}/{moderator}/preview",
+            post(handle_account_moderator_preview),
+        )
         .route("/account/pages/{id}/recent", get(handle_moderator_recent))
         .route(
             "/account/pages/{id}/recent/{order}/resend",
@@ -386,29 +390,15 @@ pub(super) fn new_request_id(api: &Api) -> Result<String, Failure> {
 
 pub(super) fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = signed_in(api, headers)?;
-    let allowed = signed_in.account.page.id == id || {
-        let streamer = api.accounts.of_page(id);
-        [Platform::Twitch, Platform::Kick]
-            .into_iter()
-            .any(|platform| {
-                signed_in
-                    .account
-                    .identity(platform)
-                    .is_some_and(|moderator| {
-                        streamer
-                            .as_ref()
-                            .and_then(|streamer| {
-                                streamer
-                                    .identity(platform)
-                                    .map(|identity| identity.user_id.clone())
-                            })
-                            .is_some_and(|broadcaster| {
-                                api.accounts
-                                    .moderates(platform, &moderator.user_id, &broadcaster)
-                            })
-                    })
-            })
-    };
+    let allowed = signed_in.account.page.id == id
+        || listed(
+            api,
+            &signed_in.account,
+            id,
+            |platform, moderator, broadcaster| {
+                api.accounts.moderates(platform, moderator, broadcaster)
+            },
+        );
     if !allowed {
         return Err(failure(
             "not-moderator",
@@ -417,6 +407,46 @@ pub(super) fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<Sign
         ));
     }
     Ok(signed_in)
+}
+
+pub(super) fn may_preview(api: &Api, account: &Account, id: &str) -> bool {
+    account.page.id == id
+        || listed(api, account, id, |platform, moderator, broadcaster| {
+            api.accounts.previews(platform, moderator, broadcaster)
+        })
+}
+
+pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+    let signed_in = moderator(api, headers, id)?;
+    if !may_preview(api, &signed_in.account, id) {
+        return Err(failure(
+            "no-preview",
+            StatusCode::FORBIDDEN,
+            "The streamer has not let you see the stream preview.",
+        ));
+    }
+    Ok(signed_in)
+}
+
+fn listed(
+    api: &Api,
+    account: &Account,
+    id: &str,
+    check: impl Fn(Platform, &str, &str) -> bool,
+) -> bool {
+    let streamer = api.accounts.of_page(id);
+    [Platform::Twitch, Platform::Kick]
+        .into_iter()
+        .any(|platform| {
+            account.identity(platform).is_some_and(|moderator| {
+                streamer
+                    .as_ref()
+                    .and_then(|streamer| streamer.identity(platform))
+                    .is_some_and(|broadcaster| {
+                        check(platform, &moderator.user_id, &broadcaster.user_id)
+                    })
+            })
+        })
 }
 
 pub(super) fn counted<T>(api: &Api, name: &str, result: Result<T, Failure>) -> Result<T, Failure> {

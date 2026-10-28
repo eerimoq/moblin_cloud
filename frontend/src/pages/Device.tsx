@@ -377,6 +377,7 @@ function DeviceView(props: {
   session: string;
   page: string;
   device: string;
+  preview: boolean | null;
   nameOf: (device: string) => string | undefined;
   onSignOut: () => void;
 }) {
@@ -507,7 +508,7 @@ function DeviceView(props: {
   const { active, select } = createSectionChoice(() => sections);
 
   createEffect(() => {
-    if (active() !== "phone") {
+    if (active() !== "phone" || props.preview !== true) {
       return;
     }
     const stop = subscribe(devicePreviewUrl(props.page, props.device), props.session, {
@@ -560,6 +561,11 @@ function DeviceView(props: {
                     "What the Moblin app shows on the device, with the same buttons to control it.",
                   )}
                 </p>
+                <Show when={props.preview === false}>
+                  <p class="text-[15px] text-muted">
+                    {t("The streamer has not let you see the stream preview.")}
+                  </p>
+                </Show>
                 <MoblinScreen
                   page={props.page}
                   state={state()}
@@ -608,12 +614,16 @@ export default function DevicePage(props: { page: string; device: string }) {
   };
 
   const [devices, setDevices] = createSignal<Device[]>([]);
+  const [preview, setPreview] = createSignal<boolean | null>(null);
   createEffect(() => {
     const current = session();
     if (current) {
       const refresh = () =>
         fetchAccount(current.session, props.page)
-          .then((account) => setDevices(account.devices))
+          .then((account) => {
+            setDevices(account.devices);
+            setPreview(account.preview);
+          })
           .catch(() => {});
       void refresh();
       onCleanup(subscribeChanges(pageEventsUrl(props.page), current.session, { account: refresh }));
@@ -682,6 +692,7 @@ export default function DevicePage(props: { page: string; device: string }) {
                   session={current.session}
                   page={props.page}
                   device={device()}
+                  preview={preview()}
                   nameOf={(id) => devices().find((candidate) => candidate.id === id)?.name}
                   onSignOut={signOut}
                 />

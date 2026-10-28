@@ -610,6 +610,7 @@ impl Auth {
                 id: channel.broadcaster_user_id,
                 name: channel.slug.clone(),
                 login: channel.slug.to_lowercase(),
+                preview: false,
             }))
     }
 
@@ -660,6 +661,7 @@ impl Auth {
                     .filter(|name| !name.is_empty())
                     .unwrap_or_else(|| user.login.clone()),
                 login: user.login.to_lowercase(),
+                preview: false,
             }))
     }
 

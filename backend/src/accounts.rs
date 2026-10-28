@@ -144,6 +144,7 @@ pub struct Moderator {
     pub id: String,
     pub login: String,
     pub name: String,
+    pub preview: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -667,12 +668,36 @@ impl Accounts {
         Ok(())
     }
 
+    pub fn set_moderator_preview(
+        &self,
+        platform: Platform,
+        broadcaster: &str,
+        moderator: &str,
+        preview: bool,
+    ) -> Result<(), AccountError> {
+        let table = moderators_table(platform);
+        let changed = self
+            .database
+            .lock()
+            .execute(
+                &format!(
+                    "UPDATE {table} SET preview = ?3 WHERE broadcaster = ?1 AND moderator = ?2"
+                ),
+                (broadcaster, moderator, preview),
+            )
+            .map_err(not_saved)?;
+        if changed == 0 {
+            return Err(AccountError::UnknownModerator);
+        }
+        Ok(())
+    }
+
     pub fn moderators(&self, platform: Platform, broadcaster: &str) -> Vec<Moderator> {
         let table = moderators_table(platform);
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name)
+                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), preview
                  FROM {table}
                  LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = moderator
                  WHERE broadcaster = ?2
@@ -685,6 +710,7 @@ impl Accounts {
                             id: row.get(0)?,
                             login: row.get(1)?,
                             name: row.get(2)?,
+                            preview: row.get(3)?,
                         })
                     })?
                     .collect::<rusqlite::Result<_>>()
@@ -699,11 +725,27 @@ impl Accounts {
     }
 
     pub fn moderates(&self, platform: Platform, moderator: &str, broadcaster: &str) -> bool {
+        self.listed(platform, moderator, broadcaster, "")
+    }
+
+    pub fn previews(&self, platform: Platform, moderator: &str, broadcaster: &str) -> bool {
+        self.listed(platform, moderator, broadcaster, " AND preview")
+    }
+
+    fn listed(
+        &self,
+        platform: Platform,
+        moderator: &str,
+        broadcaster: &str,
+        condition: &str,
+    ) -> bool {
         let table = moderators_table(platform);
         self.database
             .lock()
             .query_row(
-                &format!("SELECT 1 FROM {table} WHERE moderator = ?1 AND broadcaster = ?2"),
+                &format!(
+                    "SELECT 1 FROM {table} WHERE moderator = ?1 AND broadcaster = ?2{condition}"
+                ),
                 [moderator, broadcaster],
                 |_| Ok(()),
             )
@@ -1030,6 +1072,7 @@ mod tests {
             id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
+            preview: false,
         };
         accounts
             .add_moderator(Platform::Twitch, "42", &moderator)
@@ -1068,6 +1111,7 @@ mod tests {
             id: id.to_string(),
             login: login.to_string(),
             name: login.to_string(),
+            preview: false,
         };
         accounts
             .add_moderator(Platform::Kick, "42", &moderator("1", "erik"))
@@ -1125,6 +1169,52 @@ mod tests {
     }
 
     #[test]
+    fn moderators_see_the_preview_only_when_allowed() {
+        let accounts = Accounts::new(Database::memory());
+        let moderator = Moderator {
+            id: "1".to_string(),
+            login: "mod".to_string(),
+            name: "Mod".to_string(),
+            preview: false,
+        };
+        accounts
+            .add_moderator(Platform::Twitch, "42", &moderator)
+            .unwrap();
+        assert!(!accounts.previews(Platform::Twitch, "1", "42"));
+        assert_eq!(
+            accounts.set_moderator_preview(Platform::Twitch, "42", "2", true),
+            Err(AccountError::UnknownModerator)
+        );
+        assert_eq!(
+            accounts.set_moderator_preview(Platform::Kick, "42", "1", true),
+            Err(AccountError::UnknownModerator)
+        );
+        accounts
+            .set_moderator_preview(Platform::Twitch, "42", "1", true)
+            .unwrap();
+        assert!(accounts.previews(Platform::Twitch, "1", "42"));
+        assert!(!accounts.previews(Platform::Kick, "1", "42"));
+        assert!(!accounts.previews(Platform::Twitch, "1", "43"));
+        let shown = Moderator {
+            preview: true,
+            ..moderator.clone()
+        };
+        assert_eq!(
+            accounts.moderators(Platform::Twitch, "42"),
+            std::slice::from_ref(&shown)
+        );
+        accounts
+            .add_moderator(Platform::Twitch, "42", &moderator)
+            .unwrap();
+        assert_eq!(accounts.moderators(Platform::Twitch, "42"), [shown]);
+        accounts
+            .set_moderator_preview(Platform::Twitch, "42", "1", false)
+            .unwrap();
+        assert!(!accounts.previews(Platform::Twitch, "1", "42"));
+        assert!(accounts.moderates(Platform::Twitch, "1", "42"));
+    }
+
+    #[test]
     fn kick_moderators_keep_access_when_renamed_and_follow_the_kick_identity() {
         let accounts = Accounts::new(Database::memory());
         let (streamer, _) = accounts
@@ -1141,6 +1231,7 @@ mod tests {
                     id: "1".to_string(),
                     login: "bob".to_string(),
                     name: "bob".to_string(),
+                    preview: false,
                 },
             )
             .unwrap();
@@ -1160,6 +1251,7 @@ mod tests {
                 id: "1".to_string(),
                 login: "robert".to_string(),
                 name: "Robert".to_string(),
+                preview: false,
             }]
         );
         assert!(accounts.moderated(Platform::Kick, "2").is_empty());
@@ -1183,6 +1275,7 @@ mod tests {
                     id: "1".to_string(),
                     login: "robert".to_string(),
                     name: "Robert".to_string(),
+                    preview: false,
                 },
             )
             .unwrap();

@@ -271,6 +271,7 @@ pub(crate) fn twitch_moderator(id: &str, login: &str, name: &str) -> Moderator {
         id: id.to_string(),
         login: login.to_string(),
         name: name.to_string(),
+        preview: false,
     }
 }
 
