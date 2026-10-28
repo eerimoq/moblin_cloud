@@ -879,6 +879,9 @@ impl Streamers {
             }
         }
         drop(receiver);
+        let _ = timeout(Duration::from_secs(1), sink.close()).await;
+        drop(sink);
+        drop(stream);
         if !stopped && self.left(&page, &device, number) {
             info!("remote control streamer {page} device {device} reconnecting");
             sleep(self.linger).await;
@@ -989,6 +992,7 @@ impl Streamers {
             }) => {
                 if let Some(icon) = icons::of_moblin(&id) {
                     on_icon(icon);
+                    self.changes.notify(page, Change::Page);
                 }
             }
             _ => {}

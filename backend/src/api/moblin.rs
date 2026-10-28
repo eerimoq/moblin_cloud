@@ -82,6 +82,8 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use serde_json::{Value, json};
     use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
     use crate::api::Api;
     use crate::api::test_utils::*;
@@ -127,6 +129,32 @@ mod tests {
                 "twitch:anna": {"url": "https://cloud.moblin.app/twitch/anna", "icon": null},
             })
         );
+    }
+
+    #[tokio::test]
+    async fn a_closing_device_is_answered_at_once_while_its_session_lingers() {
+        let (address, api) =
+            start_api_lingering(None, None, None, None, None, Duration::from_secs(60)).await;
+        let (session, key, _) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        socket
+            .close(Some(CloseFrame {
+                code: CloseCode::Away,
+                reason: "".into(),
+            }))
+            .await
+            .unwrap();
+        let answered = tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(Ok(message)) = socket.next().await {
+                if matches!(message, Message::Close(_)) {
+                    break;
+                }
+            }
+        })
+        .await;
+        assert!(answered.is_ok());
+        let account = account_of(&address, &session).await;
+        assert_eq!(account["devices"][0]["reconnecting"], true);
     }
 
     #[tokio::test]

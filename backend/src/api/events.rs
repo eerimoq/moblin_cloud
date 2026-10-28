@@ -129,8 +129,10 @@ mod tests {
     use std::time::Duration;
 
     use axum::http::StatusCode;
+    use futures_util::SinkExt;
     use serde_json::{Value, json};
     use tokio::time::timeout;
+    use tokio_tungstenite::tungstenite::Message;
 
     use crate::accounts::Platform;
     use crate::api::test_utils::*;
@@ -261,8 +263,15 @@ mod tests {
             "",
         )
         .await;
-        let socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &key).await;
         assert_eq!(events.next().await, ("page".to_string(), json!({})));
+        socket
+            .send(Message::text(
+                json!({"event": {"data": {"icon": {"id": "AppIconKing"}}}}).to_string(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(events.next().await.0, "page");
         let response = client
             .post(format!("http://{address}/account/devices/A/name"))
             .bearer_auth(&session)
