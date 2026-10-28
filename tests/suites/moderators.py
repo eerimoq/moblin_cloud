@@ -89,7 +89,14 @@ class ModeratorsAdded(ModeratorsTestCase):
         self.add_moderator()
         self.assert_equal(
             self.listed_moderators(),
-            [{"id": self.moderator_id, "login": self.moderator_login, "name": self.moderator_login}],
+            [
+                {
+                    "id": self.moderator_id,
+                    "login": self.moderator_login,
+                    "name": self.moderator_login,
+                    "preview": False,
+                }
+            ],
         )
         streamer = self.dashboard.account()
         self.assert_equal(

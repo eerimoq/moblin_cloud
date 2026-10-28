@@ -89,6 +89,7 @@ class AccountSignIn(AccountTestCase):
                 "devices": [],
                 "admin": False,
                 "premium": False,
+                "preview": True,
                 "moderating": [],
                 "twitchModerators": [],
                 "kickModerators": [],
