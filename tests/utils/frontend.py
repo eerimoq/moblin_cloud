@@ -28,14 +28,26 @@ class Client:
         self.session = session
 
     def request(
-        self, method: str, path: str, json=None, headers: dict | None = None, stream: bool = False
+        self,
+        method: str,
+        path: str,
+        json=None,
+        headers: dict | None = None,
+        stream: bool = False,
+        data: bytes | str | None = None,
     ) -> requests.Response:
         headers = {"origin": FRONTEND_URL, **(headers or {})}
         if self.session is not None:
             headers["authorization"] = f"Bearer {self.session}"
         LOGGER.debug("%s %s %s", method, path, json)
         response = requests.request(
-            method, f"{self.url}{path}", json=json, headers=headers, timeout=TIMEOUT, stream=stream
+            method,
+            f"{self.url}{path}",
+            json=json,
+            data=data,
+            headers=headers,
+            timeout=TIMEOUT,
+            stream=stream,
         )
         if not stream:
             LOGGER.debug("%s %s -> %s %s", method, path, response.status_code, response.text)
@@ -63,15 +75,17 @@ class Frontend(Client):
     def id_of_twitch_login(self, login: str) -> str:
         return self.get(f"/pages/twitch/{quote(login, safe='')}")["id"]
 
-    def start_sign_in(self, login: str) -> tuple[str, requests.Session]:
+    def start_sign_in(self, login: str, platform: str = "twitch") -> tuple[str, requests.Session]:
         """Opens the sign in URL like the dashboard's sign in button and signs in as the made-up user
-        on the fake Twitch it redirects to, returning the callback URL the fake Twitch redirects back to."""
-        return self._start_sign_in({}, login)
+        on the fake Twitch or Kick it redirects to, returning the callback URL the fake redirects back to."""
+        return self._start_sign_in({}, login, platform)
 
-    def _start_sign_in(self, params: dict[str, str], login: str) -> tuple[str, requests.Session]:
+    def _start_sign_in(
+        self, params: dict[str, str], login: str, platform: str = "twitch"
+    ) -> tuple[str, requests.Session]:
         browser = requests.Session()
         response = browser.get(
-            f"{self.url}/auth/twitch/login", params=params, allow_redirects=False, timeout=TIMEOUT
+            f"{self.url}/auth/{platform}/login", params=params, allow_redirects=False, timeout=TIMEOUT
         )
         if response.status_code != 303:
             raise BackendError(response.status_code, response.text)
@@ -89,23 +103,38 @@ class Frontend(Client):
             raise BackendError(response.status_code, response.text)
         return response.headers["location"]
 
-    def start_viewer_sign_in(self, page_id: str, login: str = "viewer") -> tuple[str, requests.Session]:
-        return self._start_sign_in({"page": page_id}, login)
+    def start_viewer_sign_in(
+        self, page_id: str, login: str = "viewer", platform: str = "twitch"
+    ) -> tuple[str, requests.Session]:
+        return self._start_sign_in({"page": page_id}, login, platform)
 
-    def fake_viewer_sign_in(self, page_id: str, login: str) -> str:
-        callback_url, browser = self.start_viewer_sign_in(page_id, login)
+    def fake_viewer_sign_in(self, page_id: str, login: str, platform: str = "twitch") -> str:
+        callback_url, browser = self.start_viewer_sign_in(page_id, login, platform)
         return self.finish_sign_in(callback_url, browser)
 
-    def subscriber(self, page_id: str, login: str) -> "Subscriber":
-        page_url = self.fake_viewer_sign_in(page_id, login)
+    def subscriber(self, page_id: str, login: str, platform: str = "twitch") -> "Subscriber":
+        page_url = self.fake_viewer_sign_in(page_id, login, platform)
         viewer = viewer_of(page_url)
         if viewer is None:
             raise Exception(f"Signing in as a viewer failed, ended at {page_url}.")
         return Subscriber(self.url, page_id, viewer)
 
-    def fake_sign_in(self, login: str) -> "Dashboard":
-        callback_url, browser = self.start_sign_in(login)
+    def fake_sign_in(self, login: str, platform: str = "twitch") -> "Dashboard":
+        callback_url, browser = self.start_sign_in(login, platform)
         return self.dashboard_of(self.finish_sign_in(callback_url, browser))
+
+    def fake_link(self, platform: str, login: str) -> str:
+        """Runs the link flow of the Account page's Link button as the made-up user, returning where
+        the backend's callback redirects to, /account/#link=<token> or /account/#linkFailed."""
+        callback_url, browser = self._start_sign_in({"link": "1"}, login, platform)
+        return self.finish_sign_in(callback_url, browser)
+
+    def link_token(self, platform: str, login: str) -> str:
+        account_url = self.fake_link(platform, login)
+        token = link_of(account_url)
+        if token is None:
+            raise Exception(f"Linking failed, ended at {account_url}.")
+        return token
 
     def dashboard_of(self, dashboard_url: str) -> "Dashboard":
         session = session_of(dashboard_url)
@@ -116,6 +145,13 @@ class Frontend(Client):
 
 def viewer_of(page_url: str) -> str | None:
     return parse_qs(urlsplit(page_url).fragment).get("viewer", [None])[0]
+
+
+def link_of(account_url: str) -> str | None:
+    parts = urlsplit(account_url)
+    if f"{parts.scheme}://{parts.netloc}{parts.path}" != f"{FRONTEND_URL}/account/":
+        return None
+    return parse_qs(parts.fragment).get("link", [None])[0]
 
 
 def session_of(dashboard_url: str) -> str | None:
@@ -292,11 +328,61 @@ class Dashboard(Client):
         if not response.ok:
             raise BackendError(response.status_code, response.text)
 
+    def link(self, token: str) -> dict:
+        return self.post("/account/link", {"token": token})
+
+    def unlink(self, platform: str) -> dict:
+        return self.post(f"/account/unlink/{platform}")
+
+    def change_settings(self, **changes) -> dict:
+        """Saves the current settings, effects included, with some changed, by their names in the API."""
+        settings = self.account()["settings"]
+        return self.post("/account/settings", {**settings_body(settings), **changes})
+
+    def test_effect(self, effect: str | None = None, message: str | None = None) -> dict:
+        return self.post("/account/test/effect", {"effect": effect, "message": message})
+
+    def set_moderator_preview(self, platform: str, moderator: str, on: bool) -> dict:
+        return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/preview", {"on": on})
+
+    def upload_image(self, data: bytes, page_id: str | None = None) -> dict:
+        path = "/account/image" if page_id is None else f"/account/pages/{quote(page_id, safe='')}/image"
+        response = self.request("POST", path, data=data, headers={"content-type": "application/octet-stream"})
+        if not response.ok:
+            raise BackendError(response.status_code, response.text)
+        return response.json()
+
+    def remove_image(self) -> dict:
+        return self.post("/account/image/remove")
+
+    def moderated_resend(self, page_id: str, order_id: str) -> dict:
+        return self.post(f"/account/pages/{quote(page_id, safe='')}/recent/{quote(order_id, safe='')}/resend")
+
+    def moderated_test_effect(self, page_id: str, effect: str | None = None) -> dict:
+        return self.post(f"/account/pages/{quote(page_id, safe='')}/test/effect", {"effect": effect})
+
     def page_id(self) -> str:
         return self.account()["settings"]["id"]
 
     def moblin_cloud_key(self) -> str:
         return self.account()["key"]
+
+
+SETTINGS_FIELDS = [
+    "currency",
+    "tips",
+    "spin",
+    "effects",
+    "message",
+    "accent",
+    "font",
+    "subSpins",
+    "subEffects",
+]
+
+
+def settings_body(settings: dict) -> dict:
+    return {field: settings[field] for field in SETTINGS_FIELDS}
 
 
 class Viewer(Client):
@@ -341,6 +427,23 @@ class Viewer(Client):
     def capture_spin(self, order_id: str) -> dict:
         return self.post(self._path(f"/spin/orders/{quote(order_id, safe='')}/capture"))
 
+    def effects(self) -> dict:
+        return self.get(self._path("/effects"))
+
+    def order_effect(
+        self,
+        effect: str,
+        price: int,
+        user: str | None = None,
+        message: str | None = None,
+        provider: str | None = None,
+    ) -> str:
+        body = {"effect": effect, "price": price, "user": user, "message": message, "provider": provider}
+        return self.post(self._path("/effects/orders"), body)["orderId"]
+
+    def capture_effect(self, order_id: str) -> dict:
+        return self.post(self._path(f"/effects/orders/{quote(order_id, safe='')}/capture"))
+
 
 class Subscriber(Viewer):
     def __init__(self, url: str, page_id: str, token: str):
@@ -353,6 +456,12 @@ class Subscriber(Viewer):
 
     def spin_wheel(self, message: str | None = None) -> dict:
         return self.post(self._path("/spin/subscriber"), {"message": message})
+
+    def effect_allowance(self) -> dict:
+        return self.get(self._path("/effects/subscriber"))
+
+    def play_effect(self, effect: str, message: str | None = None) -> dict:
+        return self.post(self._path("/effects/subscriber"), {"effect": effect, "message": message})
 
 
 class DeviceEvents:

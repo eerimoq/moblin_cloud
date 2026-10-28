@@ -1,6 +1,7 @@
 websockets>=14
 systest
 requests
+pillow
 playwright
 xdg-base-dirs
 pyperclip

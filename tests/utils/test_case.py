@@ -44,6 +44,15 @@ class TestCase(systest.TestCase):
             return error.text
         raise Exception(f"Expected the backend to answer {status}.")
 
+    def assert_refused(self, call: Callable[..., object]) -> int:
+        """Checks that the backend refuses the call as the caller's mistake, with any 4xx."""
+        try:
+            call()
+        except BackendError as error:
+            self.assert_true(400 <= error.status < 500, f"Answer {error.status} {error.text!r}")
+            return error.status
+        raise Exception("Expected the backend to refuse.")
+
     def wait_until(
         self, check: Callable[[], bool], description: str = "condition to be true", timeout: float = 60
     ):
