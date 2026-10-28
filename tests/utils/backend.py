@@ -129,7 +129,7 @@ class Backend:
         arguments = [
             "--listen",
             f"0.0.0.0:{self.port}",
-            "--public-url",
+            "--backend-url",
             self.url,
             "--frontend-url",
             FRONTEND_URL,

@@ -5,7 +5,7 @@ services:
     env_file: .env
     environment:
       DATABASE: /data/database.sqlite
-      PUBLIC_URL: https://${DOMAIN}/api
+      BACKEND_URL: https://${DOMAIN}/api
       FRONTEND_URL: https://${DOMAIN}
     volumes:
       - ./data:/data

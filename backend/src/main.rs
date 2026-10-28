@@ -160,8 +160,8 @@ struct Cli {
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
     /// URL of this backend.
-    #[arg(long, env = "PUBLIC_URL", default_value = "https://api.moblin.app")]
-    public_url: String,
+    #[arg(long, env = "BACKEND_URL", default_value = "https://api.moblin.app")]
+    backend_url: String,
     /// URL of the website.
     #[arg(long, env = "FRONTEND_URL", default_value = "https://moblin.app")]
     frontend_url: String,
@@ -255,7 +255,7 @@ async fn main() -> Result<()> {
     }
     let auth = Auth::new(
         http_client(),
-        cli.public_url,
+        cli.backend_url,
         cli.frontend_url,
         twitch_app,
         kick_app,

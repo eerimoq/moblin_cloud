@@ -36,7 +36,7 @@ dev-backend *args:
 	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
 	cd backend
 	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins fake-admin,kick:fake-admin --premium-accounts fake-premium,kick:fake-premium --public-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
+	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins fake-admin,kick:fake-admin --premium-accounts fake-premium,kick:fake-premium --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	python3 ../scripts/seed_backend.py
 	wait

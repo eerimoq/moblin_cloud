@@ -156,7 +156,7 @@ struct Link {
 
 pub struct Auth {
     client: Client,
-    public_url: String,
+    backend_url: String,
     pub frontend_url: String,
     twitch: Option<OAuthApp>,
     kick: Option<KickApp>,
@@ -168,7 +168,7 @@ pub struct Auth {
 impl Auth {
     pub fn new(
         client: Client,
-        public_url: String,
+        backend_url: String,
         frontend_url: String,
         twitch: Option<OAuthApp>,
         kick: Option<KickApp>,
@@ -182,7 +182,7 @@ impl Auth {
         };
         Ok(Self {
             client,
-            public_url: public_url.trim_end_matches('/').to_string(),
+            backend_url: backend_url.trim_end_matches('/').to_string(),
             frontend_url: frontend_url.trim_end_matches('/').to_string(),
             twitch,
             kick,
@@ -197,7 +197,7 @@ impl Auth {
     }
 
     fn redirect_uri(&self, platform: Platform) -> String {
-        format!("{}/auth/{}/callback", self.public_url, platform.name())
+        format!("{}/auth/{}/callback", self.backend_url, platform.name())
     }
 
     pub fn twitch_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
@@ -252,7 +252,7 @@ impl Auth {
     }
 
     pub fn state_cookie(&self, state: &str) -> String {
-        let secure = if self.public_url.starts_with("https://") {
+        let secure = if self.backend_url.starts_with("https://") {
             "; Secure"
         } else {
             ""
