@@ -36,7 +36,7 @@ dev-backend *args:
 	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
 	cd backend
 	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins fake-admin,kick:fake-admin --premium-accounts fake-premium,kick:fake-premium --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
+	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins 847161455,kick:33069881 --premium-accounts 325813636,kick:57017113 --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
 	python3 ../scripts/seed_backend.py
 	wait
@@ -52,7 +52,7 @@ dev-frontend:
 dev-fake-moblin *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	key=$(sqlite3 "backend/${DATABASE:-./database.sqlite}" "select moblin_key from accounts join identities on identities.account = accounts.id where platform = 'twitch' and user_id = 'fake-admin'")
+	key=$(sqlite3 "backend/${DATABASE:-./database.sqlite}" "select moblin_key from accounts join identities on identities.account = accounts.id where platform = 'twitch' and login = 'admin'")
 	if [ -z "$key" ]; then
 		echo "No Moblin Cloud key for the admin user. Sign in as admin at http://localhost:5173/dashboard/ first." >&2
 		exit 1

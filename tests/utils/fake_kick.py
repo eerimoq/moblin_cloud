@@ -2,9 +2,9 @@
 """Pretends to be Kick's sign in (OAuth with PKCE), the public API endpoints it needs and the website
 API's channel user lookup, for signing in as made-up users.
 
-Any login signs in. Its Kick user id is fake-<login> and its channel slug is the login. A login ending
-in 1, 2 or 3 is a subscriber of everyone, like on the fake Twitch. Any login can be added as a Kick
-moderator.
+Any login signs in. Its Kick user id is a number of 8 digits made from the login, like a real one,
+and its channel slug is the login. A login ending in 1, 2 or 3 is a subscriber of everyone, like on
+the fake Twitch. Any login can be added as a Kick moderator.
 """
 
 import argparse
@@ -74,9 +74,15 @@ a {{ color: #a8b0b3; }}
 """
 
 
+def user_id_of(login: str) -> str:
+    return str(
+        int.from_bytes(hashlib.sha256(f"kick:{login}".encode()).digest()[:8]) % 90_000_000 + 10_000_000
+    )
+
+
 def user_of(login: str) -> dict:
     return {
-        "user_id": f"fake-{login}",
+        "user_id": user_id_of(login),
         "name": login,
         "email": f"{login}@example.com",
         "profile_picture": None,
@@ -85,7 +91,7 @@ def user_of(login: str) -> dict:
 
 def channel_of(login: str) -> dict:
     return {
-        "broadcaster_user_id": f"fake-{login}",
+        "broadcaster_user_id": user_id_of(login),
         "slug": login,
         "channel_description": "",
         "stream": {"is_live": False},

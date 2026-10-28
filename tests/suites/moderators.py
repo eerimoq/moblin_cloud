@@ -1,4 +1,5 @@
 from ..utils.context import Context
+from ..utils.fake_twitch import user_id_of
 from ..utils.moblin import Moblin
 from ..utils.test_case import TestCase
 from ..utils.website import Dashboard
@@ -22,7 +23,7 @@ class ModeratorsTestCase(TestCase):
         self.viewer = self.website.viewer(self.page_id)
         self.moderator_login = f"mod_{self.login}"
         self.moderator = self.sign_in(self.moderator_login)
-        self.moderator_id = f"fake-{self.moderator_login}"
+        self.moderator_id = user_id_of(self.moderator_login)
 
     def teardown(self):
         if hasattr(self, "moderator_id") and self.listed_moderators():
@@ -80,7 +81,7 @@ class ModeratorsAdded(ModeratorsTestCase):
             "That is your own Twitch account.",
         )
         self.assert_backend_error(
-            404, lambda: self.dashboard.remove_moderator("twitch", "fake-nobody"), "no such moderator"
+            404, lambda: self.dashboard.remove_moderator("twitch", "1"), "no such moderator"
         )
         self.assert_backend_error(
             409, lambda: self.dashboard.add_moderator("kick", "someone"), "Link Kick first."

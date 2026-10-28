@@ -16,6 +16,7 @@ from .fake_kick import FakeKick
 from .fake_paypal import FakePayPal
 from .fake_stripe import FakeStripe
 from .fake_twitch import FakeTwitch
+from .fake_twitch import user_id_of as twitch_user_id_of
 from .utils import FILES_DIR
 from .utils import REPO_DIR
 
@@ -140,9 +141,9 @@ class Backend:
             "--lookup-spacing",
             "1",
             "--admins",
-            "fake-admin",
+            twitch_user_id_of("admin"),
             "--premium-accounts",
-            "fake-pagelook",
+            twitch_user_id_of("pagelook"),
         ]
         if self.config.allow_unattested():
             arguments.append("--allow-unattested")

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Pretends to be Twitch's sign in (OAuth) and the Helix endpoints it needs, for signing in as made-up users.
 
-Any login signs in. Its Twitch user id is fake-<login>. A login ending in 1, 2 or 3 is a subscriber
-of that tier to everyone, and any login (except nobody) resolves to a Twitch user, so a streamer can
-add it as a moderator.
+Any login signs in. Its Twitch user id is a number of 9 digits made from the login, like a real one.
+A login ending in 1, 2 or 3 is a subscriber of that tier to everyone, and any login (except nobody)
+resolves to a Twitch user, so a streamer can add it as a moderator.
 """
 
 import argparse
+import hashlib
 import html
 import json
 import logging
@@ -73,17 +74,24 @@ a {{ color: #adadb8; }}
 """
 
 
+def user_id_of(login: str) -> str:
+    return str(
+        int.from_bytes(hashlib.sha256(f"twitch:{login}".encode()).digest()[:8]) % 900_000_000 + 100_000_000
+    )
+
+
 def user_of(login: str) -> dict:
-    return {"id": f"fake-{login}", "login": login, "display_name": login, "profile_image_url": None}
+    return {"id": user_id_of(login), "login": login, "display_name": login, "profile_image_url": None}
 
 
 def tier_of(login: str) -> str | None:
-    return {"1": "1000", "2": "2000", "3": "3000"}.get(login[-1])
+    return {"1": "1000", "2": "2000", "3": "3000"}.get(login[-1:])
 
 
 class FakeTwitch:
     def __init__(self, port: int = 0):
         self.signed_in: set[str] = set()
+        self.logins: dict[str, str] = {}
         self.url = ""
         self._port = port
         self._server: ThreadingHTTPServer | None = None
@@ -124,13 +132,13 @@ class FakeTwitch:
                     if self.headers.get("authorization") != f"Bearer {APP_TOKEN}":
                         self.json({"error": "Unauthorized", "status": 401, "message": "bad token"}, 401)
                     elif LOGIN_RE.match(login) and login != "nobody":
-                        self.json({"data": [user_of(login)]})
+                        self.json({"data": [self.user(login)]})
                     else:
                         self.json({"data": []})
                 elif parts.path == "/helix/users":
-                    self.json({"data": [user_of(login) for login in [self.login()] if login]})
+                    self.json({"data": [self.user(login) for login in [self.login()] if login]})
                 elif parts.path == "/helix/subscriptions/user":
-                    tier = tier_of(query.get("user_id", "").removeprefix("fake-"))
+                    tier = tier_of(fake.logins.get(query.get("user_id", ""), ""))
                     if tier is None:
                         self.json({"error": "Not Found", "status": 404, "message": "not subscribed"}, 404)
                     else:
@@ -163,6 +171,11 @@ class FakeTwitch:
                 login = form["code"]
                 fake.signed_in.add(login)
                 self.json({"access_token": login, "token_type": "bearer", "expires_in": 3600, "scope": []})
+
+            def user(self, login: str) -> dict:
+                user = user_of(login)
+                fake.logins[user["id"]] = login
+                return user
 
             def login(self) -> str | None:
                 token = self.headers.get("authorization", "").removeprefix("Bearer ")
