@@ -5,7 +5,7 @@ tester-ip-address = "macpro.home"
 backend-port = 8090
 # The port Moblin's remote control streamer connects to, where the tester acts as Moblin's
 # assistant. Moblin Cloud connects here too, with a Moblin debug build whose
-# MOBLIN_WEBSITE_API_URL is http://<tester-ip-address>:<remote-control-port>, and the tester
+# MOBLIN_CLOUD_API_URL is http://<tester-ip-address>:<remote-control-port>, and the tester
 # relays it to the backend.
 remote-control-port = 2345
 # Show the browser used for Twitch. It is always shown with --interactive.

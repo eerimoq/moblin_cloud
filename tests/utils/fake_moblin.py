@@ -441,7 +441,7 @@ class FakeMoblin:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("api_url", help="Where Moblin Cloud connects, like Moblin's MOBLIN_WEBSITE_API_URL.")
+    parser.add_argument("api_url", help="Where Moblin Cloud connects, like Moblin's MOBLIN_CLOUD_API_URL.")
     parser.add_argument("--control", help="Where the remote control streamer connects at first.")
     parser.add_argument("--key", help="The Moblin Cloud key, instead of waiting for imported settings.")
     parser.add_argument("--device-id", help="The id Moblin identifies itself with (random by default).")

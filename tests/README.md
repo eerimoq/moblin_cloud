@@ -48,7 +48,7 @@ is how the tests see the tips and wheel spins the backend delivers.
 
 This is only needed for `--device`.
 
-1. Build Moblin in debug with `MOBLIN_WEBSITE_API_URL` set to
+1. Build Moblin in debug with `MOBLIN_CLOUD_API_URL` set to
    `http://<tester-ip-address>:<remote-control-port>` in `Config/User.xcconfig`, so Moblin
    cloud connects to the tester.
 2. Generate settings into clipboard.

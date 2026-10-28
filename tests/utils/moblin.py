@@ -394,7 +394,7 @@ class Moblin:
         return f"ws://{self._tester_ip_address}:{self._port}"
 
     def api_url(self) -> str:
-        """Where Moblin Cloud connects, the MOBLIN_WEBSITE_API_URL of a Moblin debug build."""
+        """Where Moblin Cloud connects, the MOBLIN_CLOUD_API_URL of a Moblin debug build."""
         return f"http://{self._tester_ip_address}:{self._port}"
 
     def import_settings(self, key: str | None, wheel: list[dict] | None = None):

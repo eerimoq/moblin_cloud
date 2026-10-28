@@ -67,5 +67,5 @@ docker compose run --rm backend --help
 ```
 
 Moblin connects to `https://cloud-api.moblin.app`, so a Moblin has to be built
-with its Moblin Cloud URL set to `https://example.com/api` to connect to your
+with `MOBLIN_CLOUD_API_URL` set to `https://example.com/api` to connect to your
 copy, and `APP_ID` set to that build's app ID.
