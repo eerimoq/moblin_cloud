@@ -1,8 +1,7 @@
 # Moblin Cloud
 
 The streamer pages where viewers tip and spin the wheel, and the dashboard
-where streamers manage them and their Moblin devices. The landing page for
-Moblin is in [moblin_website](https://github.com/eerimoq/moblin_website).
+where streamers manage them and their Moblin devices.
 
 - `frontend/` is the website (SolidJS, TypeScript and Tailwind), deployed to
   GitHub Pages on every push to `main`.
