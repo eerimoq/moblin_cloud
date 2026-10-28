@@ -11,8 +11,8 @@ const sections: { title: string; body: JSX.Element[] }[] = [
     title: "Tips go straight to the streamer",
     body: [
       <>
-        Tip pages on moblin.app let viewers tip streamers. Every payment on a tip page is a tip,
-        sent directly to the streamer's PayPal or Stripe account. Tips do not constitute the
+        Tip pages on cloud.moblin.app let viewers tip streamers. Every payment on a tip page is a
+        tip, sent directly to the streamer's PayPal or Stripe account. Tips do not constitute the
         purchase of physical goods.
       </>,
       <>
@@ -109,13 +109,13 @@ export default function Terms() {
       <main>
         <Hero eyebrow="Terms" title="Terms for tip pages">
           <p class="max-w-[640px] text-lg text-ink-2 text-pretty sm:text-[21px]">
-            For everyone who uses a tip page on moblin.app or the{" "}
+            For everyone who uses a tip page on cloud.moblin.app or the{" "}
             <a href={asset(pages.dashboard)} class={linkClass}>
               dashboard
             </a>
             , and for the tips viewers send streamers there.
           </p>
-          <p class="text-[15px] text-muted">Last updated October 17, 2026.</p>
+          <p class="text-[15px] text-muted">Last updated October 28, 2026.</p>
         </Hero>
         <Band>
           <For each={sections}>

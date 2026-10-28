@@ -19,16 +19,16 @@ RUN case "$TARGETARCH" in \
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo 'fn main() {}' > src/main.rs \
     && cargo build --release --locked --target "$(cat /rust-target)" \
-    && rm -rf src "target/$(cat /rust-target)/release/moblin-website-backend"* \
-       "target/$(cat /rust-target)/release/deps/moblin_website_backend"*
+    && rm -rf src "target/$(cat /rust-target)/release/moblin-cloud-backend"* \
+       "target/$(cat /rust-target)/release/deps/moblin_cloud_backend"*
 COPY src ./src
 ARG VERSION=dev
-ENV MOBLIN_WEBSITE_VERSION=$VERSION
+ENV MOBLIN_CLOUD_VERSION=$VERSION
 RUN cargo build --release --locked --target "$(cat /rust-target)" \
-    && cp "target/$(cat /rust-target)/release/moblin-website-backend" /moblin-website-backend
+    && cp "target/$(cat /rust-target)/release/moblin-cloud-backend" /moblin-cloud-backend
 
 FROM gcr.io/distroless/cc-debian13:nonroot
-COPY --from=builder /moblin-website-backend /usr/local/bin/moblin-website-backend
+COPY --from=builder /moblin-cloud-backend /usr/local/bin/moblin-cloud-backend
 ENV LISTEN=0.0.0.0:8080
 EXPOSE 8080
-ENTRYPOINT ["moblin-website-backend"]
+ENTRYPOINT ["moblin-cloud-backend"]

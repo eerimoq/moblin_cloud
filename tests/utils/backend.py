@@ -23,8 +23,8 @@ from .utils import REPO_DIR
 LOGGER = logging.getLogger(__name__)
 LOGGER_PROCESS = logging.getLogger(__name__ + ".process")
 BACKEND_DIR = REPO_DIR / "backend"
-BINARY = BACKEND_DIR / "target" / "release" / "moblin-website-backend"
-SESSION_SECRET = "moblin-website-system-tests"
+BINARY = BACKEND_DIR / "target" / "release" / "moblin-cloud-backend"
+SESSION_SECRET = "moblin-cloud-system-tests"
 
 
 def build_backend():
@@ -138,8 +138,6 @@ class Backend:
             SESSION_SECRET,
             "--database",
             str(self.files_dir / "database.sqlite"),
-            "--lookup-spacing",
-            "1",
             "--admins",
             twitch_user_id_of("admin"),
             "--premium-accounts",
@@ -163,8 +161,6 @@ class Backend:
                 "--twitch-client-secret",
                 twitch["client-secret"],
             ]
-            if "live-channel" in twitch:
-                arguments += ["--twitch-live-channel", twitch["live-channel"]]
         paypal = self.fake_paypal.config
         stripe = self.fake_stripe.config
         arguments += [
@@ -192,7 +188,7 @@ class Backend:
             if self._process is not None and not self._process.is_running():
                 raise Exception("The backend exited. See the log for why.")
             try:
-                return requests.get(f"{self.url}/streamers", timeout=2).ok
+                return requests.get(f"{self.url}/icons/plain", timeout=2).ok
             except requests.ConnectionError:
                 return False
 

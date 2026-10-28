@@ -355,7 +355,6 @@ mod tests {
     use crate::accounts::{Accounts, Platform};
     use crate::api::test_utils::*;
     use crate::auth::Auth;
-    use crate::challenges::Challenges;
     use crate::counters::Counters;
     use crate::database::Database;
     use crate::deliveries::Deliveries;
@@ -363,7 +362,6 @@ mod tests {
     use crate::payments::Orders;
     use crate::remote_control::Streamers;
     use crate::requests::Requests;
-    use crate::store::Store;
     use crate::subscribers::Allowances;
 
     #[tokio::test]
@@ -914,11 +912,8 @@ mod tests {
         drop(database);
         let database = Database::open(Some(&path)).unwrap();
         let api = Arc::new(Api {
-            store: Arc::new(Store::new(6, Database::memory())),
-            challenges: Challenges::new(),
             app_attest: None,
             require_attested_moblin: false,
-            live: None,
             remote_control: Streamers::new(std::time::Duration::ZERO),
             pages: Pages::new(database.clone()),
             paypal: None,

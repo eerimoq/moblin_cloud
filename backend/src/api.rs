@@ -17,18 +17,15 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::accounts::{Account, Accounts, Page, Platform};
 use crate::app_attest::AppAttest;
 use crate::auth::Auth;
-use crate::challenges::Challenges;
 use crate::changes::Change;
 use crate::counters::Counters;
 use crate::database::Database;
 use crate::deliveries::Deliveries;
-use crate::live::Live;
 use crate::pages::Pages;
 use crate::payments::Orders;
 use crate::paypal::PayPal;
 use crate::remote_control::Streamers;
 use crate::requests::Requests;
-use crate::store::Store;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
 
@@ -38,6 +35,7 @@ mod banner;
 mod devices;
 mod effects;
 mod events;
+mod moblin;
 mod moderators;
 mod orders;
 mod providers;
@@ -46,7 +44,6 @@ mod recent;
 mod settings;
 mod sign_in;
 mod spins;
-mod streamers;
 mod subscriber;
 mod test_sends;
 #[cfg(test)]
@@ -59,6 +56,7 @@ use banner::*;
 use devices::*;
 use effects::*;
 use events::*;
+use moblin::*;
 use moderators::*;
 pub use orders::settle_orders;
 use orders::*;
@@ -68,17 +66,13 @@ use recent::*;
 use settings::*;
 use sign_in::*;
 use spins::*;
-use streamers::*;
 use subscriber::*;
 use test_sends::*;
 use tips::*;
 
 pub struct Api {
-    pub store: Arc<Store>,
-    pub challenges: Challenges,
     pub app_attest: Option<AppAttest>,
     pub require_attested_moblin: bool,
-    pub live: Option<Live>,
     pub remote_control: Streamers,
     pub pages: Pages,
     pub paypal: Option<PayPal>,
@@ -108,16 +102,13 @@ pub fn router(api: Arc<Api>) -> Router {
         .allow_methods([Method::GET, Method::POST])
         .allow_headers(Any);
     Router::new()
-        .route("/streamers", get(handle_streamers))
-        .route("/streamers/live/challenge", post(handle_challenge))
-        .route("/streamers/live", post(handle_streamers_live))
-        .route("/twitch/live", get(handle_twitch_live))
         .route(
             "/remote-control/streamer/{key}",
             get(handle_remote_control_streamer),
         )
         .route("/pages/twitch/{login}", get(handle_twitch_page))
         .route("/pages/kick/{login}", get(handle_kick_page))
+        .route("/pages/addresses", get(handle_page_addresses))
         .route("/auth/twitch/login", get(handle_twitch_login))
         .route("/auth/twitch/callback", get(handle_twitch_callback))
         .route("/auth/kick/login", get(handle_kick_login))

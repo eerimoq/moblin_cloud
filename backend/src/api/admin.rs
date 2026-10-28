@@ -82,12 +82,12 @@ pub(super) async fn handle_admin_stats(
 pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
     AdminStatsResponse {
         server: ServerStats {
-            version: option_env!("MOBLIN_WEBSITE_VERSION").unwrap_or("dev"),
+            version: option_env!("MOBLIN_CLOUD_VERSION").unwrap_or("dev"),
             started: api.started,
             now: deliveries::now(),
             memory: resident_memory(),
             integrations: Integrations {
-                twitch: api.live.is_some(),
+                twitch: api.auth.has_twitch(),
                 kick: api.auth.has_kick(),
                 app_attest: api.app_attest.is_some(),
                 paypal: api.paypal.is_some(),

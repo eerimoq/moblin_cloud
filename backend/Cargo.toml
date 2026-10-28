@@ -1,8 +1,8 @@
 [package]
-name = "moblin-website-backend"
+name = "moblin-cloud-backend"
 version = "0.1.0"
 edition = "2024"
-description = "Backend for the Moblin website: which streamers recently went live with Moblin"
+description = "Backend of Moblin Cloud: the streamers' tip pages, their dashboard and Moblin's connections"
 
 [dependencies]
 anyhow = "1"

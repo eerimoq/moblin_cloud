@@ -5,10 +5,9 @@ import { language, languages, setLanguage, t } from "../i18n";
 import Icon, { type IconName } from "./Icon";
 
 const footerLinks: { label: string; href: string; icon?: IconName }[] = [
-  { label: t("Docs"), href: asset(pages.docs) },
-  { label: t("Chat bot"), href: asset(pages.chatBot) },
-  { label: "Moblin Cloud", href: asset(pages.dashboard) },
-  { label: t("Trading cards"), href: asset(pages.cards) },
+  { label: "Moblin", href: links.website },
+  { label: t("Docs"), href: links.docs },
+  { label: t("Terms"), href: asset(pages.terms) },
   { label: "GitHub", href: links.github, icon: "github" },
   { label: "Discord", href: links.discord, icon: "discord" },
   { label: t("Privacy policy"), href: links.privacyPolicy },

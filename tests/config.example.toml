@@ -10,8 +10,8 @@ backend-port = 8090
 remote-control-port = 2345
 # Show the browser used for Twitch. It is always shown with --interactive.
 headless-browser = true
-# Accept live posts without App Attest. Set to false to test that only Moblin can post, with
-# a Moblin debug build whose MOBLIN_WEBSITE_API_URL is http://<tester-ip-address>:<backend-port>.
+# Accept Moblin Cloud connections without App Attest. Set to false to test that only Moblin can
+# connect, with --device.
 allow-unattested = true
 # app-attest-environment = "development"
 # app-id = "L82N7LD4N5.com.eerimoq.Mobs"
@@ -20,11 +20,10 @@ allow-unattested = true
 [device.iphone16pro]
 moblin-ip-address = "iphone16pro.home"
 
-# Optional. A Twitch application, for profile lookups, the live status and real sign in. Its
+# Optional. A Twitch application, for real sign in. Its
 # OAuth redirect URL must be http://localhost:<backend-port>/auth/twitch/callback.
 # [twitch]
 # client-id = "..."
 # client-secret = "..."
 # "fake" signs in as made-up users with the fake Twitch in tests/utils/fake_twitch.py, "real" in the browser with a Twitch account.
 # sign-in = "fake"
-# live-channel = "eerimoq"

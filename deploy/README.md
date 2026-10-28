@@ -1,6 +1,6 @@
 # Deploy
 
-Runs your own copy of the website and its backend on one server with Docker
+Runs your own copy of Moblin Cloud and its backend on one server with Docker
 Compose, from the published images: the backend, the frontend in Caddy,
 which serves the website on plain HTTP and proxies `/api` to the backend at
 `BACKEND_HOST` (`backend:8080` by default), and
@@ -66,6 +66,6 @@ all with their defaults:
 docker compose run --rm backend --help
 ```
 
-Moblin connects to `https://api.moblin.app`, so a Moblin has to be built with
-`MOBLIN_WEBSITE_API_URL` set to `https://example.com/api` to connect to your
+Moblin connects to `https://api.cloud.moblin.app`, so a Moblin has to be built
+with its Moblin Cloud URL set to `https://example.com/api` to connect to your
 copy, and `APP_ID` set to that build's app ID.

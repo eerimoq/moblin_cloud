@@ -1,5 +1,4 @@
 .DS_Store
-/cards-print
 tests/config.toml
 tests/files/
 tests/cache/

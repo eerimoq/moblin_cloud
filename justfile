@@ -16,7 +16,7 @@ dev:
 	set -euo pipefail
 	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
 	just dev-backend &
-	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
+	until curl -sf localhost:8080/icons/plain > /dev/null; do sleep 0.2; done
 	just dev-frontend &
 	cookies=$(mktemp)
 	authorize=$(curl -sf -c "$cookies" -o /dev/null -w '%{redirect_url}' localhost:8080/auth/twitch/login)
@@ -27,7 +27,7 @@ dev:
 	wait
 
 [group('dev')]
-[doc("Runs the backend with the fake Twitch and Kick and fills it with a few made-up streamers.")]
+[doc("Runs the backend with the fake Twitch and Kick.")]
 dev-backend *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -37,8 +37,6 @@ dev-backend *args:
 	cd backend
 	cargo build
 	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins 847161455,kick:33069881 --premium-accounts 325813636,kick:57017113 --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
-	until curl -sf localhost:8080/streamers > /dev/null; do sleep 0.2; done
-	python3 ../scripts/seed_backend.py
 	wait
 
 [group('dev')]
@@ -112,15 +110,3 @@ update-dependencies:
 machine-translate:
 	python3 scripts/translate.py
 	cd frontend && oxfmt src/locales
-
-[group('maintenance')]
-[doc("Regenerates the settings reference on the docs page from a Moblin checkout.")]
-docs-generate moblin="../moblin":
-	python3 scripts/generate_docs.py {{moblin}} frontend/src/data/docs/settings.json
-	cd frontend && oxfmt src/data/docs/settings.json
-
-[group('maintenance')]
-[doc("Renders a 108 card deck of the trading cards as 300 dpi PNGs with bleed, for makeplayingcards.com.")]
-cards-print out="cards-print":
-	cd frontend && npm run build
-	cd frontend && node scripts/print-cards.ts {{absolute_path(out)}}

@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::accounts::Platform;
 use crate::effects::EFFECTS;
@@ -103,6 +103,45 @@ fn page_of_login(
         .page_of_login(platform, login)
         .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(NameResponse { id }))
+}
+
+#[derive(Deserialize)]
+pub(super) struct AddressesQuery {
+    logins: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct PageAddress {
+    url: String,
+    icon: Option<String>,
+}
+
+pub(super) async fn handle_page_addresses(
+    State(api): State<Arc<Api>>,
+    Query(query): Query<AddressesQuery>,
+) -> Json<HashMap<String, PageAddress>> {
+    Json(
+        query
+            .logins
+            .split(',')
+            .take(100)
+            .filter_map(|address| {
+                let (platform, login) = address.split_once(':')?;
+                let platform = Platform::parse(platform)?;
+                let id = api.accounts.page_of_login(platform, login)?;
+                Some((
+                    address.to_string(),
+                    PageAddress {
+                        url: format!("{}/{}/{login}", api.auth.frontend_url, platform.name()),
+                        icon: api
+                            .pages
+                            .icon(&id)
+                            .map(|icon| format!("{}/icons/{icon}", api.auth.backend_url)),
+                    },
+                ))
+            })
+            .collect(),
+    )
 }
 
 pub(super) fn sub_tiers(api: &Api, id: &str, tiers: Option<&Tiers>) -> Option<Tiers> {

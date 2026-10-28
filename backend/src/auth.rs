@@ -156,7 +156,7 @@ struct Link {
 
 pub struct Auth {
     client: Client,
-    backend_url: String,
+    pub backend_url: String,
     pub frontend_url: String,
     twitch: Option<OAuthApp>,
     kick: Option<KickApp>,
@@ -190,6 +190,10 @@ impl Auth {
             random,
             pending: Mutex::new(HashMap::new()),
         })
+    }
+
+    pub fn has_twitch(&self) -> bool {
+        self.twitch.is_some()
     }
 
     pub fn has_kick(&self) -> bool {

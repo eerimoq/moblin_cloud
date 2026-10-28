@@ -2,7 +2,6 @@ mod accounts;
 mod api;
 mod app_attest;
 mod auth;
-mod challenges;
 mod changes;
 mod counters;
 mod database;
@@ -10,20 +9,14 @@ mod deliveries;
 mod effects;
 mod icons;
 mod images;
-mod kick;
-mod live;
-mod live_status;
 mod pages;
 mod payments;
 mod paypal;
-mod profiles;
 mod remote_control;
 mod requests;
-mod store;
 mod stripe;
 mod subscribers;
 mod traffic;
-mod twitch;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -42,42 +35,29 @@ use crate::accounts::Accounts;
 use crate::api::Api;
 use crate::app_attest::{AppAttest, Environment};
 use crate::auth::{Auth, KickApp, OAuthApp};
-use crate::challenges::Challenges;
 use crate::counters::Counters;
 use crate::database::Database;
 use crate::deliveries::Deliveries;
-use crate::kick::Kick;
-use crate::live::Live;
-use crate::live_status::LiveStatus;
 use crate::pages::Pages;
 use crate::payments::Orders;
 use crate::paypal::PayPal;
-use crate::profiles::Profiles;
 use crate::remote_control::Streamers;
 use crate::requests::Requests;
-use crate::store::Store;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
-use crate::twitch::Twitch;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Parser)]
 #[command(
-    name = "moblin-website-backend",
+    name = "moblin-cloud-backend",
     version,
-    about = "Serves the list of streamers who recently went live with Moblin"
+    about = "Serves Moblin Cloud: the streamers' tip pages, their dashboard and Moblin's connections"
 )]
 struct Cli {
     /// Address to listen on.
     #[arg(long, env = "LISTEN", default_value = "127.0.0.1:8080")]
     listen: SocketAddr,
-    /// Maximum number of listed streamers.
-    #[arg(long, env = "MAX_STREAMERS", default_value_t = 6)]
-    max_streamers: usize,
-    /// Minimum seconds between platform requests.
-    #[arg(long, env = "LOOKUP_SPACING", default_value_t = 2)]
-    lookup_spacing: u64,
     /// Twitch application client ID.
     #[arg(long, env = "TWITCH_CLIENT_ID", requires = "twitch_client_secret")]
     twitch_client_id: Option<String>,
@@ -100,9 +80,6 @@ struct Cli {
         requires = "kick_client_id"
     )]
     kick_client_secret: Option<String>,
-    /// Twitch channel whose live status the website shows.
-    #[arg(long, env = "TWITCH_LIVE_CHANNEL", default_value = "eerimoq")]
-    twitch_live_channel: String,
     /// App ID of the Moblin app, for App Attest.
     #[arg(long, env = "APP_ID", default_value = "L82N7LD4N5.com.eerimoq.Mobs")]
     app_id: String,
@@ -165,7 +142,7 @@ struct Cli {
     /// URL of the website.
     #[arg(long, env = "FRONTEND_URL")]
     frontend_url: String,
-    /// Accept live posts and Moblin Cloud connections without App Attest, for development.
+    /// Accept Moblin Cloud connections without App Attest, for development.
     #[arg(long)]
     allow_unattested: bool,
     /// Refuse Moblin Cloud connections without a valid App Attest. Without it they are only
@@ -205,7 +182,6 @@ fn http_client() -> Client {
 async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
-    let client = http_client();
     let twitch_app = match (
         &cli.twitch_client_id,
         &cli.twitch_client_secret,
@@ -263,48 +239,18 @@ async fn main() -> Result<()> {
     )?;
     if cli.database.is_none() {
         warn!(
-            "no database, forgetting streamers, accounts, page settings and undelivered requests on restart"
+            "no database, forgetting accounts, page settings and undelivered requests on restart"
         );
     }
     let database = Database::open(cli.database.as_deref())?;
-    let store = Arc::new(Store::new(cli.max_streamers, database.clone()));
     let accounts = Accounts::new(database.clone());
     let remote_control = Streamers::new(Duration::from_secs(60));
-    let twitch = match (cli.twitch_client_id, cli.twitch_client_secret) {
-        (Some(client_id), Some(client_secret)) => Some(Arc::new(Twitch::new(
-            client.clone(),
-            client_id,
-            client_secret,
-        ))),
-        _ => {
-            warn!(
-                "no Twitch client ID and secret, not looking Twitch profiles up nor checking who is live"
-            );
-            None
-        }
-    };
-    let kick = Arc::new(Kick::new(client.clone()));
-    let profiles = Profiles::new(
-        client,
-        twitch.clone(),
-        kick.clone(),
-        Duration::from_secs(cli.lookup_spacing),
-        store.clone(),
-    );
-    tokio::spawn(async move { profiles.run().await });
-    let live_status = LiveStatus::new(
-        twitch.clone(),
-        kick,
-        Duration::from_secs(cli.lookup_spacing),
-        store.clone(),
-    );
-    tokio::spawn(async move { live_status.run().await });
     let app_attest = if cli.allow_unattested {
-        warn!("accepting live posts and Moblin Cloud connections from anyone");
+        warn!("accepting Moblin Cloud connections from anyone");
         None
     } else {
         info!(
-            "accepting live posts from {} in the {:?} App Attest environment",
+            "accepting Moblin Cloud connections from {} in the {:?} App Attest environment",
             cli.app_id, cli.app_attest_environment
         );
         if cli.require_attested_moblin {
@@ -390,11 +336,8 @@ async fn main() -> Result<()> {
         }
     };
     let api = Arc::new(Api {
-        store,
-        challenges: Challenges::new(),
         app_attest,
         require_attested_moblin: cli.require_attested_moblin,
-        live: twitch.map(|twitch| Live::new(twitch, cli.twitch_live_channel)),
         remote_control,
         pages,
         paypal,

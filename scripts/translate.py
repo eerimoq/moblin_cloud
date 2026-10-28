@@ -51,10 +51,10 @@ BATCH_SIZE = 25
 WORKERS = 4
 
 SYSTEM_PROMPT = """\
-You translate the website of Moblin, a free and open source iOS app for IRL live streaming to \
-Twitch, YouTube, Kick and others. The website has a landing page, documentation, chat bot \
-commands, trading cards, a dashboard where streamers manage their page and the streamer's page \
-where viewers tip and spin a wheel of luck, paying with PayPal. Use the \
+You translate Moblin Cloud, the website of Moblin, a free and open source iOS app for IRL live \
+streaming to Twitch, YouTube, Kick and others, where streamers get a page on which viewers tip \
+them and spin a wheel of luck, paying with PayPal or Stripe, and a dashboard where they manage it \
+and their Moblin devices. Use the \
 terminology a streamer or viewer would expect in each language and a friendly, casual tone, \
 keep translations about as long as the English original, and match its capitalization style. \
 Keep technical terms and product names (Moblin, Moblin Cloud, Mobcam, Moblink, Twitch, PayPal, \

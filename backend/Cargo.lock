@@ -1141,7 +1141,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "moblin-website-backend"
+name = "moblin-cloud-backend"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -57,18 +57,6 @@ class Client:
 class Website(Client):
     """The public parts of the website: the home page and the streamer list."""
 
-    def streamers(self) -> list[dict]:
-        return self.get("/streamers")["streamers"]
-
-    def twitch_live(self) -> dict:
-        return self.get("/twitch/live")
-
-    def challenge(self) -> str:
-        return self.post("/streamers/live/challenge")["challenge"]
-
-    def went_live(self, body: dict, headers: dict | None = None) -> requests.Response:
-        return self.request("POST", "/streamers/live", json=body, headers=headers)
-
     def viewer(self, page_id: str) -> "Viewer":
         return Viewer(self.url, page_id)
 

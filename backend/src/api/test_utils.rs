@@ -12,7 +12,6 @@ use tokio_tungstenite::tungstenite::Message;
 use super::*;
 use crate::accounts::{Account, Accounts, Identity, Moderator, Page, Platform};
 use crate::auth::{Auth, KickApp, OAuthApp};
-use crate::challenges::Challenges;
 use crate::counters::Counters;
 use crate::database::Database;
 use crate::deliveries::Deliveries;
@@ -21,7 +20,6 @@ use crate::payments::Orders;
 use crate::paypal::PayPal;
 use crate::remote_control::Streamers;
 use crate::requests::Requests;
-use crate::store::Store;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
 
@@ -79,11 +77,8 @@ pub(crate) fn build_api(
     let database = Database::memory();
     let pages = pages.unwrap_or_else(|| Pages::new(database.clone()));
     Api {
-        store: Arc::new(Store::new(6, Database::memory())),
-        challenges: Challenges::new(),
         app_attest: None,
         require_attested_moblin: false,
-        live: None,
         remote_control: Streamers::new(linger),
         pages,
         paypal,

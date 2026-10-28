@@ -1,154 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
-use axum::Json;
-use axum::body::Bytes;
+use anyhow::anyhow;
 use axum::extract::{Path, State, WebSocketUpgrade};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::Response;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
-use log::{info, warn};
-use serde::{Deserialize, Serialize};
-
-use crate::app_attest::{AppAttest, Attestation, base64};
-use crate::challenges::Challenges;
-use crate::store::{self, Channel, Streamer};
+use log::info;
 
 use super::*;
-
-const ASSERTION_HEADER: &str = "moblin-assertion";
-
-#[derive(Serialize)]
-pub(super) struct StreamersResponse {
-    streamers: Vec<ListedStreamer>,
-}
-
-#[derive(Serialize)]
-pub(super) struct ListedStreamer {
-    #[serde(flatten)]
-    streamer: Streamer,
-    page: Option<PageAddress>,
-}
-
-#[derive(Serialize)]
-pub(super) struct PageAddress {
-    platform: &'static str,
-    login: String,
-    icon: Option<String>,
-}
-
-pub(super) async fn handle_streamers(State(api): State<Arc<Api>>) -> Json<StreamersResponse> {
-    Json(StreamersResponse {
-        streamers: api
-            .store
-            .streamers()
-            .into_iter()
-            .map(|streamer| ListedStreamer {
-                page: page_address(&api, &streamer),
-                streamer,
-            })
-            .collect(),
-    })
-}
-
-fn page_address(api: &Api, streamer: &Streamer) -> Option<PageAddress> {
-    streamer.channels.iter().find_map(|listed| {
-        let (platform, login) = match listed.channel.platform {
-            store::Platform::Twitch => (Platform::Twitch, listed.channel.name.to_lowercase()),
-            store::Platform::Kick => (
-                Platform::Kick,
-                listed.channel.name.to_lowercase().replace('_', "-"),
-            ),
-            store::Platform::YouTube => return None,
-        };
-        let id = api.accounts.page_of_login(platform, &login)?;
-        Some(PageAddress {
-            platform: platform.name(),
-            login,
-            icon: api.pages.icon(&id),
-        })
-    })
-}
-
-#[derive(Serialize)]
-pub(super) struct TwitchLiveResponse {
-    channel: String,
-    live: bool,
-}
-
-pub(super) async fn handle_twitch_live(
-    State(api): State<Arc<Api>>,
-) -> Result<Json<TwitchLiveResponse>, (StatusCode, String)> {
-    let Some(live) = &api.live else {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "no Twitch client ID and secret".to_string(),
-        ));
-    };
-    let is_live = live.is_live().await.map_err(|error| {
-        warn!("checking if {} is live failed: {error:#}", live.login());
-        (StatusCode::SERVICE_UNAVAILABLE, format!("{error:#}"))
-    })?;
-    Ok(Json(TwitchLiveResponse {
-        channel: live.login().to_string(),
-        live: is_live,
-    }))
-}
-
-#[derive(Serialize)]
-pub(super) struct ChallengeResponse {
-    challenge: String,
-}
-
-pub(super) async fn handle_challenge(
-    State(api): State<Arc<Api>>,
-) -> Result<Json<ChallengeResponse>, StatusCode> {
-    let challenge = api
-        .challenges
-        .issue()
-        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    Ok(Json(ChallengeResponse {
-        challenge: BASE64_STANDARD.encode(challenge),
-    }))
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct LiveRequest {
-    channels: Vec<Channel>,
-    challenge: Option<String>,
-    #[serde(flatten)]
-    app_attest: Attestation,
-}
-
-pub(super) async fn handle_streamers_live(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let request: LiveRequest = serde_json::from_slice(&body)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    if let Some(app_attest) = &api.app_attest
-        && let Err(error) = verify(app_attest, &api.challenges, &request, &headers, &body)
-    {
-        warn!("rejected live post: {error:#}");
-        return Err((StatusCode::UNAUTHORIZED, format!("{error:#}")));
-    }
-    let channels = request.channels;
-    Channel::validate_all(&channels)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    info!(
-        "{} went live",
-        channels
-            .iter()
-            .map(Channel::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    api.store.streamer_live(channels);
-    Ok(StatusCode::NO_CONTENT)
-}
 
 pub(super) async fn handle_remote_control_streamer(
     State(api): State<Arc<Api>>,
@@ -215,35 +73,6 @@ pub(super) async fn handle_remote_control_streamer(
     }))
 }
 
-fn verify(
-    app_attest: &AppAttest,
-    challenges: &Challenges,
-    request: &LiveRequest,
-    headers: &HeaderMap,
-    body: &[u8],
-) -> Result<()> {
-    let assertion = headers
-        .get(ASSERTION_HEADER)
-        .context("no assertion")?
-        .to_str()
-        .ok()
-        .context("assertion is not text")?;
-    let challenge =
-        base64(request.challenge.as_deref().context("no challenge")?).context("challenge")?;
-    app_attest.verify(
-        &Attestation {
-            assertion: Some(assertion.to_string()),
-            ..request.app_attest.clone()
-        },
-        body,
-    )?;
-    anyhow::ensure!(
-        challenges.consume(&challenge),
-        "the challenge is unknown, used or expired"
-    );
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -258,7 +87,6 @@ mod tests {
     use crate::api::test_utils::*;
     use crate::app_attest::{AppAttest, Environment};
     use crate::deliveries;
-    use crate::store::{Channel, Platform};
 
     async fn refused(address: &str, key: &str, identify: Value) {
         let (mut socket, _) = tokio_tungstenite::connect_async(format!(
@@ -282,60 +110,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streamers_with_an_account_link_to_their_page() {
+    async fn the_pages_of_logins_are_answered_with_their_addresses() {
         let (address, api) = start_api(None).await;
         streamer(&address, &api).await;
         create_account(&api, "2", "Anna", "anna");
-        api.store.streamer_live(vec![Channel {
-            platform: Platform::Kick,
-            name: "nobody".to_string(),
-        }]);
-        api.store.streamer_live(vec![Channel {
-            platform: Platform::Twitch,
-            name: "Erik".to_string(),
-        }]);
-        api.store.streamer_live(vec![
-            Channel {
-                platform: Platform::YouTube,
-                name: "Anna".to_string(),
-            },
-            Channel {
-                platform: Platform::Twitch,
-                name: "anna".to_string(),
-            },
-        ]);
-        let pages = async || {
-            let (status, body) = get_json(&address, "/streamers").await;
-            assert_eq!(status, StatusCode::OK);
-            body["streamers"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|streamer| streamer["page"].clone())
-                .collect::<Vec<_>>()
-        };
+        let (status, body) = get_json(
+            &address,
+            "/pages/addresses?logins=kick:nobody,twitch:erik,youtube:anna,twitch:anna,twitch,kick:erik",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
         assert_eq!(
-            pages().await,
-            vec![
-                json!({"platform": "twitch", "login": "anna", "icon": null}),
-                json!({"platform": "twitch", "login": "erik", "icon": null}),
-                Value::Null
-            ]
+            body,
+            json!({
+                "twitch:erik": {"url": "https://moblin.app/twitch/erik", "icon": null},
+                "twitch:anna": {"url": "https://moblin.app/twitch/anna", "icon": null},
+            })
         );
     }
 
     #[tokio::test]
-    async fn moblins_icon_is_shown_on_the_page_and_in_the_list() {
+    async fn moblins_icon_is_shown_on_the_page_and_in_its_address() {
         let (address, api) = start_api(None).await;
         let (_, key, id) = streamer(&address, &api).await;
-        api.store.streamer_live(vec![Channel {
-            platform: Platform::Twitch,
-            name: "Erik".to_string(),
-        }]);
         let icon = async || {
             let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
-            let (_, list) = get_json(&address, "/streamers").await;
-            assert_eq!(list["streamers"][0]["page"]["icon"], profile["icon"]);
+            let (_, addresses) = get_json(&address, "/pages/addresses?logins=twitch:erik").await;
+            assert_eq!(
+                addresses["twitch:erik"]["icon"],
+                match &profile["icon"] {
+                    Value::String(icon) => json!(format!("http://localhost/icons/{icon}")),
+                    _ => Value::Null,
+                }
+            );
             profile["icon"].clone()
         };
         assert_eq!(icon().await, Value::Null);
@@ -375,7 +182,7 @@ mod tests {
         let (address, _) = start_api_built(api).await;
         let allowed = async |origin: &str| {
             let response = reqwest::Client::new()
-                .get(format!("http://{address}/streamers"))
+                .get(format!("http://{address}/icons/king"))
                 .header("origin", origin)
                 .send()
                 .await

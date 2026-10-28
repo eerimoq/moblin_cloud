@@ -723,7 +723,7 @@ function BannerImage(props: {
   );
 }
 
-const setupGuide = `${asset(pages.docs)}#guides/moblin-cloud`;
+const setupGuide = `${links.docs}#guides/moblin-cloud`;
 
 function GuideLink(props: { text: string }) {
   return (

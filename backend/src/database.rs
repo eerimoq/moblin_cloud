@@ -117,10 +117,6 @@ impl Database {
                      test TEXT,
                      resends INTEGER NOT NULL DEFAULT 0
                  );
-                 CREATE TABLE IF NOT EXISTS streamers (
-                     position INTEGER PRIMARY KEY,
-                     channels TEXT NOT NULL
-                 );
                  CREATE TABLE IF NOT EXISTS subscriber_allowances (
                      page TEXT NOT NULL,
                      viewer TEXT NOT NULL,
@@ -204,10 +200,8 @@ impl Database {
 
 #[cfg(test)]
 pub fn temporary_path(name: &str) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "moblin-website-{name}-{}.sqlite",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("moblin-cloud-{name}-{}.sqlite", std::process::id()));
     remove(&path);
     path
 }

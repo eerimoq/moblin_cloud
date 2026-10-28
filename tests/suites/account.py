@@ -445,7 +445,7 @@ class AccountCors(TestCase):
                 timeout=10,
             )
             self.assert_equal(response.headers.get("access-control-allow-origin"), FRONTEND_URL)
-            response = requests.get(f"{self.backend.url}/streamers", headers={"origin": origin}, timeout=10)
+            response = requests.get(f"{self.backend.url}/icons/plain", headers={"origin": origin}, timeout=10)
             self.assert_equal(response.headers.get("access-control-allow-origin"), FRONTEND_URL)
 
 

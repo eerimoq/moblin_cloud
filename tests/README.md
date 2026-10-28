@@ -66,6 +66,5 @@ just system-test --device iphone16pro
 just system-test --device iphone16pro --interactive
 ```
 
-`--interactive` also runs the tests needing a person, like going live in a Moblin debug build
-whose `MOBLIN_WEBSITE_API_URL` points at the backend under test instead of the tester (with
-`allow-unattested = false`).
+`--interactive` also runs the tests needing a person, like signing in with a real Twitch account
+in the browser or changing the wheel on a real Moblin device.
