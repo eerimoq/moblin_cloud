@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use axum::extract::DefaultBodyLimit;
-use axum::http::header::AUTHORIZATION;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -12,7 +12,7 @@ use axum::{Json, Router, middleware};
 use log::warn;
 use serde_json::Value;
 use tokio::sync::watch;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 use crate::accounts::{Account, Accounts, Page, Platform};
 use crate::app_attest::AppAttest;
@@ -100,7 +100,8 @@ pub fn router(api: Arc<Api>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(HeaderValue::from_str(&origin).expect("the frontend URL is not an origin"))
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers(Any);
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE])
+        .max_age(Duration::from_secs(7200));
     Router::new()
         .route(
             "/remote-control/streamer/{key}",

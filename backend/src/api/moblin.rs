@@ -201,6 +201,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preflights_allow_the_session_and_are_cached() {
+        let mut api = build_api(None, None, None, None, None, Duration::ZERO);
+        api.auth.frontend_url = "https://example.com".to_string();
+        let (address, _) = start_api_built(api).await;
+        let response = reqwest::Client::new()
+            .request(
+                reqwest::Method::OPTIONS,
+                format!("http://{address}/account"),
+            )
+            .header("origin", "https://example.com")
+            .header("access-control-request-method", "POST")
+            .header(
+                "access-control-request-headers",
+                "authorization,content-type",
+            )
+            .send()
+            .await
+            .unwrap();
+        let headers = response.headers();
+        assert_eq!(
+            headers["access-control-allow-headers"],
+            "authorization,content-type"
+        );
+        assert_eq!(headers["access-control-max-age"], "7200");
+    }
+
+    #[tokio::test]
     async fn up_to_5_devices_connect_with_one_key() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
