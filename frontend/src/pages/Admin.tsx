@@ -1067,7 +1067,7 @@ function Loaded(props: { stats: AdminStats }) {
               />
             </div>
           </Section>
-          <Section id="server" title="Server" hint="The backend at api.moblin.app, right now.">
+          <Section id="server" title="Server" hint="The backend, right now.">
             <div class="flex flex-col gap-4">
               <div class="grid gap-4 sm:grid-cols-3">
                 <Tile

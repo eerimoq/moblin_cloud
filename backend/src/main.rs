@@ -160,10 +160,10 @@ struct Cli {
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
     /// URL of this backend.
-    #[arg(long, env = "BACKEND_URL", default_value = "https://api.moblin.app")]
+    #[arg(long, env = "BACKEND_URL")]
     backend_url: String,
     /// URL of the website.
-    #[arg(long, env = "FRONTEND_URL", default_value = "https://moblin.app")]
+    #[arg(long, env = "FRONTEND_URL")]
     frontend_url: String,
     /// Accept live posts and Moblin Cloud connections without App Attest, for development.
     #[arg(long)]
