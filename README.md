@@ -6,7 +6,7 @@ Moblin is in [moblin_website](https://github.com/eerimoq/moblin_website).
 
 - `frontend/` is the website (SolidJS, TypeScript and Tailwind), deployed to
   GitHub Pages on every push to `main`.
-- `backend/` is a Rust service deployed at `https://api.cloud.moblin.app`.
+- `backend/` is a Rust service deployed at `https://cloud-api.moblin.app`.
 - `deploy/` runs your own copy of both on one server, see
   [deploy/README.md](deploy/README.md).
 
