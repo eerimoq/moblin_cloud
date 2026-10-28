@@ -36,8 +36,8 @@ To terminate TLS in a reverse proxy already running on the server instead,
 remove the `caddy` service, publish the frontend with `ports: ["127.0.0.1:8080:80"]`
 and forward the domain to `http://127.0.0.1:8080`. The proxy has to pass
 WebSocket upgrades (Moblin connects to `/api/remote-control/streamer/`) and
-must not buffer responses, since the dashboard and the device page are
-server-sent event streams.
+must not buffer responses, since the dashboard, the tip page and the device
+page are server-sent event streams.
 
 ## Start
 
@@ -58,11 +58,14 @@ Everything is optional, but nobody can sign in without Twitch or Kick.
 - Kick: the same at https://kick.com/settings/developer with
   `https://example.com/api/auth/kick/callback`, and `KICK_CLIENT_ID` and
   `KICK_CLIENT_SECRET`.
-- Stripe: a Stripe Connect platform account, with `STRIPE_SECRET_KEY` and
-  `STRIPE_PUBLISHABLE_KEY`. PayPal needs an approved PayPal partner account,
-  so it is left out here.
-- `ADMINS`: your Twitch user id, or `kick:<Kick user id>`, for the admin page.
+
+Every setting is an environment variable in `.env`; the backend lists them
+all with their defaults:
+
+```
+docker compose run --rm backend --help
+```
 
 Moblin connects to `https://api.moblin.app`, so a Moblin has to be built with
 `MOBLIN_WEBSITE_API_URL` set to `https://example.com/api` to connect to your
-copy.
+copy, and `APP_ID` set to that build's app ID.
