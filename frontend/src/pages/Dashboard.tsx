@@ -1,4 +1,5 @@
 import {
+  children,
   createEffect,
   createMemo,
   createSignal,
@@ -1886,7 +1887,6 @@ function Admin(props: {
   page?: string;
   recentChanges: number;
   onAccount: (account: Account) => void;
-  onOpenDevice: (device: string) => void;
   onSignOut: () => void;
 }) {
   const account = () => props.account;
@@ -2240,7 +2240,6 @@ function Admin(props: {
               <MoblinSettings
                 account={account()}
                 busy={busy()}
-                onOpen={props.onOpenDevice}
                 onNewKey={() => busyWith(() => newMoblinKey(props.session), setAccount)}
                 onRename={(device, name) =>
                   busyWith(() => renameDevice(props.session, device, name), setAccount)
@@ -2251,7 +2250,7 @@ function Admin(props: {
               />
             }
           >
-            <ModeratedDevices account={account()} onOpen={props.onOpenDevice} />
+            <ModeratedDevices account={account()} />
           </Show>
         </div>
       </div>
@@ -2377,7 +2376,6 @@ function QrCode(props: { text: string; label: string }) {
 function MoblinSettings(props: {
   account: Account;
   busy: boolean;
-  onOpen: (device: string) => void;
   onNewKey: () => Promise<void>;
   onRename: (device: string, name: string) => Promise<void>;
   onRemove: (device: string) => Promise<void>;
@@ -2507,7 +2505,7 @@ function MoblinSettings(props: {
               <Show
                 when={renaming() === device.id}
                 fallback={
-                  <DeviceRow device={device} page={props.account.settings.id} onOpen={props.onOpen}>
+                  <DeviceRow device={device}>
                     <button
                       type="button"
                       class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
@@ -2564,7 +2562,7 @@ function MoblinSettings(props: {
         </p>
         <p class="text-[15px] text-muted">
           {t(
-            "Open a device's status to see how it is doing and mute it. Your moderators can too, from their dashboard.",
+            "Pick a device at the top of the page to see how it is doing and control it. Your moderators can too, if you let them.",
           )}
         </p>
       </div>
@@ -2610,13 +2608,8 @@ function DeviceList(props: { devices: Device[]; children: (device: Device) => JS
   );
 }
 
-function DeviceRow(props: {
-  device: Device;
-  page: string;
-  remote?: boolean;
-  onOpen: (device: string) => void;
-  children?: JSX.Element;
-}) {
+function DeviceRow(props: { device: Device; children?: JSX.Element }) {
+  const actions = children(() => props.children);
   return (
     <>
       <span
@@ -2633,28 +2626,14 @@ function DeviceRow(props: {
       <span class="basis-full pl-[22px] text-[15px] text-muted sm:basis-auto sm:pl-0">
         {deviceGets(props.device)}
       </span>
-      <span class="flex basis-full gap-3 pl-[22px] sm:basis-auto sm:pl-0">
-        <Show when={props.remote ?? true}>
-          <a
-            href={deviceUrl(props.page, props.device.id)}
-            onClick={(event) => {
-              if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
-                event.preventDefault();
-                props.onOpen(props.device.id);
-              }
-            }}
-            class="text-[15px] font-semibold text-leaf hover:underline"
-          >
-            {t("Remote control")}
-          </a>
-        </Show>
-        {props.children}
-      </span>
+      <Show when={actions()}>
+        <span class="flex basis-full gap-3 pl-[22px] sm:basis-auto sm:pl-0">{actions()}</span>
+      </Show>
     </>
   );
 }
 
-function ModeratedDevices(props: { account: Account; onOpen: (device: string) => void }) {
+function ModeratedDevices(props: { account: Account }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Moblin</h2>
@@ -2668,19 +2647,14 @@ function ModeratedDevices(props: { account: Account; onOpen: (device: string) =>
           fallback={<p class="text-muted">{t("No device has connected yet.")}</p>}
         >
           <DeviceList devices={props.account.devices}>
-            {(device) => (
-              <DeviceRow
-                device={device}
-                page={props.account.settings.id}
-                remote={props.account.remoteControl !== "none"}
-                onOpen={props.onOpen}
-              />
-            )}
+            {(device) => <DeviceRow device={device} />}
           </DeviceList>
         </Show>
-        <p class="text-[15px] text-muted">
-          {t("Open a device's status to see how it is doing and mute it.")}
-        </p>
+        <Show when={props.account.remoteControl !== "none"}>
+          <p class="text-[15px] text-muted">
+            {t("Pick a device at the top of the page to see how it is doing and control it.")}
+          </p>
+        </Show>
       </div>
     </div>
   );
@@ -2932,7 +2906,6 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
                         page={channel() ? id : undefined}
                         recentChanges={recentChanges()}
                         onAccount={update}
-                        onOpenDevice={(to) => show(channel(), to)}
                         onSignOut={props.onSignOut}
                       />
                     }
