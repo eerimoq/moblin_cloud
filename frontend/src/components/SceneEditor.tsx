@@ -16,6 +16,8 @@ import {
   moved,
   movedTo,
   newId,
+  resizeCorner,
+  resizedBy,
   newSceneWidget,
   sameId,
   withCamera,
@@ -98,28 +100,32 @@ function SceneCanvas(props: {
   const widgetOf = (layout: SceneWidget) =>
     props.widgets.find((widget) => sameId(widget.id, layout.widgetId));
 
-  const startDrag = (event: PointerEvent, index: number, layout: SceneWidget) => {
+  const startDrag = (
+    event: PointerEvent,
+    index: number,
+    layout: SceneWidget,
+    dragged: (size: [number, number], dx: number, dy: number) => SceneWidget,
+  ) => {
     props.onSelect(layout.id);
     if (props.disabled || layout.positioningLock || !canvas) {
       return;
     }
+    event.stopPropagation();
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const bounds = canvas.getBoundingClientRect();
     const size = boxSize(widgetOf(layout), layout);
-    const [left, top] = boxPosition(layout, size);
     const startX = event.clientX;
     const startY = event.clientY;
     const move = (moveEvent: PointerEvent) => {
-      const newLeft = Math.max(
-        0,
-        Math.min(1 - size[0], left! + (moveEvent.clientX - startX) / bounds.width),
+      props.onMove(
+        index,
+        dragged(
+          size,
+          (moveEvent.clientX - startX) / bounds.width,
+          (moveEvent.clientY - startY) / bounds.height,
+        ),
       );
-      const newTop = Math.max(
-        0,
-        Math.min(1 - size[1], top! + (moveEvent.clientY - startY) / bounds.height),
-      );
-      props.onMove(index, movedTo(layout, size, [newLeft, newTop]));
     };
     const stop = () => {
       target.removeEventListener("pointermove", move);
@@ -130,6 +136,18 @@ function SceneCanvas(props: {
     target.addEventListener("pointerup", stop);
     target.addEventListener("pointercancel", stop);
   };
+
+  const startMove = (event: PointerEvent, index: number, layout: SceneWidget) =>
+    startDrag(event, index, layout, (size, dx, dy) => {
+      const [left, top] = boxPosition(layout, size);
+      return movedTo(layout, size, [
+        Math.max(0, Math.min(1 - size[0], left! + dx)),
+        Math.max(0, Math.min(1 - size[1], top! + dy)),
+      ]);
+    });
+
+  const startResize = (event: PointerEvent, index: number, layout: SceneWidget) =>
+    startDrag(event, index, layout, (size, dx, dy) => resizedBy(layout, size, [dx, dy]));
 
   return (
     <div
@@ -143,27 +161,56 @@ function SceneCanvas(props: {
           const widget = () => widgetOf(layout());
           const size = () => boxSize(widget(), layout());
           const position = () => boxPosition(layout(), size());
+          const selected = () => props.selected === layout().id;
+          const corner = () => resizeCorner(layout().alignment);
           return (
             <Show when={widget() && hasPosition(widget()!.type)}>
-              <button
-                type="button"
-                class="absolute flex items-start overflow-hidden rounded-md border-2 px-1.5 py-0.5 text-left text-[11px] leading-tight font-semibold"
-                classList={{
-                  "border-leaf bg-leaf/25 text-ink z-10": props.selected === layout().id,
-                  "border-ink-2/60 bg-ink/10 text-ink-2": props.selected !== layout().id,
-                  "border-dashed": !widget()!.enabled,
-                  "cursor-move": !props.disabled && !layout().positioningLock,
-                }}
+              <div
+                class="absolute"
+                classList={{ "z-10": selected() }}
                 style={{
                   left: `${position()[0]! * 100}%`,
                   top: `${position()[1]! * 100}%`,
                   width: `${size()[0] * 100}%`,
                   height: `${size()[1] * 100}%`,
                 }}
-                onPointerDown={(event) => startDrag(event, index, layout())}
               >
-                <span class="truncate">{widget()!.name}</span>
-              </button>
+                <button
+                  type="button"
+                  class="flex size-full items-start overflow-hidden rounded-md border-2 px-1.5 py-0.5 text-left text-[11px] leading-tight font-semibold"
+                  classList={{
+                    "border-leaf bg-leaf/25 text-ink": selected(),
+                    "border-ink-2/60 bg-ink/10 text-ink-2": !selected(),
+                    "border-dashed": !widget()!.enabled,
+                    "cursor-move": !props.disabled && !layout().positioningLock,
+                  }}
+                  onPointerDown={(event) => startMove(event, index, layout())}
+                >
+                  <span class="truncate">{widget()!.name}</span>
+                </button>
+                <Show
+                  when={
+                    selected() &&
+                    hasSize(widget()!.type) &&
+                    !props.disabled &&
+                    !layout().positioningLock
+                  }
+                >
+                  <span
+                    aria-hidden="true"
+                    class="absolute size-3.5 rounded-sm border-2 border-card bg-leaf"
+                    classList={{
+                      "right-0.5": corner().right,
+                      "left-0.5": !corner().right,
+                      "bottom-0.5": corner().bottom,
+                      "top-0.5": !corner().bottom,
+                      "cursor-nwse-resize": corner().right === corner().bottom,
+                      "cursor-nesw-resize": corner().right !== corner().bottom,
+                    }}
+                    onPointerDown={(event) => startResize(event, index, layout())}
+                  />
+                </Show>
+              </div>
             </Show>
           );
         }}
@@ -387,7 +434,7 @@ function SceneForm(props: {
         <h3 class="text-[17px] font-semibold text-ink">{t("Layout")}</h3>
         <p class="text-[15px] text-ink-2">
           {t(
-            "Drag a widget to move it. The boxes show where widgets are on the stream, not their exact shape.",
+            "Drag a widget to move it, or its corner handle to resize it. The boxes show where widgets are on the stream, not their exact shape.",
           )}
         </p>
         <SceneCanvas

@@ -198,6 +198,26 @@ export const movedTo = (
     : rounded(isTop(layout.alignment) ? top * 100 : (1 - top - height) * 100),
 });
 
+const growth = (alignment: Alignment): [number, number] => [
+  isHorizontalCenter(alignment) ? 2 : isLeft(alignment) ? 1 : -1,
+  isVerticalCenter(alignment) ? 2 : isTop(alignment) ? 1 : -1,
+];
+
+export const resizeCorner = (alignment: Alignment) => {
+  const [x, y] = growth(alignment);
+  return { right: x > 0, bottom: y > 0 };
+};
+
+export const resizedBy = (
+  layout: SceneWidget,
+  [width, height]: [number, number],
+  [dx, dy]: [number, number],
+): SceneWidget => {
+  const [x, y] = growth(layout.alignment);
+  const factor = ((width + x * dx) / width + (height + y * dy) / height) / 2;
+  return { ...layout, size: Math.max(1, rounded(layout.size * factor)) };
+};
+
 export const newId = () => crypto.randomUUID().toUpperCase();
 
 export const newSceneWidget = (widget: Widget): SceneWidget => {
