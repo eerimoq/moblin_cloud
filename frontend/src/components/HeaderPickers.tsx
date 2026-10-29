@@ -214,30 +214,50 @@ export function StreamerPicker(props: {
   );
 }
 
-export function DevicePicker(props: {
+function DashboardBadge() {
+  return (
+    <span class="flex size-8 items-center justify-center rounded-full bg-ghost-hover text-ink">
+      <Icon name="grid" class="size-5" />
+    </span>
+  );
+}
+
+export function PagePicker(props: {
   devices: Device[];
   picked: string;
   onPick: (device: string) => void;
 }) {
+  const dashboard = (): Option => ({
+    value: "",
+    label: t("Dashboard"),
+    badge: () => <DashboardBadge />,
+  });
   return (
     <Picker
-      label={t("Device")}
+      label={t("Page")}
       value={props.picked}
-      fallback={{
-        value: props.picked,
-        label: "Moblin",
-        badge: () => <DeviceBadge device={undefined} />,
-      }}
-      options={props.devices.map((device) => ({
-        value: device.id,
-        label: device.name,
-        detail: device.connected
-          ? t("Connected")
-          : device.reconnecting
-            ? t("Reconnecting")
-            : t("Not connected"),
-        badge: () => <DeviceBadge device={device} />,
-      }))}
+      fallback={
+        props.picked
+          ? {
+              value: props.picked,
+              label: "Moblin",
+              badge: () => <DeviceBadge device={undefined} />,
+            }
+          : dashboard()
+      }
+      options={[
+        dashboard(),
+        ...props.devices.map((device) => ({
+          value: device.id,
+          label: device.name,
+          detail: device.connected
+            ? t("Connected")
+            : device.reconnecting
+              ? t("Reconnecting")
+              : t("Not connected"),
+          badge: () => <DeviceBadge device={device} />,
+        })),
+      ]}
       onChange={props.onPick}
     />
   );

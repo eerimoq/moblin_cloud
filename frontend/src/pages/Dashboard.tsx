@@ -1,10 +1,13 @@
 import {
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   Index,
   type JSX,
+  lazy,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -22,6 +25,7 @@ import {
   Avatar,
   channelKey,
   moderatedChannelKey,
+  PagePicker,
   rememberChannel,
   StreamerPicker,
 } from "../components/HeaderPickers";
@@ -103,6 +107,8 @@ import {
 import { effectName, effects } from "../data/effects";
 import { language, t, tRich } from "../i18n";
 import CloudLanding from "../components/CloudLanding";
+
+const DeviceView = lazy(() => import("./Device"));
 
 const accentNames: Record<string, string> = {
   green: t("Green"),
@@ -1874,9 +1880,20 @@ function Editable(props: { readOnly: boolean; children: JSX.Element }) {
   );
 }
 
-function Admin(props: { session: string; account: Account; page?: string; onSignOut: () => void }) {
-  const [account, setAccount] = createSignal(props.account);
-  const [settings, setSettings] = createSignal(props.account.settings);
+function Admin(props: {
+  session: string;
+  account: Account;
+  page?: string;
+  recentChanges: number;
+  onAccount: (account: Account) => void;
+  onOpenDevice: (device: string) => void;
+  onSignOut: () => void;
+}) {
+  const account = () => props.account;
+  const settings = () => props.account.settings;
+  const setAccount = (account: Account) => props.onAccount(account);
+  const setSettings = (settings: Account["settings"]) =>
+    props.onAccount({ ...props.account, settings });
   const [busy, setBusy] = createSignal(false);
   const moderating = () => props.page !== undefined;
   const { recent, loadRecent, loadMore } = createRecent(
@@ -1922,33 +1939,14 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
       setSettings,
     );
 
-  const refreshAccount = async () => {
-    try {
-      const account = await fetchAccount(props.session, props.page);
-      setAccount(account);
-      setSettings(account.settings);
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-    }
-  };
-
-  onMount(() => {
-    void loadRecent();
-    onCleanup(
-      subscribeChanges(
-        pageEventsUrl(props.page ?? props.account.settings.id),
-        props.session,
-        { account: () => void refreshAccount(), recent: () => void loadRecent() },
-        (status) => {
-          if (status === 401) {
-            props.onSignOut();
-          }
-        },
-      ),
-    );
-  });
+  onMount(() => void loadRecent());
+  createEffect(
+    on(
+      () => props.recentChanges,
+      () => void loadRecent(),
+      { defer: true },
+    ),
+  );
 
   const save = (changes: Partial<SettingsChanges>) =>
     busyWith(
@@ -2242,6 +2240,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
               <MoblinSettings
                 account={account()}
                 busy={busy()}
+                onOpen={props.onOpenDevice}
                 onNewKey={() => busyWith(() => newMoblinKey(props.session), setAccount)}
                 onRename={(device, name) =>
                   busyWith(() => renameDevice(props.session, device, name), setAccount)
@@ -2252,7 +2251,7 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
               />
             }
           >
-            <ModeratedDevices account={account()} />
+            <ModeratedDevices account={account()} onOpen={props.onOpenDevice} />
           </Show>
         </div>
       </div>
@@ -2260,60 +2259,55 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
   );
 }
 
-function Moderated(props: { session: string; channel: Moderating; onSignOut: () => void }) {
-  const [account, setAccount] = createSignal<Account | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+type Target = { channel: string; page: string | null; device: string };
 
-  onMount(async () => {
+function readTarget(remembered: boolean): Target {
+  const path = location.pathname.slice(import.meta.env.BASE_URL.length);
+  const device = path.match(/^device\/([^/]+)(?:\/([^/]+))?\/?$/);
+  if (device) {
+    return {
+      channel: "",
+      page: decodeURIComponent(device[1]),
+      device: decodeURIComponent(device[2] ?? ""),
+    };
+  }
+  const channel = path.match(/^dashboard\/(twitch|kick)\/([^/]+)\/?$/);
+  if (channel) {
+    return { channel: `${channel[1]}/${decodeURIComponent(channel[2])}`, page: null, device: "" };
+  }
+  let stored = "";
+  if (remembered) {
     try {
-      setAccount(await fetchAccount(props.session, props.channel.id));
-    } catch (error) {
-      if (signedOut(error)) {
-        props.onSignOut();
-      }
-      setError(
-        error instanceof BackendError && error.status === 403
-          ? t("{name} has removed you as a moderator.", { name: props.channel.name })
-          : t("Something went wrong. Try again."),
-      );
-    }
-  });
+      stored = sessionStorage.getItem(moderatedChannelKey) ?? "";
+    } catch {}
+  }
+  return {
+    channel: stored && !stored.includes("/") ? `twitch/${stored}` : stored,
+    page: null,
+    device: "",
+  };
+}
 
-  return (
-    <Show
-      when={account()}
-      fallback={
-        <Show when={error()} fallback={<Spinner />}>
-          {(error) => <Notice status>{error()}</Notice>}
-        </Show>
-      }
-    >
-      {(account) => (
-        <Admin
-          session={props.session}
-          account={account()}
-          page={props.channel.id}
-          onSignOut={props.onSignOut}
-        />
-      )}
-    </Show>
+function resolve(account: Account, target: Target) {
+  const [platform, login] = target.channel.split("/", 2) as [Platform, string | undefined];
+  const channel =
+    target.page !== null
+      ? (account.moderating.find((channel) => channel.id === target.page) ?? null)
+      : ((login
+          ? account.moderating.find((channel) => channel[platform]?.login === login)
+          : null) ??
+        account.moderating.find((channel) => channelKey(channel) === target.channel) ??
+        null);
+  const page = channel?.id ?? account.settings.id;
+  return { channel, page, device: target.page === page ? target.device : "" };
+}
+
+const dashboardUrl = (channel: Moderating | null) =>
+  asset(
+    channel
+      ? `${pages.dashboard}${channel.platform}/${encodeURIComponent(channel.login)}`
+      : pages.dashboard,
   );
-}
-
-function readModeratedChannel() {
-  const fromUrl = location.pathname
-    .slice(import.meta.env.BASE_URL.length)
-    .match(/^dashboard\/(twitch|kick)\/([^/]+)\/?$/);
-  if (fromUrl) {
-    return `${fromUrl[1]}/${decodeURIComponent(fromUrl[2])}`;
-  }
-  try {
-    const stored = sessionStorage.getItem(moderatedChannelKey) ?? "";
-    return stored && !stored.includes("/") ? `twitch/${stored}` : stored;
-  } catch {
-    return "";
-  }
-}
 
 const onOff = (on: boolean) => ({ on, text: on ? t("On") : t("Off") });
 
@@ -2383,6 +2377,7 @@ function QrCode(props: { text: string; label: string }) {
 function MoblinSettings(props: {
   account: Account;
   busy: boolean;
+  onOpen: (device: string) => void;
   onNewKey: () => Promise<void>;
   onRename: (device: string, name: string) => Promise<void>;
   onRemove: (device: string) => Promise<void>;
@@ -2512,7 +2507,7 @@ function MoblinSettings(props: {
               <Show
                 when={renaming() === device.id}
                 fallback={
-                  <DeviceRow device={device} page={props.account.settings.id}>
+                  <DeviceRow device={device} page={props.account.settings.id} onOpen={props.onOpen}>
                     <button
                       type="button"
                       class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
@@ -2619,6 +2614,7 @@ function DeviceRow(props: {
   device: Device;
   page: string;
   remote?: boolean;
+  onOpen: (device: string) => void;
   children?: JSX.Element;
 }) {
   return (
@@ -2641,6 +2637,12 @@ function DeviceRow(props: {
         <Show when={props.remote ?? true}>
           <a
             href={deviceUrl(props.page, props.device.id)}
+            onClick={(event) => {
+              if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+                event.preventDefault();
+                props.onOpen(props.device.id);
+              }
+            }}
             class="text-[15px] font-semibold text-leaf hover:underline"
           >
             {t("Remote control")}
@@ -2652,7 +2654,7 @@ function DeviceRow(props: {
   );
 }
 
-function ModeratedDevices(props: { account: Account }) {
+function ModeratedDevices(props: { account: Account; onOpen: (device: string) => void }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Moblin</h2>
@@ -2671,6 +2673,7 @@ function ModeratedDevices(props: { account: Account }) {
                 device={device}
                 page={props.account.settings.id}
                 remote={props.account.remoteControl !== "none"}
+                onOpen={props.onOpen}
               />
             )}
           </DeviceList>
@@ -2734,114 +2737,272 @@ function GoPremium(props: { ref: (dialog: HTMLDialogElement) => void }) {
 const smallButtonClass =
   "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
 
-export default function Dashboard() {
-  const { session, loading, signInFailed, signOut } = createAccountSession();
+function SignedIn(props: { session: string; account: Account; onSignOut: () => void }) {
+  const [target, setTarget] = createSignal(readTarget(true));
+  const shown = createMemo(() => resolve(props.account, target()), undefined, {
+    equals: (a, b) => a.channel === b.channel && a.page === b.page && a.device === b.device,
+  });
+  const channel = () => shown().channel;
+  const page = () => shown().page;
+  const device = () => shown().device;
 
-  const [chosenChannel, setChosenChannel] = createSignal(readModeratedChannel());
-  const chooseChannel = (key: string) => {
-    setChosenChannel(key);
-    const [platform, login] = key.split("/", 2);
-    const path = login
-      ? `${pages.dashboard}${platform}/${encodeURIComponent(login)}`
-      : pages.dashboard;
-    history.replaceState(null, "", `${asset(path)}${location.search}${location.hash}`);
-    rememberChannel(key);
+  const known = new Map([[props.account.settings.id, props.account]]);
+  const [pageAccount, setPageAccount] = createSignal<Account | null>(null);
+  const current = createMemo(() => {
+    const account = pageAccount();
+    return account?.settings.id === page() ? account : null;
+  });
+  const update = (account: Account) => {
+    known.set(account.settings.id, account);
+    if (account.settings.id === page()) {
+      setPageAccount(account);
+    }
   };
-  const channel = (account: Account) => {
-    const [platform, login] = chosenChannel().split("/", 2) as [Platform, string | undefined];
-    return (
-      (login ? account.moderating.find((channel) => channel[platform]?.login === login) : null) ??
-      account.moderating.find((channel) => channelKey(channel) === chosenChannel()) ??
-      null
+  const [failure, setFailure] = createSignal<{ page: string; message: string } | null>(null);
+  const [recentChanges, setRecentChanges] = createSignal(0);
+
+  createEffect(
+    on(page, (id) => {
+      const moderated = channel();
+      setPageAccount(known.get(id) ?? null);
+      setFailure(null);
+      const refresh = async () => {
+        try {
+          update(await fetchAccount(props.session, moderated ? id : undefined));
+        } catch (error) {
+          if (signedOut(error)) {
+            props.onSignOut();
+          } else if (!known.has(id)) {
+            setFailure({
+              page: id,
+              message:
+                moderated && forbidden(error)
+                  ? t("{name} has removed you as a moderator.", { name: moderated.name })
+                  : t("Something went wrong. Try again."),
+            });
+          }
+        }
+      };
+      void refresh();
+      onCleanup(
+        subscribeChanges(
+          pageEventsUrl(id),
+          props.session,
+          {
+            account: () => void refresh(),
+            recent: () => setRecentChanges((count) => count + 1),
+          },
+          (status) => {
+            if (status === 401) {
+              props.onSignOut();
+            }
+          },
+        ),
+      );
+    }),
+  );
+
+  createEffect(() => {
+    const picked = channel();
+    rememberChannel(picked ? channelKey(picked) : "");
+  });
+
+  createEffect(() => {
+    const { channel, page, device } = shown();
+    const there = resolve(props.account, readTarget(false));
+    if (
+      there.page !== page ||
+      there.device !== device ||
+      (!device && location.pathname.startsWith(asset(pages.device)))
+    ) {
+      history.replaceState(
+        null,
+        "",
+        `${device ? deviceUrl(page, device) : dashboardUrl(channel)}${location.search}${location.hash}`,
+      );
+    }
+  });
+
+  const onPopState = () => setTarget(readTarget(false));
+  addEventListener("popstate", onPopState);
+  onCleanup(() => removeEventListener("popstate", onPopState));
+
+  const hashes = { dashboard: "", device: "" };
+  const show = (picked: Moderating | null, to: string) => {
+    const id = picked?.id ?? props.account.settings.id;
+    hashes[device() ? "device" : "dashboard"] = location.hash;
+    scrollTo({ top: 0, behavior: "instant" });
+    history.pushState(
+      null,
+      "",
+      `${to ? deviceUrl(id, to) : dashboardUrl(picked)}${hashes[to ? "device" : "dashboard"]}`,
     );
+    setTarget(
+      to
+        ? { channel: "", page: id, device: to }
+        : { channel: picked ? channelKey(picked) : "", page: null, device: "" },
+    );
+  };
+
+  const pickStreamer = async (key: string) => {
+    const picked = props.account.moderating.find((channel) => channelKey(channel) === key) ?? null;
+    if (!device()) {
+      show(picked, "");
+      return;
+    }
+    const id = picked?.id ?? props.account.settings.id;
+    const account =
+      known.get(id) ??
+      (await fetchAccount(props.session, picked ? id : undefined).catch(() => null));
+    show(picked, account && account.remoteControl !== "none" ? (account.devices[0]?.id ?? "") : "");
   };
 
   let premiumDialog: HTMLDialogElement | undefined;
 
   return (
     <>
-      <CloudHeader premium={session()?.account.premium}>
-        <Show
-          when={session()}
-          fallback={
+      <CloudHeader premium={props.account.premium}>
+        <div class="ml-auto flex min-w-0 items-center gap-3">
+          <Show when={!props.account.premium}>
+            <GoPremium ref={(element) => (premiumDialog = element)} />
+          </Show>
+          <PagePicker
+            devices={current()?.devices ?? []}
+            picked={device()}
+            onPick={(to) => show(channel(), to)}
+          />
+          <Show when={props.account.moderating.length > 0}>
+            <StreamerPicker
+              account={props.account}
+              picked={channel()}
+              onPick={(key) => void pickStreamer(key)}
+            />
+          </Show>
+          <Show when={props.account.admin}>
+            <a
+              href={asset(pages.admin)}
+              class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
+              title={t("Admin")}
+            >
+              <Icon name="chart" class="size-5 sm:hidden" />
+              <span class="max-sm:sr-only">{t("Admin")}</span>
+            </a>
+          </Show>
+          <AccountMenu
+            name={props.account.name}
+            avatar={props.account.avatar}
+            items={[
+              ...(props.account.premium
+                ? []
+                : [
+                    {
+                      label: t("Go premium"),
+                      icon: "star" as const,
+                      onClick: () => premiumDialog?.showModal(),
+                    },
+                  ]),
+              { label: t("Account"), icon: "user", href: asset(pages.account) },
+            ]}
+            onSignOut={props.onSignOut}
+          />
+        </div>
+      </CloudHeader>
+      <main>
+        <Band tight>
+          <Show when={page()} keyed>
+            {(id) => (
+              <Show
+                when={current()}
+                fallback={
+                  <Show
+                    when={failure()?.page === id ? failure()?.message : null}
+                    fallback={<Spinner />}
+                  >
+                    {(message) => <Notice status>{message()}</Notice>}
+                  </Show>
+                }
+              >
+                {(account) => (
+                  <Show
+                    when={device()}
+                    fallback={
+                      <Admin
+                        session={props.session}
+                        account={account()}
+                        page={channel() ? id : undefined}
+                        recentChanges={recentChanges()}
+                        onAccount={update}
+                        onOpenDevice={(to) => show(channel(), to)}
+                        onSignOut={props.onSignOut}
+                      />
+                    }
+                  >
+                    {(picked) => (
+                      <Show
+                        when={account().remoteControl !== "none"}
+                        fallback={
+                          <div class={cardClass}>
+                            <p class="text-ink-2">
+                              {t("The streamer has not let you use the remote control.")}
+                            </p>
+                          </div>
+                        }
+                      >
+                        <DeviceView
+                          session={props.session}
+                          page={id}
+                          device={picked()}
+                          preview={account().preview}
+                          goLive={account().goLive}
+                          remoteControl={account().remoteControl === "control"}
+                          nameOf={(device) =>
+                            account().devices.find((candidate) => candidate.id === device)?.name
+                          }
+                          onSignOut={props.onSignOut}
+                        />
+                      </Show>
+                    )}
+                  </Show>
+                )}
+              </Show>
+            )}
+          </Show>
+        </Band>
+      </main>
+    </>
+  );
+}
+
+export default function Dashboard() {
+  const { session, loading, signInFailed, signOut } = createAccountSession();
+
+  return (
+    <Show
+      when={session()}
+      keyed
+      fallback={
+        <>
+          <CloudHeader>
             <Show when={!loading()}>
               <span class="ml-auto flex items-center gap-2">
                 <PlatformSignIn platform="twitch" />
                 <PlatformSignIn platform="kick" />
               </span>
             </Show>
-          }
-        >
-          {(current) => (
-            <div class="ml-auto flex min-w-0 items-center gap-3">
-              <Show when={!current().account.premium}>
-                <GoPremium ref={(element) => (premiumDialog = element)} />
-              </Show>
-              <Show when={current().account.moderating.length > 0}>
-                <StreamerPicker
-                  account={current().account}
-                  picked={channel(current().account)}
-                  onPick={chooseChannel}
-                />
-              </Show>
-              <Show when={current().account.admin}>
-                <a
-                  href={asset(pages.admin)}
-                  class={`${ghostButtonClass} h-11! px-5! text-base! max-sm:w-11 max-sm:px-0!`}
-                  title={t("Admin")}
-                >
-                  <Icon name="chart" class="size-5 sm:hidden" />
-                  <span class="max-sm:sr-only">{t("Admin")}</span>
-                </a>
-              </Show>
-              <AccountMenu
-                name={current().account.name}
-                avatar={current().account.avatar}
-                items={[
-                  ...(current().account.premium
-                    ? []
-                    : [
-                        {
-                          label: t("Go premium"),
-                          icon: "star" as const,
-                          onClick: () => premiumDialog?.showModal(),
-                        },
-                      ]),
-                  { label: t("Account"), icon: "user", href: asset(pages.account) },
-                ]}
-                onSignOut={signOut}
-              />
-            </div>
-          )}
-        </Show>
-      </CloudHeader>
-      <main>
-        <Show when={loading() || session()} fallback={<CloudLanding failed={signInFailed()} />}>
-          <Band tight={session() !== null}>
-            <Show when={!loading()} fallback={<Spinner />}>
-              <Show when={session()} keyed>
-                {(current) => (
-                  <Show
-                    when={channel(current.account)}
-                    keyed
-                    fallback={
-                      <Admin
-                        session={current.session}
-                        account={current.account}
-                        onSignOut={signOut}
-                      />
-                    }
-                  >
-                    {(channel) => (
-                      <Moderated session={current.session} channel={channel} onSignOut={signOut} />
-                    )}
-                  </Show>
-                )}
-              </Show>
+          </CloudHeader>
+          <main>
+            <Show when={loading()} fallback={<CloudLanding failed={signInFailed()} />}>
+              <Band>
+                <Spinner />
+              </Band>
             </Show>
-          </Band>
-        </Show>
-      </main>
-    </>
+          </main>
+        </>
+      }
+    >
+      {(current) => (
+        <SignedIn session={current.session} account={current.account} onSignOut={signOut} />
+      )}
+    </Show>
   );
 }

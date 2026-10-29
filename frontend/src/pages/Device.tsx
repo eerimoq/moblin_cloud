@@ -1,25 +1,12 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { asset } from "../asset";
-import {
-  channelKey,
-  DevicePicker,
-  rememberChannel,
-  StreamerPicker,
-} from "../components/HeaderPickers";
 import Icon from "../components/Icon";
 import MoblinScreen from "../components/MoblinScreen";
 import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
-import { AccountMenu, Band, cardClass, CloudHeader, Spinner } from "../components/PageParts";
+import { cardClass } from "../components/PageParts";
 import {
   controlDevice,
-  fetchAccount,
-  pageEventsUrl,
-  createAccountSession,
   deviceEventsUrl,
   devicePreviewUrl,
-  type Access,
-  type Account,
-  type Device,
   type Control,
   type DeviceSettings,
   type DeviceSnapshot,
@@ -30,9 +17,8 @@ import {
 } from "../data/account";
 import { BackendError } from "../data/backend";
 import { formatBits } from "../data/moblin";
-import { deviceUrl, pages } from "../data/links";
 import { t } from "../i18n";
-import { subscribe, subscribeChanges } from "../sse";
+import { subscribe } from "../sse";
 
 const emptyStatus = (): DeviceStatus => ({ general: {}, topLeft: {}, topRight: {} });
 
@@ -374,7 +360,7 @@ function Graphs(props: { history: Sample[] }) {
   );
 }
 
-function DeviceView(props: {
+export default function DeviceView(props: {
   session: string;
   page: string;
   device: string;
@@ -594,140 +580,6 @@ function DeviceView(props: {
           </div>
         </div>
       </Show>
-    </>
-  );
-}
-
-export default function DevicePage(props: { page: string; device: string }) {
-  const { session, loading, signOut } = createAccountSession();
-
-  createEffect(() => {
-    if (!loading() && !session()) {
-      location.replace(asset(pages.dashboard));
-    }
-  });
-
-  const [device, setDevice] = createSignal(props.device);
-  const onPopState = () => {
-    const match = location.pathname.match(/\/device\/[^/]+(?:\/([^/]+))?\/?$/);
-    if (match) {
-      setDevice(decodeURIComponent(match[1] ?? ""));
-    }
-  };
-  addEventListener("popstate", onPopState);
-  onCleanup(() => removeEventListener("popstate", onPopState));
-  const pick = (picked: string) => {
-    if (picked !== device()) {
-      history.pushState(null, "", `${deviceUrl(props.page, picked)}${location.hash}`);
-      setDevice(picked);
-    }
-  };
-
-  const [devices, setDevices] = createSignal<Device[]>([]);
-  const [preview, setPreview] = createSignal<boolean | null>(null);
-  const [goLive, setGoLive] = createSignal(false);
-  const [remoteControl, setRemoteControl] = createSignal<Access | null>(null);
-  createEffect(() => {
-    const current = session();
-    if (current) {
-      const refresh = () =>
-        fetchAccount(current.session, props.page)
-          .then((account) => {
-            setDevices(account.devices);
-            setPreview(account.preview);
-            setGoLive(account.goLive);
-            setRemoteControl(account.remoteControl);
-          })
-          .catch(() => {});
-      void refresh();
-      onCleanup(subscribeChanges(pageEventsUrl(props.page), current.session, { account: refresh }));
-    }
-  });
-
-  const channel = (account: Account) =>
-    account.moderating.find((channel) => channel.id === props.page) ?? null;
-  const dashboard = (account: Account) => {
-    const picked = channel(account);
-    return asset(picked ? `${pages.dashboard}${channelKey(picked)}` : pages.dashboard);
-  };
-
-  createEffect(() => {
-    const current = session();
-    if (current) {
-      const picked = channel(current.account);
-      rememberChannel(picked ? channelKey(picked) : "");
-    }
-  });
-
-  return (
-    <>
-      <CloudHeader premium={session()?.account.premium}>
-        <Show when={session()}>
-          {(current) => (
-            <div class="ml-auto flex min-w-0 items-center gap-3">
-              <Show when={devices().length > 0}>
-                <DevicePicker devices={devices()} picked={device()} onPick={pick} />
-              </Show>
-              <Show when={current().account.moderating.length > 0}>
-                <StreamerPicker
-                  account={current().account}
-                  picked={channel(current().account)}
-                  onPick={async (key) => {
-                    rememberChannel(key);
-                    const picked =
-                      current().account.moderating.find((channel) => channelKey(channel) === key) ??
-                      null;
-                    const page = picked ? picked.id : current().account.settings.id;
-                    const first = await fetchAccount(current().session, page)
-                      .then((account) => account.devices[0]?.id ?? "")
-                      .catch(() => "");
-                    location.assign(`${deviceUrl(page, first)}${location.hash}`);
-                  }}
-                />
-              </Show>
-              <AccountMenu
-                name={current().account.name}
-                avatar={current().account.avatar}
-                items={[
-                  { label: t("Dashboard"), icon: "chart", href: dashboard(current().account) },
-                ]}
-                onSignOut={signOut}
-              />
-            </div>
-          )}
-        </Show>
-      </CloudHeader>
-      <main>
-        <Band tight>
-          <Show when={!loading() && remoteControl() !== null} fallback={<Spinner />}>
-            <Show
-              when={remoteControl() !== "none"}
-              fallback={
-                <div class={cardClass}>
-                  <p class="text-ink-2">
-                    {t("The streamer has not let you use the remote control.")}
-                  </p>
-                </div>
-              }
-            >
-              <Show when={device() ? session() : undefined} keyed>
-                {(current) => (
-                  <DeviceView
-                    session={current.session}
-                    page={props.page}
-                    device={device()}
-                    preview={preview()}
-                    goLive={goLive()}
-                    remoteControl={remoteControl() === "control"}
-                    nameOf={(id) => devices().find((candidate) => candidate.id === id)?.name}
-                    onSignOut={signOut}
-                  />
-                )}
-              </Show>
-            </Show>
-          </Show>
-        </Band>
-      </main>
     </>
   );
 }
