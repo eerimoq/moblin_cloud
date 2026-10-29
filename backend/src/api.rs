@@ -31,12 +31,12 @@ use crate::subscribers::Allowances;
 
 mod account;
 mod admin;
+mod assistants;
 mod banner;
 mod devices;
 mod effects;
 mod events;
 mod moblin;
-mod moderators;
 mod orders;
 mod providers;
 mod public;
@@ -52,12 +52,12 @@ mod tips;
 
 use account::*;
 use admin::*;
+use assistants::*;
 use banner::*;
 use devices::*;
 use effects::*;
 use events::*;
 use moblin::*;
-use moderators::*;
 pub use orders::settle_orders;
 use orders::*;
 use providers::*;
@@ -162,35 +162,35 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/test/spin", post(handle_account_test_spin))
         .route("/account/test/effect", post(handle_account_test_effect))
         .route(
-            "/account/moderators/{platform}",
-            post(handle_account_moderator_add),
+            "/account/assistants/{platform}",
+            post(handle_account_assistant_add),
         )
         .route(
-            "/account/moderators/{platform}/{moderator}/remove",
-            post(handle_account_moderator_remove),
+            "/account/assistants/{platform}/{assistant}/remove",
+            post(handle_account_assistant_remove),
         )
         .route(
-            "/account/moderators/{platform}/{moderator}/preview",
-            post(handle_account_moderator_preview),
+            "/account/assistants/{platform}/{assistant}/preview",
+            post(handle_account_assistant_preview),
         )
         .route(
-            "/account/moderators/{platform}/{moderator}/go-live",
-            post(handle_account_moderator_go_live),
+            "/account/assistants/{platform}/{assistant}/go-live",
+            post(handle_account_assistant_go_live),
         )
         .route(
-            "/account/moderators/{platform}/{moderator}/edit-tips",
-            post(handle_account_moderator_edit_tips),
+            "/account/assistants/{platform}/{assistant}/edit-tips",
+            post(handle_account_assistant_edit_tips),
         )
         .route(
-            "/account/moderators/{platform}/{moderator}/remote-control",
-            post(handle_account_moderator_remote_control),
+            "/account/assistants/{platform}/{assistant}/remote-control",
+            post(handle_account_assistant_remote_control),
         )
-        .route("/account/pages/{id}/recent", get(handle_moderator_recent))
+        .route("/account/pages/{id}/recent", get(handle_assistant_recent))
         .route(
             "/account/pages/{id}/recent/{order}/resend",
-            post(handle_moderator_resend),
+            post(handle_assistant_resend),
         )
-        .route("/account/pages/{id}", get(handle_moderator_account))
+        .route("/account/pages/{id}", get(handle_assistant_account))
         .route("/account/pages/{id}/events", get(handle_page_events))
         .route(
             "/account/pages/{id}/devices/{device}/events",
@@ -206,27 +206,27 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route(
             "/account/pages/{id}/settings",
-            post(handle_moderator_settings),
+            post(handle_assistant_settings),
         )
         .route(
             "/account/pages/{id}/image",
-            post(handle_moderator_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+            post(handle_assistant_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
         )
         .route(
             "/account/pages/{id}/image/remove",
-            post(handle_moderator_image_remove),
+            post(handle_assistant_image_remove),
         )
         .route(
             "/account/pages/{id}/test/tip",
-            post(handle_moderator_test_tip),
+            post(handle_assistant_test_tip),
         )
         .route(
             "/account/pages/{id}/test/spin",
-            post(handle_moderator_test_spin),
+            post(handle_assistant_test_spin),
         )
         .route(
             "/account/pages/{id}/test/effect",
-            post(handle_moderator_test_effect),
+            post(handle_assistant_test_effect),
         )
         .route("/admin/stats", get(handle_admin_stats))
         .route("/admin/stats/events", get(handle_admin_stats_events))
@@ -401,22 +401,22 @@ pub(super) fn new_request_id(api: &Api) -> Result<String, Failure> {
     ))
 }
 
-pub(super) fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+pub(super) fn assistant(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = signed_in(api, headers)?;
     let allowed = signed_in.account.page.id == id
         || listed(
             api,
             &signed_in.account,
             id,
-            |platform, moderator, broadcaster| {
-                api.accounts.moderates(platform, moderator, broadcaster)
+            |platform, assistant, broadcaster| {
+                api.accounts.assists(platform, assistant, broadcaster)
             },
         );
     if !allowed {
         return Err(failure(
-            "not-moderator",
+            "not-assistant",
             StatusCode::FORBIDDEN,
-            "Only the streamer and the moderators they turned on can do this.",
+            "Only the streamer and the assistants they turned on can do this.",
         ));
     }
     Ok(signed_in)
@@ -424,9 +424,9 @@ pub(super) fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<Sign
 
 pub(super) fn may(api: &Api, account: &Account, id: &str, permission: Permission) -> bool {
     account.page.id == id
-        || listed(api, account, id, |platform, moderator, broadcaster| {
+        || listed(api, account, id, |platform, assistant, broadcaster| {
             api.accounts
-                .permits(platform, moderator, broadcaster, permission)
+                .permits(platform, assistant, broadcaster, permission)
         })
 }
 
@@ -437,16 +437,16 @@ pub(super) fn access(api: &Api, account: &Account, id: &str) -> Access {
     [Access::Control, Access::View]
         .into_iter()
         .find(|&access| {
-            listed(api, account, id, |platform, moderator, broadcaster| {
+            listed(api, account, id, |platform, assistant, broadcaster| {
                 api.accounts
-                    .grants(platform, moderator, broadcaster, access)
+                    .grants(platform, assistant, broadcaster, access)
             })
         })
         .unwrap_or(Access::None)
 }
 
 pub(super) fn watcher(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
-    let signed_in = moderator(api, headers, id)?;
+    let signed_in = assistant(api, headers, id)?;
     if access(api, &signed_in.account, id) < Access::View {
         return Err(failure(
             "no-remote-control",
@@ -470,7 +470,7 @@ pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<Sign
 }
 
 pub(super) fn editor(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
-    let signed_in = moderator(api, headers, id)?;
+    let signed_in = assistant(api, headers, id)?;
     if !may(api, &signed_in.account, id, Permission::EditTips) {
         return Err(failure(
             "no-edit-tips",
@@ -491,12 +491,12 @@ fn listed(
     [Platform::Twitch, Platform::Kick]
         .into_iter()
         .any(|platform| {
-            account.identity(platform).is_some_and(|moderator| {
+            account.identity(platform).is_some_and(|assistant| {
                 streamer
                     .as_ref()
                     .and_then(|streamer| streamer.identity(platform))
                     .is_some_and(|broadcaster| {
-                        check(platform, &moderator.user_id, &broadcaster.user_id)
+                        check(platform, &assistant.user_id, &broadcaster.user_id)
                     })
             })
         })

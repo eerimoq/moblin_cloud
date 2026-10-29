@@ -123,25 +123,25 @@ pub struct AccountStats {
 pub enum AccountError {
     Unknown,
     Full,
-    UnknownModerator,
+    UnknownAssistant,
     UnknownDevice,
-    TooManyModerators,
+    TooManyAssistants,
     IdentityTaken(Platform),
     UnknownIdentity,
     LastIdentity,
     NotSaved,
 }
 
-fn moderators_table(platform: Platform) -> &'static str {
+fn assistants_table(platform: Platform) -> &'static str {
     match platform {
-        Platform::Twitch => "twitch_moderators",
-        Platform::Kick => "kick_moderators",
+        Platform::Twitch => "twitch_assistants",
+        Platform::Kick => "kick_assistants",
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Moderator {
+pub struct Assistant {
     pub id: String,
     pub login: String,
     pub name: String,
@@ -656,123 +656,123 @@ impl Accounts {
         })
     }
 
-    pub fn add_moderator(
+    pub fn add_assistant(
         &self,
         platform: Platform,
         broadcaster: &str,
-        moderator: &Moderator,
+        assistant: &Assistant,
     ) -> Result<(), AccountError> {
-        let table = moderators_table(platform);
+        let table = assistants_table(platform);
         let mut database = self.database.lock();
         let transaction = database.transaction().map_err(not_saved)?;
         let listed: u32 = transaction
             .query_row(
-                &format!("SELECT count(*) FROM {table} WHERE broadcaster = ?1 AND moderator != ?2"),
-                [broadcaster, &moderator.id],
+                &format!("SELECT count(*) FROM {table} WHERE broadcaster = ?1 AND assistant != ?2"),
+                [broadcaster, &assistant.id],
                 |row| row.get(0),
             )
             .map_err(not_saved)?;
         if listed >= 50 {
-            return Err(AccountError::TooManyModerators);
+            return Err(AccountError::TooManyAssistants);
         }
         transaction
             .execute(
                 &format!(
-                    "INSERT INTO {table} (broadcaster, moderator, login, name) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT (broadcaster, moderator) DO UPDATE SET login = excluded.login, name = excluded.name"
+                    "INSERT INTO {table} (broadcaster, assistant, login, name) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (broadcaster, assistant) DO UPDATE SET login = excluded.login, name = excluded.name"
                 ),
-                [broadcaster, &moderator.id, &moderator.login, &moderator.name],
+                [broadcaster, &assistant.id, &assistant.login, &assistant.name],
             )
             .map_err(not_saved)?;
         transaction.commit().map_err(not_saved)
     }
 
-    pub fn remove_moderator(
+    pub fn remove_assistant(
         &self,
         platform: Platform,
         broadcaster: &str,
-        moderator: &str,
+        assistant: &str,
     ) -> Result<(), AccountError> {
-        let table = moderators_table(platform);
+        let table = assistants_table(platform);
         let removed = self
             .database
             .lock()
             .execute(
-                &format!("DELETE FROM {table} WHERE broadcaster = ?1 AND moderator = ?2"),
-                [broadcaster, moderator],
+                &format!("DELETE FROM {table} WHERE broadcaster = ?1 AND assistant = ?2"),
+                [broadcaster, assistant],
             )
             .map_err(not_saved)?;
         if removed == 0 {
-            return Err(AccountError::UnknownModerator);
+            return Err(AccountError::UnknownAssistant);
         }
         Ok(())
     }
 
-    pub fn set_moderator_permission(
+    pub fn set_assistant_permission(
         &self,
         platform: Platform,
         broadcaster: &str,
-        moderator: &str,
+        assistant: &str,
         permission: Permission,
         on: bool,
     ) -> Result<(), AccountError> {
-        let table = moderators_table(platform);
+        let table = assistants_table(platform);
         let column = permission.column();
         let changed = self
             .database
             .lock()
             .execute(
                 &format!(
-                    "UPDATE {table} SET {column} = ?3 WHERE broadcaster = ?1 AND moderator = ?2"
+                    "UPDATE {table} SET {column} = ?3 WHERE broadcaster = ?1 AND assistant = ?2"
                 ),
-                (broadcaster, moderator, on),
+                (broadcaster, assistant, on),
             )
             .map_err(not_saved)?;
         if changed == 0 {
-            return Err(AccountError::UnknownModerator);
+            return Err(AccountError::UnknownAssistant);
         }
         Ok(())
     }
 
-    pub fn set_moderator_access(
+    pub fn set_assistant_access(
         &self,
         platform: Platform,
         broadcaster: &str,
-        moderator: &str,
+        assistant: &str,
         access: Access,
     ) -> Result<(), AccountError> {
-        let table = moderators_table(platform);
+        let table = assistants_table(platform);
         let changed = self
             .database
             .lock()
             .execute(
                 &format!(
-                    "UPDATE {table} SET remote_control = ?3 WHERE broadcaster = ?1 AND moderator = ?2"
+                    "UPDATE {table} SET remote_control = ?3 WHERE broadcaster = ?1 AND assistant = ?2"
                 ),
-                (broadcaster, moderator, access as u8),
+                (broadcaster, assistant, access as u8),
             )
             .map_err(not_saved)?;
         if changed == 0 {
-            return Err(AccountError::UnknownModerator);
+            return Err(AccountError::UnknownAssistant);
         }
         Ok(())
     }
 
-    pub fn moderators(&self, platform: Platform, broadcaster: &str) -> Vec<Moderator> {
-        let table = moderators_table(platform);
+    pub fn assistants(&self, platform: Platform, broadcaster: &str) -> Vec<Assistant> {
+        let table = assistants_table(platform);
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips, remote_control
+                "SELECT assistant, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips, remote_control
                  FROM {table}
-                 LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = moderator
+                 LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = assistant
                  WHERE broadcaster = ?2
                  ORDER BY 3 COLLATE NOCASE"
             ))
             .and_then(|mut statement| {
                 statement
                     .query_map([platform.name(), broadcaster], |row| {
-                        Ok(Moderator {
+                        Ok(Assistant {
                             id: row.get(0)?,
                             login: row.get(1)?,
                             name: row.get(2)?,
@@ -787,27 +787,27 @@ impl Accounts {
             });
         result.unwrap_or_else(|error| {
             warn!(
-                "failed to read the {} moderators of {broadcaster}: {error:#}",
+                "failed to read the {} assistants of {broadcaster}: {error:#}",
                 platform.title()
             );
             Vec::new()
         })
     }
 
-    pub fn moderates(&self, platform: Platform, moderator: &str, broadcaster: &str) -> bool {
-        self.listed(platform, moderator, broadcaster, "")
+    pub fn assists(&self, platform: Platform, assistant: &str, broadcaster: &str) -> bool {
+        self.listed(platform, assistant, broadcaster, "")
     }
 
     pub fn permits(
         &self,
         platform: Platform,
-        moderator: &str,
+        assistant: &str,
         broadcaster: &str,
         permission: Permission,
     ) -> bool {
         self.listed(
             platform,
-            moderator,
+            assistant,
             broadcaster,
             &format!(" AND {}", permission.column()),
         )
@@ -816,13 +816,13 @@ impl Accounts {
     pub fn grants(
         &self,
         platform: Platform,
-        moderator: &str,
+        assistant: &str,
         broadcaster: &str,
         access: Access,
     ) -> bool {
         self.listed(
             platform,
-            moderator,
+            assistant,
             broadcaster,
             &format!(" AND remote_control >= {}", access as u8),
         )
@@ -831,45 +831,45 @@ impl Accounts {
     fn listed(
         &self,
         platform: Platform,
-        moderator: &str,
+        assistant: &str,
         broadcaster: &str,
         condition: &str,
     ) -> bool {
-        let table = moderators_table(platform);
+        let table = assistants_table(platform);
         self.database
             .lock()
             .query_row(
                 &format!(
-                    "SELECT 1 FROM {table} WHERE moderator = ?1 AND broadcaster = ?2{condition}"
+                    "SELECT 1 FROM {table} WHERE assistant = ?1 AND broadcaster = ?2{condition}"
                 ),
-                [moderator, broadcaster],
+                [assistant, broadcaster],
                 |_| Ok(()),
             )
             .optional()
             .unwrap_or_else(|error| {
-                warn!("failed to read {} moderators: {error:#}", platform.title());
+                warn!("failed to read {} assistants: {error:#}", platform.title());
                 None
             })
             .is_some()
     }
 
-    pub fn moderated(&self, platform: Platform, moderator: &str) -> Vec<Account> {
-        let table = moderators_table(platform);
+    pub fn assisted(&self, platform: Platform, assistant: &str) -> Vec<Account> {
+        let table = assistants_table(platform);
         let broadcasters: Vec<String> = {
             let database = self.database.lock();
             let result = database
                 .prepare_cached(&format!(
                     "SELECT identities.account FROM {table}
                      JOIN identities ON identities.platform = ?1 AND identities.user_id = broadcaster
-                     WHERE moderator = ?2 ORDER BY identities.name COLLATE NOCASE"
+                     WHERE assistant = ?2 ORDER BY identities.name COLLATE NOCASE"
                 ))
                 .and_then(|mut statement| {
                     statement
-                        .query_map([platform.name(), moderator], |row| row.get(0))?
+                        .query_map([platform.name(), assistant], |row| row.get(0))?
                         .collect::<rusqlite::Result<_>>()
                 });
             result.unwrap_or_else(|error| {
-                warn!("failed to read {} moderators: {error:#}", platform.title());
+                warn!("failed to read {} assistants: {error:#}", platform.title());
                 Vec::new()
             })
         };
@@ -911,8 +911,8 @@ impl Accounts {
             transaction
                 .execute(
                     &format!(
-                        "DELETE FROM {} WHERE broadcaster = ?1 OR moderator = ?1",
-                        moderators_table(identity.platform)
+                        "DELETE FROM {} WHERE broadcaster = ?1 OR assistant = ?1",
+                        assistants_table(identity.platform)
                     ),
                     [&identity.user_id],
                 )
@@ -1155,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn moderators_are_kept_per_platform() {
+    fn assistants_are_kept_per_platform() {
         let accounts = Accounts::new(Database::memory());
         let (streamer, _) = accounts
             .signed_in(
@@ -1164,7 +1164,7 @@ mod tests {
             )
             .unwrap();
         sign_in(&accounts, "1", "Mod", "mod", page("q", "l")).unwrap();
-        let moderator = Moderator {
+        let assistant = Assistant {
             id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
@@ -1175,39 +1175,39 @@ mod tests {
             remote_control: Access::None,
         };
         accounts
-            .add_moderator(Platform::Twitch, "42", &moderator)
+            .add_assistant(Platform::Twitch, "42", &assistant)
             .unwrap();
-        assert_eq!(accounts.moderated(Platform::Twitch, "1")[0].page.id, "p");
-        assert!(accounts.moderates(Platform::Twitch, "1", "42"));
-        assert!(!accounts.moderates(Platform::Kick, "1", "42"));
-        assert!(accounts.moderated(Platform::Kick, "1").is_empty());
-        assert_eq!(accounts.moderators(Platform::Twitch, "42"), [moderator]);
-        assert!(accounts.moderators(Platform::Kick, "42").is_empty());
+        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page.id, "p");
+        assert!(accounts.assists(Platform::Twitch, "1", "42"));
+        assert!(!accounts.assists(Platform::Kick, "1", "42"));
+        assert!(accounts.assisted(Platform::Kick, "1").is_empty());
+        assert_eq!(accounts.assistants(Platform::Twitch, "42"), [assistant]);
+        assert!(accounts.assistants(Platform::Kick, "42").is_empty());
         assert_eq!(
-            accounts.remove_moderator(Platform::Kick, "42", "1"),
-            Err(AccountError::UnknownModerator)
+            accounts.remove_assistant(Platform::Kick, "42", "1"),
+            Err(AccountError::UnknownAssistant)
         );
         accounts
             .link("s", &kick("9", "Streamer", "streamer"))
             .unwrap();
         accounts.unlink("s", Platform::Twitch).unwrap();
-        assert!(accounts.moderated(Platform::Twitch, "1").is_empty());
+        assert!(accounts.assisted(Platform::Twitch, "1").is_empty());
         assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
         accounts
             .link("s", &twitch("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.moderated(Platform::Twitch, "1")[0].page.id, "p");
+        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page.id, "p");
         accounts
-            .remove_moderator(Platform::Twitch, "42", "1")
+            .remove_assistant(Platform::Twitch, "42", "1")
             .unwrap();
-        assert!(!accounts.moderates(Platform::Twitch, "1", "42"));
-        assert!(accounts.moderated(Platform::Twitch, "1").is_empty());
+        assert!(!accounts.assists(Platform::Twitch, "1", "42"));
+        assert!(accounts.assisted(Platform::Twitch, "1").is_empty());
     }
 
     #[test]
-    fn moderators_are_an_allow_list() {
+    fn assistants_are_an_allow_list() {
         let accounts = Accounts::new(Database::memory());
-        let moderator = |id: &str, login: &str| Moderator {
+        let assistant = |id: &str, login: &str| Assistant {
             id: id.to_string(),
             login: login.to_string(),
             name: login.to_string(),
@@ -1218,64 +1218,64 @@ mod tests {
             remote_control: Access::None,
         };
         accounts
-            .add_moderator(Platform::Kick, "42", &moderator("1", "erik"))
+            .add_assistant(Platform::Kick, "42", &assistant("1", "erik"))
             .unwrap();
         accounts
-            .add_moderator(Platform::Kick, "42", &moderator("2", "bob"))
+            .add_assistant(Platform::Kick, "42", &assistant("2", "bob"))
             .unwrap();
         accounts
-            .add_moderator(Platform::Kick, "43", &moderator("1", "erik"))
+            .add_assistant(Platform::Kick, "43", &assistant("1", "erik"))
             .unwrap();
         assert_eq!(
-            accounts.moderators(Platform::Kick, "42"),
-            [moderator("2", "bob"), moderator("1", "erik")]
+            accounts.assistants(Platform::Kick, "42"),
+            [assistant("2", "bob"), assistant("1", "erik")]
         );
-        assert!(accounts.moderates(Platform::Kick, "1", "42"));
-        assert!(accounts.moderates(Platform::Kick, "1", "43"));
-        assert!(!accounts.moderates(Platform::Kick, "2", "43"));
-        assert!(!accounts.moderates(Platform::Kick, "42", "1"));
+        assert!(accounts.assists(Platform::Kick, "1", "42"));
+        assert!(accounts.assists(Platform::Kick, "1", "43"));
+        assert!(!accounts.assists(Platform::Kick, "2", "43"));
+        assert!(!accounts.assists(Platform::Kick, "42", "1"));
         assert_eq!(
-            accounts.remove_moderator(Platform::Kick, "42", "3"),
-            Err(AccountError::UnknownModerator)
+            accounts.remove_assistant(Platform::Kick, "42", "3"),
+            Err(AccountError::UnknownAssistant)
         );
         accounts
-            .remove_moderator(Platform::Kick, "42", "1")
+            .remove_assistant(Platform::Kick, "42", "1")
             .unwrap();
-        assert!(!accounts.moderates(Platform::Kick, "1", "42"));
-        assert!(accounts.moderates(Platform::Kick, "1", "43"));
+        assert!(!accounts.assists(Platform::Kick, "1", "42"));
+        assert!(accounts.assists(Platform::Kick, "1", "43"));
         assert_eq!(
-            accounts.moderators(Platform::Kick, "42"),
-            [moderator("2", "bob")]
+            accounts.assistants(Platform::Kick, "42"),
+            [assistant("2", "bob")]
         );
         for n in 0..49 {
             accounts
-                .add_moderator(
+                .add_assistant(
                     Platform::Kick,
                     "42",
-                    &moderator(&format!("{}", 100 + n), "m"),
+                    &assistant(&format!("{}", 100 + n), "m"),
                 )
                 .unwrap();
         }
-        assert_eq!(accounts.moderators(Platform::Kick, "42").len(), 50);
+        assert_eq!(accounts.assistants(Platform::Kick, "42").len(), 50);
         assert_eq!(
-            accounts.add_moderator(Platform::Kick, "42", &moderator("200", "late")),
-            Err(AccountError::TooManyModerators)
+            accounts.add_assistant(Platform::Kick, "42", &assistant("200", "late")),
+            Err(AccountError::TooManyAssistants)
         );
         accounts
-            .add_moderator(Platform::Kick, "42", &moderator("2", "robert"))
+            .add_assistant(Platform::Kick, "42", &assistant("2", "robert"))
             .unwrap();
-        assert_eq!(accounts.moderators(Platform::Kick, "42").len(), 50);
+        assert_eq!(accounts.assistants(Platform::Kick, "42").len(), 50);
         assert!(
             accounts
-                .moderators(Platform::Kick, "42")
-                .contains(&moderator("2", "robert"))
+                .assistants(Platform::Kick, "42")
+                .contains(&assistant("2", "robert"))
         );
     }
 
     #[test]
-    fn moderators_have_permissions_only_when_allowed() {
+    fn assistants_have_permissions_only_when_allowed() {
         let accounts = Accounts::new(Database::memory());
-        let moderator = Moderator {
+        let assistant = Assistant {
             id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
@@ -1286,7 +1286,7 @@ mod tests {
             remote_control: Access::None,
         };
         accounts
-            .add_moderator(Platform::Twitch, "42", &moderator)
+            .add_assistant(Platform::Twitch, "42", &assistant)
             .unwrap();
         for permission in [
             Permission::Preview,
@@ -1295,54 +1295,54 @@ mod tests {
         ] {
             assert!(!accounts.permits(Platform::Twitch, "1", "42", permission));
             assert_eq!(
-                accounts.set_moderator_permission(Platform::Twitch, "42", "2", permission, true),
-                Err(AccountError::UnknownModerator)
+                accounts.set_assistant_permission(Platform::Twitch, "42", "2", permission, true),
+                Err(AccountError::UnknownAssistant)
             );
             assert_eq!(
-                accounts.set_moderator_permission(Platform::Kick, "42", "1", permission, true),
-                Err(AccountError::UnknownModerator)
+                accounts.set_assistant_permission(Platform::Kick, "42", "1", permission, true),
+                Err(AccountError::UnknownAssistant)
             );
         }
         accounts
-            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::Preview, true)
+            .set_assistant_permission(Platform::Twitch, "42", "1", Permission::Preview, true)
             .unwrap();
         assert!(accounts.permits(Platform::Twitch, "1", "42", Permission::Preview));
         assert!(!accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
         assert!(!accounts.permits(Platform::Kick, "1", "42", Permission::Preview));
         assert!(!accounts.permits(Platform::Twitch, "1", "43", Permission::Preview));
         accounts
-            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::GoLive, true)
+            .set_assistant_permission(Platform::Twitch, "42", "1", Permission::GoLive, true)
             .unwrap();
         assert!(accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
-        let shown = Moderator {
+        let shown = Assistant {
             preview: true,
             go_live: true,
-            ..moderator.clone()
+            ..assistant.clone()
         };
         assert_eq!(
-            accounts.moderators(Platform::Twitch, "42"),
+            accounts.assistants(Platform::Twitch, "42"),
             std::slice::from_ref(&shown)
         );
         accounts
-            .add_moderator(Platform::Twitch, "42", &moderator)
+            .add_assistant(Platform::Twitch, "42", &assistant)
             .unwrap();
-        assert_eq!(accounts.moderators(Platform::Twitch, "42"), [shown]);
+        assert_eq!(accounts.assistants(Platform::Twitch, "42"), [shown]);
         accounts
-            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::Preview, false)
+            .set_assistant_permission(Platform::Twitch, "42", "1", Permission::Preview, false)
             .unwrap();
         assert!(!accounts.permits(Platform::Twitch, "1", "42", Permission::Preview));
         assert!(accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
         accounts
-            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::GoLive, false)
+            .set_assistant_permission(Platform::Twitch, "42", "1", Permission::GoLive, false)
             .unwrap();
         assert!(!accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
-        assert!(accounts.moderates(Platform::Twitch, "1", "42"));
+        assert!(accounts.assists(Platform::Twitch, "1", "42"));
     }
 
     #[test]
-    fn moderators_get_remote_control_access_only_when_allowed() {
+    fn assistants_get_remote_control_access_only_when_allowed() {
         let accounts = Accounts::new(Database::memory());
-        let moderator = Moderator {
+        let assistant = Assistant {
             id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
@@ -1353,41 +1353,41 @@ mod tests {
             remote_control: Access::None,
         };
         accounts
-            .add_moderator(Platform::Twitch, "42", &moderator)
+            .add_assistant(Platform::Twitch, "42", &assistant)
             .unwrap();
         let granted = |access| accounts.grants(Platform::Twitch, "1", "42", access);
         assert!(granted(Access::None));
         assert!(!granted(Access::View));
         assert_eq!(
-            accounts.set_moderator_access(Platform::Twitch, "42", "2", Access::View),
-            Err(AccountError::UnknownModerator)
+            accounts.set_assistant_access(Platform::Twitch, "42", "2", Access::View),
+            Err(AccountError::UnknownAssistant)
         );
         accounts
-            .set_moderator_access(Platform::Twitch, "42", "1", Access::View)
+            .set_assistant_access(Platform::Twitch, "42", "1", Access::View)
             .unwrap();
         assert!(granted(Access::View));
         assert!(!granted(Access::Control));
         accounts
-            .set_moderator_access(Platform::Twitch, "42", "1", Access::Control)
+            .set_assistant_access(Platform::Twitch, "42", "1", Access::Control)
             .unwrap();
         assert!(granted(Access::View));
         assert!(granted(Access::Control));
         assert!(!accounts.grants(Platform::Kick, "1", "42", Access::View));
         accounts
-            .add_moderator(Platform::Twitch, "42", &moderator)
+            .add_assistant(Platform::Twitch, "42", &assistant)
             .unwrap();
         assert_eq!(
-            accounts.moderators(Platform::Twitch, "42")[0].remote_control,
+            accounts.assistants(Platform::Twitch, "42")[0].remote_control,
             Access::Control
         );
         accounts
-            .set_moderator_access(Platform::Twitch, "42", "1", Access::None)
+            .set_assistant_access(Platform::Twitch, "42", "1", Access::None)
             .unwrap();
         assert!(!granted(Access::View));
     }
 
     #[test]
-    fn kick_moderators_keep_access_when_renamed_and_follow_the_kick_identity() {
+    fn kick_assistants_keep_access_when_renamed_and_follow_the_kick_identity() {
         let accounts = Accounts::new(Database::memory());
         let (streamer, _) = accounts
             .signed_in(
@@ -1396,10 +1396,10 @@ mod tests {
             )
             .unwrap();
         accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Kick,
                 "42",
-                &Moderator {
+                &Assistant {
                     id: "1".to_string(),
                     login: "bob".to_string(),
                     name: "bob".to_string(),
@@ -1411,19 +1411,19 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(accounts.moderated(Platform::Kick, "1")[0].page.id, "p");
-        assert!(accounts.moderates(Platform::Kick, "1", "42"));
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page.id, "p");
+        assert!(accounts.assists(Platform::Kick, "1", "42"));
         accounts
             .signed_in(
                 &kick("1", "Robert", "robert"),
                 ("m".to_string(), page("q", "l")),
             )
             .unwrap();
-        assert!(accounts.moderates(Platform::Kick, "1", "42"));
-        assert_eq!(accounts.moderated(Platform::Kick, "1")[0].page.id, "p");
+        assert!(accounts.assists(Platform::Kick, "1", "42"));
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page.id, "p");
         assert_eq!(
-            accounts.moderators(Platform::Kick, "42"),
-            [Moderator {
+            accounts.assistants(Platform::Kick, "42"),
+            [Assistant {
                 id: "1".to_string(),
                 login: "robert".to_string(),
                 name: "Robert".to_string(),
@@ -1434,24 +1434,24 @@ mod tests {
                 remote_control: Access::None,
             }]
         );
-        assert!(accounts.moderated(Platform::Kick, "2").is_empty());
+        assert!(accounts.assisted(Platform::Kick, "2").is_empty());
         accounts
             .link("s", &twitch("7", "Streamer", "streamer"))
             .unwrap();
         accounts.unlink("s", Platform::Kick).unwrap();
-        assert!(accounts.moderated(Platform::Kick, "1").is_empty());
+        assert!(accounts.assisted(Platform::Kick, "1").is_empty());
         assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
         accounts
             .link("s", &kick("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.moderated(Platform::Kick, "1")[0].page.id, "p");
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page.id, "p");
         accounts.delete("m").unwrap();
-        assert!(accounts.moderators(Platform::Kick, "42").is_empty());
+        assert!(accounts.assistants(Platform::Kick, "42").is_empty());
         accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Kick,
                 "42",
-                &Moderator {
+                &Assistant {
                     id: "1".to_string(),
                     login: "robert".to_string(),
                     name: "Robert".to_string(),
@@ -1464,8 +1464,8 @@ mod tests {
             )
             .unwrap();
         accounts.delete("s").unwrap();
-        assert!(accounts.moderators(Platform::Kick, "42").is_empty());
-        assert!(!accounts.moderates(Platform::Kick, "1", "42"));
+        assert!(accounts.assistants(Platform::Kick, "42").is_empty());
+        assert!(!accounts.assists(Platform::Kick, "1", "42"));
     }
 
     #[test]

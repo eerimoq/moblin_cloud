@@ -102,36 +102,36 @@ class ImagesRefused(ImagesTestCase):
         )
 
 
-class ImagesByModerators(ImagesTestCase):
-    """Let a moderator the streamer lets edit tips change the banner of a premium streamer, but not of others."""
+class ImagesByAssistants(ImagesTestCase):
+    """Let an assistant the streamer lets edit tips change the banner of a premium streamer, but not of others."""
 
     def run(self):
-        moderator = self.sign_in("imagemod")
-        self.premium.add_moderator("twitch", "imagemod")
+        assistant = self.sign_in("imagemod")
+        self.premium.add_assistant("twitch", "imagemod")
         try:
             self.assert_backend_error(
-                403, lambda: moderator.upload_image(image(1500, 500), self.page_id), NO_EDIT_TIPS
+                403, lambda: assistant.upload_image(image(1500, 500), self.page_id), NO_EDIT_TIPS
             )
             self.assert_backend_error(
-                403, lambda: moderator.moderated_remove_image(self.page_id), NO_EDIT_TIPS
+                403, lambda: assistant.assisted_remove_image(self.page_id), NO_EDIT_TIPS
             )
-            self.premium.set_moderator_edit_tips("twitch", user_id_of("imagemod"), True)
-            settings = moderator.upload_image(image(1500, 500), self.page_id)
+            self.premium.set_assistant_edit_tips("twitch", user_id_of("imagemod"), True)
+            settings = assistant.upload_image(image(1500, 500), self.page_id)
             self.assert_equal(self.viewer.profile()["image"], settings["image"])
-            self.assert_equal(moderator.moderated_remove_image(self.page_id)["image"], None)
+            self.assert_equal(assistant.assisted_remove_image(self.page_id)["image"], None)
         finally:
-            self.premium.remove_moderator("twitch", user_id_of("imagemod"))
-        self.assert_backend_error(403, lambda: moderator.upload_image(image(1500, 500), self.page_id))
+            self.premium.remove_assistant("twitch", user_id_of("imagemod"))
+        self.assert_backend_error(403, lambda: assistant.upload_image(image(1500, 500), self.page_id))
         normal = self.sign_in("imagenormal")
-        normal.add_moderator("twitch", "imagemod")
-        normal.set_moderator_edit_tips("twitch", user_id_of("imagemod"), True)
-        self.assert_backend_error(403, lambda: moderator.upload_image(image(1500, 500), normal.page_id()))
-        normal.remove_moderator("twitch", user_id_of("imagemod"))
+        normal.add_assistant("twitch", "imagemod")
+        normal.set_assistant_edit_tips("twitch", user_id_of("imagemod"), True)
+        self.assert_backend_error(403, lambda: assistant.upload_image(image(1500, 500), normal.page_id()))
+        normal.remove_assistant("twitch", user_id_of("imagemod"))
 
 
 def tests(context: Context):
     return [
         ImagesUpload(context),
         ImagesRefused(context),
-        ImagesByModerators(context),
+        ImagesByAssistants(context),
     ]

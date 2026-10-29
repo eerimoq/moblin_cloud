@@ -417,14 +417,14 @@ mod tests {
             .to_string();
         create_account(&api, "1", "One", "one");
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("42", "fortytwo", "42"),
+                &twitch_assistant("42", "fortytwo", "42"),
             )
             .unwrap();
-        assert!(api.accounts.moderates(Platform::Twitch, "42", "1"));
-        assert!(!api.accounts.moderates(Platform::Twitch, "42", "9"));
+        assert!(api.accounts.assists(Platform::Twitch, "42", "1"));
+        assert!(!api.accounts.assists(Platform::Twitch, "42", "9"));
         let response = client
             .get(format!("http://{address}/auth/twitch/login"))
             .send()
@@ -458,7 +458,7 @@ mod tests {
             again.starts_with("https://cloud.moblin.app/dashboard/#session="),
             "{again}"
         );
-        assert!(api.accounts.moderates(Platform::Twitch, "42", "1"));
+        assert!(api.accounts.assists(Platform::Twitch, "42", "1"));
         assert_eq!(
             location(
                 &client
@@ -666,8 +666,8 @@ mod tests {
             account["kick"],
             json!({"login": "kickerik", "name": "KickErik", "avatar": "https://files.kick.com/erik.png"})
         );
-        assert_eq!(account["twitchModerators"], json!([]));
-        assert_eq!(account["moderating"], json!([]));
+        assert_eq!(account["twitchAssistants"], json!([]));
+        assert_eq!(account["assisting"], json!([]));
         let id = account["settings"]["id"].as_str().unwrap().to_string();
         let session_account = api.auth.session_of(&session).unwrap().account;
         assert_ne!(session_account, "123");
@@ -704,7 +704,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let response = client
-            .post(format!("http://{address}/account/moderators/twitch"))
+            .post(format!("http://{address}/account/assistants/twitch"))
             .bearer_auth(&session)
             .json(&json!({"username": "bob"}))
             .send()
@@ -713,7 +713,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_eq!(response.text().await.unwrap(), "Link Twitch first.");
         let response = client
-            .post(format!("http://{address}/account/moderators/youtube"))
+            .post(format!("http://{address}/account/assistants/youtube"))
             .bearer_auth(&session)
             .json(&json!({"username": "bob"}))
             .send()
@@ -906,7 +906,7 @@ mod tests {
                  INSERT INTO identities (platform, user_id, account, login, name) VALUES
                      ('twitch', '42', '0123456789abcdef0123456789abcdef', 'erik', 'Old Erik');
                  INSERT INTO pages (id, settings) VALUES ('oldpage', '{\"message\":\"Old\"}');
-                 INSERT INTO twitch_moderators (broadcaster, moderator, login, name) VALUES ('7', '42', 'erik', 'Erik');",
+                 INSERT INTO twitch_assistants (broadcaster, assistant, login, name) VALUES ('7', '42', 'erik', 'Erik');",
             )
             .unwrap();
         drop(database);
@@ -966,7 +966,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         create_account(&api, "7", "Streamer", "streamer");
         assert_eq!(
-            account_of(&address, &old_session).await["moderating"][0]["login"],
+            account_of(&address, &old_session).await["assisting"][0]["login"],
             "streamer"
         );
         let flow = SignInFlow::new(&address, FakeKick::default());

@@ -10,7 +10,7 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::*;
-use crate::accounts::{Access, Account, Accounts, Identity, Moderator, Page, Platform};
+use crate::accounts::{Access, Account, Accounts, Assistant, Identity, Page, Platform};
 use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::counters::Counters;
 use crate::database::Database;
@@ -266,8 +266,8 @@ pub(crate) fn twitch_identity(id: &str, name: &str, login: &str) -> Identity {
     }
 }
 
-pub(crate) fn twitch_moderator(id: &str, login: &str, name: &str) -> Moderator {
-    Moderator {
+pub(crate) fn twitch_assistant(id: &str, login: &str, name: &str) -> Assistant {
+    Assistant {
         id: id.to_string(),
         login: login.to_string(),
         name: name.to_string(),

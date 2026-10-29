@@ -283,7 +283,7 @@ pub(super) async fn handle_account_settings(
     update_settings(&api, account.page.id, premium, request).await
 }
 
-pub(super) async fn handle_moderator_settings(
+pub(super) async fn handle_assistant_settings(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,

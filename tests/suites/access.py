@@ -16,7 +16,7 @@ from ..utils.frontend import Dashboard
 from ..utils.frontend import Subscriber
 from ..utils.test_case import TestCase
 
-NOT_MODERATOR = "Only the streamer and the moderators they turned on can do this."
+NOT_ASSISTANT = "Only the streamer and the assistants they turned on can do this."
 NO_PREVIEW = "The streamer has not let you see the stream preview."
 NO_GO_LIVE = "The streamer has not let you go live."
 NO_REMOTE_CONTROL = "The streamer has not let you use the remote control."
@@ -42,219 +42,219 @@ class AccessTestCase(TestCase):
         self.skip_if_real_twitch_sign_in()
 
 
-class AccessModeratorPreview(AccessTestCase):
-    """Show a moderator the stream preview only once the streamer let them, and stop showing it when turned off."""
+class AccessAssistantPreview(AccessTestCase):
+    """Show an assistant the stream preview only once the streamer let them, and stop showing it when turned off."""
 
     def run(self):
         streamer = self.sign_in("previewer")
         page_id = streamer.page_id()
-        moderator = self.sign_in("previewmod")
-        moderator_id = user_id_of("previewmod")
+        assistant = self.sign_in("previewmod")
+        assistant_id = user_id_of("previewmod")
         self.assert_backend_error(
-            404, lambda: streamer.set_moderator_preview("twitch", moderator_id, True), "no such moderator"
+            404, lambda: streamer.set_assistant_preview("twitch", assistant_id, True), "no such assistant"
         )
-        streamer.add_moderator("twitch", "previewmod")
-        streamer.set_moderator_remote_control("twitch", moderator_id, "view")
+        streamer.add_assistant("twitch", "previewmod")
+        streamer.set_assistant_remote_control("twitch", assistant_id, "view")
         with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "PV1") as device:
             device.start()
             self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
             path = f"/account/pages/{page_id}/devices/PV1/preview"
-            self.assert_equal(moderator.moderated_account(page_id)["preview"], False)
-            self.assert_backend_error(403, lambda: EventStream(moderator, path), NO_PREVIEW)
-            with EventStream(moderator, f"/account/pages/{page_id}/devices/PV1/events") as events:
+            self.assert_equal(assistant.assisted_account(page_id)["preview"], False)
+            self.assert_backend_error(403, lambda: EventStream(assistant, path), NO_PREVIEW)
+            with EventStream(assistant, f"/account/pages/{page_id}/devices/PV1/events") as events:
                 self.assert_equal(events.next()[0], "snapshot")
-            account = streamer.set_moderator_preview("twitch", moderator_id, True)
-            self.assert_equal([entry["preview"] for entry in account["twitchModerators"]], [True])
-            self.assert_equal(moderator.moderated_account(page_id)["preview"], True)
-            with EventStream(moderator, path) as frames:
+            account = streamer.set_assistant_preview("twitch", assistant_id, True)
+            self.assert_equal([entry["preview"] for entry in account["twitchAssistants"]], [True])
+            self.assert_equal(assistant.assisted_account(page_id)["preview"], True)
+            with EventStream(assistant, path) as frames:
                 frame = frames.wait_for("frame", 10)
                 assert isinstance(frame, dict)
                 self.assert_true(base64.b64decode(frame["image"]).startswith(b"\x89PNG"))
             self.assert_equal(
                 [
                     entry["preview"]
-                    for entry in streamer.add_moderator("twitch", "PreviewMod")["twitchModerators"]
+                    for entry in streamer.add_assistant("twitch", "PreviewMod")["twitchAssistants"]
                 ],
                 [True],
-                "adding a moderator again keeps their preview",
+                "adding an assistant again keeps their preview",
             )
-            streamer.set_moderator_preview("twitch", moderator_id, False)
-            self.assert_backend_error(403, lambda: EventStream(moderator, path), NO_PREVIEW)
+            streamer.set_assistant_preview("twitch", assistant_id, False)
+            self.assert_backend_error(403, lambda: EventStream(assistant, path), NO_PREVIEW)
             self.assert_backend_error(403, lambda: EventStream(self.sign_in("previewother"), path))
             with EventStream(streamer, path) as frames:
                 frames.wait_for("frame", 10)
-        streamer.remove_moderator("twitch", moderator_id)
+        streamer.remove_assistant("twitch", assistant_id)
 
 
-class AccessModeratorRemoteControl(AccessTestCase):
-    """Let a moderator see a device only once the streamer let them view it, and control it only once they let them control it."""
+class AccessAssistantRemoteControl(AccessTestCase):
+    """Let an assistant see a device only once the streamer let them view it, and control it only once they let them control it."""
 
     def run(self):
         streamer = self.sign_in("remotestreamer")
         page_id = streamer.page_id()
-        moderator = self.sign_in("remotemod")
-        moderator_id = user_id_of("remotemod")
+        assistant = self.sign_in("remotemod")
+        assistant_id = user_id_of("remotemod")
         events = f"/account/pages/{page_id}/devices/RC1/events"
         self.assert_backend_error(
             404,
-            lambda: streamer.set_moderator_remote_control("twitch", moderator_id, "view"),
-            "no such moderator",
+            lambda: streamer.set_assistant_remote_control("twitch", assistant_id, "view"),
+            "no such assistant",
         )
-        streamer.add_moderator("twitch", "remotemod")
+        streamer.add_assistant("twitch", "remotemod")
         with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "RC1") as device:
             device.start()
             self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
-            self.assert_equal(moderator.moderated_account(page_id)["remoteControl"], "none")
-            self.assert_backend_error(403, lambda: EventStream(moderator, events), NO_REMOTE_CONTROL)
+            self.assert_equal(assistant.assisted_account(page_id)["remoteControl"], "none")
+            self.assert_backend_error(403, lambda: EventStream(assistant, events), NO_REMOTE_CONTROL)
             self.assert_backend_error(
                 403,
-                lambda: moderator.control_device(page_id, "RC1", {"setTorch": {"on": True}}),
+                lambda: assistant.control_device(page_id, "RC1", {"setTorch": {"on": True}}),
                 NO_REMOTE_CONTROL,
             )
-            self.assert_refused(lambda: streamer.set_moderator_remote_control("twitch", moderator_id, "all"))
-            account = streamer.set_moderator_remote_control("twitch", moderator_id, "view")
-            self.assert_equal([entry["remoteControl"] for entry in account["twitchModerators"]], ["view"])
-            self.assert_equal(moderator.moderated_account(page_id)["remoteControl"], "view")
-            with EventStream(moderator, events) as stream:
+            self.assert_refused(lambda: streamer.set_assistant_remote_control("twitch", assistant_id, "all"))
+            account = streamer.set_assistant_remote_control("twitch", assistant_id, "view")
+            self.assert_equal([entry["remoteControl"] for entry in account["twitchAssistants"]], ["view"])
+            self.assert_equal(assistant.assisted_account(page_id)["remoteControl"], "view")
+            with EventStream(assistant, events) as stream:
                 self.assert_equal(stream.next()[0], "snapshot")
             for control in [{"setTorch": {"on": True}}, {"setLive": {"on": False}}]:
                 self.assert_backend_error(
                     403,
-                    lambda control=control: moderator.control_device(page_id, "RC1", control),
+                    lambda control=control: assistant.control_device(page_id, "RC1", control),
                     NO_CONTROL,
                 )
             self.assert_equal(device.controls, [])
-            streamer.set_moderator_remote_control("twitch", moderator_id, "control")
-            self.assert_equal(moderator.moderated_account(page_id)["remoteControl"], "control")
-            moderator.control_device(page_id, "RC1", {"setTorch": {"on": True}})
+            streamer.set_assistant_remote_control("twitch", assistant_id, "control")
+            self.assert_equal(assistant.assisted_account(page_id)["remoteControl"], "control")
+            assistant.control_device(page_id, "RC1", {"setTorch": {"on": True}})
             self.assert_equal(
                 [
                     entry["remoteControl"]
-                    for entry in streamer.add_moderator("twitch", "RemoteMod")["twitchModerators"]
+                    for entry in streamer.add_assistant("twitch", "RemoteMod")["twitchAssistants"]
                 ],
                 ["control"],
-                "adding a moderator again keeps their remote control access",
+                "adding an assistant again keeps their remote control access",
             )
-            streamer.set_moderator_remote_control("twitch", moderator_id, "none")
-            self.assert_backend_error(403, lambda: EventStream(moderator, events), NO_REMOTE_CONTROL)
-        streamer.remove_moderator("twitch", moderator_id)
+            streamer.set_assistant_remote_control("twitch", assistant_id, "none")
+            self.assert_backend_error(403, lambda: EventStream(assistant, events), NO_REMOTE_CONTROL)
+        streamer.remove_assistant("twitch", assistant_id)
 
 
-class AccessModeratorGoLive(AccessTestCase):
-    """Let a moderator who may use the remote control go live only once the streamer let them, while ending the stream and their other controls always work."""
+class AccessAssistantGoLive(AccessTestCase):
+    """Let an assistant who may use the remote control go live only once the streamer let them, while ending the stream and their other controls always work."""
 
     def run(self):
         streamer = self.sign_in("golive")
         page_id = streamer.page_id()
-        moderator = self.sign_in("golivemod")
-        moderator_id = user_id_of("golivemod")
+        assistant = self.sign_in("golivemod")
+        assistant_id = user_id_of("golivemod")
         self.assert_backend_error(
-            404, lambda: streamer.set_moderator_go_live("twitch", moderator_id, True), "no such moderator"
+            404, lambda: streamer.set_assistant_go_live("twitch", assistant_id, True), "no such assistant"
         )
-        streamer.add_moderator("twitch", "golivemod")
-        streamer.set_moderator_remote_control("twitch", moderator_id, "control")
+        streamer.add_assistant("twitch", "golivemod")
+        streamer.set_assistant_remote_control("twitch", assistant_id, "control")
         with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "GL1") as device:
             device.start()
             self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
-            self.assert_equal(moderator.moderated_account(page_id)["goLive"], False)
+            self.assert_equal(assistant.assisted_account(page_id)["goLive"], False)
             self.assert_backend_error(
                 403,
-                lambda: moderator.control_device(page_id, "GL1", {"setLive": {"on": True}}),
+                lambda: assistant.control_device(page_id, "GL1", {"setLive": {"on": True}}),
                 NO_GO_LIVE,
             )
-            moderator.control_device(page_id, "GL1", {"setTorch": {"on": True}})
-            moderator.control_device(page_id, "GL1", {"setLive": {"on": False}})
-            account = streamer.set_moderator_go_live("twitch", moderator_id, True)
+            assistant.control_device(page_id, "GL1", {"setTorch": {"on": True}})
+            assistant.control_device(page_id, "GL1", {"setLive": {"on": False}})
+            account = streamer.set_assistant_go_live("twitch", assistant_id, True)
             self.assert_equal(
-                [(entry["preview"], entry["goLive"]) for entry in account["twitchModerators"]],
+                [(entry["preview"], entry["goLive"]) for entry in account["twitchAssistants"]],
                 [(False, True)],
             )
-            self.assert_equal(moderator.moderated_account(page_id)["goLive"], True)
-            moderator.control_device(page_id, "GL1", {"setLive": {"on": True}})
+            self.assert_equal(assistant.assisted_account(page_id)["goLive"], True)
+            assistant.control_device(page_id, "GL1", {"setLive": {"on": True}})
             self.assert_equal(
                 [
                     entry["goLive"]
-                    for entry in streamer.add_moderator("twitch", "GoLiveMod")["twitchModerators"]
+                    for entry in streamer.add_assistant("twitch", "GoLiveMod")["twitchAssistants"]
                 ],
                 [True],
-                "adding a moderator again keeps their go live",
+                "adding an assistant again keeps their go live",
             )
-            streamer.set_moderator_go_live("twitch", moderator_id, False)
+            streamer.set_assistant_go_live("twitch", assistant_id, False)
             self.assert_backend_error(
                 403,
-                lambda: moderator.control_device(page_id, "GL1", {"setLive": {"on": True}}),
+                lambda: assistant.control_device(page_id, "GL1", {"setLive": {"on": True}}),
                 NO_GO_LIVE,
             )
-        streamer.remove_moderator("twitch", moderator_id)
+        streamer.remove_assistant("twitch", assistant_id)
 
 
-class AccessModeratorsLimit(AccessTestCase):
-    """Keep at most 50 moderators per platform, but let one listed already be added again."""
+class AccessAssistantsLimit(AccessTestCase):
+    """Keep at most 50 assistants per platform, but let one listed already be added again."""
 
     def run(self):
         streamer = self.sign_in("manymods")
         for number in range(50):
-            streamer.add_moderator("twitch", f"manymod{number}")
-        self.assert_equal(len(streamer.account()["twitchModerators"]), 50)
+            streamer.add_assistant("twitch", f"manymod{number}")
+        self.assert_equal(len(streamer.account()["twitchAssistants"]), 50)
         self.assert_backend_error(
-            409, lambda: streamer.add_moderator("twitch", "manymod50"), "at most 50 moderators"
+            409, lambda: streamer.add_assistant("twitch", "manymod50"), "at most 50 assistants"
         )
-        self.assert_equal(len(streamer.add_moderator("twitch", "MANYMOD7")["twitchModerators"]), 50)
+        self.assert_equal(len(streamer.add_assistant("twitch", "MANYMOD7")["twitchAssistants"]), 50)
 
 
-class AccessDeletedModerators(AccessTestCase):
-    """Remove a deleted account's moderator rows both ways, so signing in again moderates nothing and is moderated by nobody."""
+class AccessDeletedAssistants(AccessTestCase):
+    """Remove a deleted account's assistant rows both ways, so signing in again assists nothing and is assisted by nobody."""
 
     def run(self):
         streamer = self.sign_in("delstreamer")
         page_id = streamer.page_id()
-        moderator = self.sign_in("delmod")
-        streamer.add_moderator("twitch", "delmod")
-        moderator.add_moderator("twitch", "delstreamer")
-        moderator.delete_account()
-        self.assert_equal(streamer.account()["twitchModerators"], [], "the deleted moderator is gone")
-        self.assert_equal(streamer.account()["moderating"], [], "the deleted streamer's list is gone")
+        assistant = self.sign_in("delmod")
+        streamer.add_assistant("twitch", "delmod")
+        assistant.add_assistant("twitch", "delstreamer")
+        assistant.delete_account()
+        self.assert_equal(streamer.account()["twitchAssistants"], [], "the deleted assistant is gone")
+        self.assert_equal(streamer.account()["assisting"], [], "the deleted streamer's list is gone")
         again = self.sign_in("delmod")
-        self.assert_equal(again.account()["moderating"], [])
-        self.assert_backend_error(403, lambda: again.moderated_account(page_id), NOT_MODERATOR)
-        streamer.add_moderator("twitch", "delmod")
+        self.assert_equal(again.account()["assisting"], [])
+        self.assert_backend_error(403, lambda: again.assisted_account(page_id), NOT_ASSISTANT)
+        streamer.add_assistant("twitch", "delmod")
         streamer.delete_account()
-        self.assert_equal(again.account()["moderating"], [])
+        self.assert_equal(again.account()["assisting"], [])
         returned = self.sign_in("delstreamer")
-        self.assert_equal(returned.account()["twitchModerators"], [])
-        self.assert_backend_error(403, lambda: again.moderated_account(returned.page_id()), NOT_MODERATOR)
+        self.assert_equal(returned.account()["twitchAssistants"], [])
+        self.assert_backend_error(403, lambda: again.assisted_account(returned.page_id()), NOT_ASSISTANT)
 
 
-class AccessModeratorLimits(AccessTestCase):
-    """Keep a moderator to the page they moderate, its devices and what the streamer may do."""
+class AccessAssistantLimits(AccessTestCase):
+    """Keep an assistant to the page they assist, its devices and what the streamer may do."""
 
     def run(self):
         streamer = self.sign_in("limitedstreamer")
         page_id = streamer.page_id()
-        moderator = self.sign_in("limitedmod")
-        streamer.add_moderator("twitch", "limitedmod")
-        streamer.set_moderator_edit_tips("twitch", user_id_of("limitedmod"), True)
-        streamer.set_moderator_remote_control("twitch", user_id_of("limitedmod"), "control")
+        assistant = self.sign_in("limitedmod")
+        streamer.add_assistant("twitch", "limitedmod")
+        streamer.set_assistant_edit_tips("twitch", user_id_of("limitedmod"), True)
+        streamer.set_assistant_remote_control("twitch", user_id_of("limitedmod"), "control")
         other = self.sign_in("limitedother")
         with RecordingMoblin(self.backend.url, other.moblin_cloud_key(), "LO1") as device:
             device.start()
             self.wait_until(lambda: other.account()["devices"] != [], "the other streamer's device")
             self.assert_backend_error(
-                403, lambda: moderator.control_device(other.page_id(), "LO1", {"setMute": {"on": True}})
+                403, lambda: assistant.control_device(other.page_id(), "LO1", {"setMute": {"on": True}})
             )
-            self.assert_refused(lambda: moderator.control_device(page_id, "LO1", {"setMute": {"on": True}}))
+            self.assert_refused(lambda: assistant.control_device(page_id, "LO1", {"setMute": {"on": True}}))
             self.assert_refused(
-                lambda: EventStream(moderator, f"/account/pages/{page_id}/devices/LO1/events")
+                lambda: EventStream(assistant, f"/account/pages/{page_id}/devices/LO1/events")
             )
             self.assert_equal(device.controls, [])
-        self.assert_backend_error(403, lambda: moderator.moderated_settings(page_id, font="serif"))
-        self.assert_equal(moderator.moderated_account(page_id)["key"], None)
-        self.assert_backend_error(403, lambda: moderator.moderated_account("AAAAAAAAAAAAAAAA"), NOT_MODERATOR)
+        self.assert_backend_error(403, lambda: assistant.assisted_settings(page_id, font="serif"))
+        self.assert_equal(assistant.assisted_account(page_id)["key"], None)
+        self.assert_backend_error(403, lambda: assistant.assisted_account("AAAAAAAAAAAAAAAA"), NOT_ASSISTANT)
         for path in ["/account/key", "/account/paypal/connect", "/account/delete", "/account/sign-out"]:
-            response = moderator.request("POST", path.replace("/account", f"/account/pages/{page_id}"))
+            response = assistant.request("POST", path.replace("/account", f"/account/pages/{page_id}"))
             self.assert_true(response.status_code in [404, 405], f"{path}: {response.status_code}")
         self.assert_equal(streamer.account()["settings"]["id"], page_id)
-        streamer.remove_moderator("twitch", user_id_of("limitedmod"))
+        streamer.remove_assistant("twitch", user_id_of("limitedmod"))
 
 
 class AccessTokens(AccessTestCase):
@@ -325,12 +325,12 @@ class AccessCors(AccessTestCase):
 
 def tests(context: Context):
     return [
-        AccessModeratorPreview(context),
-        AccessModeratorRemoteControl(context),
-        AccessModeratorGoLive(context),
-        AccessModeratorsLimit(context),
-        AccessDeletedModerators(context),
-        AccessModeratorLimits(context),
+        AccessAssistantPreview(context),
+        AccessAssistantRemoteControl(context),
+        AccessAssistantGoLive(context),
+        AccessAssistantsLimit(context),
+        AccessDeletedAssistants(context),
+        AccessAssistantLimits(context),
         AccessTokens(context),
         AccessCors(context),
     ]

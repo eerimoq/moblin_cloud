@@ -64,7 +64,7 @@ const reasonLabels: Record<string, string> = {
   "no-spins-left": "Viewer used this month's spins",
   "no-effects-left": "Viewer used this month's effects",
   "tier-excluded": "Viewer's tier gets nothing on the page",
-  "not-moderator": "Not the streamer or a moderator they turned on",
+  "not-assistant": "Not the streamer or an assistant they turned on",
 };
 
 const problemReasons = [
@@ -1036,10 +1036,10 @@ function Loaded(props: { stats: AdminStats }) {
                 counters().step(
                   "deviceControls",
                   "Controls",
-                  "The streamer or a moderator controlling a device from its device page: going live, muting, switching scene and so on. Watching a device's status is not counted.",
+                  "The streamer or an assistant controlling a device from its device page: going live, muting, switching scene and so on. Watching a device's status is not counted.",
                   [
                     "account",
-                    "not-moderator",
+                    "not-assistant",
                     "no-remote-control",
                     "no-control",
                     "no-go-live",
@@ -1053,9 +1053,9 @@ function Loaded(props: { stats: AdminStats }) {
                     "not-found": "Device not in the list",
                     offline: "Device not connected",
                     "invalid-control": "Unknown control, id or message",
-                    "no-remote-control": "Moderator without remote control access",
-                    "no-control": "Moderator who may only view",
-                    "no-go-live": "Moderator not let go live",
+                    "no-remote-control": "Assistant without remote control access",
+                    "no-control": "Assistant who may only view",
+                    "no-go-live": "Assistant not let go live",
                   },
                 ),
               ]}

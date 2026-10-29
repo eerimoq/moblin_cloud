@@ -4,7 +4,7 @@ API's channel user lookup, for signing in as made-up users.
 
 Any login signs in. Its Kick user id is a number of 8 digits made from the login, like a real one,
 and its channel slug is the login. A login ending in 1, 2 or 3 is a subscriber of everyone, like on
-the fake Twitch. Any login can be added as a Kick moderator.
+the fake Twitch. Any login can be added as a Kick assistant.
 """
 
 import argparse

@@ -3,7 +3,7 @@
 
 Any login signs in. Its Twitch user id is a number of 9 digits made from the login, like a real one.
 A login ending in 1, 2 or 3 is a subscriber of that tier to everyone, and any login (except nobody)
-resolves to a Twitch user, so a streamer can add it as a moderator.
+resolves to a Twitch user, so a streamer can add it as an assistant.
 """
 
 import argparse

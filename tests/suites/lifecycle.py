@@ -17,7 +17,7 @@ class LifecycleTestCase(TestCase):
 
 
 class LifecycleKeptOnRestart(LifecycleTestCase):
-    """Keep everything a streamer set up when the backend restarts: identities, devices, moderators, look and features."""
+    """Keep everything a streamer set up when the backend restarts: identities, devices, assistants, look and features."""
 
     def run(self):
         dashboard = self.sign_in("admin")
@@ -34,9 +34,9 @@ class LifecycleKeptOnRestart(LifecycleTestCase):
             message="Kept",
         )
         dashboard.upload_image(image(1500, 500))
-        dashboard.add_moderator("twitch", "keptmod")
-        dashboard.add_moderator("kick", "keptkickmod")
-        dashboard.set_moderator_preview("kick", kick_user_id_of("keptkickmod"), True)
+        dashboard.add_assistant("twitch", "keptmod")
+        dashboard.add_assistant("kick", "keptkickmod")
+        dashboard.set_assistant_preview("kick", kick_user_id_of("keptkickmod"), True)
         device = RawDevice(self.backend.port, dashboard.moblin_cloud_key(), "KEPT")
         device.event({"icon": {"id": "AppIconKing"}})
         dashboard.rename_device("KEPT", "Kept phone")
@@ -64,8 +64,8 @@ class LifecycleKeptOnRestart(LifecycleTestCase):
             ).json(),
             addresses,
         )
-        moderator = self.frontend.fake_sign_in("keptkickmod", "kick")
-        self.assert_equal(moderator.moderated_account(page_id)["preview"], True)
+        assistant = self.frontend.fake_sign_in("keptkickmod", "kick")
+        self.assert_equal(assistant.assisted_account(page_id)["preview"], True)
 
     def teardown(self):
         dashboard = self.sign_in("admin")
@@ -73,9 +73,9 @@ class LifecycleKeptOnRestart(LifecycleTestCase):
             effects=None, tips=None, subEffects=None, accent=None, font=None, message=None
         )
         dashboard.remove_image()
-        for platform, moderators in [("twitch", "twitchModerators"), ("kick", "kickModerators")]:
-            for moderator in dashboard.account()[moderators]:
-                dashboard.remove_moderator(platform, moderator["id"])
+        for platform, assistants in [("twitch", "twitchAssistants"), ("kick", "kickAssistants")]:
+            for assistant in dashboard.account()[assistants]:
+                dashboard.remove_assistant(platform, assistant["id"])
 
 
 class LifecycleOneProviderLeft(LifecycleTestCase):
@@ -201,30 +201,30 @@ class LifecycleStatsBounded(LifecycleTestCase):
         )
 
 
-class LifecycleModeratorOfMany(LifecycleTestCase):
-    """List every channel a user moderates, on each platform, and only those."""
+class LifecycleAssistantOfMany(LifecycleTestCase):
+    """List every channel a user assists, on each platform, and only those."""
 
     def run(self):
-        moderator = self.sign_in("manychannels")
-        moderator.link(self.frontend.link_token("kick", "manychannelskick"))
+        assistant = self.sign_in("manychannels")
+        assistant.link(self.frontend.link_token("kick", "manychannelskick"))
         twitch = self.sign_in("channelone")
         kick = self.frontend.fake_sign_in("channeltwo", "kick")
         both = self.sign_in("channelthree")
         both.link(self.frontend.link_token("kick", "channelthreekick"))
-        twitch.add_moderator("twitch", "manychannels")
-        kick.add_moderator("kick", "manychannelskick")
-        both.add_moderator("twitch", "manychannels")
-        both.add_moderator("kick", "manychannelskick")
-        moderating = moderator.account()["moderating"]
-        ids = [channel["id"] for channel in moderating]
+        twitch.add_assistant("twitch", "manychannels")
+        kick.add_assistant("kick", "manychannelskick")
+        both.add_assistant("twitch", "manychannels")
+        both.add_assistant("kick", "manychannelskick")
+        assisting = assistant.account()["assisting"]
+        ids = [channel["id"] for channel in assisting]
         self.assert_equal(sorted(set(ids)), sorted({twitch.page_id(), kick.page_id(), both.page_id()}))
-        self.assert_equal(len(ids), len(set(ids)), f"each channel once {moderating}")
+        self.assert_equal(len(ids), len(set(ids)), f"each channel once {assisting}")
         for page in [twitch, kick, both]:
-            self.assert_equal(moderator.moderated_test_tip(page.page_id()), {})
-        both.remove_moderator("twitch", user_id_of("manychannels"))
-        self.assert_in(both.page_id(), [channel["id"] for channel in moderator.account()["moderating"]])
-        both.remove_moderator("kick", kick_user_id_of("manychannelskick"))
-        self.assert_not_in(both.page_id(), [channel["id"] for channel in moderator.account()["moderating"]])
+            self.assert_equal(assistant.assisted_test_tip(page.page_id()), {})
+        both.remove_assistant("twitch", user_id_of("manychannels"))
+        self.assert_in(both.page_id(), [channel["id"] for channel in assistant.account()["assisting"]])
+        both.remove_assistant("kick", kick_user_id_of("manychannelskick"))
+        self.assert_not_in(both.page_id(), [channel["id"] for channel in assistant.account()["assisting"]])
 
 
 def tests(context: Context):
@@ -234,5 +234,5 @@ def tests(context: Context):
         LifecycleCaptureAfterDelete(context),
         LifecycleNewKey(context),
         LifecycleStatsBounded(context),
-        LifecycleModeratorOfMany(context),
+        LifecycleAssistantOfMany(context),
     ]

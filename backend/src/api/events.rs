@@ -42,7 +42,7 @@ pub(super) async fn handle_page_events(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    moderator(&api, &headers, &id)?;
+    assistant(&api, &headers, &id)?;
     let watching = Watching {
         api: api.clone(),
         headers,
@@ -71,7 +71,7 @@ pub(super) async fn handle_page_events(
                     return Some((signal(name), watching));
                 }
                 _ = sleep_until(watching.check_at) => {
-                    if moderator(&watching.api, &watching.headers, &watching.page).is_err() {
+                    if assistant(&watching.api, &watching.headers, &watching.page).is_err() {
                         return None;
                     }
                     watching.check_at = Instant::now() + Duration::from_secs(60);
@@ -206,16 +206,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moderators_hear_about_their_channels() {
+    async fn assistants_hear_about_their_channels() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, _, page) = streamer(&address, &api).await;
-        let moderator = create_account(&api, "21", "Mod 21", "mod21");
-        let moderator_session = api.auth.session("21", 0);
+        let assistant = create_account(&api, "21", "Mod 21", "mod21");
+        let assistant_session = api.auth.session("21", 0);
         let url = format!("http://{address}/account/pages/{page}/events");
         let response = client
             .get(&url)
-            .bearer_auth(&moderator_session)
+            .bearer_auth(&assistant_session)
             .send()
             .await
             .unwrap();
@@ -223,32 +223,32 @@ mod tests {
         let response = client.get(&url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("21", "mod21", "Mod 21"),
+                &twitch_assistant("21", "mod21", "Mod 21"),
             )
             .unwrap();
-        let mut moderated = Events::open(&client, &url, &moderator_session).await;
+        let mut assisted = Events::open(&client, &url, &assistant_session).await;
         let mut own = Events::open(
             &client,
             &format!(
                 "http://{address}/account/pages/{}/events",
-                moderator.page.id
+                assistant.page.id
             ),
-            &moderator_session,
+            &assistant_session,
         )
         .await;
         let response = client
             .post(format!(
-                "http://{address}/account/moderators/twitch/21/remove"
+                "http://{address}/account/assistants/twitch/21/remove"
             ))
             .bearer_auth(&session)
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(moderated.next().await.0, "account");
+        assert_eq!(assisted.next().await.0, "account");
         assert_eq!(own.next().await.0, "account");
     }
 

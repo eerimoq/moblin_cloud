@@ -132,21 +132,21 @@ class DeliveriesPending(DeliveriesTestCase):
 
 
 class DeliveriesStreamsRechecked(DeliveriesTestCase):
-    """End a moderator's open streams within a minute of being removed, and everyone's when signing out everywhere."""
+    """End an assistant's open streams within a minute of being removed, and everyone's when signing out everywhere."""
 
     login = "deliveriesrecheck"
 
     def run(self):
         device = self.device("RC1")
-        moderator = self.sign_in("recheckmod")
-        self.dashboard.add_moderator("twitch", "recheckmod")
-        self.dashboard.set_moderator_remote_control("twitch", user_id_of("recheckmod"), "view")
+        assistant = self.sign_in("recheckmod")
+        self.dashboard.add_assistant("twitch", "recheckmod")
+        self.dashboard.set_assistant_remote_control("twitch", user_id_of("recheckmod"), "view")
         streams = [
-            EventStream(moderator, f"/account/pages/{self.page_id}/devices/RC1/events"),
-            EventStream(moderator, f"/account/pages/{self.page_id}/events"),
+            EventStream(assistant, f"/account/pages/{self.page_id}/devices/RC1/events"),
+            EventStream(assistant, f"/account/pages/{self.page_id}/events"),
         ]
         own = EventStream(self.dashboard, f"/account/pages/{self.page_id}/devices/RC1/events")
-        self.dashboard.remove_moderator("twitch", user_id_of("recheckmod"))
+        self.dashboard.remove_assistant("twitch", user_id_of("recheckmod"))
         self.dashboard.sign_out_everywhere()
         for stream in streams + [own]:
             self.assert_true(stream.wait_for_end(75), "the stream ended")

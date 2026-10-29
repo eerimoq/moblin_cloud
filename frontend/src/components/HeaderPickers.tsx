@@ -1,16 +1,16 @@
 import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
-import type { Account, Device, Moderating } from "../data/account";
+import type { Account, Device, Assisting } from "../data/account";
 import { t } from "../i18n";
 import Icon from "./Icon";
 import { ghostButtonClass } from "./PageParts";
 
-export const channelKey = (channel: Moderating) => `${channel.platform}/${channel.login}`;
+export const channelKey = (channel: Assisting) => `${channel.platform}/${channel.login}`;
 
-export const moderatedChannelKey = "moderatedChannel";
+export const assistedChannelKey = "assistedChannel";
 
 export const rememberChannel = (key: string) => {
   try {
-    sessionStorage.setItem(moderatedChannelKey, key);
+    sessionStorage.setItem(assistedChannelKey, key);
   } catch {}
 };
 
@@ -185,7 +185,7 @@ function DeviceBadge(props: { device: Device | undefined }) {
 
 export function StreamerPicker(props: {
   account: Account;
-  picked: Moderating | null;
+  picked: Assisting | null;
   onPick: (key: string) => void;
 }) {
   const you = (): Option => ({
@@ -200,7 +200,7 @@ export function StreamerPicker(props: {
       fallback={you()}
       options={[
         you(),
-        ...props.account.moderating.map((channel) => ({
+        ...props.account.assisting.map((channel) => ({
           value: channelKey(channel),
           label:
             channel.platform === "kick"

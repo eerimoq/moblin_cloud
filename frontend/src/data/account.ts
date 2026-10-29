@@ -25,14 +25,14 @@ export type Account = {
   goLive: boolean;
   editTips: boolean;
   remoteControl: Access;
-  moderating: Moderating[];
-  twitchModerators: Moderator[];
-  kickModerators: Moderator[];
+  assisting: Assisting[];
+  twitchAssistants: Assistant[];
+  kickAssistants: Assistant[];
 };
 
 export type Access = "none" | "view" | "control";
 
-export type Moderator = {
+export type Assistant = {
   id: string;
   login: string;
   name: string;
@@ -43,7 +43,7 @@ export type Moderator = {
   remoteControl: Access;
 };
 
-export type Moderating = {
+export type Assisting = {
   id: string;
   platform: Platform;
   name: string;
@@ -383,60 +383,60 @@ export const fetchRecent = (
 export const resendRecent = (session: string, id: string, page?: string) =>
   call<object>(`${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, session, post());
 
-export const addModerator = (session: string, platform: Platform, username: string) =>
-  call<Account>(`/account/moderators/${platform}`, session, post({ username }));
+export const addAssistant = (session: string, platform: Platform, username: string) =>
+  call<Account>(`/account/assistants/${platform}`, session, post({ username }));
 
-export const removeModerator = (session: string, platform: Platform, moderator: string) =>
+export const removeAssistant = (session: string, platform: Platform, assistant: string) =>
   call<Account>(
-    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/remove`,
+    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/remove`,
     session,
     post(),
   );
 
-export const setModeratorPreview = (
+export const setAssistantPreview = (
   session: string,
   platform: Platform,
-  moderator: string,
+  assistant: string,
   on: boolean,
 ) =>
   call<Account>(
-    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/preview`,
+    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/preview`,
     session,
     post({ on }),
   );
 
-export const setModeratorGoLive = (
+export const setAssistantGoLive = (
   session: string,
   platform: Platform,
-  moderator: string,
+  assistant: string,
   on: boolean,
 ) =>
   call<Account>(
-    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/go-live`,
+    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/go-live`,
     session,
     post({ on }),
   );
 
-export const setModeratorEditTips = (
+export const setAssistantEditTips = (
   session: string,
   platform: Platform,
-  moderator: string,
+  assistant: string,
   on: boolean,
 ) =>
   call<Account>(
-    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/edit-tips`,
+    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/edit-tips`,
     session,
     post({ on }),
   );
 
-export const setModeratorRemoteControl = (
+export const setAssistantRemoteControl = (
   session: string,
   platform: Platform,
-  moderator: string,
+  assistant: string,
   access: Access,
 ) =>
   call<Account>(
-    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/remote-control`,
+    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/remote-control`,
     session,
     post({ access }),
   );

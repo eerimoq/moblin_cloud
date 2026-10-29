@@ -84,37 +84,37 @@ class ReceivedPages(ReceivedTestCase):
         self.assert_equal(item["devices"], [])
 
 
-class ReceivedByModerators(ReceivedTestCase):
-    """Show moderators the same received items without how they were paid, and let them send one again."""
+class ReceivedByAssistants(ReceivedTestCase):
+    """Show assistants the same received items without how they were paid, and let them send one again."""
 
     login = "receivedmods"
 
     def run(self):
         order_id = self.paid_tip(250, "Modview", "Hello")
-        moderator = self.sign_in("receivedmod")
-        self.assert_backend_error(403, lambda: moderator.moderated_resend(self.page_id, order_id))
-        self.dashboard.add_moderator("twitch", "receivedmod")
+        assistant = self.sign_in("receivedmod")
+        self.assert_backend_error(403, lambda: assistant.assisted_resend(self.page_id, order_id))
+        self.dashboard.add_assistant("twitch", "receivedmod")
         own = self.recent()["items"]
-        moderated = moderator.moderated_recent(self.page_id, "tip")["items"]
-        self.assert_equal([item["id"] for item in moderated], [order_id])
-        self.assert_equal(moderated, [{key: value for key, value in own[0].items() if key != "provider"}])
+        assisted = assistant.assisted_recent(self.page_id, "tip")["items"]
+        self.assert_equal([item["id"] for item in assisted], [order_id])
+        self.assert_equal(assisted, [{key: value for key, value in own[0].items() if key != "provider"}])
         device = RawDevice(self.backend.port, self.dashboard.moblin_cloud_key(), "RM1")
         try:
             self.wait_until(
                 lambda: self.recent()["items"][0]["status"] == "delivered", "the tip to be delivered"
             )
-            self.assert_equal(moderator.moderated_resend(self.page_id, order_id), {})
+            self.assert_equal(assistant.assisted_resend(self.page_id, order_id), {})
             self.wait_until(
                 lambda: any(tip["requestId"] == f"{order_id}-1" for tip in device.tips()),
                 "the tip sent again",
             )
-            self.assert_backend_error(404, lambda: moderator.moderated_resend(self.page_id, "NOSUCHORDER"))
+            self.assert_backend_error(404, lambda: assistant.assisted_resend(self.page_id, "NOSUCHORDER"))
             other = self.sign_in("receivedother")
             other_order = other.page_id()
-            self.assert_refused(lambda: moderator.moderated_resend(other_order, order_id))
+            self.assert_refused(lambda: assistant.assisted_resend(other_order, order_id))
         finally:
             device.close()
-            self.dashboard.remove_moderator("twitch", user_id_of("receivedmod"))
+            self.dashboard.remove_assistant("twitch", user_id_of("receivedmod"))
 
 
 class ReceivedCapturedOnce(ReceivedTestCase):
@@ -193,15 +193,15 @@ class ReceivedTestLimit(TestCase):
     def run(self):
         dashboard = self.sign_in("testlimit")
         page_id = dashboard.page_id()
-        moderator = self.sign_in("testlimitmod")
-        dashboard.add_moderator("twitch", "testlimitmod")
+        assistant = self.sign_in("testlimitmod")
+        dashboard.add_assistant("twitch", "testlimitmod")
         for number in range(1, 8):
             self.assert_equal(dashboard.test_tip(str(number)), {})
-        self.assert_equal(moderator.moderated_test_tip(page_id, "8"), {})
+        self.assert_equal(assistant.assisted_test_tip(page_id, "8"), {})
         self.assert_equal(dashboard.test_effect(), {})
-        self.assert_equal(moderator.moderated_test_effect(page_id), {})
+        self.assert_equal(assistant.assisted_test_effect(page_id), {})
         self.assert_backend_error(429, lambda: dashboard.test_tip("11"))
-        self.assert_backend_error(429, lambda: moderator.moderated_test_tip(page_id, "12"))
+        self.assert_backend_error(429, lambda: assistant.assisted_test_tip(page_id, "12"))
         self.assert_backend_error(429, dashboard.test_effect)
         other = self.sign_in("testlimitother")
         self.assert_equal(other.test_tip(), {})
@@ -221,7 +221,7 @@ class ReceivedTestLimit(TestCase):
 def tests(context: Context):
     return [
         ReceivedPages(context),
-        ReceivedByModerators(context),
+        ReceivedByAssistants(context),
         ReceivedCapturedOnce(context),
         ReceivedAmounts(context),
         ReceivedTestLimit(context),

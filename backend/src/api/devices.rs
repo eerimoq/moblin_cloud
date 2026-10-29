@@ -377,14 +377,14 @@ mod tests {
         assert_eq!(polled["sample"], Value::Null);
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("21", "mod21", "Mod 21"),
+                &twitch_assistant("21", "mod21", "Mod 21"),
             )
             .unwrap();
         api.accounts
-            .set_moderator_access(Platform::Twitch, "1", "21", Access::View)
+            .set_assistant_access(Platform::Twitch, "1", "21", Access::View)
             .unwrap();
         let mut second = Events::open(&client, &url, &api.auth.session("21", 0)).await;
         answer_monitoring(&mut socket, false).await;
@@ -540,7 +540,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        assert_eq!(counter(&api, "deviceControlsFailed:not-moderator"), 1);
+        assert_eq!(counter(&api, "deviceControlsFailed:not-assistant"), 1);
         let mut events = Events::open(
             &client,
             &format!("http://{address}/account/pages/{page}/devices/A/events"),
@@ -608,20 +608,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moderators_view_and_control_the_device_only_when_allowed() {
+    async fn assistants_view_and_control_the_device_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, page) = streamer(&address, &api).await;
         let mut socket = connect(&address, &key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("21", "mod21", "Mod 21"),
+                &twitch_assistant("21", "mod21", "Mod 21"),
             )
             .unwrap();
-        let moderator = api.auth.session("21", 0);
+        let assistant = api.auth.session("21", 0);
         let events = format!("http://{address}/account/pages/{page}/devices/A/events");
         let url = format!("http://{address}/account/pages/{page}/devices/A/control");
         let granted = async |session: &str| {
@@ -639,7 +639,7 @@ mod tests {
         let grant = async |access: &str| {
             client
                 .post(format!(
-                    "http://{address}/account/moderators/twitch/21/remote-control"
+                    "http://{address}/account/assistants/twitch/21/remote-control"
                 ))
                 .bearer_auth(&session)
                 .json(&json!({"access": access}))
@@ -650,7 +650,7 @@ mod tests {
         let watch = async || {
             client
                 .get(&events)
-                .bearer_auth(&moderator)
+                .bearer_auth(&assistant)
                 .send()
                 .await
                 .unwrap()
@@ -662,14 +662,14 @@ mod tests {
             assert_eq!(response.text().await.unwrap(), text);
         };
         assert_eq!(granted(&session).await, "control");
-        assert_eq!(granted(&moderator).await, "none");
+        assert_eq!(granted(&assistant).await, "none");
         refused(
             watch().await,
             "The streamer has not let you use the remote control.",
         )
         .await;
         refused(
-            control(&moderator, json!({"setTorch": {"on": true}}))
+            control(&assistant, json!({"setTorch": {"on": true}}))
                 .await
                 .unwrap(),
             "The streamer has not let you use the remote control.",
@@ -682,11 +682,11 @@ mod tests {
         let response = grant("view").await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchModerators"],
+            response.json::<Value>().await.unwrap()["twitchAssistants"],
             json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "view"}])
         );
-        assert_eq!(granted(&moderator).await, "view");
-        let mut watching = Events::open(&client, &events, &moderator).await;
+        assert_eq!(granted(&assistant).await, "view");
+        let mut watching = Events::open(&client, &events, &assistant).await;
         answer_monitoring(&mut socket, true).await;
         assert_eq!(watching.next().await.0, "snapshot");
         for body in [
@@ -694,7 +694,7 @@ mod tests {
             json!({"setLive": {"on": false}}),
         ] {
             refused(
-                control(&moderator, body).await.unwrap(),
+                control(&assistant, body).await.unwrap(),
                 "The streamer has not let you control Moblin.",
             )
             .await;
@@ -702,8 +702,8 @@ mod tests {
         assert_eq!(counter(&api, "deviceControlsFailed:no-remote-control"), 1);
         assert_eq!(counter(&api, "deviceControlsFailed:no-control"), 2);
         assert_eq!(grant("control").await.status(), StatusCode::OK);
-        assert_eq!(granted(&moderator).await, "control");
-        let call = tokio::spawn(control(&moderator, json!({"setTorch": {"on": true}})));
+        assert_eq!(granted(&assistant).await, "control");
+        let call = tokio::spawn(control(&assistant, json!({"setTorch": {"on": true}})));
         let request = loop {
             let request = receive(&mut socket).await;
             if request["request"]["data"].get("setTorch").is_some() {
@@ -715,7 +715,7 @@ mod tests {
         assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
         drop(watching);
         assert_eq!(grant("none").await.status(), StatusCode::OK);
-        assert_eq!(granted(&moderator).await, "none");
+        assert_eq!(granted(&assistant).await, "none");
         refused(
             watch().await,
             "The streamer has not let you use the remote control.",
@@ -724,23 +724,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moderators_go_live_only_when_allowed_but_always_end_the_stream() {
+    async fn assistants_go_live_only_when_allowed_but_always_end_the_stream() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, page) = streamer(&address, &api).await;
         let mut socket = connect(&address, &key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("21", "mod21", "Mod 21"),
+                &twitch_assistant("21", "mod21", "Mod 21"),
             )
             .unwrap();
         api.accounts
-            .set_moderator_access(Platform::Twitch, "1", "21", Access::Control)
+            .set_assistant_access(Platform::Twitch, "1", "21", Access::Control)
             .unwrap();
-        let moderator = api.auth.session("21", 0);
+        let assistant = api.auth.session("21", 0);
         let url = format!("http://{address}/account/pages/{page}/devices/A/control");
         let allowed = async |session: &str| {
             client
@@ -757,7 +757,7 @@ mod tests {
         let allow = async |on: bool| {
             client
                 .post(format!(
-                    "http://{address}/account/moderators/twitch/21/go-live"
+                    "http://{address}/account/assistants/twitch/21/go-live"
                 ))
                 .bearer_auth(&session)
                 .json(&json!({"on": on}))
@@ -768,8 +768,8 @@ mod tests {
         let control =
             |session: &str, body: Value| client.post(&url).bearer_auth(session).json(&body).send();
         assert_eq!(allowed(&session).await, true);
-        assert_eq!(allowed(&moderator).await, false);
-        let response = control(&moderator, json!({"setLive": {"on": true}}))
+        assert_eq!(allowed(&assistant).await, false);
+        let response = control(&assistant, json!({"setLive": {"on": true}}))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -778,7 +778,7 @@ mod tests {
             "The streamer has not let you go live."
         );
         assert_eq!(counter(&api, "deviceControlsFailed:no-go-live"), 1);
-        let call = tokio::spawn(control(&moderator, json!({"setLive": {"on": false}})));
+        let call = tokio::spawn(control(&assistant, json!({"setLive": {"on": false}})));
         let request = receive(&mut socket).await;
         assert_eq!(
             request["request"]["data"],
@@ -794,41 +794,41 @@ mod tests {
         let response = allow(true).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchModerators"],
+            response.json::<Value>().await.unwrap()["twitchAssistants"],
             json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": true, "editTips": false, "remoteControl": "control"}])
         );
-        assert_eq!(allowed(&moderator).await, true);
-        let call = tokio::spawn(control(&moderator, json!({"setLive": {"on": true}})));
+        assert_eq!(allowed(&assistant).await, true);
+        let call = tokio::spawn(control(&assistant, json!({"setLive": {"on": true}})));
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], json!({"setLive": {"on": true}}));
         answer(&mut socket, &request, Value::Null).await;
         assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
         assert_eq!(allow(false).await.status(), StatusCode::OK);
-        assert_eq!(allowed(&moderator).await, false);
-        let response = control(&moderator, json!({"setLive": {"on": true}}))
+        assert_eq!(allowed(&assistant).await, false);
+        let response = control(&assistant, json!({"setLive": {"on": true}}))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
-    async fn moderators_get_the_preview_only_when_allowed() {
+    async fn assistants_get_the_preview_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, page) = streamer(&address, &api).await;
         let mut socket = connect(&address, &key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("21", "mod21", "Mod 21"),
+                &twitch_assistant("21", "mod21", "Mod 21"),
             )
             .unwrap();
         api.accounts
-            .set_moderator_access(Platform::Twitch, "1", "21", Access::View)
+            .set_assistant_access(Platform::Twitch, "1", "21", Access::View)
             .unwrap();
-        let moderator = api.auth.session("21", 0);
+        let assistant = api.auth.session("21", 0);
         let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
         let allowed = async |session: &str| {
             client
@@ -842,10 +842,10 @@ mod tests {
                 .unwrap()["preview"]
                 .clone()
         };
-        let allow = async |moderator: &str, on: bool| {
+        let allow = async |assistant: &str, on: bool| {
             client
                 .post(format!(
-                    "http://{address}/account/moderators/twitch/{moderator}/preview"
+                    "http://{address}/account/assistants/twitch/{assistant}/preview"
                 ))
                 .bearer_auth(&session)
                 .json(&json!({"on": on}))
@@ -854,10 +854,10 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(allowed(&session).await, true);
-        assert_eq!(allowed(&moderator).await, false);
+        assert_eq!(allowed(&assistant).await, false);
         let response = client
             .get(&url)
-            .bearer_auth(&moderator)
+            .bearer_auth(&assistant)
             .send()
             .await
             .unwrap();
@@ -868,9 +868,9 @@ mod tests {
         );
         let response = client
             .post(format!(
-                "http://{address}/account/moderators/twitch/21/preview"
+                "http://{address}/account/assistants/twitch/21/preview"
             ))
-            .bearer_auth(&moderator)
+            .bearer_auth(&assistant)
             .json(&json!({"on": true}))
             .send()
             .await
@@ -880,11 +880,11 @@ mod tests {
         let response = allow("21", true).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchModerators"],
+            response.json::<Value>().await.unwrap()["twitchAssistants"],
             json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": true, "goLive": false, "editTips": false, "remoteControl": "view"}])
         );
-        assert_eq!(allowed(&moderator).await, true);
-        let mut preview = Events::open(&client, &url, &moderator).await;
+        assert_eq!(allowed(&assistant).await, true);
+        let mut preview = Events::open(&client, &url, &assistant).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], json!({"startPreview": {}}));
         answer(&mut socket, &request, Value::Null).await;
@@ -902,10 +902,10 @@ mod tests {
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], json!({"stopPreview": {}}));
         assert_eq!(allow("21", false).await.status(), StatusCode::OK);
-        assert_eq!(allowed(&moderator).await, false);
+        assert_eq!(allowed(&assistant).await, false);
         let response = client
             .get(&url)
-            .bearer_auth(&moderator)
+            .bearer_auth(&assistant)
             .send()
             .await
             .unwrap();

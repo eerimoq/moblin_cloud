@@ -1,5 +1,6 @@
 from .suites import access
 from .suites import account
+from .suites import assistants
 from .suites import deliveries
 from .suites import devices
 from .suites import effects
@@ -7,7 +8,6 @@ from .suites import events
 from .suites import images
 from .suites import kick
 from .suites import lifecycle
-from .suites import moderators
 from .suites import pages
 from .suites import payments
 from .suites import paypal
@@ -30,7 +30,7 @@ def create_suites(context):
         stripe.tests(context),
         payments.tests(context),
         subscribers.tests(context),
-        moderators.tests(context),
+        assistants.tests(context),
         persistence.tests(context),
         devices.tests(context),
         effects.tests(context),

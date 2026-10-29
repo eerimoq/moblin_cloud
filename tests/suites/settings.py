@@ -67,17 +67,17 @@ class SettingsCurrencyWithFeatureOn(SettingsTestCase):
             self.dashboard.change_settings(currency="USD")
 
 
-class SettingsModeratorKeepsCurrency(SettingsTestCase):
-    """Keep the page's currency when a moderator saves, also while all paid features are off."""
+class SettingsAssistantKeepsCurrency(SettingsTestCase):
+    """Keep the page's currency when an assistant saves, also while all paid features are off."""
 
     login = "settingsmodcurrency"
 
     def run(self):
-        moderator = self.sign_in("settingsmod")
-        self.dashboard.add_moderator("twitch", "settingsmod")
-        self.dashboard.set_moderator_edit_tips("twitch", user_id_of("settingsmod"), True)
+        assistant = self.sign_in("settingsmod")
+        self.dashboard.add_assistant("twitch", "settingsmod")
+        self.dashboard.set_assistant_edit_tips("twitch", user_id_of("settingsmod"), True)
         try:
-            settings = moderator.post(
+            settings = assistant.post(
                 f"/account/pages/{self.page_id}/settings",
                 {
                     "currency": "EUR",
@@ -97,7 +97,7 @@ class SettingsModeratorKeepsCurrency(SettingsTestCase):
             self.assert_equal(self.dashboard.account()["settings"]["currency"], "USD")
             self.assert_equal(self.viewer.effects()["effects"]["currency"], "USD")
         finally:
-            self.dashboard.remove_moderator("twitch", user_id_of("settingsmod"))
+            self.dashboard.remove_assistant("twitch", user_id_of("settingsmod"))
             self.dashboard.change_settings(effects=None)
 
 
@@ -158,7 +158,7 @@ def tests(context: Context):
     return [
         SettingsCurrencyLocked(context),
         SettingsCurrencyWithFeatureOn(context),
-        SettingsModeratorKeepsCurrency(context),
+        SettingsAssistantKeepsCurrency(context),
         SettingsAccent(context),
         SettingsSubscriberTiers(context),
     ]

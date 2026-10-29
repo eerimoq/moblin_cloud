@@ -166,13 +166,13 @@ fn recent_devices(
         .collect()
 }
 
-pub(super) async fn handle_moderator_recent(
+pub(super) async fn handle_assistant_recent(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, Failure> {
-    moderator(&api, &headers, &id)?;
+    assistant(&api, &headers, &id)?;
     let page = page_of(&api, &id).ok_or(failure(
         "not-found",
         StatusCode::NOT_FOUND,
@@ -194,12 +194,12 @@ pub(super) async fn handle_account_resend(
     resend(&api, &account.page.id, &order_id)
 }
 
-pub(super) async fn handle_moderator_resend(
+pub(super) async fn handle_assistant_resend(
     State(api): State<Arc<Api>>,
     Path((id, order_id)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    moderator(&api, &headers, &id)?;
+    assistant(&api, &headers, &id)?;
     resend(&api, &id, &order_id)
 }
 
@@ -275,7 +275,7 @@ mod tests {
         assert!(tip["at"].as_u64().unwrap() > 0);
         assert!(tip.get("message").is_none());
         let id = api.accounts.get("1").unwrap().page.id;
-        let moderated: Value = client
+        let assisted: Value = client
             .get(format!(
                 "http://{address}/account/pages/{id}/recent?kind=tip"
             ))
@@ -286,8 +286,8 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(moderated["items"][0]["id"], "ORDER1");
-        assert!(moderated["items"][0].get("provider").is_none());
+        assert_eq!(assisted["items"][0]["id"], "ORDER1");
+        assert!(assisted["items"][0].get("provider").is_none());
         assert_eq!(recent().await["items"][0]["devices"], json!([]));
         let key = api.accounts.get("1").unwrap().page.key.clone();
         let mut socket = connect(&address, &key).await;

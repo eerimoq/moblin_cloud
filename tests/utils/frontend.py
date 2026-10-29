@@ -257,16 +257,16 @@ class Dashboard(Client):
     def admin_stats(self) -> dict:
         return self.get("/admin/stats")
 
-    def add_moderator(self, platform: str, username: str) -> dict:
-        return self.post(f"/account/moderators/{platform}", {"username": username})
+    def add_assistant(self, platform: str, username: str) -> dict:
+        return self.post(f"/account/assistants/{platform}", {"username": username})
 
-    def remove_moderator(self, platform: str, moderator: str) -> dict:
-        return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/remove")
+    def remove_assistant(self, platform: str, assistant: str) -> dict:
+        return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/remove")
 
-    def moderated_recent(self, page_id: str, kind: str) -> dict:
+    def assisted_recent(self, page_id: str, kind: str) -> dict:
         return self.get(f"/account/pages/{quote(page_id, safe='')}/recent?kind={kind}")
 
-    def moderated_account(self, page_id: str) -> dict:
+    def assisted_account(self, page_id: str) -> dict:
         return self.get(f"/account/pages/{quote(page_id, safe='')}")
 
     def device_events(self, page_id: str, device: str) -> "DeviceEvents":
@@ -288,9 +288,9 @@ class Dashboard(Client):
             f"/account/pages/{quote(page_id, safe='')}/devices/{quote(device, safe='')}/control", control
         )
 
-    def moderated_settings(self, page_id: str, **changes) -> dict:
-        """Saves the moderated page's settings with some changed, like the moderator's dashboard does."""
-        settings = self.moderated_account(page_id)["settings"]
+    def assisted_settings(self, page_id: str, **changes) -> dict:
+        """Saves the assisted page's settings with some changed, like the assistant's dashboard does."""
+        settings = self.assisted_account(page_id)["settings"]
         names = {"subSpins": "sub_spins"}
         body = {
             field: settings[field]
@@ -309,13 +309,13 @@ class Dashboard(Client):
                 body[field] = changes[names.get(field, field)]
         return self.post(f"/account/pages/{quote(page_id, safe='')}/settings", body)
 
-    def moderated_test_tip(self, page_id: str, message: str | None = None) -> dict:
+    def assisted_test_tip(self, page_id: str, message: str | None = None) -> dict:
         return self.post(f"/account/pages/{quote(page_id, safe='')}/test/tip", {"message": message})
 
-    def moderated_test_spin(self, page_id: str, message: str | None = None) -> dict:
+    def assisted_test_spin(self, page_id: str, message: str | None = None) -> dict:
         return self.post(f"/account/pages/{quote(page_id, safe='')}/test/spin", {"message": message})
 
-    def moderated_remove_image(self, page_id: str) -> dict:
+    def assisted_remove_image(self, page_id: str) -> dict:
         return self.post(f"/account/pages/{quote(page_id, safe='')}/image/remove")
 
     def sign_out_everywhere(self):
@@ -342,19 +342,19 @@ class Dashboard(Client):
     def test_effect(self, effect: str | None = None, message: str | None = None) -> dict:
         return self.post("/account/test/effect", {"effect": effect, "message": message})
 
-    def set_moderator_preview(self, platform: str, moderator: str, on: bool) -> dict:
-        return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/preview", {"on": on})
+    def set_assistant_preview(self, platform: str, assistant: str, on: bool) -> dict:
+        return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/preview", {"on": on})
 
-    def set_moderator_go_live(self, platform: str, moderator: str, on: bool) -> dict:
-        return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/go-live", {"on": on})
+    def set_assistant_go_live(self, platform: str, assistant: str, on: bool) -> dict:
+        return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/go-live", {"on": on})
 
-    def set_moderator_remote_control(self, platform: str, moderator: str, access: str) -> dict:
+    def set_assistant_remote_control(self, platform: str, assistant: str, access: str) -> dict:
         return self.post(
-            f"/account/moderators/{platform}/{quote(moderator, safe='')}/remote-control", {"access": access}
+            f"/account/assistants/{platform}/{quote(assistant, safe='')}/remote-control", {"access": access}
         )
 
-    def set_moderator_edit_tips(self, platform: str, moderator: str, on: bool) -> dict:
-        return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/edit-tips", {"on": on})
+    def set_assistant_edit_tips(self, platform: str, assistant: str, on: bool) -> dict:
+        return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/edit-tips", {"on": on})
 
     def upload_image(self, data: bytes, page_id: str | None = None) -> dict:
         path = "/account/image" if page_id is None else f"/account/pages/{quote(page_id, safe='')}/image"
@@ -366,10 +366,10 @@ class Dashboard(Client):
     def remove_image(self) -> dict:
         return self.post("/account/image/remove")
 
-    def moderated_resend(self, page_id: str, order_id: str) -> dict:
+    def assisted_resend(self, page_id: str, order_id: str) -> dict:
         return self.post(f"/account/pages/{quote(page_id, safe='')}/recent/{quote(order_id, safe='')}/resend")
 
-    def moderated_test_effect(self, page_id: str, effect: str | None = None) -> dict:
+    def assisted_test_effect(self, page_id: str, effect: str | None = None) -> dict:
         return self.post(f"/account/pages/{quote(page_id, safe='')}/test/effect", {"effect": effect})
 
     def page_id(self) -> str:

@@ -1353,7 +1353,7 @@ function DashboardLink(props: { link: DashboardLink }) {
     >
       <img src={asset("logos/logo-cloud.png")} alt="" class="h-5 w-auto shrink-0" />
       <span class="truncate">
-        {props.link.own ? t("Open your dashboard") : t("Moderate on the dashboard")}
+        {props.link.own ? t("Open your dashboard") : t("Assist on the dashboard")}
       </span>
     </a>
   );
@@ -1382,7 +1382,7 @@ function dashboardLink(
   if (account.settings.id === id) {
     return { href: asset(pages.dashboard), own: true };
   }
-  const channel = account.moderating.find((channel) => channel.id === id);
+  const channel = account.assisting.find((channel) => channel.id === id);
   if (!channel) {
     return null;
   }

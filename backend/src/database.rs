@@ -32,7 +32,18 @@ impl Database {
                 .execute_batch("ALTER TABLE accounts ADD COLUMN moblin_key TEXT")
                 .context("failed to add the accounts moblin_key column")?;
         }
-        for table in ["twitch_moderators", "kick_moderators"] {
+        for platform in ["twitch", "kick"] {
+            if columns(&format!("{platform}_moderators"), "moderator")? {
+                connection
+                    .execute_batch(&format!(
+                        "ALTER TABLE {platform}_moderators RENAME TO {platform}_assistants;
+                         ALTER TABLE {platform}_assistants RENAME COLUMN moderator TO assistant;
+                         DROP INDEX IF EXISTS {platform}_moderators_moderator;"
+                    ))
+                    .with_context(|| format!("failed to rename the {platform} moderators"))?;
+            }
+        }
+        for table in ["twitch_assistants", "kick_assistants"] {
             for column in ["preview", "go_live", "edit_tips", "remote_control"] {
                 if columns(table, "broadcaster")? && !columns(table, column)? {
                     connection
@@ -85,18 +96,18 @@ impl Database {
                      last_seen INTEGER NOT NULL,
                      PRIMARY KEY (account, id)
                  );
-                 CREATE TABLE IF NOT EXISTS twitch_moderators (
+                 CREATE TABLE IF NOT EXISTS twitch_assistants (
                      broadcaster TEXT NOT NULL,
-                     moderator TEXT NOT NULL,
+                     assistant TEXT NOT NULL,
                      login TEXT NOT NULL,
                      name TEXT NOT NULL,
                      preview INTEGER NOT NULL DEFAULT 0,
                      go_live INTEGER NOT NULL DEFAULT 0,
                      edit_tips INTEGER NOT NULL DEFAULT 0,
                      remote_control INTEGER NOT NULL DEFAULT 0,
-                     PRIMARY KEY (broadcaster, moderator)
+                     PRIMARY KEY (broadcaster, assistant)
                  );
-                 CREATE INDEX IF NOT EXISTS twitch_moderators_moderator ON twitch_moderators (moderator);
+                 CREATE INDEX IF NOT EXISTS twitch_assistants_assistant ON twitch_assistants (assistant);
                  CREATE TABLE IF NOT EXISTS pages (
                      id TEXT PRIMARY KEY,
                      settings TEXT NOT NULL
@@ -161,18 +172,18 @@ impl Database {
                  );
                  CREATE INDEX IF NOT EXISTS identities_account ON identities (account);
                  CREATE INDEX IF NOT EXISTS identities_login ON identities (platform, login);
-                 CREATE TABLE IF NOT EXISTS kick_moderators (
+                 CREATE TABLE IF NOT EXISTS kick_assistants (
                      broadcaster TEXT NOT NULL,
-                     moderator TEXT NOT NULL,
+                     assistant TEXT NOT NULL,
                      login TEXT NOT NULL,
                      name TEXT NOT NULL,
                      preview INTEGER NOT NULL DEFAULT 0,
                      go_live INTEGER NOT NULL DEFAULT 0,
                      edit_tips INTEGER NOT NULL DEFAULT 0,
                      remote_control INTEGER NOT NULL DEFAULT 0,
-                     PRIMARY KEY (broadcaster, moderator)
+                     PRIMARY KEY (broadcaster, assistant)
                  );
-                 CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
+                 CREATE INDEX IF NOT EXISTS kick_assistants_assistant ON kick_assistants (assistant);",
             )
             .context("failed to create the database tables")?;
         connection
@@ -282,8 +293,8 @@ mod tests {
     }
 
     #[test]
-    fn old_moderators_get_no_permissions_on_start() {
-        let path = temporary_path("moderators-preview");
+    fn old_moderators_become_assistants_without_permissions_on_start() {
+        let path = temporary_path("moderators-renamed");
         let connection = Connection::open(&path).unwrap();
         connection
             .execute_batch(
@@ -294,6 +305,7 @@ mod tests {
                      name TEXT NOT NULL,
                      PRIMARY KEY (broadcaster, moderator)
                  );
+                 CREATE INDEX twitch_moderators_moderator ON twitch_moderators (moderator);
                  INSERT INTO twitch_moderators VALUES ('42', '1', 'mod', 'Mod');",
             )
             .unwrap();
@@ -301,7 +313,7 @@ mod tests {
         for _ in 0..2 {
             let database = Database::open(Some(&path)).unwrap();
             let connection = database.lock();
-            for table in ["twitch_moderators", "kick_moderators"] {
+            for table in ["twitch_assistants", "kick_assistants"] {
                 let columns: u32 = connection
                     .query_row(
                         "SELECT count(*) FROM pragma_table_info(?1) WHERE name IN ('preview', 'go_live', 'edit_tips', 'remote_control')",
@@ -311,9 +323,17 @@ mod tests {
                     .unwrap();
                 assert_eq!(columns, 4);
             }
+            let moderators: u32 = connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE name LIKE '%moderator%'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(moderators, 0);
             let (preview, go_live, edit_tips, remote_control): (bool, bool, bool, bool) = connection
                 .query_row(
-                    "SELECT preview, go_live, edit_tips, remote_control FROM twitch_moderators WHERE moderator = '1'",
+                    "SELECT preview, go_live, edit_tips, remote_control FROM twitch_assistants WHERE assistant = '1'",
                     [],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                 )

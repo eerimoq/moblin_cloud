@@ -24,7 +24,7 @@ import SectionMenu, { createSectionChoice, type Section } from "../components/Se
 import {
   Avatar,
   channelKey,
-  moderatedChannelKey,
+  assistedChannelKey,
   PagePicker,
   rememberChannel,
   StreamerPicker,
@@ -44,15 +44,15 @@ import {
   Value,
 } from "../components/PageParts";
 import {
-  addModerator,
+  addAssistant,
   createAccountSession,
-  type Moderator,
-  removeModerator,
-  setModeratorEditTips,
-  setModeratorGoLive,
-  setModeratorPreview,
-  setModeratorRemoteControl,
-  type Moderating,
+  type Assistant,
+  removeAssistant,
+  setAssistantEditTips,
+  setAssistantGoLive,
+  setAssistantPreview,
+  setAssistantRemoteControl,
+  type Assisting,
   checkPayPal,
   checkStripe,
   connectPayPal,
@@ -854,7 +854,7 @@ function YourPage(props: {
   account: Account;
   page: Settings;
   busy: boolean;
-  moderating: boolean;
+  assisting: boolean;
   onSave: (changes: Page) => Promise<void>;
   onImage: (image: File | null) => Promise<void>;
 }) {
@@ -881,7 +881,7 @@ function YourPage(props: {
   return (
     <form class={cardClass} onSubmit={save.submit}>
       <h2 class="text-[23px] font-semibold">
-        {props.moderating
+        {props.assisting
           ? t("The tip page of {name}", { name: props.account.name })
           : t("Your tip page")}
       </h2>
@@ -1144,7 +1144,7 @@ function SubscriberSettings(props: {
   );
 }
 
-function ModeratorSettings(props: {
+function AssistantSettings(props: {
   session: string;
   account: Account;
   onAccount: (account: Account) => void;
@@ -1153,20 +1153,20 @@ function ModeratorSettings(props: {
   const linked = () => platforms.filter((platform) => props.account[platform] !== null);
   return (
     <section class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
+      <h2 class="text-[23px] font-semibold">{t("Assistants")}</h2>
       <p class="text-ink-2">
         {t(
-          "Moderators can see your dashboard, send tests and use the remote control. Turn on more below.",
+          "Assistants can see your dashboard, send tests and use the remote control. Turn on more below.",
         )}
       </p>
       <For each={linked()}>
         {(platform) => (
-          <ModeratorList
+          <AssistantList
             session={props.session}
             platform={platform}
             titled={linked().length > 1}
-            moderators={
-              platform === "twitch" ? props.account.twitchModerators : props.account.kickModerators
+            assistants={
+              platform === "twitch" ? props.account.twitchAssistants : props.account.kickAssistants
             }
             onAccount={props.onAccount}
             onSignOut={props.onSignOut}
@@ -1277,11 +1277,11 @@ function PermissionRow(props: { title: string; children: JSX.Element }) {
   );
 }
 
-function ModeratorList(props: {
+function AssistantList(props: {
   session: string;
   platform: Platform;
   titled: boolean;
-  moderators: Moderator[];
+  assistants: Assistant[];
   onAccount: (account: Account) => void;
   onSignOut: () => void;
 }) {
@@ -1302,7 +1302,7 @@ function ModeratorList(props: {
       if (signedOut(error)) {
         props.onSignOut();
       }
-      setError(moderationErrorText(error));
+      setError(assistantErrorText(error));
       return false;
     }
   };
@@ -1323,7 +1323,7 @@ function ModeratorList(props: {
     if (!name) {
       return;
     }
-    if (await run(() => addModerator(props.session, props.platform, name))) {
+    if (await run(() => addAssistant(props.session, props.platform, name))) {
       setUsername("");
     }
   };
@@ -1340,70 +1340,70 @@ function ModeratorList(props: {
           {platformNames[props.platform]}
         </h3>
       </Show>
-      <Show when={props.moderators.length > 0}>
+      <Show when={props.assistants.length > 0}>
         <ul class="rounded-2xl border-[1.5px] border-line">
-          <Index each={props.moderators}>
-            {(moderator) => (
+          <Index each={props.assistants}>
+            {(assistant) => (
               <li class="flex items-start gap-3 border-line px-4 py-3 not-first:border-t-[1.5px] first:rounded-t-[14px] last:rounded-b-[14px] odd:bg-well even:bg-card">
                 <div class="flex min-w-0 flex-1 flex-col gap-3">
                   <div class="flex min-w-0 items-center gap-3">
-                    <Avatar picked={moderator()} class="size-10 shrink-0 text-base" />
+                    <Avatar picked={assistant()} class="size-10 shrink-0 text-base" />
                     <div class="min-w-0">
-                      <div class="truncate font-semibold">{moderator().name}</div>
-                      <div class="truncate text-[14px] text-ink-2">{moderator().login}</div>
+                      <div class="truncate font-semibold">{assistant().name}</div>
+                      <div class="truncate text-[14px] text-ink-2">{assistant().login}</div>
                     </div>
                   </div>
                   <PermissionRow title={t("Dashboard")}>
                     <PermissionBox
-                      checked={moderator().editTips}
+                      checked={assistant().editTips}
                       text={t("Edit tips")}
-                      label={t("Let {name} edit your settings", { name: moderator().name })}
+                      label={t("Let {name} edit your settings", { name: assistant().name })}
                       help={t("Change the tip page, message, wheel of luck and effect settings.")}
                       onChange={(on) =>
                         call(() =>
-                          setModeratorEditTips(props.session, props.platform, moderator().id, on),
+                          setAssistantEditTips(props.session, props.platform, assistant().id, on),
                         )
                       }
                     />
                   </PermissionRow>
                   <PermissionRow title={t("Remote control")}>
                     <AccessPicker
-                      access={moderator().remoteControl}
+                      access={assistant().remoteControl}
                       label={t("What {name} may do with the remote control", {
-                        name: moderator().name,
+                        name: assistant().name,
                       })}
                       onChange={(access) =>
                         call(() =>
-                          setModeratorRemoteControl(
+                          setAssistantRemoteControl(
                             props.session,
                             props.platform,
-                            moderator().id,
+                            assistant().id,
                             access,
                           ),
                         )
                       }
                     />
                     <PermissionBox
-                      checked={moderator().preview}
-                      disabled={moderator().remoteControl === "none"}
+                      checked={assistant().preview}
+                      disabled={assistant().remoteControl === "none"}
                       text={t("Preview")}
-                      label={t("Let {name} see the stream preview", { name: moderator().name })}
+                      label={t("Let {name} see the stream preview", { name: assistant().name })}
                       help={t("See the stream preview.")}
                       onChange={(on) =>
                         call(() =>
-                          setModeratorPreview(props.session, props.platform, moderator().id, on),
+                          setAssistantPreview(props.session, props.platform, assistant().id, on),
                         )
                       }
                     />
                     <PermissionBox
-                      checked={moderator().goLive}
-                      disabled={moderator().remoteControl !== "control"}
+                      checked={assistant().goLive}
+                      disabled={assistant().remoteControl !== "control"}
                       text={t("Go live")}
-                      label={t("Let {name} go live", { name: moderator().name })}
+                      label={t("Let {name} go live", { name: assistant().name })}
                       help={t("Start the stream. Ending it is always allowed.")}
                       onChange={(on) =>
                         call(() =>
-                          setModeratorGoLive(props.session, props.platform, moderator().id, on),
+                          setAssistantGoLive(props.session, props.platform, assistant().id, on),
                         )
                       }
                     />
@@ -1413,10 +1413,10 @@ function ModeratorList(props: {
                   type="button"
                   class="flex size-10 shrink-0 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
                   disabled={busy()}
-                  aria-label={t("Remove {name}", { name: moderator().name })}
+                  aria-label={t("Remove {name}", { name: assistant().name })}
                   title={t("Remove")}
                   onClick={() =>
-                    void run(() => removeModerator(props.session, props.platform, moderator().id))
+                    void run(() => removeAssistant(props.session, props.platform, assistant().id))
                   }
                 >
                   <Icon name="trash" class="size-5" />
@@ -1454,7 +1454,7 @@ function ModeratorList(props: {
   );
 }
 
-const moderationErrorText = (error: unknown) =>
+const assistantErrorText = (error: unknown) =>
   error instanceof BackendError && error.status < 500 && error.message
     ? error.message
     : t("Something went wrong. Try again.");
@@ -1783,7 +1783,7 @@ function SendForm(props: {
       if (signedOut(error)) {
         props.onSignOut();
       }
-      setError(moderationErrorText(error));
+      setError(assistantErrorText(error));
     } finally {
       setSending(false);
     }
@@ -1895,7 +1895,7 @@ function Admin(props: {
   const setSettings = (settings: Account["settings"]) =>
     props.onAccount({ ...props.account, settings });
   const [busy, setBusy] = createSignal(false);
-  const moderating = () => props.page !== undefined;
+  const assisting = () => props.page !== undefined;
   const { recent, loadRecent, loadMore } = createRecent(
     (kind, limit, before) => fetchRecent(props.session, props.page, kind, limit, before),
     (error) => {
@@ -1967,7 +1967,7 @@ function Admin(props: {
       id: "tips",
       label: t("Message"),
       icon: "heart",
-      shown: () => moderating() || payments() || isOn(settings().tips),
+      shown: () => assisting() || payments() || isOn(settings().tips),
       status: () => onOff(isOn(settings().tips)),
     },
     {
@@ -1985,10 +1985,10 @@ function Admin(props: {
       status: () => onOff(isOn(settings().effects) || isOn(settings().subEffects)),
     },
     {
-      id: "moderators",
-      label: t("Moderators"),
+      id: "assistants",
+      label: t("Assistants"),
       icon: "shield",
-      shown: () => !moderating() && (account().twitch !== null || account().kick !== null),
+      shown: () => !assisting() && (account().twitch !== null || account().kick !== null),
       status: () => null,
     },
     {
@@ -2030,7 +2030,7 @@ function Admin(props: {
           </div>
         </Show>
         <div hidden={active() !== "page"} class="flex flex-col gap-6">
-          <Show when={!moderating()}>
+          <Show when={!assisting()}>
             <GetStarted
               account={account()}
               settings={settings()}
@@ -2043,7 +2043,7 @@ function Admin(props: {
               account={account()}
               page={settings()}
               busy={busy()}
-              moderating={moderating()}
+              assisting={assisting()}
               onSave={save}
               onImage={changeImage}
             />
@@ -2056,7 +2056,7 @@ function Admin(props: {
               <NeedsPayments
                 title={t("Message")}
                 available={payments()}
-                streamer={moderating() ? account().name : null}
+                streamer={assisting() ? account().name : null}
                 onConnect={() => select("payments")}
               />
             }
@@ -2084,14 +2084,14 @@ function Admin(props: {
           />
         </div>
         <div hidden={active() !== "wheel"} class="flex flex-col gap-6">
-          <Show when={!moderating() && isOn(settings().spin) && !settings().connected}>
+          <Show when={!assisting() && isOn(settings().spin) && !settings().connected}>
             <Notice>
               {t("Viewers can't spin the wheel right now, as Moblin is not connected.")}
             </Notice>
           </Show>
           <Show
             when={
-              !moderating() &&
+              !assisting() &&
               isOn(settings().spin) &&
               settings().connected &&
               !account().devices.some((device) => device.wheel)
@@ -2110,7 +2110,7 @@ function Admin(props: {
               <NeedsPayments
                 title={t("Wheel of luck")}
                 available={payments()}
-                streamer={moderating() ? account().name : null}
+                streamer={assisting() ? account().name : null}
                 onConnect={() => select("payments")}
               />
             }
@@ -2156,7 +2156,7 @@ function Admin(props: {
               <NeedsPayments
                 title={t("Effect")}
                 available={payments()}
-                streamer={moderating() ? account().name : null}
+                streamer={assisting() ? account().name : null}
                 onConnect={() => select("payments")}
               />
             }
@@ -2223,9 +2223,9 @@ function Admin(props: {
             </Show>
           </div>
         </Show>
-        <Show when={!moderating() && (account().twitch || account().kick)}>
-          <div hidden={active() !== "moderators"}>
-            <ModeratorSettings
+        <Show when={!assisting() && (account().twitch || account().kick)}>
+          <div hidden={active() !== "assistants"}>
+            <AssistantSettings
               session={props.session}
               account={account()}
               onAccount={setAccount}
@@ -2235,7 +2235,7 @@ function Admin(props: {
         </Show>
         <div hidden={active() !== "moblin"}>
           <Show
-            when={moderating()}
+            when={assisting()}
             fallback={
               <MoblinSettings
                 account={account()}
@@ -2251,7 +2251,7 @@ function Admin(props: {
               />
             }
           >
-            <ModeratedDevices account={account()} onOpen={props.onOpenDevice} />
+            <AssistedDevices account={account()} onOpen={props.onOpenDevice} />
           </Show>
         </div>
       </div>
@@ -2278,7 +2278,7 @@ function readTarget(remembered: boolean): Target {
   let stored = "";
   if (remembered) {
     try {
-      stored = sessionStorage.getItem(moderatedChannelKey) ?? "";
+      stored = sessionStorage.getItem(assistedChannelKey) ?? "";
     } catch {}
   }
   return {
@@ -2292,17 +2292,15 @@ function resolve(account: Account, target: Target) {
   const [platform, login] = target.channel.split("/", 2) as [Platform, string | undefined];
   const channel =
     target.page !== null
-      ? (account.moderating.find((channel) => channel.id === target.page) ?? null)
-      : ((login
-          ? account.moderating.find((channel) => channel[platform]?.login === login)
-          : null) ??
-        account.moderating.find((channel) => channelKey(channel) === target.channel) ??
+      ? (account.assisting.find((channel) => channel.id === target.page) ?? null)
+      : ((login ? account.assisting.find((channel) => channel[platform]?.login === login) : null) ??
+        account.assisting.find((channel) => channelKey(channel) === target.channel) ??
         null);
   const page = channel?.id ?? account.settings.id;
   return { channel, page, device: target.page === page ? target.device : "" };
 }
 
-const dashboardUrl = (channel: Moderating | null) =>
+const dashboardUrl = (channel: Assisting | null) =>
   asset(
     channel
       ? `${pages.dashboard}${channel.platform}/${encodeURIComponent(channel.login)}`
@@ -2564,7 +2562,7 @@ function MoblinSettings(props: {
         </p>
         <p class="text-[15px] text-muted">
           {t(
-            "Open a device's status to see how it is doing and mute it. Your moderators can too, from their dashboard.",
+            "Open a device's status to see how it is doing and mute it. Your assistants can too, from their dashboard.",
           )}
         </p>
       </div>
@@ -2654,7 +2652,7 @@ function DeviceRow(props: {
   );
 }
 
-function ModeratedDevices(props: { account: Account; onOpen: (device: string) => void }) {
+function AssistedDevices(props: { account: Account; onOpen: (device: string) => void }) {
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">Moblin</h2>
@@ -2763,12 +2761,12 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
 
   createEffect(
     on(page, (id) => {
-      const moderated = channel();
+      const assisted = channel();
       setPageAccount(known.get(id) ?? null);
       setFailure(null);
       const refresh = async () => {
         try {
-          update(await fetchAccount(props.session, moderated ? id : undefined));
+          update(await fetchAccount(props.session, assisted ? id : undefined));
         } catch (error) {
           if (signedOut(error)) {
             props.onSignOut();
@@ -2776,8 +2774,8 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
             setFailure({
               page: id,
               message:
-                moderated && forbidden(error)
-                  ? t("{name} has removed you as a moderator.", { name: moderated.name })
+                assisted && forbidden(error)
+                  ? t("{name} has removed you as an assistant.", { name: assisted.name })
                   : t("Something went wrong. Try again."),
             });
           }
@@ -2828,7 +2826,7 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
   onCleanup(() => removeEventListener("popstate", onPopState));
 
   const hashes = { dashboard: "", device: "" };
-  const show = (picked: Moderating | null, to: string) => {
+  const show = (picked: Assisting | null, to: string) => {
     const id = picked?.id ?? props.account.settings.id;
     hashes[device() ? "device" : "dashboard"] = location.hash;
     scrollTo({ top: 0, behavior: "instant" });
@@ -2845,7 +2843,7 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
   };
 
   const pickStreamer = async (key: string) => {
-    const picked = props.account.moderating.find((channel) => channelKey(channel) === key) ?? null;
+    const picked = props.account.assisting.find((channel) => channelKey(channel) === key) ?? null;
     if (!device()) {
       show(picked, "");
       return;
@@ -2871,7 +2869,7 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
             picked={device()}
             onPick={(to) => show(channel(), to)}
           />
-          <Show when={props.account.moderating.length > 0}>
+          <Show when={props.account.assisting.length > 0}>
             <StreamerPicker
               account={props.account}
               picked={channel()}

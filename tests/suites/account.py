@@ -93,9 +93,9 @@ class AccountSignIn(AccountTestCase):
                 "goLive": True,
                 "editTips": True,
                 "remoteControl": "control",
-                "moderating": [],
-                "twitchModerators": [],
-                "kickModerators": [],
+                "assisting": [],
+                "twitchAssistants": [],
+                "kickAssistants": [],
             },
         )
 

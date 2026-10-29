@@ -81,31 +81,31 @@ class EventsPageIcon(EventsTestCase):
 
 
 class EventsAccount(EventsTestCase):
-    """Tell the streamer's and the moderators' dashboards about account changes and new received items."""
+    """Tell the streamer's and the assistants' dashboards about account changes and new received items."""
 
     login = "eventsaccount"
 
     def run(self):
-        moderator = self.sign_in("eventsmod")
-        self.assert_backend_error(403, lambda: self.account_events(moderator))
+        assistant = self.sign_in("eventsmod")
+        self.assert_backend_error(403, lambda: self.account_events(assistant))
         self.assert_backend_error(401, lambda: self.account_events(Dashboard(self.backend.url, None)))
-        with self.account_events() as events, self.account_events(moderator, moderator.page_id()) as own:
-            self.dashboard.add_moderator("twitch", "eventsmod")
+        with self.account_events() as events, self.account_events(assistant, assistant.page_id()) as own:
+            self.dashboard.add_assistant("twitch", "eventsmod")
             self.assert_event(events, "account")
             self.assert_event(own, "account")
-            with self.account_events(moderator) as moderated:
+            with self.account_events(assistant) as assisted:
                 device = RawDevice(self.backend.port, self.dashboard.moblin_cloud_key(), "EA1")
                 self.dashboard.rename_device("EA1", "Named")
                 self.assert_event(events, "account")
-                self.assert_event(moderated, "account")
+                self.assert_event(assisted, "account")
                 self.dashboard.test_tip("Counted")
                 self.wait_until(lambda: bool(device.tips()), "the test tip")
-                self.dashboard.set_moderator_preview("twitch", user_id_of("eventsmod"), True)
-                self.assert_event(moderated, "account")
+                self.dashboard.set_assistant_preview("twitch", user_id_of("eventsmod"), True)
+                self.assert_event(assisted, "account")
                 device.close()
-            self.dashboard.remove_moderator("twitch", user_id_of("eventsmod"))
+            self.dashboard.remove_assistant("twitch", user_id_of("eventsmod"))
             self.assert_event(own, "account")
-        self.assert_backend_error(403, lambda: self.account_events(moderator))
+        self.assert_backend_error(403, lambda: self.account_events(assistant))
 
 
 class EventsRecent(EventsTestCase):

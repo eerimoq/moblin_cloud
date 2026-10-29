@@ -11,7 +11,7 @@ use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::accounts::{Access, Identity, Moderator, Platform};
+use crate::accounts::{Access, Assistant, Identity, Platform};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
@@ -567,7 +567,7 @@ impl Auth {
             .any(|badge| badge.kind == "subscriber" && badge.active))
     }
 
-    pub async fn kick_user(&self, username: &str) -> Result<Option<Moderator>> {
+    pub async fn kick_user(&self, username: &str) -> Result<Option<Assistant>> {
         let app = self.kick.as_ref().context("Kick not configured")?;
         let token = self
             .access_token(
@@ -606,7 +606,7 @@ impl Auth {
             .data
             .into_iter()
             .find(|channel| !channel.broadcaster_user_id.is_empty() && !channel.slug.is_empty())
-            .map(|channel| Moderator {
+            .map(|channel| Assistant {
                 id: channel.broadcaster_user_id,
                 name: channel.slug.clone(),
                 login: channel.slug.to_lowercase(),
@@ -618,7 +618,7 @@ impl Auth {
             }))
     }
 
-    pub async fn twitch_user(&self, username: &str) -> Result<Option<Moderator>> {
+    pub async fn twitch_user(&self, username: &str) -> Result<Option<Assistant>> {
         let app = self.twitch.as_ref().context("Twitch not configured")?;
         let token = self
             .access_token(
@@ -658,7 +658,7 @@ impl Auth {
             .data
             .into_iter()
             .find(|user| !user.id.is_empty() && !user.login.is_empty())
-            .map(|user| Moderator {
+            .map(|user| Assistant {
                 id: user.id,
                 name: user
                     .display_name
@@ -673,7 +673,7 @@ impl Auth {
             }))
     }
 
-    pub async fn user(&self, platform: Platform, username: &str) -> Result<Option<Moderator>> {
+    pub async fn user(&self, platform: Platform, username: &str) -> Result<Option<Assistant>> {
         match platform {
             Platform::Twitch => self.twitch_user(username).await,
             Platform::Kick => self.kick_user(username).await,

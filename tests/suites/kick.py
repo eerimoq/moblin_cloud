@@ -215,24 +215,24 @@ class KickAllowancesApart(KickTestCase):
         dashboard.change_settings(subEffects=None)
 
 
-class KickModerators(KickTestCase):
-    """Let a Kick user the streamer added as a Kick moderator help, also after unlinking and linking Kick again."""
+class KickAssistants(KickTestCase):
+    """Let a Kick user the streamer added as a Kick assistant help, also after unlinking and linking Kick again."""
 
     def run(self):
         dashboard = self.sign_in("kickmodded")
         page_id = dashboard.page_id()
-        self.assert_backend_error(409, lambda: dashboard.add_moderator("kick", "kmod"), "Link Kick first.")
+        self.assert_backend_error(409, lambda: dashboard.add_assistant("kick", "kmod"), "Link Kick first.")
         dashboard.link(self.frontend.link_token("kick", "kickmoddedkick"))
         self.assert_backend_error(
-            409, lambda: dashboard.add_moderator("kick", "kickmoddedkick"), "That is your own Kick account."
+            409, lambda: dashboard.add_assistant("kick", "kickmoddedkick"), "That is your own Kick account."
         )
         self.assert_backend_error(
-            404, lambda: dashboard.add_moderator("kick", "nobody"), "There is no Kick user named nobody."
+            404, lambda: dashboard.add_assistant("kick", "nobody"), "There is no Kick user named nobody."
         )
-        self.assert_backend_error(404, lambda: dashboard.add_moderator("youtube", "kmod"), "no such platform")
-        account = dashboard.add_moderator("kick", "KMod")
+        self.assert_backend_error(404, lambda: dashboard.add_assistant("youtube", "kmod"), "no such platform")
+        account = dashboard.add_assistant("kick", "KMod")
         self.assert_equal(
-            account["kickModerators"],
+            account["kickAssistants"],
             [
                 {
                     "id": kick_user_id_of("kmod"),
@@ -246,23 +246,23 @@ class KickModerators(KickTestCase):
                 }
             ],
         )
-        self.assert_equal(account["twitchModerators"], [])
-        moderator = self.kick_sign_in("kmod")
-        moderating = moderator.account()["moderating"]
+        self.assert_equal(account["twitchAssistants"], [])
+        assistant = self.kick_sign_in("kmod")
+        assisting = assistant.account()["assisting"]
         self.assert_equal(
-            [(channel["id"], channel["platform"]) for channel in moderating], [(page_id, "kick")]
+            [(channel["id"], channel["platform"]) for channel in assisting], [(page_id, "kick")]
         )
-        self.assert_equal(moderating[0]["login"], "kickmoddedkick")
-        self.assert_equal(moderator.moderated_test_tip(page_id), {})
+        self.assert_equal(assisting[0]["login"], "kickmoddedkick")
+        self.assert_equal(assistant.assisted_test_tip(page_id), {})
         dashboard.unlink("kick")
-        self.assert_equal(moderator.account()["moderating"], [])
-        self.assert_backend_error(403, lambda: moderator.moderated_test_tip(page_id))
+        self.assert_equal(assistant.account()["assisting"], [])
+        self.assert_backend_error(403, lambda: assistant.assisted_test_tip(page_id))
         dashboard.link(self.frontend.link_token("kick", "kickmoddedkick"))
-        self.assert_equal([channel["id"] for channel in moderator.account()["moderating"]], [page_id])
-        dashboard.remove_moderator("kick", kick_user_id_of("kmod"))
-        self.assert_equal(moderator.account()["moderating"], [])
+        self.assert_equal([channel["id"] for channel in assistant.account()["assisting"]], [page_id])
+        dashboard.remove_assistant("kick", kick_user_id_of("kmod"))
+        self.assert_equal(assistant.account()["assisting"], [])
         self.assert_backend_error(
-            404, lambda: dashboard.remove_moderator("kick", kick_user_id_of("kmod")), "no such moderator"
+            404, lambda: dashboard.remove_assistant("kick", kick_user_id_of("kmod")), "no such assistant"
         )
 
 
@@ -276,5 +276,5 @@ def tests(context: Context):
         KickUnlinkSignsViewersOut(context),
         KickSubscribers(context),
         KickAllowancesApart(context),
-        KickModerators(context),
+        KickAssistants(context),
     ]

@@ -12,7 +12,7 @@ use crate::accounts::{Access, Permission, Platform};
 use super::*;
 
 #[derive(Deserialize)]
-pub(super) struct ModeratorRequest {
+pub(super) struct AssistantRequest {
     username: String,
 }
 
@@ -26,11 +26,11 @@ pub(super) struct AccessRequest {
     access: Access,
 }
 
-pub(super) async fn handle_account_moderator_add(
+pub(super) async fn handle_account_assistant_add(
     State(api): State<Arc<Api>>,
     Path(platform): Path<String>,
     headers: HeaderMap,
-    Json(request): Json<ModeratorRequest>,
+    Json(request): Json<AssistantRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let platform = platform_of(&platform)?;
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
@@ -59,8 +59,8 @@ pub(super) async fn handle_account_moderator_add(
             format!("Enter a {} username.", platform.title()),
         ));
     }
-    let moderator = match api.auth.user(platform, username).await {
-        Ok(Some(moderator)) => moderator,
+    let assistant = match api.auth.user(platform, username).await {
+        Ok(Some(assistant)) => assistant,
         Ok(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
@@ -78,28 +78,28 @@ pub(super) async fn handle_account_moderator_add(
             ));
         }
     };
-    if moderator.id == broadcaster {
+    if assistant.id == broadcaster {
         return Err((
             StatusCode::CONFLICT,
             format!("That is your own {} account.", platform.title()),
         ));
     }
     api.accounts
-        .add_moderator(platform, &broadcaster, &moderator)
+        .add_assistant(platform, &broadcaster, &assistant)
         .map_err(account_error)?;
     info!(
-        "{id} added {} moderator {} ({})",
+        "{id} added {} assistant {} ({})",
         platform.title(),
-        moderator.id,
-        moderator.login
+        assistant.id,
+        assistant.login
     );
-    moderators_changed(&api, &account.page.id, platform, &moderator.id);
+    assistants_changed(&api, &account.page.id, platform, &assistant.id);
     Ok(account_response(&api, account))
 }
 
-pub(super) async fn handle_account_moderator_remove(
+pub(super) async fn handle_account_assistant_remove(
     State(api): State<Arc<Api>>,
-    Path((platform, moderator)): Path<(String, String)>,
+    Path((platform, assistant)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let platform = platform_of(&platform)?;
@@ -109,64 +109,64 @@ pub(super) async fn handle_account_moderator_remove(
         .map(|identity| identity.user_id.clone())
         .ok_or_else(|| platform_needed(platform))?;
     api.accounts
-        .remove_moderator(platform, &broadcaster, &moderator)
+        .remove_assistant(platform, &broadcaster, &assistant)
         .map_err(account_error)?;
-    info!("{id} removed {} moderator {moderator}", platform.title());
-    moderators_changed(&api, &account.page.id, platform, &moderator);
+    info!("{id} removed {} assistant {assistant}", platform.title());
+    assistants_changed(&api, &account.page.id, platform, &assistant);
     Ok(account_response(&api, account))
 }
 
-pub(super) async fn handle_account_moderator_preview(
+pub(super) async fn handle_account_assistant_preview(
     State(api): State<Arc<Api>>,
-    Path((platform, moderator)): Path<(String, String)>,
+    Path((platform, assistant)): Path<(String, String)>,
     headers: HeaderMap,
     Json(request): Json<PermissionRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     set_permission(
         &api,
         &platform,
-        &moderator,
+        &assistant,
         &headers,
         Permission::Preview,
         request.on,
     )
 }
 
-pub(super) async fn handle_account_moderator_go_live(
+pub(super) async fn handle_account_assistant_go_live(
     State(api): State<Arc<Api>>,
-    Path((platform, moderator)): Path<(String, String)>,
+    Path((platform, assistant)): Path<(String, String)>,
     headers: HeaderMap,
     Json(request): Json<PermissionRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     set_permission(
         &api,
         &platform,
-        &moderator,
+        &assistant,
         &headers,
         Permission::GoLive,
         request.on,
     )
 }
 
-pub(super) async fn handle_account_moderator_edit_tips(
+pub(super) async fn handle_account_assistant_edit_tips(
     State(api): State<Arc<Api>>,
-    Path((platform, moderator)): Path<(String, String)>,
+    Path((platform, assistant)): Path<(String, String)>,
     headers: HeaderMap,
     Json(request): Json<PermissionRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     set_permission(
         &api,
         &platform,
-        &moderator,
+        &assistant,
         &headers,
         Permission::EditTips,
         request.on,
     )
 }
 
-pub(super) async fn handle_account_moderator_remote_control(
+pub(super) async fn handle_account_assistant_remote_control(
     State(api): State<Arc<Api>>,
-    Path((platform, moderator)): Path<(String, String)>,
+    Path((platform, assistant)): Path<(String, String)>,
     headers: HeaderMap,
     Json(request): Json<AccessRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
@@ -177,21 +177,21 @@ pub(super) async fn handle_account_moderator_remote_control(
         .map(|identity| identity.user_id.clone())
         .ok_or_else(|| platform_needed(platform))?;
     api.accounts
-        .set_moderator_access(platform, &broadcaster, &moderator, request.access)
+        .set_assistant_access(platform, &broadcaster, &assistant, request.access)
         .map_err(account_error)?;
     info!(
-        "{id} set the remote control access of {} moderator {moderator} to {:?}",
+        "{id} set the remote control access of {} assistant {assistant} to {:?}",
         platform.title(),
         request.access
     );
-    moderators_changed(&api, &account.page.id, platform, &moderator);
+    assistants_changed(&api, &account.page.id, platform, &assistant);
     Ok(account_response(&api, account))
 }
 
 fn set_permission(
     api: &Api,
     platform: &str,
-    moderator: &str,
+    assistant: &str,
     headers: &HeaderMap,
     permission: Permission,
     on: bool,
@@ -203,30 +203,30 @@ fn set_permission(
         .map(|identity| identity.user_id.clone())
         .ok_or_else(|| platform_needed(platform))?;
     api.accounts
-        .set_moderator_permission(platform, &broadcaster, moderator, permission, on)
+        .set_assistant_permission(platform, &broadcaster, assistant, permission, on)
         .map_err(account_error)?;
     info!(
-        "{id} turned {permission:?} {} for {} moderator {moderator}",
+        "{id} turned {permission:?} {} for {} assistant {assistant}",
         if on { "on" } else { "off" },
         platform.title()
     );
-    moderators_changed(api, &account.page.id, platform, moderator);
+    assistants_changed(api, &account.page.id, platform, assistant);
     Ok(account_response(api, account))
 }
 
-fn moderators_changed(api: &Api, page: &str, platform: Platform, moderator: &str) {
+fn assistants_changed(api: &Api, page: &str, platform: Platform, assistant: &str) {
     api.remote_control.changes.notify(page, Change::Account);
-    if let Some(id) = api.accounts.account_of_identity(platform, moderator) {
+    if let Some(id) = api.accounts.account_of_identity(platform, assistant) {
         account_changed(api, &id, Change::Account);
     }
 }
 
-pub(super) async fn handle_moderator_account(
+pub(super) async fn handle_assistant_account(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, Failure> {
-    let signed_in = moderator(&api, &headers, &id)?;
+    let signed_in = assistant(&api, &headers, &id)?;
     let account = api.accounts.of_page(&id).ok_or(failure(
         "not-found",
         StatusCode::NOT_FOUND,
@@ -247,9 +247,9 @@ pub(super) async fn handle_moderator_account(
         go_live: may(&api, &signed_in.account, &id, Permission::GoLive),
         edit_tips: may(&api, &signed_in.account, &id, Permission::EditTips),
         remote_control: access(&api, &signed_in.account, &id),
-        twitch_moderators: Vec::new(),
-        kick_moderators: Vec::new(),
-        moderating: Vec::new(),
+        twitch_assistants: Vec::new(),
+        kick_assistants: Vec::new(),
+        assisting: Vec::new(),
     }))
 }
 
@@ -265,7 +265,7 @@ mod tests {
     use crate::pages::{Feature, Settings, Spin, SpinOption, Tips};
 
     #[tokio::test]
-    async fn kick_moderators_are_an_allow_list() {
+    async fn kick_assistants_are_an_allow_list() {
         let (kick, fake) = start_kick().await;
         let (address, api) = start_api_with(None, None, None, Some(kick_app(&kick)), None).await;
         let flow = SignInFlow::new(&address, fake.clone());
@@ -277,17 +277,17 @@ mod tests {
             .to_string();
         let add = async |session: &str, username: &str| {
             client
-                .post(format!("http://{address}/account/moderators/kick"))
+                .post(format!("http://{address}/account/assistants/kick"))
                 .bearer_auth(session)
                 .json(&json!({"username": username}))
                 .send()
                 .await
                 .unwrap()
         };
-        let remove = async |session: &str, moderator: &str| {
+        let remove = async |session: &str, assistant: &str| {
             client
                 .post(format!(
-                    "http://{address}/account/moderators/kick/{moderator}/remove"
+                    "http://{address}/account/assistants/kick/{assistant}/remove"
                 ))
                 .bearer_auth(session)
                 .send()
@@ -339,14 +339,14 @@ mod tests {
             assert_eq!(response.text().await.unwrap(), text);
         }
         assert_eq!(
-            account_of(&address, &session).await["kickModerators"],
+            account_of(&address, &session).await["kickAssistants"],
             json!([])
         );
         let response = add(&session, " @Bob ").await;
         assert_eq!(response.status(), StatusCode::OK);
         let account: Value = response.json().await.unwrap();
         assert_eq!(
-            account["kickModerators"],
+            account["kickAssistants"],
             json!([{"id": "9", "login": "bob", "name": "bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
@@ -356,7 +356,7 @@ mod tests {
         let response = add(&session, "bob").await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["kickModerators"]
+            response.json::<Value>().await.unwrap()["kickAssistants"]
                 .as_array()
                 .unwrap()
                 .len(),
@@ -364,12 +364,12 @@ mod tests {
         );
         let other = session_of(&flow.sign_in("kick", "kick-b").await);
         assert_eq!(dashboard(&other).await.status(), StatusCode::FORBIDDEN);
-        assert_eq!(account_of(&address, &other).await["moderating"], json!([]));
-        let moderator = session_of(&flow.sign_in("kick", "kick-mod").await);
-        let account = account_of(&address, &moderator).await;
+        assert_eq!(account_of(&address, &other).await["assisting"], json!([]));
+        let assistant = session_of(&flow.sign_in("kick", "kick-mod").await);
+        let account = account_of(&address, &assistant).await;
         assert_eq!(account["kick"]["login"], "robert");
         assert_eq!(
-            account["moderating"],
+            account["assisting"],
             json!([{
                 "id": id,
                 "platform": "kick",
@@ -385,21 +385,21 @@ mod tests {
             }])
         );
         assert_eq!(
-            account_of(&address, &session).await["kickModerators"],
+            account_of(&address, &session).await["kickAssistants"],
             json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": "https://files.kick.com/robert.png", "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
-        let response = dashboard(&moderator).await;
+        let response = dashboard(&assistant).await;
         assert_eq!(response.status(), StatusCode::OK);
         let streamer: Value = response.json().await.unwrap();
         assert_eq!(streamer["kick"]["login"], "kickerik");
         assert_eq!(streamer["twitch"], Value::Null);
-        assert_eq!(streamer["kickModerators"], json!([]));
-        assert_eq!(streamer["twitchModerators"], json!([]));
+        assert_eq!(streamer["kickAssistants"], json!([]));
+        assert_eq!(streamer["twitchAssistants"], json!([]));
         let response = client
             .get(format!(
                 "http://{address}/account/pages/{id}/recent?kind=tip"
             ))
-            .bearer_auth(&moderator)
+            .bearer_auth(&assistant)
             .send()
             .await
             .unwrap();
@@ -407,7 +407,7 @@ mod tests {
         let save = async || {
             client
                 .post(format!("http://{address}/account/pages/{id}/settings"))
-                .bearer_auth(&moderator)
+                .bearer_auth(&assistant)
                 .json(&json!({"message": "Hi from the mod"}))
                 .send()
                 .await
@@ -416,7 +416,7 @@ mod tests {
         assert_eq!(save().await.status(), StatusCode::FORBIDDEN);
         let response = client
             .post(format!(
-                "http://{address}/account/moderators/kick/9/edit-tips"
+                "http://{address}/account/assistants/kick/9/edit-tips"
             ))
             .bearer_auth(&session)
             .json(&json!({"on": true}))
@@ -430,21 +430,21 @@ mod tests {
         let response = remove(&session, "9").await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["kickModerators"],
+            response.json::<Value>().await.unwrap()["kickAssistants"],
             json!([])
         );
-        assert_eq!(dashboard(&moderator).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(dashboard(&assistant).await.status(), StatusCode::FORBIDDEN);
         assert_eq!(
-            account_of(&address, &moderator).await["moderating"],
+            account_of(&address, &assistant).await["assisting"],
             json!([])
         );
         let response = remove(&session, "9").await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        assert_eq!(response.text().await.unwrap(), "no such moderator");
+        assert_eq!(response.text().await.unwrap(), "no such assistant");
     }
 
     #[tokio::test]
-    async fn twitch_moderators_are_added_by_username() {
+    async fn twitch_assistants_are_added_by_username() {
         let twitch = start_twitch().await;
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
@@ -452,7 +452,7 @@ mod tests {
         let (session, _, id) = streamer(&address, &api).await;
         let add = async |username: &str| {
             client
-                .post(format!("http://{address}/account/moderators/twitch"))
+                .post(format!("http://{address}/account/assistants/twitch"))
                 .bearer_auth(&session)
                 .json(&json!({"username": username}))
                 .send()
@@ -489,55 +489,55 @@ mod tests {
         let response = add(" @Bob ").await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchModerators"],
+            response.json::<Value>().await.unwrap()["twitchAssistants"],
             json!([{"id": "9", "login": "bob", "name": "Bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
-        assert!(api.accounts.moderates(Platform::Twitch, "9", "1"));
+        assert!(api.accounts.assists(Platform::Twitch, "9", "1"));
         create_account(&api, "9", "Robert", "robert");
-        let moderator = api.auth.session("9", 0);
-        let account = account_of(&address, &moderator).await;
-        assert_eq!(account["moderating"][0]["id"], id);
-        assert_eq!(account["moderating"][0]["platform"], "twitch");
+        let assistant = api.auth.session("9", 0);
+        let account = account_of(&address, &assistant).await;
+        assert_eq!(account["assisting"][0]["id"], id);
+        assert_eq!(account["assisting"][0]["platform"], "twitch");
         assert_eq!(
-            account_of(&address, &session).await["twitchModerators"],
+            account_of(&address, &session).await["twitchAssistants"],
             json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
-            .bearer_auth(&moderator)
+            .bearer_auth(&assistant)
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         for n in 0..49 {
             api.accounts
-                .add_moderator(
+                .add_assistant(
                     Platform::Twitch,
                     "1",
-                    &twitch_moderator(&format!("{}", 100 + n), "m", "M"),
+                    &twitch_assistant(&format!("{}", 100 + n), "m", "M"),
                 )
                 .unwrap();
         }
         let response = add("late").await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
-        assert_eq!(response.text().await.unwrap(), "at most 50 moderators");
+        assert_eq!(response.text().await.unwrap(), "at most 50 assistants");
         let response = client
             .post(format!(
-                "http://{address}/account/moderators/twitch/9/remove"
+                "http://{address}/account/assistants/twitch/9/remove"
             ))
             .bearer_auth(&session)
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(!api.accounts.moderates(Platform::Twitch, "9", "1"));
+        assert!(!api.accounts.assists(Platform::Twitch, "9", "1"));
         assert_eq!(
-            account_of(&address, &moderator).await["moderating"],
+            account_of(&address, &assistant).await["assisting"],
             json!([])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
-            .bearer_auth(&moderator)
+            .bearer_auth(&assistant)
             .send()
             .await
             .unwrap();
@@ -545,7 +545,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moderators_have_access_while_listed() {
+    async fn assistants_have_access_while_listed() {
         let twitch = start_twitch().await;
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
@@ -554,14 +554,14 @@ mod tests {
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "9",
-                &twitch_moderator("22", "viewer22", "Viewer 22"),
+                &twitch_assistant("22", "viewer22", "Viewer 22"),
             )
             .unwrap();
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
-        let moderating = async |session: &str| {
+        let assisting = async |session: &str| {
             client
                 .get(format!("http://{address}/account"))
                 .bearer_auth(session)
@@ -570,7 +570,7 @@ mod tests {
                 .unwrap()
                 .json::<Value>()
                 .await
-                .unwrap()["moderating"]
+                .unwrap()["assisting"]
                 .clone()
         };
         let dashboard = async |session: &str| {
@@ -582,16 +582,16 @@ mod tests {
                 .unwrap()
                 .status()
         };
-        let toggle = async |moderator: &str, enabled: bool| {
+        let toggle = async |assistant: &str, enabled: bool| {
             if enabled {
                 client
-                    .post(format!("http://{address}/account/moderators/twitch"))
+                    .post(format!("http://{address}/account/assistants/twitch"))
                     .bearer_auth(&session)
-                    .json(&json!({"username": moderator}))
+                    .json(&json!({"username": assistant}))
             } else {
                 client
                     .post(format!(
-                        "http://{address}/account/moderators/twitch/{moderator}/remove"
+                        "http://{address}/account/assistants/twitch/{assistant}/remove"
                     ))
                     .bearer_auth(&session)
             }
@@ -603,7 +603,7 @@ mod tests {
             let response = toggle(if enabled { "mod21" } else { "21" }, enabled).await;
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(
-                response.json::<Value>().await.unwrap()["twitchModerators"],
+                response.json::<Value>().await.unwrap()["twitchAssistants"],
                 if enabled {
                     json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
                 } else {
@@ -613,11 +613,11 @@ mod tests {
         };
         assert_eq!(toggle("nobody", true).await.status(), StatusCode::NOT_FOUND);
         assert_eq!(toggle("22", false).await.status(), StatusCode::NOT_FOUND);
-        assert_eq!(moderating(&mod1).await, json!([]));
+        assert_eq!(assisting(&mod1).await, json!([]));
         assert_eq!(dashboard(&mod1).await, StatusCode::FORBIDDEN);
         settings(true).await;
         assert_eq!(
-            moderating(&mod1).await,
+            assisting(&mod1).await,
             json!([{
                 "id": id,
                 "platform": "twitch",
@@ -628,7 +628,7 @@ mod tests {
                 "kick": null,
             }])
         );
-        assert_eq!(moderating(&viewer1).await, json!([]));
+        assert_eq!(assisting(&viewer1).await, json!([]));
         assert_eq!(dashboard(&viewer1).await, StatusCode::FORBIDDEN);
         assert_eq!(dashboard("garbage").await, StatusCode::UNAUTHORIZED);
         assert_eq!(dashboard(&mod1).await, StatusCode::OK);
@@ -656,13 +656,13 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
         settings(false).await;
-        assert_eq!(moderating(&mod1).await, json!([]));
+        assert_eq!(assisting(&mod1).await, json!([]));
         assert_eq!(dashboard(&mod1).await, StatusCode::FORBIDDEN);
         assert_eq!(dashboard(&session).await, StatusCode::OK);
     }
 
     #[tokio::test]
-    async fn moderators_use_the_streamers_dashboard() {
+    async fn assistants_use_the_streamers_dashboard() {
         let (address, api, _fake) = start_paid_fake().await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&address, &api).await;
@@ -720,10 +720,10 @@ mod tests {
             );
         }
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("21", "mod21", "Mod 21"),
+                &twitch_assistant("21", "mod21", "Mod 21"),
             )
             .unwrap();
         let own: Value = client
@@ -744,8 +744,8 @@ mod tests {
         assert_eq!(account["devices"], json!([]));
         assert_eq!(account["admin"], false);
         assert_eq!(account["premium"], false);
-        assert_eq!(account["moderating"], json!([]));
-        assert_eq!(account["twitchModerators"], json!([]));
+        assert_eq!(account["assisting"], json!([]));
+        assert_eq!(account["twitchAssistants"], json!([]));
         assert_eq!(account["editTips"], false);
         let settings = &account["settings"];
         assert_eq!(settings["id"], id);
@@ -782,7 +782,7 @@ mod tests {
         assert_eq!(api.pages.get(&id).message, None);
         let response = client
             .post(format!(
-                "http://{address}/account/moderators/twitch/21/edit-tips"
+                "http://{address}/account/assistants/twitch/21/edit-tips"
             ))
             .bearer_auth(&session)
             .json(&json!({"on": true}))
@@ -791,7 +791,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchModerators"][0]["editTips"],
+            response.json::<Value>().await.unwrap()["twitchAssistants"][0]["editTips"],
             true
         );
         assert_eq!(
@@ -910,9 +910,9 @@ mod tests {
                 .map_or(0, |counter| counter.total)
         };
         assert_eq!(count("tipTests"), 1);
-        assert_eq!(count("tipTestsFailed:not-moderator"), 2);
+        assert_eq!(count("tipTestsFailed:not-assistant"), 2);
         assert_eq!(count("spinTestsFailed:offline"), 1);
         assert_eq!(count("imageUploadsFailed:not-premium"), 1);
-        assert_eq!(count("imageUploadsFailed:not-moderator"), 0);
+        assert_eq!(count("imageUploadsFailed:not-assistant"), 0);
     }
 }

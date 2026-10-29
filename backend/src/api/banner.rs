@@ -30,17 +30,17 @@ async fn account_image(
     save_image(api, &id, account.page.id, premium, body).await
 }
 
-pub(super) async fn handle_moderator_image(
+pub(super) async fn handle_assistant_image(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let result = moderator_image(&api, &id, &headers, body).await;
+    let result = assistant_image(&api, &id, &headers, body).await;
     counted(&api, "imageUploads", result)
 }
 
-async fn moderator_image(
+async fn assistant_image(
     api: &Api,
     page: &str,
     headers: &HeaderMap,
@@ -105,7 +105,7 @@ pub(super) async fn handle_account_image_remove(
     remove_image(&api, &id, account.page.id)
 }
 
-pub(super) async fn handle_moderator_image_remove(
+pub(super) async fn handle_assistant_image_remove(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,

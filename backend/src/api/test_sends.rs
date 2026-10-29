@@ -28,7 +28,7 @@ fn test_page(
     page: Option<&str>,
 ) -> Result<(String, Account, String), Failure> {
     let (id, account) = match page {
-        Some(page) => (page.to_string(), moderator(api, headers, page)?.account),
+        Some(page) => (page.to_string(), assistant(api, headers, page)?.account),
         None => {
             let account = signed_in(api, headers)?.account;
             (account.page.id.clone(), account)
@@ -62,7 +62,7 @@ pub(super) async fn handle_account_test_tip(
     counted(&api, "tipTests", result)
 }
 
-pub(super) async fn handle_moderator_test_tip(
+pub(super) async fn handle_assistant_test_tip(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,
@@ -107,7 +107,7 @@ pub(super) async fn handle_account_test_spin(
     counted(&api, "spinTests", result)
 }
 
-pub(super) async fn handle_moderator_test_spin(
+pub(super) async fn handle_assistant_test_spin(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,
@@ -163,7 +163,7 @@ pub(super) async fn handle_account_test_effect(
     counted(&api, "effectTests", result)
 }
 
-pub(super) async fn handle_moderator_test_effect(
+pub(super) async fn handle_assistant_test_effect(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
     headers: HeaderMap,

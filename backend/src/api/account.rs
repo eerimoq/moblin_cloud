@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, StatusCode};
 use log::info;
 use serde::{Deserialize, Serialize};
 
-use crate::accounts::{Access, Account, AccountError, Moderator, Platform};
+use crate::accounts::{Access, Account, AccountError, Assistant, Platform};
 
 use super::*;
 
@@ -28,9 +28,9 @@ pub(super) struct AccountResponse {
     pub(super) go_live: bool,
     pub(super) edit_tips: bool,
     pub(super) remote_control: Access,
-    pub(super) moderating: Vec<ModeratingResponse>,
-    pub(super) twitch_moderators: Vec<Moderator>,
-    pub(super) kick_moderators: Vec<Moderator>,
+    pub(super) assisting: Vec<AssistingResponse>,
+    pub(super) twitch_assistants: Vec<Assistant>,
+    pub(super) kick_assistants: Vec<Assistant>,
 }
 
 #[derive(Serialize)]
@@ -49,7 +49,7 @@ pub(super) fn public_identity(account: &Account, platform: Platform) -> Option<P
 }
 
 #[derive(Serialize)]
-pub(super) struct ModeratingResponse {
+pub(super) struct AssistingResponse {
     id: String,
     platform: Platform,
     name: String,
@@ -59,27 +59,27 @@ pub(super) struct ModeratingResponse {
     kick: Option<PublicIdentity>,
 }
 
-pub(super) fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse> {
-    let mut moderating: Vec<ModeratingResponse> = Vec::new();
+pub(super) fn assisting(api: &Api, account: &Account) -> Vec<AssistingResponse> {
+    let mut assisting: Vec<AssistingResponse> = Vec::new();
     for (platform, streamer) in
         [Platform::Twitch, Platform::Kick]
             .into_iter()
             .flat_map(|platform| {
                 account
                     .identity(platform)
-                    .map(|identity| api.accounts.moderated(platform, &identity.user_id))
+                    .map(|identity| api.accounts.assisted(platform, &identity.user_id))
                     .unwrap_or_default()
                     .into_iter()
                     .map(move |streamer| (platform, streamer))
             })
     {
-        if moderating.iter().any(|known| known.id == streamer.page.id) {
+        if assisting.iter().any(|known| known.id == streamer.page.id) {
             continue;
         }
         let Some(channel) = streamer.identity(platform) else {
             continue;
         };
-        moderating.push(ModeratingResponse {
+        assisting.push(AssistingResponse {
             id: streamer.page.id.clone(),
             platform,
             name: channel.name.clone(),
@@ -89,7 +89,7 @@ pub(super) fn moderating(api: &Api, account: &Account) -> Vec<ModeratingResponse
             kick: public_identity(&streamer, Platform::Kick),
         });
     }
-    moderating
+    assisting
 }
 
 #[derive(Serialize)]
@@ -162,15 +162,15 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         go_live: true,
         edit_tips: true,
         remote_control: Access::Control,
-        twitch_moderators: twitch
+        twitch_assistants: twitch
             .as_deref()
-            .map(|twitch| api.accounts.moderators(Platform::Twitch, twitch))
+            .map(|twitch| api.accounts.assistants(Platform::Twitch, twitch))
             .unwrap_or_default(),
-        kick_moderators: account
+        kick_assistants: account
             .kick_id()
-            .map(|kick| api.accounts.moderators(Platform::Kick, kick))
+            .map(|kick| api.accounts.assistants(Platform::Kick, kick))
             .unwrap_or_default(),
-        moderating: moderating(api, &account),
+        assisting: assisting(api, &account),
     })
 }
 
@@ -181,10 +181,10 @@ pub(super) fn account_error(error: AccountError) -> (StatusCode, String) {
             StatusCode::SERVICE_UNAVAILABLE,
             "too many accounts".to_string(),
         ),
-        AccountError::UnknownModerator => (StatusCode::NOT_FOUND, "no such moderator".to_string()),
+        AccountError::UnknownAssistant => (StatusCode::NOT_FOUND, "no such assistant".to_string()),
         AccountError::UnknownDevice => (StatusCode::NOT_FOUND, "no such device".to_string()),
-        AccountError::TooManyModerators => {
-            (StatusCode::CONFLICT, "at most 50 moderators".to_string())
+        AccountError::TooManyAssistants => {
+            (StatusCode::CONFLICT, "at most 50 assistants".to_string())
         }
         AccountError::IdentityTaken(platform) => (
             StatusCode::CONFLICT,
@@ -396,19 +396,19 @@ mod tests {
     async fn deleting_an_account_removes_everything_it_owns() {
         let (address, api) = start_api(None).await;
         let (session, key, id) = streamer(&address, &api).await;
-        let moderator = create_account(&api, "21", "Mod 21", "mod21");
+        let assistant = create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "1",
-                &twitch_moderator("21", "mod21", "Mod 21"),
+                &twitch_assistant("21", "mod21", "Mod 21"),
             )
             .unwrap();
         api.accounts
-            .add_moderator(
+            .add_assistant(
                 Platform::Twitch,
                 "21",
-                &twitch_moderator("1", "erik", "Erik"),
+                &twitch_assistant("1", "erik", "Erik"),
             )
             .unwrap();
         let client = reqwest::Client::new();
@@ -450,13 +450,13 @@ mod tests {
                 .is_none()
         );
         assert!(api.accounts.page_of_key(&key).is_none());
-        assert!(api.accounts.moderators(Platform::Twitch, "21").is_empty());
-        assert!(api.accounts.moderated(Platform::Twitch, "21").is_empty());
-        assert_eq!(api.accounts.get("21").unwrap(), moderator);
+        assert!(api.accounts.assistants(Platform::Twitch, "21").is_empty());
+        assert!(api.accounts.assisted(Platform::Twitch, "21").is_empty());
+        assert_eq!(api.accounts.get("21").unwrap(), assistant);
         for (table, column, value) in [
             ("pages", "id", id.as_str()),
-            ("twitch_moderators", "broadcaster", "1"),
-            ("twitch_moderators", "moderator", "1"),
+            ("twitch_assistants", "broadcaster", "1"),
+            ("twitch_assistants", "assistant", "1"),
         ] {
             let count: u64 = api
                 .database
