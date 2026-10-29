@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
-use crate::accounts::{Account, Accounts, Page, Platform};
+use crate::accounts::{Account, Accounts, Page, Permission, Platform};
 use crate::app_attest::AppAttest;
 use crate::auth::Auth;
 use crate::changes::Change;
@@ -172,6 +172,10 @@ pub fn router(api: Arc<Api>) -> Router {
         .route(
             "/account/moderators/{platform}/{moderator}/preview",
             post(handle_account_moderator_preview),
+        )
+        .route(
+            "/account/moderators/{platform}/{moderator}/go-live",
+            post(handle_account_moderator_go_live),
         )
         .route("/account/pages/{id}/recent", get(handle_moderator_recent))
         .route(
@@ -410,16 +414,17 @@ pub(super) fn moderator(api: &Api, headers: &HeaderMap, id: &str) -> Result<Sign
     Ok(signed_in)
 }
 
-pub(super) fn may_preview(api: &Api, account: &Account, id: &str) -> bool {
+pub(super) fn may(api: &Api, account: &Account, id: &str, permission: Permission) -> bool {
     account.page.id == id
         || listed(api, account, id, |platform, moderator, broadcaster| {
-            api.accounts.previews(platform, moderator, broadcaster)
+            api.accounts
+                .permits(platform, moderator, broadcaster, permission)
         })
 }
 
 pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = moderator(api, headers, id)?;
-    if !may_preview(api, &signed_in.account, id) {
+    if !may(api, &signed_in.account, id, Permission::Preview) {
         return Err(failure(
             "no-preview",
             StatusCode::FORBIDDEN,

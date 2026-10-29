@@ -355,6 +355,7 @@ export default function MoblinScreen(props: {
   status: DeviceStatus;
   settings: DeviceSettings | null;
   preview: string | null;
+  goLive: boolean;
   connected: boolean;
   pending: string[];
   onControl: (control: Control) => Promise<void>;
@@ -649,7 +650,16 @@ export default function MoblinScreen(props: {
                   <div class="flex justify-center pt-[5px] pr-[10px]">
                     <button
                       type="button"
-                      disabled={disabled("setLive") || props.state.streaming === undefined}
+                      disabled={
+                        (!props.goLive && !props.state.streaming) ||
+                        disabled("setLive") ||
+                        props.state.streaming === undefined
+                      }
+                      title={
+                        props.goLive || props.state.streaming
+                          ? undefined
+                          : t("The streamer has not let you go live.")
+                      }
                       class={`min-w-[60px] rounded-[10px] bg-phone-live p-[5px] text-[17px] leading-tight whitespace-nowrap disabled:opacity-50 ${
                         props.state.streaming ? "border border-white" : ""
                       }`}

@@ -611,6 +611,7 @@ impl Auth {
                 name: channel.slug.clone(),
                 login: channel.slug.to_lowercase(),
                 preview: false,
+                go_live: false,
             }))
     }
 
@@ -662,6 +663,7 @@ impl Auth {
                     .unwrap_or_else(|| user.login.clone()),
                 login: user.login.to_lowercase(),
                 preview: false,
+                go_live: false,
             }))
     }
 

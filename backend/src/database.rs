@@ -33,12 +33,14 @@ impl Database {
                 .context("failed to add the accounts moblin_key column")?;
         }
         for table in ["twitch_moderators", "kick_moderators"] {
-            if columns(table, "broadcaster")? && !columns(table, "preview")? {
-                connection
-                    .execute_batch(&format!(
-                        "ALTER TABLE {table} ADD COLUMN preview INTEGER NOT NULL DEFAULT 0"
-                    ))
-                    .with_context(|| format!("failed to add the {table} preview column"))?;
+            for column in ["preview", "go_live"] {
+                if columns(table, "broadcaster")? && !columns(table, column)? {
+                    connection
+                        .execute_batch(&format!(
+                            "ALTER TABLE {table} ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+                        ))
+                        .with_context(|| format!("failed to add the {table} {column} column"))?;
+                }
             }
         }
         if columns("devices", "key")? {
@@ -89,6 +91,7 @@ impl Database {
                      login TEXT NOT NULL,
                      name TEXT NOT NULL,
                      preview INTEGER NOT NULL DEFAULT 0,
+                     go_live INTEGER NOT NULL DEFAULT 0,
                      PRIMARY KEY (broadcaster, moderator)
                  );
                  CREATE INDEX IF NOT EXISTS twitch_moderators_moderator ON twitch_moderators (moderator);
@@ -162,6 +165,7 @@ impl Database {
                      login TEXT NOT NULL,
                      name TEXT NOT NULL,
                      preview INTEGER NOT NULL DEFAULT 0,
+                     go_live INTEGER NOT NULL DEFAULT 0,
                      PRIMARY KEY (broadcaster, moderator)
                  );
                  CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
@@ -274,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn old_moderators_get_no_preview_on_start() {
+    fn old_moderators_get_no_preview_and_no_go_live_on_start() {
         let path = temporary_path("moderators-preview");
         let connection = Connection::open(&path).unwrap();
         connection
@@ -296,21 +300,22 @@ mod tests {
             for table in ["twitch_moderators", "kick_moderators"] {
                 let columns: u32 = connection
                     .query_row(
-                        "SELECT count(*) FROM pragma_table_info(?1) WHERE name = 'preview'",
+                        "SELECT count(*) FROM pragma_table_info(?1) WHERE name IN ('preview', 'go_live')",
                         [table],
                         |row| row.get(0),
                     )
                     .unwrap();
-                assert_eq!(columns, 1);
+                assert_eq!(columns, 2);
             }
-            let preview: bool = connection
+            let (preview, go_live): (bool, bool) = connection
                 .query_row(
-                    "SELECT preview FROM twitch_moderators WHERE moderator = '1'",
+                    "SELECT preview, go_live FROM twitch_moderators WHERE moderator = '1'",
                     [],
-                    |row| row.get(0),
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .unwrap();
             assert!(!preview);
+            assert!(!go_live);
         }
         remove(&path);
     }

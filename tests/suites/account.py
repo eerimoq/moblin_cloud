@@ -90,6 +90,7 @@ class AccountSignIn(AccountTestCase):
                 "admin": False,
                 "premium": False,
                 "preview": True,
+                "goLive": True,
                 "moderating": [],
                 "twitchModerators": [],
                 "kickModerators": [],

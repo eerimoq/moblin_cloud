@@ -233,7 +233,15 @@ class KickModerators(KickTestCase):
         account = dashboard.add_moderator("kick", "KMod")
         self.assert_equal(
             account["kickModerators"],
-            [{"id": kick_user_id_of("kmod"), "login": "kmod", "name": "kmod", "preview": False}],
+            [
+                {
+                    "id": kick_user_id_of("kmod"),
+                    "login": "kmod",
+                    "name": "kmod",
+                    "preview": False,
+                    "goLive": False,
+                }
+            ],
         )
         self.assert_equal(account["twitchModerators"], [])
         moderator = self.kick_sign_in("kmod")

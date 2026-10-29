@@ -95,6 +95,7 @@ class ModeratorsAdded(ModeratorsTestCase):
                     "login": self.moderator_login,
                     "name": self.moderator_login,
                     "preview": False,
+                    "goLive": False,
                 }
             ],
         )

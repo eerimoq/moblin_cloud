@@ -22,6 +22,7 @@ export type Account = {
   admin: boolean;
   premium: boolean;
   preview: boolean;
+  goLive: boolean;
   moderating: Moderating[];
   twitchModerators: Moderator[];
   kickModerators: Moderator[];
@@ -32,6 +33,7 @@ export type Moderator = {
   login: string;
   name: string;
   preview: boolean;
+  goLive: boolean;
 };
 
 export type Moderating = {
@@ -391,6 +393,18 @@ export const setModeratorPreview = (
 ) =>
   call<Account>(
     `/account/moderators/${platform}/${encodeURIComponent(moderator)}/preview`,
+    session,
+    post({ on }),
+  );
+
+export const setModeratorGoLive = (
+  session: string,
+  platform: Platform,
+  moderator: string,
+  on: boolean,
+) =>
+  call<Account>(
+    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/go-live`,
     session,
     post({ on }),
   );

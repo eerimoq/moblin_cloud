@@ -25,6 +25,7 @@ pub(super) struct AccountResponse {
     pub(super) admin: bool,
     pub(super) premium: bool,
     pub(super) preview: bool,
+    pub(super) go_live: bool,
     pub(super) moderating: Vec<ModeratingResponse>,
     pub(super) twitch_moderators: Vec<Moderator>,
     pub(super) kick_moderators: Vec<Moderator>,
@@ -156,6 +157,7 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),
         preview: true,
+        go_live: true,
         twitch_moderators: twitch
             .as_deref()
             .map(|twitch| api.accounts.moderators(Platform::Twitch, twitch))

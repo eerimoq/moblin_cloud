@@ -345,6 +345,9 @@ class Dashboard(Client):
     def set_moderator_preview(self, platform: str, moderator: str, on: bool) -> dict:
         return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/preview", {"on": on})
 
+    def set_moderator_go_live(self, platform: str, moderator: str, on: bool) -> dict:
+        return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/go-live", {"on": on})
+
     def upload_image(self, data: bytes, page_id: str | None = None) -> dict:
         path = "/account/image" if page_id is None else f"/account/pages/{quote(page_id, safe='')}/image"
         response = self.request("POST", path, data=data, headers={"content-type": "application/octet-stream"})

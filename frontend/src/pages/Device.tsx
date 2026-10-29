@@ -378,6 +378,7 @@ function DeviceView(props: {
   page: string;
   device: string;
   preview: boolean | null;
+  goLive: boolean;
   nameOf: (device: string) => string | undefined;
   onSignOut: () => void;
 }) {
@@ -572,6 +573,7 @@ function DeviceView(props: {
                   status={status()}
                   settings={settings()}
                   preview={preview()}
+                  goLive={props.goLive}
                   connected={online()}
                   pending={pending()}
                   onControl={control}
@@ -615,6 +617,7 @@ export default function DevicePage(props: { page: string; device: string }) {
 
   const [devices, setDevices] = createSignal<Device[]>([]);
   const [preview, setPreview] = createSignal<boolean | null>(null);
+  const [goLive, setGoLive] = createSignal(false);
   createEffect(() => {
     const current = session();
     if (current) {
@@ -623,6 +626,7 @@ export default function DevicePage(props: { page: string; device: string }) {
           .then((account) => {
             setDevices(account.devices);
             setPreview(account.preview);
+            setGoLive(account.goLive);
           })
           .catch(() => {});
       void refresh();
@@ -693,6 +697,7 @@ export default function DevicePage(props: { page: string; device: string }) {
                   page={props.page}
                   device={device()}
                   preview={preview()}
+                  goLive={goLive()}
                   nameOf={(id) => devices().find((candidate) => candidate.id === id)?.name}
                   onSignOut={signOut}
                 />

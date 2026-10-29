@@ -16,6 +16,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
 
+use crate::accounts::Permission;
 use crate::remote_control::{Control, PreviewWatch, RequestError, Snapshot, Watch};
 
 use super::*;
@@ -194,6 +195,15 @@ pub(super) async fn handle_device_control(
                 "unknown control",
             )
         })?;
+        if matches!(control, Control::SetLive { on: true })
+            && !may(&api, &signed_in.account, &id, Permission::GoLive)
+        {
+            return Err(failure(
+                "no-go-live",
+                StatusCode::FORBIDDEN,
+                "The streamer has not let you go live.",
+            ));
+        }
         known_device(&api, &id, &device)?;
         api.remote_control
             .control((&id, &device), control.clone())
@@ -584,6 +594,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn moderators_go_live_only_when_allowed_but_always_end_the_stream() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        create_account(&api, "21", "Mod 21", "mod21");
+        api.accounts
+            .add_moderator(
+                Platform::Twitch,
+                "1",
+                &twitch_moderator("21", "mod21", "Mod 21"),
+            )
+            .unwrap();
+        let moderator = api.auth.session("21", 0);
+        let url = format!("http://{address}/account/pages/{page}/devices/A/control");
+        let allowed = async |session: &str| {
+            client
+                .get(format!("http://{address}/account/pages/{page}"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()["goLive"]
+                .clone()
+        };
+        let allow = async |on: bool| {
+            client
+                .post(format!(
+                    "http://{address}/account/moderators/twitch/21/go-live"
+                ))
+                .bearer_auth(&session)
+                .json(&json!({"on": on}))
+                .send()
+                .await
+                .unwrap()
+        };
+        let control =
+            |session: &str, body: Value| client.post(&url).bearer_auth(session).json(&body).send();
+        assert_eq!(allowed(&session).await, true);
+        assert_eq!(allowed(&moderator).await, false);
+        let response = control(&moderator, json!({"setLive": {"on": true}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer has not let you go live."
+        );
+        assert_eq!(counter(&api, "deviceControlsFailed:no-go-live"), 1);
+        let call = tokio::spawn(control(&moderator, json!({"setLive": {"on": false}})));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"setLive": {"on": false}})
+        );
+        answer(&mut socket, &request, Value::Null).await;
+        assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
+        let call = tokio::spawn(control(&session, json!({"setLive": {"on": true}})));
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"setLive": {"on": true}}));
+        answer(&mut socket, &request, Value::Null).await;
+        assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
+        let response = allow(true).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["twitchModerators"],
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false, "goLive": true}])
+        );
+        assert_eq!(allowed(&moderator).await, true);
+        let call = tokio::spawn(control(&moderator, json!({"setLive": {"on": true}})));
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"setLive": {"on": true}}));
+        answer(&mut socket, &request, Value::Null).await;
+        assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
+        assert_eq!(allow(false).await.status(), StatusCode::OK);
+        assert_eq!(allowed(&moderator).await, false);
+        let response = control(&moderator, json!({"setLive": {"on": true}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
     async fn moderators_get_the_preview_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
@@ -650,7 +745,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": true}])
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": true, "goLive": false}])
         );
         assert_eq!(allowed(&moderator).await, true);
         let mut preview = Events::open(&client, &url, &moderator).await;

@@ -7,7 +7,7 @@ use axum::http::{HeaderMap, StatusCode};
 use log::{info, warn};
 use serde::Deserialize;
 
-use crate::accounts::Platform;
+use crate::accounts::{Permission, Platform};
 
 use super::*;
 
@@ -17,7 +17,7 @@ pub(super) struct ModeratorRequest {
 }
 
 #[derive(Deserialize)]
-pub(super) struct PreviewRequest {
+pub(super) struct PermissionRequest {
     on: bool,
 }
 
@@ -115,24 +115,58 @@ pub(super) async fn handle_account_moderator_preview(
     State(api): State<Arc<Api>>,
     Path((platform, moderator)): Path<(String, String)>,
     headers: HeaderMap,
-    Json(request): Json<PreviewRequest>,
+    Json(request): Json<PermissionRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let platform = platform_of(&platform)?;
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    set_permission(
+        &api,
+        &platform,
+        &moderator,
+        &headers,
+        Permission::Preview,
+        request.on,
+    )
+}
+
+pub(super) async fn handle_account_moderator_go_live(
+    State(api): State<Arc<Api>>,
+    Path((platform, moderator)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<PermissionRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    set_permission(
+        &api,
+        &platform,
+        &moderator,
+        &headers,
+        Permission::GoLive,
+        request.on,
+    )
+}
+
+fn set_permission(
+    api: &Api,
+    platform: &str,
+    moderator: &str,
+    headers: &HeaderMap,
+    permission: Permission,
+    on: bool,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let platform = platform_of(platform)?;
+    let SignedIn { id, account, .. } = signed_in(api, headers)?;
     let broadcaster = account
         .identity(platform)
         .map(|identity| identity.user_id.clone())
         .ok_or_else(|| platform_needed(platform))?;
     api.accounts
-        .set_moderator_preview(platform, &broadcaster, &moderator, request.on)
+        .set_moderator_permission(platform, &broadcaster, moderator, permission, on)
         .map_err(account_error)?;
     info!(
-        "{id} turned the preview {} for {} moderator {moderator}",
-        if request.on { "on" } else { "off" },
+        "{id} turned {permission:?} {} for {} moderator {moderator}",
+        if on { "on" } else { "off" },
         platform.title()
     );
-    moderators_changed(&api, &account.page.id, platform, &moderator);
-    Ok(account_response(&api, account))
+    moderators_changed(api, &account.page.id, platform, moderator);
+    Ok(account_response(api, account))
 }
 
 fn moderators_changed(api: &Api, page: &str, platform: Platform, moderator: &str) {
@@ -164,7 +198,8 @@ pub(super) async fn handle_moderator_account(
         settings: without_payments(settings_response(&api, id.clone(), settings)).0,
         admin: false,
         premium: streamer_is_premium(&api, &id),
-        preview: may_preview(&api, &signed_in.account, &id),
+        preview: may(&api, &signed_in.account, &id, Permission::Preview),
+        go_live: may(&api, &signed_in.account, &id, Permission::GoLive),
         twitch_moderators: Vec::new(),
         kick_moderators: Vec::new(),
         moderating: Vec::new(),
@@ -265,7 +300,7 @@ mod tests {
         let account: Value = response.json().await.unwrap();
         assert_eq!(
             account["kickModerators"],
-            json!([{"id": "9", "login": "bob", "name": "bob", "preview": false}])
+            json!([{"id": "9", "login": "bob", "name": "bob", "preview": false, "goLive": false}])
         );
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
         assert_eq!(token["grant_type"], "client_credentials");
@@ -304,7 +339,7 @@ mod tests {
         );
         assert_eq!(
             account_of(&address, &session).await["kickModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false}])
         );
         let response = dashboard(&moderator).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -395,7 +430,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "9", "login": "bob", "name": "Bob", "preview": false}])
+            json!([{"id": "9", "login": "bob", "name": "Bob", "preview": false, "goLive": false}])
         );
         assert!(api.accounts.moderates(Platform::Twitch, "9", "1"));
         create_account(&api, "9", "Robert", "robert");
@@ -405,7 +440,7 @@ mod tests {
         assert_eq!(account["moderating"][0]["platform"], "twitch");
         assert_eq!(
             account_of(&address, &session).await["twitchModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false}])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
@@ -510,7 +545,7 @@ mod tests {
             assert_eq!(
                 response.json::<Value>().await.unwrap()["twitchModerators"],
                 if enabled {
-                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false}])
+                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false, "goLive": false}])
                 } else {
                     json!([])
                 }

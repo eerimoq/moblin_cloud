@@ -18,6 +18,7 @@ from ..utils.test_case import TestCase
 
 NOT_MODERATOR = "Only the streamer and the moderators they turned on can do this."
 NO_PREVIEW = "The streamer has not let you see the stream preview."
+NO_GO_LIVE = "The streamer has not let you go live."
 
 
 def unpadded(data: bytes) -> str:
@@ -79,6 +80,53 @@ class AccessModeratorPreview(AccessTestCase):
             self.assert_backend_error(403, lambda: EventStream(self.sign_in("previewother"), path))
             with EventStream(streamer, path) as frames:
                 frames.wait_for("frame", 10)
+        streamer.remove_moderator("twitch", moderator_id)
+
+
+class AccessModeratorGoLive(AccessTestCase):
+    """Let a moderator go live only once the streamer let them, while ending the stream and their other controls always work."""
+
+    def run(self):
+        streamer = self.sign_in("golive")
+        page_id = streamer.page_id()
+        moderator = self.sign_in("golivemod")
+        moderator_id = user_id_of("golivemod")
+        self.assert_backend_error(
+            404, lambda: streamer.set_moderator_go_live("twitch", moderator_id, True), "no such moderator"
+        )
+        streamer.add_moderator("twitch", "golivemod")
+        with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "GL1") as device:
+            device.start()
+            self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
+            self.assert_equal(moderator.moderated_account(page_id)["goLive"], False)
+            self.assert_backend_error(
+                403,
+                lambda: moderator.control_device(page_id, "GL1", {"setLive": {"on": True}}),
+                NO_GO_LIVE,
+            )
+            moderator.control_device(page_id, "GL1", {"setTorch": {"on": True}})
+            moderator.control_device(page_id, "GL1", {"setLive": {"on": False}})
+            account = streamer.set_moderator_go_live("twitch", moderator_id, True)
+            self.assert_equal(
+                [(entry["preview"], entry["goLive"]) for entry in account["twitchModerators"]],
+                [(False, True)],
+            )
+            self.assert_equal(moderator.moderated_account(page_id)["goLive"], True)
+            moderator.control_device(page_id, "GL1", {"setLive": {"on": True}})
+            self.assert_equal(
+                [
+                    entry["goLive"]
+                    for entry in streamer.add_moderator("twitch", "GoLiveMod")["twitchModerators"]
+                ],
+                [True],
+                "adding a moderator again keeps their go live",
+            )
+            streamer.set_moderator_go_live("twitch", moderator_id, False)
+            self.assert_backend_error(
+                403,
+                lambda: moderator.control_device(page_id, "GL1", {"setLive": {"on": True}}),
+                NO_GO_LIVE,
+            )
         streamer.remove_moderator("twitch", moderator_id)
 
 
@@ -218,6 +266,7 @@ class AccessCors(AccessTestCase):
 def tests(context: Context):
     return [
         AccessModeratorPreview(context),
+        AccessModeratorGoLive(context),
         AccessModeratorsLimit(context),
         AccessDeletedModerators(context),
         AccessModeratorLimits(context),

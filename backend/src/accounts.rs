@@ -140,11 +140,28 @@ fn moderators_table(platform: Platform) -> &'static str {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Moderator {
     pub id: String,
     pub login: String,
     pub name: String,
     pub preview: bool,
+    pub go_live: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Permission {
+    Preview,
+    GoLive,
+}
+
+impl Permission {
+    fn column(self) -> &'static str {
+        match self {
+            Self::Preview => "preview",
+            Self::GoLive => "go_live",
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -668,22 +685,24 @@ impl Accounts {
         Ok(())
     }
 
-    pub fn set_moderator_preview(
+    pub fn set_moderator_permission(
         &self,
         platform: Platform,
         broadcaster: &str,
         moderator: &str,
-        preview: bool,
+        permission: Permission,
+        on: bool,
     ) -> Result<(), AccountError> {
         let table = moderators_table(platform);
+        let column = permission.column();
         let changed = self
             .database
             .lock()
             .execute(
                 &format!(
-                    "UPDATE {table} SET preview = ?3 WHERE broadcaster = ?1 AND moderator = ?2"
+                    "UPDATE {table} SET {column} = ?3 WHERE broadcaster = ?1 AND moderator = ?2"
                 ),
-                (broadcaster, moderator, preview),
+                (broadcaster, moderator, on),
             )
             .map_err(not_saved)?;
         if changed == 0 {
@@ -697,7 +716,7 @@ impl Accounts {
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), preview
+                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), preview, go_live
                  FROM {table}
                  LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = moderator
                  WHERE broadcaster = ?2
@@ -711,6 +730,7 @@ impl Accounts {
                             login: row.get(1)?,
                             name: row.get(2)?,
                             preview: row.get(3)?,
+                            go_live: row.get(4)?,
                         })
                     })?
                     .collect::<rusqlite::Result<_>>()
@@ -728,8 +748,19 @@ impl Accounts {
         self.listed(platform, moderator, broadcaster, "")
     }
 
-    pub fn previews(&self, platform: Platform, moderator: &str, broadcaster: &str) -> bool {
-        self.listed(platform, moderator, broadcaster, " AND preview")
+    pub fn permits(
+        &self,
+        platform: Platform,
+        moderator: &str,
+        broadcaster: &str,
+        permission: Permission,
+    ) -> bool {
+        self.listed(
+            platform,
+            moderator,
+            broadcaster,
+            &format!(" AND {}", permission.column()),
+        )
     }
 
     fn listed(
@@ -1073,6 +1104,7 @@ mod tests {
             login: "mod".to_string(),
             name: "Mod".to_string(),
             preview: false,
+            go_live: false,
         };
         accounts
             .add_moderator(Platform::Twitch, "42", &moderator)
@@ -1112,6 +1144,7 @@ mod tests {
             login: login.to_string(),
             name: login.to_string(),
             preview: false,
+            go_live: false,
         };
         accounts
             .add_moderator(Platform::Kick, "42", &moderator("1", "erik"))
@@ -1169,34 +1202,43 @@ mod tests {
     }
 
     #[test]
-    fn moderators_see_the_preview_only_when_allowed() {
+    fn moderators_have_permissions_only_when_allowed() {
         let accounts = Accounts::new(Database::memory());
         let moderator = Moderator {
             id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
             preview: false,
+            go_live: false,
         };
         accounts
             .add_moderator(Platform::Twitch, "42", &moderator)
             .unwrap();
-        assert!(!accounts.previews(Platform::Twitch, "1", "42"));
-        assert_eq!(
-            accounts.set_moderator_preview(Platform::Twitch, "42", "2", true),
-            Err(AccountError::UnknownModerator)
-        );
-        assert_eq!(
-            accounts.set_moderator_preview(Platform::Kick, "42", "1", true),
-            Err(AccountError::UnknownModerator)
-        );
+        for permission in [Permission::Preview, Permission::GoLive] {
+            assert!(!accounts.permits(Platform::Twitch, "1", "42", permission));
+            assert_eq!(
+                accounts.set_moderator_permission(Platform::Twitch, "42", "2", permission, true),
+                Err(AccountError::UnknownModerator)
+            );
+            assert_eq!(
+                accounts.set_moderator_permission(Platform::Kick, "42", "1", permission, true),
+                Err(AccountError::UnknownModerator)
+            );
+        }
         accounts
-            .set_moderator_preview(Platform::Twitch, "42", "1", true)
+            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::Preview, true)
             .unwrap();
-        assert!(accounts.previews(Platform::Twitch, "1", "42"));
-        assert!(!accounts.previews(Platform::Kick, "1", "42"));
-        assert!(!accounts.previews(Platform::Twitch, "1", "43"));
+        assert!(accounts.permits(Platform::Twitch, "1", "42", Permission::Preview));
+        assert!(!accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
+        assert!(!accounts.permits(Platform::Kick, "1", "42", Permission::Preview));
+        assert!(!accounts.permits(Platform::Twitch, "1", "43", Permission::Preview));
+        accounts
+            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::GoLive, true)
+            .unwrap();
+        assert!(accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
         let shown = Moderator {
             preview: true,
+            go_live: true,
             ..moderator.clone()
         };
         assert_eq!(
@@ -1208,9 +1250,14 @@ mod tests {
             .unwrap();
         assert_eq!(accounts.moderators(Platform::Twitch, "42"), [shown]);
         accounts
-            .set_moderator_preview(Platform::Twitch, "42", "1", false)
+            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::Preview, false)
             .unwrap();
-        assert!(!accounts.previews(Platform::Twitch, "1", "42"));
+        assert!(!accounts.permits(Platform::Twitch, "1", "42", Permission::Preview));
+        assert!(accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
+        accounts
+            .set_moderator_permission(Platform::Twitch, "42", "1", Permission::GoLive, false)
+            .unwrap();
+        assert!(!accounts.permits(Platform::Twitch, "1", "42", Permission::GoLive));
         assert!(accounts.moderates(Platform::Twitch, "1", "42"));
     }
 
@@ -1232,6 +1279,7 @@ mod tests {
                     login: "bob".to_string(),
                     name: "bob".to_string(),
                     preview: false,
+                    go_live: false,
                 },
             )
             .unwrap();
@@ -1252,6 +1300,7 @@ mod tests {
                 login: "robert".to_string(),
                 name: "Robert".to_string(),
                 preview: false,
+                go_live: false,
             }]
         );
         assert!(accounts.moderated(Platform::Kick, "2").is_empty());
@@ -1276,6 +1325,7 @@ mod tests {
                     login: "robert".to_string(),
                     name: "Robert".to_string(),
                     preview: false,
+                    go_live: false,
                 },
             )
             .unwrap();

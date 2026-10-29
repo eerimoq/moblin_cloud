@@ -33,6 +33,7 @@ import {
   createAccountSession,
   type Moderator,
   removeModerator,
+  setModeratorGoLive,
   setModeratorPreview,
   type Moderating,
   checkPayPal,
@@ -1135,7 +1136,7 @@ function ModeratorSettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
       <p class="text-ink-2">
         {t("Moderators can manage your dashboard, except payments, moderators and Moblin.")}{" "}
-        {t("They see your stream preview only when you turn it on for them.")}
+        {t("They see your stream preview and can go live only when you turn it on for them.")}
       </p>
       <For each={linked()}>
         {(platform) => (
@@ -1152,6 +1153,29 @@ function ModeratorSettings(props: {
         )}
       </For>
     </section>
+  );
+}
+
+function PermissionBox(props: {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onChange: (on: boolean) => Promise<boolean>;
+}) {
+  return (
+    <input
+      type="checkbox"
+      checked={props.checked}
+      disabled={props.disabled}
+      aria-label={props.label}
+      onChange={async (event) => {
+        const input = event.currentTarget;
+        if (!(await props.onChange(input.checked))) {
+          input.checked = props.checked;
+        }
+      }}
+      class="size-5 accent-moss"
+    />
   );
 }
 
@@ -1222,6 +1246,9 @@ function ModeratorList(props: {
                 <th scope="col" class="w-24 px-2 py-2.5 text-center">
                   {t("Preview")}
                 </th>
+                <th scope="col" class="w-24 px-2 py-2.5 text-center">
+                  {t("Go live")}
+                </th>
                 <th scope="col" class="w-14">
                   <span class="sr-only">{t("Remove")}</span>
                 </th>
@@ -1234,25 +1261,29 @@ function ModeratorList(props: {
                     <td class="truncate px-4 py-2 font-semibold">{moderator.name}</td>
                     <td class="truncate px-4 py-2 text-ink-2">{moderator.login}</td>
                     <td class="px-2 py-2 text-center">
-                      <input
-                        type="checkbox"
+                      <PermissionBox
                         checked={moderator.preview}
                         disabled={busy()}
-                        aria-label={t("Let {name} see the stream preview", {
+                        label={t("Let {name} see the stream preview", { name: moderator.name })}
+                        onChange={(on) =>
+                          run(() =>
+                            setModeratorPreview(props.session, props.platform, moderator.id, on),
+                          )
+                        }
+                      />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <PermissionBox
+                        checked={moderator.goLive}
+                        disabled={busy()}
+                        label={t("Let {name} go live", {
                           name: moderator.name,
                         })}
-                        onChange={async (event) => {
-                          const input = event.currentTarget;
-                          const on = input.checked;
-                          if (
-                            !(await run(() =>
-                              setModeratorPreview(props.session, props.platform, moderator.id, on),
-                            ))
-                          ) {
-                            input.checked = moderator.preview;
-                          }
-                        }}
-                        class="size-5 accent-moss"
+                        onChange={(on) =>
+                          run(() =>
+                            setModeratorGoLive(props.session, props.platform, moderator.id, on),
+                          )
+                        }
                       />
                     </td>
                     <td class="py-1 pr-2">
