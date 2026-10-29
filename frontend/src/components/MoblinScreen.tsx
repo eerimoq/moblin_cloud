@@ -356,6 +356,7 @@ export default function MoblinScreen(props: {
   settings: DeviceSettings | null;
   preview: string | null;
   goLive: boolean;
+  remoteControl: boolean;
   connected: boolean;
   pending: string[];
   onControl: (control: Control) => Promise<void>;
@@ -390,7 +391,8 @@ export default function MoblinScreen(props: {
   const outerWidth = screenWidth + 2 * bezel;
   const outerHeight = screenHeight + 2 * bezel;
   const scale = () => Math.min(1.2, width() / outerWidth);
-  const disabled = (key: string) => !props.connected || props.pending.includes(key);
+  const disabled = (key: string) =>
+    !props.connected || !props.remoteControl || props.pending.includes(key);
   const confirmed = async (question: string, action: string, control: Control) => {
     if (await ask(question, action)) {
       await props.onControl(control);
@@ -656,7 +658,7 @@ export default function MoblinScreen(props: {
                         props.state.streaming === undefined
                       }
                       title={
-                        props.goLive || props.state.streaming
+                        props.goLive || props.state.streaming || !props.remoteControl
                           ? undefined
                           : t("The streamer has not let you go live.")
                       }

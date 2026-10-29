@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, StatusCode};
 use log::info;
 use serde::{Deserialize, Serialize};
 
-use crate::accounts::{Account, AccountError, Moderator, Platform};
+use crate::accounts::{Access, Account, AccountError, Moderator, Platform};
 
 use super::*;
 
@@ -27,6 +27,7 @@ pub(super) struct AccountResponse {
     pub(super) preview: bool,
     pub(super) go_live: bool,
     pub(super) edit_tips: bool,
+    pub(super) remote_control: Access,
     pub(super) moderating: Vec<ModeratingResponse>,
     pub(super) twitch_moderators: Vec<Moderator>,
     pub(super) kick_moderators: Vec<Moderator>,
@@ -160,6 +161,7 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         preview: true,
         go_live: true,
         edit_tips: true,
+        remote_control: Access::Control,
         twitch_moderators: twitch
             .as_deref()
             .map(|twitch| api.accounts.moderators(Platform::Twitch, twitch))

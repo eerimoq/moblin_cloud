@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
-use crate::accounts::{Account, Accounts, Page, Permission, Platform};
+use crate::accounts::{Access, Account, Accounts, Page, Permission, Platform};
 use crate::app_attest::AppAttest;
 use crate::auth::Auth;
 use crate::changes::Change;
@@ -180,6 +180,10 @@ pub fn router(api: Arc<Api>) -> Router {
         .route(
             "/account/moderators/{platform}/{moderator}/edit-tips",
             post(handle_account_moderator_edit_tips),
+        )
+        .route(
+            "/account/moderators/{platform}/{moderator}/remote-control",
+            post(handle_account_moderator_remote_control),
         )
         .route("/account/pages/{id}/recent", get(handle_moderator_recent))
         .route(
@@ -426,8 +430,35 @@ pub(super) fn may(api: &Api, account: &Account, id: &str, permission: Permission
         })
 }
 
-pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+pub(super) fn access(api: &Api, account: &Account, id: &str) -> Access {
+    if account.page.id == id {
+        return Access::Control;
+    }
+    [Access::Control, Access::View]
+        .into_iter()
+        .find(|&access| {
+            listed(api, account, id, |platform, moderator, broadcaster| {
+                api.accounts
+                    .grants(platform, moderator, broadcaster, access)
+            })
+        })
+        .unwrap_or(Access::None)
+}
+
+pub(super) fn watcher(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = moderator(api, headers, id)?;
+    if access(api, &signed_in.account, id) < Access::View {
+        return Err(failure(
+            "no-remote-control",
+            StatusCode::FORBIDDEN,
+            "The streamer has not let you use the remote control.",
+        ));
+    }
+    Ok(signed_in)
+}
+
+pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+    let signed_in = watcher(api, headers, id)?;
     if !may(api, &signed_in.account, id, Permission::Preview) {
         return Err(failure(
             "no-preview",

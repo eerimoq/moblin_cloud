@@ -95,9 +95,11 @@ class ModeratorsAdded(ModeratorsTestCase):
                     "id": self.moderator_id,
                     "login": self.moderator_login,
                     "name": self.moderator_login,
+                    "avatar": None,
                     "preview": False,
                     "goLive": False,
                     "editTips": False,
+                    "remoteControl": "none",
                 }
             ],
         )

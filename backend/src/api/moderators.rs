@@ -7,7 +7,7 @@ use axum::http::{HeaderMap, StatusCode};
 use log::{info, warn};
 use serde::Deserialize;
 
-use crate::accounts::{Permission, Platform};
+use crate::accounts::{Access, Permission, Platform};
 
 use super::*;
 
@@ -19,6 +19,11 @@ pub(super) struct ModeratorRequest {
 #[derive(Deserialize)]
 pub(super) struct PermissionRequest {
     on: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct AccessRequest {
+    access: Access,
 }
 
 pub(super) async fn handle_account_moderator_add(
@@ -159,6 +164,30 @@ pub(super) async fn handle_account_moderator_edit_tips(
     )
 }
 
+pub(super) async fn handle_account_moderator_remote_control(
+    State(api): State<Arc<Api>>,
+    Path((platform, moderator)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<AccessRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    let platform = platform_of(&platform)?;
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let broadcaster = account
+        .identity(platform)
+        .map(|identity| identity.user_id.clone())
+        .ok_or_else(|| platform_needed(platform))?;
+    api.accounts
+        .set_moderator_access(platform, &broadcaster, &moderator, request.access)
+        .map_err(account_error)?;
+    info!(
+        "{id} set the remote control access of {} moderator {moderator} to {:?}",
+        platform.title(),
+        request.access
+    );
+    moderators_changed(&api, &account.page.id, platform, &moderator);
+    Ok(account_response(&api, account))
+}
+
 fn set_permission(
     api: &Api,
     platform: &str,
@@ -217,6 +246,7 @@ pub(super) async fn handle_moderator_account(
         preview: may(&api, &signed_in.account, &id, Permission::Preview),
         go_live: may(&api, &signed_in.account, &id, Permission::GoLive),
         edit_tips: may(&api, &signed_in.account, &id, Permission::EditTips),
+        remote_control: access(&api, &signed_in.account, &id),
         twitch_moderators: Vec::new(),
         kick_moderators: Vec::new(),
         moderating: Vec::new(),
@@ -317,7 +347,7 @@ mod tests {
         let account: Value = response.json().await.unwrap();
         assert_eq!(
             account["kickModerators"],
-            json!([{"id": "9", "login": "bob", "name": "bob", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "bob", "name": "bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
         assert_eq!(token["grant_type"], "client_credentials");
@@ -356,7 +386,7 @@ mod tests {
         );
         assert_eq!(
             account_of(&address, &session).await["kickModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": "https://files.kick.com/robert.png", "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": "https://files.kick.com/robert.png", "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
         let response = dashboard(&moderator).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -460,7 +490,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "9", "login": "bob", "name": "Bob", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "bob", "name": "Bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
         assert!(api.accounts.moderates(Platform::Twitch, "9", "1"));
         create_account(&api, "9", "Robert", "robert");
@@ -470,7 +500,7 @@ mod tests {
         assert_eq!(account["moderating"][0]["platform"], "twitch");
         assert_eq!(
             account_of(&address, &session).await["twitchModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
@@ -575,7 +605,7 @@ mod tests {
             assert_eq!(
                 response.json::<Value>().await.unwrap()["twitchModerators"],
                 if enabled {
-                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
+                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
                 } else {
                     json!([])
                 }

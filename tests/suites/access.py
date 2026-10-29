@@ -19,6 +19,8 @@ from ..utils.test_case import TestCase
 NOT_MODERATOR = "Only the streamer and the moderators they turned on can do this."
 NO_PREVIEW = "The streamer has not let you see the stream preview."
 NO_GO_LIVE = "The streamer has not let you go live."
+NO_REMOTE_CONTROL = "The streamer has not let you use the remote control."
+NO_CONTROL = "The streamer has not let you control Moblin."
 
 
 def unpadded(data: bytes) -> str:
@@ -52,6 +54,7 @@ class AccessModeratorPreview(AccessTestCase):
             404, lambda: streamer.set_moderator_preview("twitch", moderator_id, True), "no such moderator"
         )
         streamer.add_moderator("twitch", "previewmod")
+        streamer.set_moderator_remote_control("twitch", moderator_id, "view")
         with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "PV1") as device:
             device.start()
             self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
@@ -83,8 +86,62 @@ class AccessModeratorPreview(AccessTestCase):
         streamer.remove_moderator("twitch", moderator_id)
 
 
+class AccessModeratorRemoteControl(AccessTestCase):
+    """Let a moderator see a device only once the streamer let them view it, and control it only once they let them control it."""
+
+    def run(self):
+        streamer = self.sign_in("remotestreamer")
+        page_id = streamer.page_id()
+        moderator = self.sign_in("remotemod")
+        moderator_id = user_id_of("remotemod")
+        events = f"/account/pages/{page_id}/devices/RC1/events"
+        self.assert_backend_error(
+            404,
+            lambda: streamer.set_moderator_remote_control("twitch", moderator_id, "view"),
+            "no such moderator",
+        )
+        streamer.add_moderator("twitch", "remotemod")
+        with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "RC1") as device:
+            device.start()
+            self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
+            self.assert_equal(moderator.moderated_account(page_id)["remoteControl"], "none")
+            self.assert_backend_error(403, lambda: EventStream(moderator, events), NO_REMOTE_CONTROL)
+            self.assert_backend_error(
+                403,
+                lambda: moderator.control_device(page_id, "RC1", {"setTorch": {"on": True}}),
+                NO_REMOTE_CONTROL,
+            )
+            self.assert_refused(lambda: streamer.set_moderator_remote_control("twitch", moderator_id, "all"))
+            account = streamer.set_moderator_remote_control("twitch", moderator_id, "view")
+            self.assert_equal([entry["remoteControl"] for entry in account["twitchModerators"]], ["view"])
+            self.assert_equal(moderator.moderated_account(page_id)["remoteControl"], "view")
+            with EventStream(moderator, events) as stream:
+                self.assert_equal(stream.next()[0], "snapshot")
+            for control in [{"setTorch": {"on": True}}, {"setLive": {"on": False}}]:
+                self.assert_backend_error(
+                    403,
+                    lambda control=control: moderator.control_device(page_id, "RC1", control),
+                    NO_CONTROL,
+                )
+            self.assert_equal(device.controls, [])
+            streamer.set_moderator_remote_control("twitch", moderator_id, "control")
+            self.assert_equal(moderator.moderated_account(page_id)["remoteControl"], "control")
+            moderator.control_device(page_id, "RC1", {"setTorch": {"on": True}})
+            self.assert_equal(
+                [
+                    entry["remoteControl"]
+                    for entry in streamer.add_moderator("twitch", "RemoteMod")["twitchModerators"]
+                ],
+                ["control"],
+                "adding a moderator again keeps their remote control access",
+            )
+            streamer.set_moderator_remote_control("twitch", moderator_id, "none")
+            self.assert_backend_error(403, lambda: EventStream(moderator, events), NO_REMOTE_CONTROL)
+        streamer.remove_moderator("twitch", moderator_id)
+
+
 class AccessModeratorGoLive(AccessTestCase):
-    """Let a moderator go live only once the streamer let them, while ending the stream and their other controls always work."""
+    """Let a moderator who may use the remote control go live only once the streamer let them, while ending the stream and their other controls always work."""
 
     def run(self):
         streamer = self.sign_in("golive")
@@ -95,6 +152,7 @@ class AccessModeratorGoLive(AccessTestCase):
             404, lambda: streamer.set_moderator_go_live("twitch", moderator_id, True), "no such moderator"
         )
         streamer.add_moderator("twitch", "golivemod")
+        streamer.set_moderator_remote_control("twitch", moderator_id, "control")
         with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "GL1") as device:
             device.start()
             self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
@@ -176,6 +234,7 @@ class AccessModeratorLimits(AccessTestCase):
         moderator = self.sign_in("limitedmod")
         streamer.add_moderator("twitch", "limitedmod")
         streamer.set_moderator_edit_tips("twitch", user_id_of("limitedmod"), True)
+        streamer.set_moderator_remote_control("twitch", user_id_of("limitedmod"), "control")
         other = self.sign_in("limitedother")
         with RecordingMoblin(self.backend.url, other.moblin_cloud_key(), "LO1") as device:
             device.start()
@@ -267,6 +326,7 @@ class AccessCors(AccessTestCase):
 def tests(context: Context):
     return [
         AccessModeratorPreview(context),
+        AccessModeratorRemoteControl(context),
         AccessModeratorGoLive(context),
         AccessModeratorsLimit(context),
         AccessDeletedModerators(context),

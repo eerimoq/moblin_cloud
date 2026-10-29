@@ -348,6 +348,11 @@ class Dashboard(Client):
     def set_moderator_go_live(self, platform: str, moderator: str, on: bool) -> dict:
         return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/go-live", {"on": on})
 
+    def set_moderator_remote_control(self, platform: str, moderator: str, access: str) -> dict:
+        return self.post(
+            f"/account/moderators/{platform}/{quote(moderator, safe='')}/remote-control", {"access": access}
+        )
+
     def set_moderator_edit_tips(self, platform: str, moderator: str, on: bool) -> dict:
         return self.post(f"/account/moderators/{platform}/{quote(moderator, safe='')}/edit-tips", {"on": on})
 

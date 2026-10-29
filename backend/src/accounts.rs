@@ -149,6 +149,7 @@ pub struct Moderator {
     pub preview: bool,
     pub go_live: bool,
     pub edit_tips: bool,
+    pub remote_control: Access,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -164,6 +165,24 @@ impl Permission {
             Self::Preview => "preview",
             Self::GoLive => "go_live",
             Self::EditTips => "edit_tips",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Access {
+    None,
+    View,
+    Control,
+}
+
+impl Access {
+    fn of(level: u8) -> Self {
+        match level {
+            0 => Self::None,
+            1 => Self::View,
+            _ => Self::Control,
         }
     }
 }
@@ -715,12 +734,36 @@ impl Accounts {
         Ok(())
     }
 
+    pub fn set_moderator_access(
+        &self,
+        platform: Platform,
+        broadcaster: &str,
+        moderator: &str,
+        access: Access,
+    ) -> Result<(), AccountError> {
+        let table = moderators_table(platform);
+        let changed = self
+            .database
+            .lock()
+            .execute(
+                &format!(
+                    "UPDATE {table} SET remote_control = ?3 WHERE broadcaster = ?1 AND moderator = ?2"
+                ),
+                (broadcaster, moderator, access as u8),
+            )
+            .map_err(not_saved)?;
+        if changed == 0 {
+            return Err(AccountError::UnknownModerator);
+        }
+        Ok(())
+    }
+
     pub fn moderators(&self, platform: Platform, broadcaster: &str) -> Vec<Moderator> {
         let table = moderators_table(platform);
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips
+                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips, remote_control
                  FROM {table}
                  LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = moderator
                  WHERE broadcaster = ?2
@@ -737,6 +780,7 @@ impl Accounts {
                             preview: row.get(4)?,
                             go_live: row.get(5)?,
                             edit_tips: row.get(6)?,
+                            remote_control: Access::of(row.get(7)?),
                         })
                     })?
                     .collect::<rusqlite::Result<_>>()
@@ -766,6 +810,21 @@ impl Accounts {
             moderator,
             broadcaster,
             &format!(" AND {}", permission.column()),
+        )
+    }
+
+    pub fn grants(
+        &self,
+        platform: Platform,
+        moderator: &str,
+        broadcaster: &str,
+        access: Access,
+    ) -> bool {
+        self.listed(
+            platform,
+            moderator,
+            broadcaster,
+            &format!(" AND remote_control >= {}", access as u8),
         )
     }
 
@@ -1113,6 +1172,7 @@ mod tests {
             preview: false,
             go_live: false,
             edit_tips: false,
+            remote_control: Access::None,
         };
         accounts
             .add_moderator(Platform::Twitch, "42", &moderator)
@@ -1155,6 +1215,7 @@ mod tests {
             preview: false,
             go_live: false,
             edit_tips: false,
+            remote_control: Access::None,
         };
         accounts
             .add_moderator(Platform::Kick, "42", &moderator("1", "erik"))
@@ -1222,6 +1283,7 @@ mod tests {
             preview: false,
             go_live: false,
             edit_tips: false,
+            remote_control: Access::None,
         };
         accounts
             .add_moderator(Platform::Twitch, "42", &moderator)
@@ -1278,6 +1340,53 @@ mod tests {
     }
 
     #[test]
+    fn moderators_get_remote_control_access_only_when_allowed() {
+        let accounts = Accounts::new(Database::memory());
+        let moderator = Moderator {
+            id: "1".to_string(),
+            login: "mod".to_string(),
+            name: "Mod".to_string(),
+            avatar: None,
+            preview: false,
+            go_live: false,
+            edit_tips: false,
+            remote_control: Access::None,
+        };
+        accounts
+            .add_moderator(Platform::Twitch, "42", &moderator)
+            .unwrap();
+        let granted = |access| accounts.grants(Platform::Twitch, "1", "42", access);
+        assert!(granted(Access::None));
+        assert!(!granted(Access::View));
+        assert_eq!(
+            accounts.set_moderator_access(Platform::Twitch, "42", "2", Access::View),
+            Err(AccountError::UnknownModerator)
+        );
+        accounts
+            .set_moderator_access(Platform::Twitch, "42", "1", Access::View)
+            .unwrap();
+        assert!(granted(Access::View));
+        assert!(!granted(Access::Control));
+        accounts
+            .set_moderator_access(Platform::Twitch, "42", "1", Access::Control)
+            .unwrap();
+        assert!(granted(Access::View));
+        assert!(granted(Access::Control));
+        assert!(!accounts.grants(Platform::Kick, "1", "42", Access::View));
+        accounts
+            .add_moderator(Platform::Twitch, "42", &moderator)
+            .unwrap();
+        assert_eq!(
+            accounts.moderators(Platform::Twitch, "42")[0].remote_control,
+            Access::Control
+        );
+        accounts
+            .set_moderator_access(Platform::Twitch, "42", "1", Access::None)
+            .unwrap();
+        assert!(!granted(Access::View));
+    }
+
+    #[test]
     fn kick_moderators_keep_access_when_renamed_and_follow_the_kick_identity() {
         let accounts = Accounts::new(Database::memory());
         let (streamer, _) = accounts
@@ -1298,6 +1407,7 @@ mod tests {
                     preview: false,
                     go_live: false,
                     edit_tips: false,
+                    remote_control: Access::None,
                 },
             )
             .unwrap();
@@ -1321,6 +1431,7 @@ mod tests {
                 preview: false,
                 go_live: false,
                 edit_tips: false,
+                remote_control: Access::None,
             }]
         );
         assert!(accounts.moderated(Platform::Kick, "2").is_empty());
@@ -1348,6 +1459,7 @@ mod tests {
                     preview: false,
                     go_live: false,
                     edit_tips: false,
+                    remote_control: Access::None,
                 },
             )
             .unwrap();

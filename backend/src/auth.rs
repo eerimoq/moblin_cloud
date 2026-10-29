@@ -11,7 +11,7 @@ use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::accounts::{Identity, Moderator, Platform};
+use crate::accounts::{Access, Identity, Moderator, Platform};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
@@ -614,6 +614,7 @@ impl Auth {
                 preview: false,
                 go_live: false,
                 edit_tips: false,
+                remote_control: Access::None,
             }))
     }
 
@@ -668,6 +669,7 @@ impl Auth {
                 preview: false,
                 go_live: false,
                 edit_tips: false,
+                remote_control: Access::None,
             }))
     }
 

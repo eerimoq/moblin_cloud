@@ -10,7 +10,7 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::*;
-use crate::accounts::{Account, Accounts, Identity, Moderator, Page, Platform};
+use crate::accounts::{Access, Account, Accounts, Identity, Moderator, Page, Platform};
 use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::counters::Counters;
 use crate::database::Database;
@@ -275,6 +275,7 @@ pub(crate) fn twitch_moderator(id: &str, login: &str, name: &str) -> Moderator {
         preview: false,
         go_live: false,
         edit_tips: false,
+        remote_control: Access::None,
     }
 }
 

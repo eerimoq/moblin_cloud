@@ -1040,6 +1040,9 @@ function Loaded(props: { stats: AdminStats }) {
                   [
                     "account",
                     "not-moderator",
+                    "no-remote-control",
+                    "no-control",
+                    "no-go-live",
                     "not-found",
                     "offline",
                     "invalid-control",
@@ -1050,6 +1053,9 @@ function Loaded(props: { stats: AdminStats }) {
                     "not-found": "Device not in the list",
                     offline: "Device not connected",
                     "invalid-control": "Unknown control or id",
+                    "no-remote-control": "Moderator without remote control access",
+                    "no-control": "Moderator who may only view",
+                    "no-go-live": "Moderator not let go live",
                   },
                 ),
               ]}

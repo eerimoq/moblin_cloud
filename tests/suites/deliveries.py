@@ -140,6 +140,7 @@ class DeliveriesStreamsRechecked(DeliveriesTestCase):
         device = self.device("RC1")
         moderator = self.sign_in("recheckmod")
         self.dashboard.add_moderator("twitch", "recheckmod")
+        self.dashboard.set_moderator_remote_control("twitch", user_id_of("recheckmod"), "view")
         streams = [
             EventStream(moderator, f"/account/pages/{self.page_id}/devices/RC1/events"),
             EventStream(moderator, f"/account/pages/{self.page_id}/events"),

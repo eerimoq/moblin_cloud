@@ -238,9 +238,11 @@ class KickModerators(KickTestCase):
                     "id": kick_user_id_of("kmod"),
                     "login": "kmod",
                     "name": "kmod",
+                    "avatar": None,
                     "preview": False,
                     "goLive": False,
                     "editTips": False,
+                    "remoteControl": "none",
                 }
             ],
         )

@@ -16,7 +16,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
 
-use crate::accounts::Permission;
+use crate::accounts::{Access, Permission};
 use crate::remote_control::{Control, PreviewWatch, RequestError, Snapshot, Watch};
 
 use super::*;
@@ -73,7 +73,7 @@ pub(super) async fn handle_device_events(
     Path((id, device)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    moderator(&api, &headers, &id)?;
+    watcher(&api, &headers, &id)?;
     let known = known_device(&api, &id, &device)?;
     let watch = api.remote_control.watch((&id, &device));
     let first = Event::default()
@@ -106,7 +106,7 @@ pub(super) async fn handle_device_events(
                 }
                 _ = stopping.wait_for(|stopping| *stopping) => return None,
                 _ = sleep_until(streaming.check_at) => {
-                    if moderator(&streaming.api, &streaming.headers, &streaming.page).is_err() {
+                    if watcher(&streaming.api, &streaming.headers, &streaming.page).is_err() {
                         return None;
                     }
                     streaming.check_at = Instant::now() + Duration::from_secs(60);
@@ -187,7 +187,14 @@ pub(super) async fn handle_device_control(
     control: Result<Json<Control>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let result = async {
-        let signed_in = moderator(&api, &headers, &id)?;
+        let signed_in = watcher(&api, &headers, &id)?;
+        if access(&api, &signed_in.account, &id) < Access::Control {
+            return Err(failure(
+                "no-control",
+                StatusCode::FORBIDDEN,
+                "The streamer has not let you control Moblin.",
+            ));
+        }
         let Json(control) = control.map_err(|_| {
             failure(
                 "invalid-control",
@@ -232,7 +239,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::protocol::CloseFrame;
     use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
-    use crate::accounts::Platform;
+    use crate::accounts::{Access, Platform};
     use crate::api::test_utils::*;
 
     fn settings() -> Value {
@@ -375,6 +382,9 @@ mod tests {
                 "1",
                 &twitch_moderator("21", "mod21", "Mod 21"),
             )
+            .unwrap();
+        api.accounts
+            .set_moderator_access(Platform::Twitch, "1", "21", Access::View)
             .unwrap();
         let mut second = Events::open(&client, &url, &api.auth.session("21", 0)).await;
         answer_monitoring(&mut socket, false).await;
@@ -594,6 +604,122 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn moderators_view_and_control_the_device_only_when_allowed() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&address, &api).await;
+        let mut socket = connect(&address, &key).await;
+        create_account(&api, "21", "Mod 21", "mod21");
+        api.accounts
+            .add_moderator(
+                Platform::Twitch,
+                "1",
+                &twitch_moderator("21", "mod21", "Mod 21"),
+            )
+            .unwrap();
+        let moderator = api.auth.session("21", 0);
+        let events = format!("http://{address}/account/pages/{page}/devices/A/events");
+        let url = format!("http://{address}/account/pages/{page}/devices/A/control");
+        let granted = async |session: &str| {
+            client
+                .get(format!("http://{address}/account/pages/{page}"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()["remoteControl"]
+                .clone()
+        };
+        let grant = async |access: &str| {
+            client
+                .post(format!(
+                    "http://{address}/account/moderators/twitch/21/remote-control"
+                ))
+                .bearer_auth(&session)
+                .json(&json!({"access": access}))
+                .send()
+                .await
+                .unwrap()
+        };
+        let watch = async || {
+            client
+                .get(&events)
+                .bearer_auth(&moderator)
+                .send()
+                .await
+                .unwrap()
+        };
+        let control =
+            |session: &str, body: Value| client.post(&url).bearer_auth(session).json(&body).send();
+        let refused = async |response: reqwest::Response, text: &str| {
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert_eq!(response.text().await.unwrap(), text);
+        };
+        assert_eq!(granted(&session).await, "control");
+        assert_eq!(granted(&moderator).await, "none");
+        refused(
+            watch().await,
+            "The streamer has not let you use the remote control.",
+        )
+        .await;
+        refused(
+            control(&moderator, json!({"setTorch": {"on": true}}))
+                .await
+                .unwrap(),
+            "The streamer has not let you use the remote control.",
+        )
+        .await;
+        assert_eq!(
+            grant("everything").await.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let response = grant("view").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["twitchModerators"],
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "view"}])
+        );
+        assert_eq!(granted(&moderator).await, "view");
+        let mut watching = Events::open(&client, &events, &moderator).await;
+        answer_monitoring(&mut socket, true).await;
+        assert_eq!(watching.next().await.0, "snapshot");
+        for body in [
+            json!({"setTorch": {"on": true}}),
+            json!({"setLive": {"on": false}}),
+        ] {
+            refused(
+                control(&moderator, body).await.unwrap(),
+                "The streamer has not let you control Moblin.",
+            )
+            .await;
+        }
+        assert_eq!(counter(&api, "deviceControlsFailed:no-remote-control"), 1);
+        assert_eq!(counter(&api, "deviceControlsFailed:no-control"), 2);
+        assert_eq!(grant("control").await.status(), StatusCode::OK);
+        assert_eq!(granted(&moderator).await, "control");
+        let call = tokio::spawn(control(&moderator, json!({"setTorch": {"on": true}})));
+        let request = loop {
+            let request = receive(&mut socket).await;
+            if request["request"]["data"].get("setTorch").is_some() {
+                break request;
+            }
+            answer(&mut socket, &request, Value::Null).await;
+        };
+        answer(&mut socket, &request, Value::Null).await;
+        assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
+        drop(watching);
+        assert_eq!(grant("none").await.status(), StatusCode::OK);
+        assert_eq!(granted(&moderator).await, "none");
+        refused(
+            watch().await,
+            "The streamer has not let you use the remote control.",
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn moderators_go_live_only_when_allowed_but_always_end_the_stream() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
@@ -606,6 +732,9 @@ mod tests {
                 "1",
                 &twitch_moderator("21", "mod21", "Mod 21"),
             )
+            .unwrap();
+        api.accounts
+            .set_moderator_access(Platform::Twitch, "1", "21", Access::Control)
             .unwrap();
         let moderator = api.auth.session("21", 0);
         let url = format!("http://{address}/account/pages/{page}/devices/A/control");
@@ -662,7 +791,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": true, "editTips": false}])
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": true, "editTips": false, "remoteControl": "control"}])
         );
         assert_eq!(allowed(&moderator).await, true);
         let call = tokio::spawn(control(&moderator, json!({"setLive": {"on": true}})));
@@ -691,6 +820,9 @@ mod tests {
                 "1",
                 &twitch_moderator("21", "mod21", "Mod 21"),
             )
+            .unwrap();
+        api.accounts
+            .set_moderator_access(Platform::Twitch, "1", "21", Access::View)
             .unwrap();
         let moderator = api.auth.session("21", 0);
         let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
@@ -745,7 +877,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": true, "goLive": false, "editTips": false}])
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": true, "goLive": false, "editTips": false, "remoteControl": "view"}])
         );
         assert_eq!(allowed(&moderator).await, true);
         let mut preview = Events::open(&client, &url, &moderator).await;

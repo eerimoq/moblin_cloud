@@ -17,6 +17,7 @@ import {
   createAccountSession,
   deviceEventsUrl,
   devicePreviewUrl,
+  type Access,
   type Account,
   type Device,
   type Control,
@@ -379,6 +380,7 @@ function DeviceView(props: {
   device: string;
   preview: boolean | null;
   goLive: boolean;
+  remoteControl: boolean;
   nameOf: (device: string) => string | undefined;
   onSignOut: () => void;
 }) {
@@ -567,6 +569,11 @@ function DeviceView(props: {
                     {t("The streamer has not let you see the stream preview.")}
                   </p>
                 </Show>
+                <Show when={!props.remoteControl}>
+                  <p class="text-[15px] text-muted">
+                    {t("The streamer has not let you control Moblin.")}
+                  </p>
+                </Show>
                 <MoblinScreen
                   page={props.page}
                   state={state()}
@@ -574,6 +581,7 @@ function DeviceView(props: {
                   settings={settings()}
                   preview={preview()}
                   goLive={props.goLive}
+                  remoteControl={props.remoteControl}
                   connected={online()}
                   pending={pending()}
                   onControl={control}
@@ -618,6 +626,7 @@ export default function DevicePage(props: { page: string; device: string }) {
   const [devices, setDevices] = createSignal<Device[]>([]);
   const [preview, setPreview] = createSignal<boolean | null>(null);
   const [goLive, setGoLive] = createSignal(false);
+  const [remoteControl, setRemoteControl] = createSignal<Access | null>(null);
   createEffect(() => {
     const current = session();
     if (current) {
@@ -627,6 +636,7 @@ export default function DevicePage(props: { page: string; device: string }) {
             setDevices(account.devices);
             setPreview(account.preview);
             setGoLive(account.goLive);
+            setRemoteControl(account.remoteControl);
           })
           .catch(() => {});
       void refresh();
@@ -689,19 +699,31 @@ export default function DevicePage(props: { page: string; device: string }) {
       </CloudHeader>
       <main>
         <Band tight>
-          <Show when={!loading()} fallback={<Spinner />}>
-            <Show when={device() ? session() : undefined} keyed>
-              {(current) => (
-                <DeviceView
-                  session={current.session}
-                  page={props.page}
-                  device={device()}
-                  preview={preview()}
-                  goLive={goLive()}
-                  nameOf={(id) => devices().find((candidate) => candidate.id === id)?.name}
-                  onSignOut={signOut}
-                />
-              )}
+          <Show when={!loading() && remoteControl() !== null} fallback={<Spinner />}>
+            <Show
+              when={remoteControl() !== "none"}
+              fallback={
+                <div class={cardClass}>
+                  <p class="text-ink-2">
+                    {t("The streamer has not let you use the remote control.")}
+                  </p>
+                </div>
+              }
+            >
+              <Show when={device() ? session() : undefined} keyed>
+                {(current) => (
+                  <DeviceView
+                    session={current.session}
+                    page={props.page}
+                    device={device()}
+                    preview={preview()}
+                    goLive={goLive()}
+                    remoteControl={remoteControl() === "control"}
+                    nameOf={(id) => devices().find((candidate) => candidate.id === id)?.name}
+                    onSignOut={signOut}
+                  />
+                )}
+              </Show>
             </Show>
           </Show>
         </Band>

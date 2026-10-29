@@ -47,6 +47,7 @@ import {
   setModeratorEditTips,
   setModeratorGoLive,
   setModeratorPreview,
+  setModeratorRemoteControl,
   type Moderating,
   checkPayPal,
   checkStripe,
@@ -66,6 +67,7 @@ import {
   sendTest,
   stripeCountries,
   uploadImage,
+  type Access,
   type Account,
   type Device,
   type Recent,
@@ -1169,8 +1171,55 @@ function ModeratorSettings(props: {
   );
 }
 
+const tooltipClass =
+  "pointer-events-none invisible absolute bottom-full left-0 z-10 mb-1 w-max max-w-[min(100%,18rem)] lg:max-w-72 rounded-xl border-[1.5px] border-line bg-band px-3 py-2 text-[14px] whitespace-normal opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-has-[:focus-visible]:visible group-has-[:focus-visible]:opacity-100";
+
+function AccessPicker(props: {
+  access: Access;
+  label: string;
+  onChange: (access: Access) => Promise<boolean>;
+}) {
+  const help = createUniqueId();
+  const [pending, setPending] = createSignal(false);
+  const options: { value: Access; text: string }[] = [
+    { value: "none", text: t("No access") },
+    { value: "view", text: t("View only") },
+    { value: "control", text: t("View and control") },
+  ];
+  return (
+    <span class="group flex items-center lg:relative">
+      <select
+        value={props.access}
+        disabled={pending()}
+        aria-label={props.label}
+        aria-describedby={help}
+        onChange={async (event) => {
+          const select = event.currentTarget;
+          setPending(true);
+          try {
+            if (!(await props.onChange(select.value as Access))) {
+              select.value = props.access;
+            }
+          } finally {
+            setPending(false);
+          }
+        }}
+        class="h-9 rounded-xl border-[1.5px] border-line bg-well px-3 text-[15px] text-ink focus:border-leaf focus:outline-none disabled:opacity-50"
+      >
+        <For each={options}>{(option) => <option value={option.value}>{option.text}</option>}</For>
+      </select>
+      <span id={help} role="tooltip" class={tooltipClass}>
+        {t(
+          "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.",
+        )}
+      </span>
+    </span>
+  );
+}
+
 function PermissionBox(props: {
   checked: boolean;
+  disabled?: boolean;
   text: string;
   label: string;
   help: string;
@@ -1179,11 +1228,11 @@ function PermissionBox(props: {
   const help = createUniqueId();
   const [pending, setPending] = createSignal(false);
   return (
-    <label class="group flex items-center gap-2 whitespace-nowrap lg:relative">
+    <label class="group flex items-center gap-2 whitespace-nowrap has-[:disabled]:text-muted lg:relative">
       <input
         type="checkbox"
         checked={props.checked}
-        disabled={pending()}
+        disabled={pending() || props.disabled}
         aria-label={props.label}
         aria-describedby={help}
         onChange={async (event) => {
@@ -1200,11 +1249,7 @@ function PermissionBox(props: {
         class="size-5 accent-moss"
       />
       {props.text}
-      <span
-        id={help}
-        role="tooltip"
-        class="pointer-events-none invisible absolute bottom-full left-0 z-10 mb-1 w-max max-w-[min(100%,18rem)] lg:max-w-72 rounded-xl border-[1.5px] border-line bg-band px-3 py-2 text-[14px] whitespace-normal opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-has-[:focus-visible]:visible group-has-[:focus-visible]:opacity-100"
-      >
+      <span id={help} role="tooltip" class={tooltipClass}>
         {props.help}
       </span>
     </label>
@@ -1316,8 +1361,25 @@ function ModeratorList(props: {
                     />
                   </PermissionRow>
                   <PermissionRow title={t("Remote control")}>
+                    <AccessPicker
+                      access={moderator().remoteControl}
+                      label={t("What {name} may do with the remote control", {
+                        name: moderator().name,
+                      })}
+                      onChange={(access) =>
+                        call(() =>
+                          setModeratorRemoteControl(
+                            props.session,
+                            props.platform,
+                            moderator().id,
+                            access,
+                          ),
+                        )
+                      }
+                    />
                     <PermissionBox
                       checked={moderator().preview}
+                      disabled={moderator().remoteControl === "none"}
                       text={t("Preview")}
                       label={t("Let {name} see the stream preview", { name: moderator().name })}
                       help={t("See the stream preview.")}
@@ -1329,6 +1391,7 @@ function ModeratorList(props: {
                     />
                     <PermissionBox
                       checked={moderator().goLive}
+                      disabled={moderator().remoteControl !== "control"}
                       text={t("Go live")}
                       label={t("Let {name} go live", { name: moderator().name })}
                       help={t("Start the stream. Ending it is always allowed.")}
@@ -2552,7 +2615,12 @@ function DeviceList(props: { devices: Device[]; children: (device: Device) => JS
   );
 }
 
-function DeviceRow(props: { device: Device; page: string; children?: JSX.Element }) {
+function DeviceRow(props: {
+  device: Device;
+  page: string;
+  remote?: boolean;
+  children?: JSX.Element;
+}) {
   return (
     <>
       <span
@@ -2570,12 +2638,14 @@ function DeviceRow(props: { device: Device; page: string; children?: JSX.Element
         {deviceGets(props.device)}
       </span>
       <span class="flex basis-full gap-3 pl-[22px] sm:basis-auto sm:pl-0">
-        <a
-          href={deviceUrl(props.page, props.device.id)}
-          class="text-[15px] font-semibold text-leaf hover:underline"
-        >
-          {t("Remote control")}
-        </a>
+        <Show when={props.remote ?? true}>
+          <a
+            href={deviceUrl(props.page, props.device.id)}
+            class="text-[15px] font-semibold text-leaf hover:underline"
+          >
+            {t("Remote control")}
+          </a>
+        </Show>
         {props.children}
       </span>
     </>
@@ -2596,7 +2666,13 @@ function ModeratedDevices(props: { account: Account }) {
           fallback={<p class="text-muted">{t("No device has connected yet.")}</p>}
         >
           <DeviceList devices={props.account.devices}>
-            {(device) => <DeviceRow device={device} page={props.account.settings.id} />}
+            {(device) => (
+              <DeviceRow
+                device={device}
+                page={props.account.settings.id}
+                remote={props.account.remoteControl !== "none"}
+              />
+            )}
           </DeviceList>
         </Show>
         <p class="text-[15px] text-muted">

@@ -92,6 +92,7 @@ class AccountSignIn(AccountTestCase):
                 "preview": True,
                 "goLive": True,
                 "editTips": True,
+                "remoteControl": "control",
                 "moderating": [],
                 "twitchModerators": [],
                 "kickModerators": [],

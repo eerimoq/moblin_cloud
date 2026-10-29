@@ -24,10 +24,13 @@ export type Account = {
   preview: boolean;
   goLive: boolean;
   editTips: boolean;
+  remoteControl: Access;
   moderating: Moderating[];
   twitchModerators: Moderator[];
   kickModerators: Moderator[];
 };
+
+export type Access = "none" | "view" | "control";
 
 export type Moderator = {
   id: string;
@@ -37,6 +40,7 @@ export type Moderator = {
   preview: boolean;
   goLive: boolean;
   editTips: boolean;
+  remoteControl: Access;
 };
 
 export type Moderating = {
@@ -422,6 +426,18 @@ export const setModeratorEditTips = (
     `/account/moderators/${platform}/${encodeURIComponent(moderator)}/edit-tips`,
     session,
     post({ on }),
+  );
+
+export const setModeratorRemoteControl = (
+  session: string,
+  platform: Platform,
+  moderator: string,
+  access: Access,
+) =>
+  call<Account>(
+    `/account/moderators/${platform}/${encodeURIComponent(moderator)}/remote-control`,
+    session,
+    post({ access }),
   );
 
 export const linkAccount = (session: string, token: string) =>

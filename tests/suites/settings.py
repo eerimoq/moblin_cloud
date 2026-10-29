@@ -75,6 +75,7 @@ class SettingsModeratorKeepsCurrency(SettingsTestCase):
     def run(self):
         moderator = self.sign_in("settingsmod")
         self.dashboard.add_moderator("twitch", "settingsmod")
+        self.dashboard.set_moderator_edit_tips("twitch", user_id_of("settingsmod"), True)
         try:
             settings = moderator.post(
                 f"/account/pages/{self.page_id}/settings",
