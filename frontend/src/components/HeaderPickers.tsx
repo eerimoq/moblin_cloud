@@ -148,12 +148,14 @@ function Picker(props: {
   );
 }
 
-export function Avatar(props: { picked: { name: string; avatar: string | null } }) {
+export function Avatar(props: { picked: { name: string; avatar: string | null }; class?: string }) {
   return (
     <Show
       when={props.picked.avatar}
       fallback={
-        <span class="flex size-8 items-center justify-center rounded-full bg-moss font-display text-sm font-semibold text-white">
+        <span
+          class={`flex items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${props.class ?? "size-8 text-sm"}`}
+        >
           {props.picked.name.slice(0, 1).toUpperCase()}
         </span>
       }
@@ -163,7 +165,7 @@ export function Avatar(props: { picked: { name: string; avatar: string | null } 
           src={avatar()}
           alt=""
           referrerpolicy="no-referrer"
-          class="size-8 rounded-full bg-ghost object-cover"
+          class={`rounded-full bg-ghost object-cover ${props.class ?? "size-8"}`}
         />
       )}
     </Show>

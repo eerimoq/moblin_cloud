@@ -1296,7 +1296,7 @@ function ModeratorList(props: {
               <li class="flex items-start gap-3 border-line px-4 py-3 not-first:border-t-[1.5px] first:rounded-t-[14px] last:rounded-b-[14px] odd:bg-well even:bg-card">
                 <div class="flex min-w-0 flex-1 flex-col gap-3">
                   <div class="flex min-w-0 items-center gap-3">
-                    <Avatar picked={moderator()} />
+                    <Avatar picked={moderator()} class="size-11 shrink-0 text-lg" />
                     <div class="min-w-0">
                       <div class="truncate font-semibold">{moderator().name}</div>
                       <div class="truncate text-[14px] text-ink-2">{moderator().login}</div>
