@@ -33,6 +33,7 @@ export type Moderator = {
   id: string;
   login: string;
   name: string;
+  avatar: string | null;
   preview: boolean;
   goLive: boolean;
   editTips: boolean;

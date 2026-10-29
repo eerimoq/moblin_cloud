@@ -19,6 +19,7 @@ import Modal, { ask } from "../components/Modal";
 import { createRecent, Latest, timeAgo } from "../components/Latest";
 import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
 import {
+  Avatar,
   channelKey,
   moderatedChannelKey,
   rememberChannel,
@@ -1279,9 +1280,12 @@ function ModeratorList(props: {
             {(moderator) => (
               <li class="flex items-start gap-3 border-line px-4 py-3 not-first:border-t-[1.5px] first:rounded-t-[14px] last:rounded-b-[14px] odd:bg-well even:bg-card">
                 <div class="flex min-w-0 flex-1 flex-col gap-3">
-                  <div class="min-w-0">
-                    <div class="truncate font-semibold">{moderator.name}</div>
-                    <div class="truncate text-[14px] text-ink-2">{moderator.login}</div>
+                  <div class="flex min-w-0 items-center gap-3">
+                    <Avatar picked={moderator} />
+                    <div class="min-w-0">
+                      <div class="truncate font-semibold">{moderator.name}</div>
+                      <div class="truncate text-[14px] text-ink-2">{moderator.login}</div>
+                    </div>
                   </div>
                   <PermissionRow title={t("Dashboard")}>
                     <PermissionBox

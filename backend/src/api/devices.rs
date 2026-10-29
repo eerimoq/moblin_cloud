@@ -662,7 +662,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false, "goLive": true, "editTips": false}])
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": true, "editTips": false}])
         );
         assert_eq!(allowed(&moderator).await, true);
         let call = tokio::spawn(control(&moderator, json!({"setLive": {"on": true}})));
@@ -745,7 +745,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": true, "goLive": false, "editTips": false}])
+            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": true, "goLive": false, "editTips": false}])
         );
         assert_eq!(allowed(&moderator).await, true);
         let mut preview = Events::open(&client, &url, &moderator).await;

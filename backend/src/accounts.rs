@@ -145,6 +145,7 @@ pub struct Moderator {
     pub id: String,
     pub login: String,
     pub name: String,
+    pub avatar: Option<String>,
     pub preview: bool,
     pub go_live: bool,
     pub edit_tips: bool,
@@ -719,7 +720,7 @@ impl Accounts {
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), preview, go_live, edit_tips
+                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips
                  FROM {table}
                  LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = moderator
                  WHERE broadcaster = ?2
@@ -732,9 +733,10 @@ impl Accounts {
                             id: row.get(0)?,
                             login: row.get(1)?,
                             name: row.get(2)?,
-                            preview: row.get(3)?,
-                            go_live: row.get(4)?,
-                            edit_tips: row.get(5)?,
+                            avatar: row.get(3)?,
+                            preview: row.get(4)?,
+                            go_live: row.get(5)?,
+                            edit_tips: row.get(6)?,
                         })
                     })?
                     .collect::<rusqlite::Result<_>>()
@@ -1107,6 +1109,7 @@ mod tests {
             id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
+            avatar: None,
             preview: false,
             go_live: false,
             edit_tips: false,
@@ -1148,6 +1151,7 @@ mod tests {
             id: id.to_string(),
             login: login.to_string(),
             name: login.to_string(),
+            avatar: None,
             preview: false,
             go_live: false,
             edit_tips: false,
@@ -1214,6 +1218,7 @@ mod tests {
             id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
+            avatar: None,
             preview: false,
             go_live: false,
             edit_tips: false,
@@ -1289,6 +1294,7 @@ mod tests {
                     id: "1".to_string(),
                     login: "bob".to_string(),
                     name: "bob".to_string(),
+                    avatar: None,
                     preview: false,
                     go_live: false,
                     edit_tips: false,
@@ -1311,6 +1317,7 @@ mod tests {
                 id: "1".to_string(),
                 login: "robert".to_string(),
                 name: "Robert".to_string(),
+                avatar: None,
                 preview: false,
                 go_live: false,
                 edit_tips: false,
@@ -1337,6 +1344,7 @@ mod tests {
                     id: "1".to_string(),
                     login: "robert".to_string(),
                     name: "Robert".to_string(),
+                    avatar: None,
                     preview: false,
                     go_live: false,
                     edit_tips: false,

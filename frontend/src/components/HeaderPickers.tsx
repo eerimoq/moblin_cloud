@@ -148,7 +148,7 @@ function Picker(props: {
   );
 }
 
-function Avatar(props: { picked: { name: string; avatar: string | null } }) {
+export function Avatar(props: { picked: { name: string; avatar: string | null } }) {
   return (
     <Show
       when={props.picked.avatar}

@@ -317,7 +317,7 @@ mod tests {
         let account: Value = response.json().await.unwrap();
         assert_eq!(
             account["kickModerators"],
-            json!([{"id": "9", "login": "bob", "name": "bob", "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "bob", "name": "bob", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
         );
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
         assert_eq!(token["grant_type"], "client_credentials");
@@ -356,7 +356,7 @@ mod tests {
         );
         assert_eq!(
             account_of(&address, &session).await["kickModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": "https://files.kick.com/robert.png", "preview": false, "goLive": false, "editTips": false}])
         );
         let response = dashboard(&moderator).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "9", "login": "bob", "name": "Bob", "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "bob", "name": "Bob", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
         );
         assert!(api.accounts.moderates(Platform::Twitch, "9", "1"));
         create_account(&api, "9", "Robert", "robert");
@@ -470,7 +470,7 @@ mod tests {
         assert_eq!(account["moderating"][0]["platform"], "twitch");
         assert_eq!(
             account_of(&address, &session).await["twitchModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false, "editTips": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
@@ -575,7 +575,7 @@ mod tests {
             assert_eq!(
                 response.json::<Value>().await.unwrap()["twitchModerators"],
                 if enabled {
-                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false, "goLive": false, "editTips": false}])
+                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false}])
                 } else {
                     json!([])
                 }

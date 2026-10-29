@@ -36,7 +36,11 @@ pub(crate) async fn start_kick() -> (String, FakeKick) {
         "kick-sub" => Some(json!({"user_id": 777, "name": "Sub"})),
         "kick-lapsed" => Some(json!({"user_id": 778, "name": "Lapsed"})),
         "kick-broken" => Some(json!({"user_id": 779, "name": "Broken"})),
-        "kick-mod" => Some(json!({"user_id": 9, "name": "Robert"})),
+        "kick-mod" => Some(json!({
+            "user_id": 9,
+            "name": "Robert",
+            "profile_picture": "https://files.kick.com/robert.png",
+        })),
         _ => None,
     };
     let channel_of = |token: &str| match token {
