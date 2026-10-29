@@ -289,7 +289,7 @@ pub(super) async fn handle_moderator_settings(
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    moderator(&api, &headers, &id)?;
+    editor(&api, &headers, &id)?;
     let request = SettingsRequest {
         currency: None,
         ..request

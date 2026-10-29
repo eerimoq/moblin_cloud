@@ -175,6 +175,7 @@ class AccessModeratorLimits(AccessTestCase):
         page_id = streamer.page_id()
         moderator = self.sign_in("limitedmod")
         streamer.add_moderator("twitch", "limitedmod")
+        streamer.set_moderator_edit_tips("twitch", user_id_of("limitedmod"), True)
         other = self.sign_in("limitedother")
         with RecordingMoblin(self.backend.url, other.moblin_cloud_key(), "LO1") as device:
             device.start()

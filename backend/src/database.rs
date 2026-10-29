@@ -33,7 +33,7 @@ impl Database {
                 .context("failed to add the accounts moblin_key column")?;
         }
         for table in ["twitch_moderators", "kick_moderators"] {
-            for column in ["preview", "go_live"] {
+            for column in ["preview", "go_live", "edit_tips"] {
                 if columns(table, "broadcaster")? && !columns(table, column)? {
                     connection
                         .execute_batch(&format!(
@@ -92,6 +92,7 @@ impl Database {
                      name TEXT NOT NULL,
                      preview INTEGER NOT NULL DEFAULT 0,
                      go_live INTEGER NOT NULL DEFAULT 0,
+                     edit_tips INTEGER NOT NULL DEFAULT 0,
                      PRIMARY KEY (broadcaster, moderator)
                  );
                  CREATE INDEX IF NOT EXISTS twitch_moderators_moderator ON twitch_moderators (moderator);
@@ -166,6 +167,7 @@ impl Database {
                      name TEXT NOT NULL,
                      preview INTEGER NOT NULL DEFAULT 0,
                      go_live INTEGER NOT NULL DEFAULT 0,
+                     edit_tips INTEGER NOT NULL DEFAULT 0,
                      PRIMARY KEY (broadcaster, moderator)
                  );
                  CREATE INDEX IF NOT EXISTS kick_moderators_moderator ON kick_moderators (moderator);",
@@ -278,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn old_moderators_get_no_preview_and_no_go_live_on_start() {
+    fn old_moderators_get_no_preview_no_go_live_and_no_edit_tips_on_start() {
         let path = temporary_path("moderators-preview");
         let connection = Connection::open(&path).unwrap();
         connection
@@ -300,22 +302,23 @@ mod tests {
             for table in ["twitch_moderators", "kick_moderators"] {
                 let columns: u32 = connection
                     .query_row(
-                        "SELECT count(*) FROM pragma_table_info(?1) WHERE name IN ('preview', 'go_live')",
+                        "SELECT count(*) FROM pragma_table_info(?1) WHERE name IN ('preview', 'go_live', 'edit_tips')",
                         [table],
                         |row| row.get(0),
                     )
                     .unwrap();
-                assert_eq!(columns, 2);
+                assert_eq!(columns, 3);
             }
-            let (preview, go_live): (bool, bool) = connection
+            let (preview, go_live, edit_tips): (bool, bool, bool) = connection
                 .query_row(
-                    "SELECT preview, go_live FROM twitch_moderators WHERE moderator = '1'",
+                    "SELECT preview, go_live, edit_tips FROM twitch_moderators WHERE moderator = '1'",
                     [],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .unwrap();
             assert!(!preview);
             assert!(!go_live);
+            assert!(!edit_tips);
         }
         remove(&path);
     }

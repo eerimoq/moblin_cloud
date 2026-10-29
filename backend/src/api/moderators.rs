@@ -143,6 +143,22 @@ pub(super) async fn handle_account_moderator_go_live(
     )
 }
 
+pub(super) async fn handle_account_moderator_edit_tips(
+    State(api): State<Arc<Api>>,
+    Path((platform, moderator)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<PermissionRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, String)> {
+    set_permission(
+        &api,
+        &platform,
+        &moderator,
+        &headers,
+        Permission::EditTips,
+        request.on,
+    )
+}
+
 fn set_permission(
     api: &Api,
     platform: &str,
@@ -200,6 +216,7 @@ pub(super) async fn handle_moderator_account(
         premium: streamer_is_premium(&api, &id),
         preview: may(&api, &signed_in.account, &id, Permission::Preview),
         go_live: may(&api, &signed_in.account, &id, Permission::GoLive),
+        edit_tips: may(&api, &signed_in.account, &id, Permission::EditTips),
         twitch_moderators: Vec::new(),
         kick_moderators: Vec::new(),
         moderating: Vec::new(),
@@ -300,7 +317,7 @@ mod tests {
         let account: Value = response.json().await.unwrap();
         assert_eq!(
             account["kickModerators"],
-            json!([{"id": "9", "login": "bob", "name": "bob", "preview": false, "goLive": false}])
+            json!([{"id": "9", "login": "bob", "name": "bob", "preview": false, "goLive": false, "editTips": false}])
         );
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
         assert_eq!(token["grant_type"], "client_credentials");
@@ -339,7 +356,7 @@ mod tests {
         );
         assert_eq!(
             account_of(&address, &session).await["kickModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false, "editTips": false}])
         );
         let response = dashboard(&moderator).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -357,14 +374,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        let save = async || {
+            client
+                .post(format!("http://{address}/account/pages/{id}/settings"))
+                .bearer_auth(&moderator)
+                .json(&json!({"message": "Hi from the mod"}))
+                .send()
+                .await
+                .unwrap()
+        };
+        assert_eq!(save().await.status(), StatusCode::FORBIDDEN);
         let response = client
-            .post(format!("http://{address}/account/pages/{id}/settings"))
-            .bearer_auth(&moderator)
-            .json(&json!({"message": "Hi from the mod"}))
+            .post(format!(
+                "http://{address}/account/moderators/kick/9/edit-tips"
+            ))
+            .bearer_auth(&session)
+            .json(&json!({"on": true}))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(save().await.status(), StatusCode::OK);
         let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
         assert_eq!(profile["message"], "Hi from the mod");
         let response = remove(&session, "9").await;
@@ -430,7 +460,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchModerators"],
-            json!([{"id": "9", "login": "bob", "name": "Bob", "preview": false, "goLive": false}])
+            json!([{"id": "9", "login": "bob", "name": "Bob", "preview": false, "goLive": false, "editTips": false}])
         );
         assert!(api.accounts.moderates(Platform::Twitch, "9", "1"));
         create_account(&api, "9", "Robert", "robert");
@@ -440,7 +470,7 @@ mod tests {
         assert_eq!(account["moderating"][0]["platform"], "twitch");
         assert_eq!(
             account_of(&address, &session).await["twitchModerators"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "preview": false, "goLive": false, "editTips": false}])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
@@ -545,7 +575,7 @@ mod tests {
             assert_eq!(
                 response.json::<Value>().await.unwrap()["twitchModerators"],
                 if enabled {
-                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false, "goLive": false}])
+                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "preview": false, "goLive": false, "editTips": false}])
                 } else {
                     json!([])
                 }
@@ -686,6 +716,7 @@ mod tests {
         assert_eq!(account["premium"], false);
         assert_eq!(account["moderating"], json!([]));
         assert_eq!(account["twitchModerators"], json!([]));
+        assert_eq!(account["editTips"], false);
         let settings = &account["settings"];
         assert_eq!(settings["id"], id);
         assert_eq!(settings["currency"], "SEK");
@@ -698,6 +729,45 @@ mod tests {
         assert_eq!(settings["stripePending"], false);
         assert_eq!(settings["payable"], true);
         assert_eq!(get(&viewer1, "").await.status(), StatusCode::FORBIDDEN);
+        for (path, body) in [
+            ("/settings", json!({"message": "Hi"})),
+            ("/image/remove", json!({})),
+        ] {
+            let response = post(&mod1, path, body).await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert_eq!(
+                response.text().await.unwrap(),
+                "The streamer has not let you edit tips."
+            );
+        }
+        let response = client
+            .post(format!("http://{address}/account/pages/{id}/image"))
+            .bearer_auth(&mod1)
+            .header("content-type", "image/png")
+            .body(images::tests::png(1200, 400))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(api.pages.get(&id).message, None);
+        let response = client
+            .post(format!(
+                "http://{address}/account/moderators/twitch/21/edit-tips"
+            ))
+            .bearer_auth(&session)
+            .json(&json!({"on": true}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["twitchModerators"][0]["editTips"],
+            true
+        );
+        assert_eq!(
+            get(&mod1, "").await.json::<Value>().await.unwrap()["editTips"],
+            true
+        );
         let response = post(
             &mod1,
             "/settings",

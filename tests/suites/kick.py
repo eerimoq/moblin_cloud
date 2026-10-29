@@ -240,6 +240,7 @@ class KickModerators(KickTestCase):
                     "name": "kmod",
                     "preview": False,
                     "goLive": False,
+                    "editTips": False,
                 }
             ],
         )

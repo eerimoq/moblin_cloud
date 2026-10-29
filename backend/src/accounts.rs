@@ -147,12 +147,14 @@ pub struct Moderator {
     pub name: String,
     pub preview: bool,
     pub go_live: bool,
+    pub edit_tips: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Permission {
     Preview,
     GoLive,
+    EditTips,
 }
 
 impl Permission {
@@ -160,6 +162,7 @@ impl Permission {
         match self {
             Self::Preview => "preview",
             Self::GoLive => "go_live",
+            Self::EditTips => "edit_tips",
         }
     }
 }
@@ -716,7 +719,7 @@ impl Accounts {
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), preview, go_live
+                "SELECT moderator, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), preview, go_live, edit_tips
                  FROM {table}
                  LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = moderator
                  WHERE broadcaster = ?2
@@ -731,6 +734,7 @@ impl Accounts {
                             name: row.get(2)?,
                             preview: row.get(3)?,
                             go_live: row.get(4)?,
+                            edit_tips: row.get(5)?,
                         })
                     })?
                     .collect::<rusqlite::Result<_>>()
@@ -1105,6 +1109,7 @@ mod tests {
             name: "Mod".to_string(),
             preview: false,
             go_live: false,
+            edit_tips: false,
         };
         accounts
             .add_moderator(Platform::Twitch, "42", &moderator)
@@ -1145,6 +1150,7 @@ mod tests {
             name: login.to_string(),
             preview: false,
             go_live: false,
+            edit_tips: false,
         };
         accounts
             .add_moderator(Platform::Kick, "42", &moderator("1", "erik"))
@@ -1210,11 +1216,16 @@ mod tests {
             name: "Mod".to_string(),
             preview: false,
             go_live: false,
+            edit_tips: false,
         };
         accounts
             .add_moderator(Platform::Twitch, "42", &moderator)
             .unwrap();
-        for permission in [Permission::Preview, Permission::GoLive] {
+        for permission in [
+            Permission::Preview,
+            Permission::GoLive,
+            Permission::EditTips,
+        ] {
             assert!(!accounts.permits(Platform::Twitch, "1", "42", permission));
             assert_eq!(
                 accounts.set_moderator_permission(Platform::Twitch, "42", "2", permission, true),
@@ -1280,6 +1291,7 @@ mod tests {
                     name: "bob".to_string(),
                     preview: false,
                     go_live: false,
+                    edit_tips: false,
                 },
             )
             .unwrap();
@@ -1301,6 +1313,7 @@ mod tests {
                 name: "Robert".to_string(),
                 preview: false,
                 go_live: false,
+                edit_tips: false,
             }]
         );
         assert!(accounts.moderated(Platform::Kick, "2").is_empty());
@@ -1326,6 +1339,7 @@ mod tests {
                     name: "Robert".to_string(),
                     preview: false,
                     go_live: false,
+                    edit_tips: false,
                 },
             )
             .unwrap();

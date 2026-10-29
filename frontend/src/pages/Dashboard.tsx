@@ -1,4 +1,14 @@
-import { createMemo, createSignal, For, Index, type JSX, onCleanup, onMount, Show } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  Index,
+  type JSX,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
@@ -33,6 +43,7 @@ import {
   createAccountSession,
   type Moderator,
   removeModerator,
+  setModeratorEditTips,
   setModeratorGoLive,
   setModeratorPreview,
   type Moderating,
@@ -1135,8 +1146,9 @@ function ModeratorSettings(props: {
     <section class={cardClass}>
       <h2 class="text-[23px] font-semibold">{t("Moderators")}</h2>
       <p class="text-ink-2">
-        {t("Moderators can manage your dashboard, except payments, moderators and Moblin.")}{" "}
-        {t("They see your stream preview and can go live only when you turn it on for them.")}
+        {t(
+          "Moderators can see your dashboard, send tests and use the remote control. Turn on more below.",
+        )}
       </p>
       <For each={linked()}>
         {(platform) => (
@@ -1159,23 +1171,52 @@ function ModeratorSettings(props: {
 function PermissionBox(props: {
   checked: boolean;
   disabled: boolean;
+  text: string;
   label: string;
+  help: string;
   onChange: (on: boolean) => Promise<boolean>;
 }) {
+  const help = createUniqueId();
   return (
-    <input
-      type="checkbox"
-      checked={props.checked}
-      disabled={props.disabled}
-      aria-label={props.label}
-      onChange={async (event) => {
-        const input = event.currentTarget;
-        if (!(await props.onChange(input.checked))) {
-          input.checked = props.checked;
-        }
-      }}
-      class="size-5 accent-moss"
-    />
+    <label class="group flex items-center gap-2 whitespace-nowrap lg:relative">
+      <input
+        type="checkbox"
+        checked={props.checked}
+        disabled={props.disabled}
+        aria-label={props.label}
+        aria-describedby={help}
+        onChange={async (event) => {
+          const input = event.currentTarget;
+          if (!(await props.onChange(input.checked))) {
+            input.checked = props.checked;
+          }
+        }}
+        class="size-5 accent-moss"
+      />
+      {props.text}
+      <span
+        id={help}
+        role="tooltip"
+        class="pointer-events-none invisible absolute bottom-full left-0 z-10 mb-1 w-max max-w-[min(100%,18rem)] lg:max-w-72 rounded-xl border-[1.5px] border-line bg-band px-3 py-2 text-[14px] whitespace-normal opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-has-[:focus-visible]:visible group-has-[:focus-visible]:opacity-100"
+      >
+        {props.help}
+      </span>
+    </label>
+  );
+}
+
+function PermissionRow(props: { title: string; children: JSX.Element }) {
+  return (
+    <div
+      role="group"
+      aria-label={props.title}
+      class="relative flex flex-wrap items-center gap-x-5 gap-y-2"
+    >
+      <span class="w-36 text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+        {props.title}
+      </span>
+      {props.children}
+    </div>
   );
 }
 
@@ -1233,81 +1274,72 @@ function ModeratorList(props: {
         </h3>
       </Show>
       <Show when={props.moderators.length > 0}>
-        <div class="overflow-hidden rounded-2xl border-[1.5px] border-line">
-          <table class="w-full table-fixed">
-            <thead class="bg-band">
-              <tr class="text-left text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
-                <th scope="col" class="px-4 py-2.5">
-                  {t("Name")}
-                </th>
-                <th scope="col" class="px-4 py-2.5">
-                  {t("Username")}
-                </th>
-                <th scope="col" class="w-24 px-2 py-2.5 text-center">
-                  {t("Preview")}
-                </th>
-                <th scope="col" class="w-24 px-2 py-2.5 text-center">
-                  {t("Go live")}
-                </th>
-                <th scope="col" class="w-14">
-                  <span class="sr-only">{t("Remove")}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={props.moderators}>
-                {(moderator) => (
-                  <tr class="border-t-[1.5px] border-line odd:bg-well even:bg-card">
-                    <td class="truncate px-4 py-2 font-semibold">{moderator.name}</td>
-                    <td class="truncate px-4 py-2 text-ink-2">{moderator.login}</td>
-                    <td class="px-2 py-2 text-center">
-                      <PermissionBox
-                        checked={moderator.preview}
-                        disabled={busy()}
-                        label={t("Let {name} see the stream preview", { name: moderator.name })}
-                        onChange={(on) =>
-                          run(() =>
-                            setModeratorPreview(props.session, props.platform, moderator.id, on),
-                          )
-                        }
-                      />
-                    </td>
-                    <td class="px-2 py-2 text-center">
-                      <PermissionBox
-                        checked={moderator.goLive}
-                        disabled={busy()}
-                        label={t("Let {name} go live", {
-                          name: moderator.name,
-                        })}
-                        onChange={(on) =>
-                          run(() =>
-                            setModeratorGoLive(props.session, props.platform, moderator.id, on),
-                          )
-                        }
-                      />
-                    </td>
-                    <td class="py-1 pr-2">
-                      <button
-                        type="button"
-                        class="ml-auto flex size-10 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
-                        disabled={busy()}
-                        aria-label={t("Remove {name}", { name: moderator.name })}
-                        title={t("Remove")}
-                        onClick={() =>
-                          void run(() =>
-                            removeModerator(props.session, props.platform, moderator.id),
-                          )
-                        }
-                      >
-                        <Icon name="trash" class="size-5" />
-                      </button>
-                    </td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </div>
+        <ul class="rounded-2xl border-[1.5px] border-line">
+          <For each={props.moderators}>
+            {(moderator) => (
+              <li class="flex items-start gap-3 border-line px-4 py-3 not-first:border-t-[1.5px] first:rounded-t-[14px] last:rounded-b-[14px] odd:bg-well even:bg-card">
+                <div class="flex min-w-0 flex-1 flex-col gap-3">
+                  <div class="min-w-0">
+                    <div class="truncate font-semibold">{moderator.name}</div>
+                    <div class="truncate text-[14px] text-ink-2">{moderator.login}</div>
+                  </div>
+                  <PermissionRow title={t("Dashboard")}>
+                    <PermissionBox
+                      checked={moderator.editTips}
+                      disabled={busy()}
+                      text={t("Edit tips")}
+                      label={t("Let {name} edit your settings", { name: moderator.name })}
+                      help={t("Change the tip page, message, wheel of luck and effect settings.")}
+                      onChange={(on) =>
+                        run(() =>
+                          setModeratorEditTips(props.session, props.platform, moderator.id, on),
+                        )
+                      }
+                    />
+                  </PermissionRow>
+                  <PermissionRow title={t("Remote control")}>
+                    <PermissionBox
+                      checked={moderator.preview}
+                      disabled={busy()}
+                      text={t("Preview")}
+                      label={t("Let {name} see the stream preview", { name: moderator.name })}
+                      help={t("See the stream preview.")}
+                      onChange={(on) =>
+                        run(() =>
+                          setModeratorPreview(props.session, props.platform, moderator.id, on),
+                        )
+                      }
+                    />
+                    <PermissionBox
+                      checked={moderator.goLive}
+                      disabled={busy()}
+                      text={t("Go live")}
+                      label={t("Let {name} go live", { name: moderator.name })}
+                      help={t("Start the stream. Ending it is always allowed.")}
+                      onChange={(on) =>
+                        run(() =>
+                          setModeratorGoLive(props.session, props.platform, moderator.id, on),
+                        )
+                      }
+                    />
+                  </PermissionRow>
+                </div>
+                <button
+                  type="button"
+                  class="flex size-10 shrink-0 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
+                  disabled={busy()}
+                  aria-label={t("Remove {name}", { name: moderator.name })}
+                  title={t("Remove")}
+                  onClick={() =>
+                    void run(() => removeModerator(props.session, props.platform, moderator.id))
+                  }
+                >
+                  <Icon name="trash" class="size-5" />
+                </button>
+              </li>
+            )}
+          </For>
+        </ul>
       </Show>
       <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
         <input
@@ -1755,6 +1787,14 @@ function TestSend(props: {
   );
 }
 
+function Editable(props: { readOnly: boolean; children: JSX.Element }) {
+  return (
+    <fieldset disabled={props.readOnly} class="contents">
+      {props.children}
+    </fieldset>
+  );
+}
+
 function Admin(props: { session: string; account: Account; page?: string; onSignOut: () => void }) {
   const [account, setAccount] = createSignal(props.account);
   const [settings, setSettings] = createSignal(props.account.settings);
@@ -1907,6 +1947,11 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
         onSelect={select}
       />
       <div class="min-w-0">
+        <Show when={!account().editTips && ["page", "tips", "wheel", "effects"].includes(active())}>
+          <div class="mb-6">
+            <Notice>{t("The streamer has not let you edit tips.")}</Notice>
+          </div>
+        </Show>
         <div hidden={active() !== "page"} class="flex flex-col gap-6">
           <Show when={!moderating()}>
             <GetStarted
@@ -1916,14 +1961,16 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
               onSelect={select}
             />
           </Show>
-          <YourPage
-            account={account()}
-            page={settings()}
-            busy={busy()}
-            moderating={moderating()}
-            onSave={save}
-            onImage={changeImage}
-          />
+          <Editable readOnly={!account().editTips}>
+            <YourPage
+              account={account()}
+              page={settings()}
+              busy={busy()}
+              moderating={moderating()}
+              onSave={save}
+              onImage={changeImage}
+            />
+          </Editable>
         </div>
         <div hidden={active() !== "tips"} class="flex flex-col gap-6">
           <Show
@@ -1937,12 +1984,14 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
               />
             }
           >
-            <TipSettings
-              tips={settings().tips}
-              currency={settings().currency}
-              busy={busy()}
-              onSave={save}
-            />
+            <Editable readOnly={!account().editTips}>
+              <TipSettings
+                tips={settings().tips}
+                currency={settings().currency}
+                busy={busy()}
+                onSave={save}
+              />
+            </Editable>
           </Show>
           <TestSend
             kind="tip"
@@ -1989,22 +2038,26 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
               />
             }
           >
-            <SpinSettings
-              spin={settings().spin}
-              currency={settings().currency}
-              busy={busy()}
-              onSave={save}
-            />
+            <Editable readOnly={!account().editTips}>
+              <SpinSettings
+                spin={settings().spin}
+                currency={settings().currency}
+                busy={busy()}
+                onSave={save}
+              />
+            </Editable>
           </Show>
           <Show when={account().twitch || account().kick}>
-            <SubscriberSettings
-              perk="spin"
-              tiers={settings().subSpins}
-              twitch={account().twitch !== null}
-              kick={account().kick !== null}
-              busy={busy()}
-              onSave={(subSpins) => save({ subSpins })}
-            />
+            <Editable readOnly={!account().editTips}>
+              <SubscriberSettings
+                perk="spin"
+                tiers={settings().subSpins}
+                twitch={account().twitch !== null}
+                kick={account().kick !== null}
+                busy={busy()}
+                onSave={(subSpins) => save({ subSpins })}
+              />
+            </Editable>
           </Show>
           <TestSend
             kind="spin"
@@ -2031,22 +2084,26 @@ function Admin(props: { session: string; account: Account; page?: string; onSign
               />
             }
           >
-            <EffectSettings
-              effects={settings().effects}
-              currency={settings().currency}
-              busy={busy()}
-              onSave={save}
-            />
+            <Editable readOnly={!account().editTips}>
+              <EffectSettings
+                effects={settings().effects}
+                currency={settings().currency}
+                busy={busy()}
+                onSave={save}
+              />
+            </Editable>
           </Show>
           <Show when={account().twitch || account().kick}>
-            <SubscriberSettings
-              perk="effect"
-              tiers={settings().subEffects}
-              twitch={account().twitch !== null}
-              kick={account().kick !== null}
-              busy={busy()}
-              onSave={(subEffects) => save({ subEffects })}
-            />
+            <Editable readOnly={!account().editTips}>
+              <SubscriberSettings
+                perk="effect"
+                tiers={settings().subEffects}
+                twitch={account().twitch !== null}
+                kick={account().kick !== null}
+                busy={busy()}
+                onSave={(subEffects) => save({ subEffects })}
+              />
+            </Editable>
           </Show>
           <TestSend
             kind="effect"

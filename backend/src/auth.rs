@@ -612,6 +612,7 @@ impl Auth {
                 login: channel.slug.to_lowercase(),
                 preview: false,
                 go_live: false,
+                edit_tips: false,
             }))
     }
 
@@ -664,6 +665,7 @@ impl Auth {
                 login: user.login.to_lowercase(),
                 preview: false,
                 go_live: false,
+                edit_tips: false,
             }))
     }
 

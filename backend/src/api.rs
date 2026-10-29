@@ -177,6 +177,10 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/moderators/{platform}/{moderator}/go-live",
             post(handle_account_moderator_go_live),
         )
+        .route(
+            "/account/moderators/{platform}/{moderator}/edit-tips",
+            post(handle_account_moderator_edit_tips),
+        )
         .route("/account/pages/{id}/recent", get(handle_moderator_recent))
         .route(
             "/account/pages/{id}/recent/{order}/resend",
@@ -429,6 +433,18 @@ pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<Sign
             "no-preview",
             StatusCode::FORBIDDEN,
             "The streamer has not let you see the stream preview.",
+        ));
+    }
+    Ok(signed_in)
+}
+
+pub(super) fn editor(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+    let signed_in = moderator(api, headers, id)?;
+    if !may(api, &signed_in.account, id, Permission::EditTips) {
+        return Err(failure(
+            "no-edit-tips",
+            StatusCode::FORBIDDEN,
+            "The streamer has not let you edit tips.",
         ));
     }
     Ok(signed_in)

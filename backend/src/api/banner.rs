@@ -46,7 +46,7 @@ async fn moderator_image(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let user = moderator(api, headers, page)?.id;
+    let user = editor(api, headers, page)?.id;
     let premium = streamer_is_premium(api, page);
     save_image(api, &user, page.to_string(), premium, body)
         .await
@@ -110,7 +110,7 @@ pub(super) async fn handle_moderator_image_remove(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let user = moderator(&api, &headers, &id)?.id;
+    let user = editor(&api, &headers, &id)?.id;
     remove_image(&api, &user, id)
         .map(without_payments)
         .map_err(Failure::from)

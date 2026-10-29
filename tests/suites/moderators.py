@@ -5,6 +5,7 @@ from ..utils.moblin import Moblin
 from ..utils.test_case import TestCase
 
 NOT_MODERATOR = "Only the streamer and the moderators they turned on can do this."
+NO_EDIT_TIPS = "The streamer has not let you edit tips."
 
 
 class ModeratorsTestCase(TestCase):
@@ -96,6 +97,7 @@ class ModeratorsAdded(ModeratorsTestCase):
                     "name": self.moderator_login,
                     "preview": False,
                     "goLive": False,
+                    "editTips": False,
                 }
             ],
         )
@@ -133,7 +135,7 @@ class ModeratorsAdded(ModeratorsTestCase):
 
 
 class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
-    """Show a moderator the streamer's dashboard without payments, and let them change the rest.
+    """Show a moderator the streamer's dashboard without payments, letting them change the rest only once the streamer lets them edit tips.
 
     The streamer has no PayPal or Stripe, so the paid features can't be turned on by anyone.
     """
@@ -181,6 +183,16 @@ class ModeratorsUseTheStreamersDashboard(ModeratorsTestCase):
             [False, None, False, False, None, False],
         )
         self.assert_equal(settings["payable"], False)
+        self.assert_equal(account["editTips"], False)
+        for call in [
+            lambda: self.moderator.moderated_settings(self.page_id, message="Theirs"),
+            lambda: self.moderator.moderated_remove_image(self.page_id),
+        ]:
+            self.assert_backend_error(403, call, NO_EDIT_TIPS)
+        self.assert_equal(self.dashboard.account()["settings"]["message"], "Mine")
+        account = self.dashboard.set_moderator_edit_tips("twitch", self.moderator_id, True)
+        self.assert_equal([entry["editTips"] for entry in account["twitchModerators"]], [True])
+        self.assert_equal(self.moderator.moderated_account(self.page_id)["editTips"], True)
         for paid in [
             {"tips": {"amounts": [100]}},
             {"spin": {"options": [{"spins": 1, "price": 100}]}},
@@ -243,6 +255,7 @@ class ModeratorsChangePaidFeatures(ModeratorsTestCase):
 
     def run(self):
         self.add_moderator()
+        self.dashboard.set_moderator_edit_tips("twitch", self.moderator_id, True)
         settings = self.moderator.moderated_account(self.page_id)["settings"]
         self.assert_equal(
             [settings["payable"], settings["merchantId"], settings["paypal"]], [True, None, False]
