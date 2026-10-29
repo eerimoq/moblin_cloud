@@ -1171,25 +1171,30 @@ function ModeratorSettings(props: {
 
 function PermissionBox(props: {
   checked: boolean;
-  disabled: boolean;
   text: string;
   label: string;
   help: string;
   onChange: (on: boolean) => Promise<boolean>;
 }) {
   const help = createUniqueId();
+  const [pending, setPending] = createSignal(false);
   return (
     <label class="group flex items-center gap-2 whitespace-nowrap lg:relative">
       <input
         type="checkbox"
         checked={props.checked}
-        disabled={props.disabled}
+        disabled={pending()}
         aria-label={props.label}
         aria-describedby={help}
         onChange={async (event) => {
           const input = event.currentTarget;
-          if (!(await props.onChange(input.checked))) {
-            input.checked = props.checked;
+          setPending(true);
+          try {
+            if (!(await props.onChange(input.checked))) {
+              input.checked = props.checked;
+            }
+          } finally {
+            setPending(false);
           }
         }}
         class="size-5 accent-moss"
@@ -1232,14 +1237,15 @@ function ModeratorList(props: {
   const [username, setUsername] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const run = async (action: () => Promise<Account>) => {
-    if (busy()) {
-      return false;
-    }
-    setBusy(true);
+  let latest = 0;
+  const call = async (action: () => Promise<Account>) => {
+    const request = ++latest;
     setError(null);
     try {
-      props.onAccount(await action());
+      const account = await action();
+      if (request === latest) {
+        props.onAccount(account);
+      }
       return true;
     } catch (error) {
       if (signedOut(error)) {
@@ -1247,6 +1253,15 @@ function ModeratorList(props: {
       }
       setError(moderationErrorText(error));
       return false;
+    }
+  };
+  const run = async (action: () => Promise<Account>) => {
+    if (busy()) {
+      return false;
+    }
+    setBusy(true);
+    try {
+      return await call(action);
     } finally {
       setBusy(false);
     }
@@ -1276,53 +1291,50 @@ function ModeratorList(props: {
       </Show>
       <Show when={props.moderators.length > 0}>
         <ul class="rounded-2xl border-[1.5px] border-line">
-          <For each={props.moderators}>
+          <Index each={props.moderators}>
             {(moderator) => (
               <li class="flex items-start gap-3 border-line px-4 py-3 not-first:border-t-[1.5px] first:rounded-t-[14px] last:rounded-b-[14px] odd:bg-well even:bg-card">
                 <div class="flex min-w-0 flex-1 flex-col gap-3">
                   <div class="flex min-w-0 items-center gap-3">
-                    <Avatar picked={moderator} />
+                    <Avatar picked={moderator()} />
                     <div class="min-w-0">
-                      <div class="truncate font-semibold">{moderator.name}</div>
-                      <div class="truncate text-[14px] text-ink-2">{moderator.login}</div>
+                      <div class="truncate font-semibold">{moderator().name}</div>
+                      <div class="truncate text-[14px] text-ink-2">{moderator().login}</div>
                     </div>
                   </div>
                   <PermissionRow title={t("Dashboard")}>
                     <PermissionBox
-                      checked={moderator.editTips}
-                      disabled={busy()}
+                      checked={moderator().editTips}
                       text={t("Edit tips")}
-                      label={t("Let {name} edit your settings", { name: moderator.name })}
+                      label={t("Let {name} edit your settings", { name: moderator().name })}
                       help={t("Change the tip page, message, wheel of luck and effect settings.")}
                       onChange={(on) =>
-                        run(() =>
-                          setModeratorEditTips(props.session, props.platform, moderator.id, on),
+                        call(() =>
+                          setModeratorEditTips(props.session, props.platform, moderator().id, on),
                         )
                       }
                     />
                   </PermissionRow>
                   <PermissionRow title={t("Remote control")}>
                     <PermissionBox
-                      checked={moderator.preview}
-                      disabled={busy()}
+                      checked={moderator().preview}
                       text={t("Preview")}
-                      label={t("Let {name} see the stream preview", { name: moderator.name })}
+                      label={t("Let {name} see the stream preview", { name: moderator().name })}
                       help={t("See the stream preview.")}
                       onChange={(on) =>
-                        run(() =>
-                          setModeratorPreview(props.session, props.platform, moderator.id, on),
+                        call(() =>
+                          setModeratorPreview(props.session, props.platform, moderator().id, on),
                         )
                       }
                     />
                     <PermissionBox
-                      checked={moderator.goLive}
-                      disabled={busy()}
+                      checked={moderator().goLive}
                       text={t("Go live")}
-                      label={t("Let {name} go live", { name: moderator.name })}
+                      label={t("Let {name} go live", { name: moderator().name })}
                       help={t("Start the stream. Ending it is always allowed.")}
                       onChange={(on) =>
-                        run(() =>
-                          setModeratorGoLive(props.session, props.platform, moderator.id, on),
+                        call(() =>
+                          setModeratorGoLive(props.session, props.platform, moderator().id, on),
                         )
                       }
                     />
@@ -1332,17 +1344,17 @@ function ModeratorList(props: {
                   type="button"
                   class="flex size-10 shrink-0 items-center justify-center rounded-xl text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
                   disabled={busy()}
-                  aria-label={t("Remove {name}", { name: moderator.name })}
+                  aria-label={t("Remove {name}", { name: moderator().name })}
                   title={t("Remove")}
                   onClick={() =>
-                    void run(() => removeModerator(props.session, props.platform, moderator.id))
+                    void run(() => removeModerator(props.session, props.platform, moderator().id))
                   }
                 >
                   <Icon name="trash" class="size-5" />
                 </button>
               </li>
             )}
-          </For>
+          </Index>
         </ul>
       </Show>
       <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
