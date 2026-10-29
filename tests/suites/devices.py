@@ -307,9 +307,14 @@ class DevicesControls(DevicesTestCase):
         mute = {"setMute": {"on": True}}
         self.assert_equal(self.dashboard.control_device(self.page_id, "K1", mute), {})
         self.wait_until(lambda: mute in device.requests, "the control to reach the device")
+        message = {"sendMessage": {"text": "Drink some water!"}}
+        self.assert_equal(self.dashboard.control_device(self.page_id, "K1", message), {})
+        self.wait_until(lambda: message in device.requests, "the message to reach the device")
         for invalid in [
             {},
             {"setMute": {}},
+            {"sendMessage": {"text": " "}},
+            {"sendMessage": {"text": "x" * 301}},
             {"setScene": {"id": "not-a-uuid"}},
             {"importSettings": {"data": ""}},
             {"setMute": {"on": True}, "setTorch": {"on": True}},

@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import Icon from "../components/Icon";
 import MoblinScreen from "../components/MoblinScreen";
 import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
-import { cardClass } from "../components/PageParts";
+import { buttonClass, cardClass, inputClass, Notice } from "../components/PageParts";
 import {
   controlDevice,
   deviceEventsUrl,
@@ -360,6 +360,80 @@ function Graphs(props: { history: Sample[] }) {
   );
 }
 
+const messageErrorText = (error: unknown) =>
+  error instanceof BackendError && [403, 409, 502, 504].includes(error.status) && error.message
+    ? error.message
+    : t("Something went wrong. Try again.");
+
+function MomMessage(props: {
+  session: string;
+  page: string;
+  device: string;
+  enabled: boolean;
+  onSignOut: () => void;
+}) {
+  const [text, setText] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const send = async (event: SubmitEvent) => {
+    event.preventDefault();
+    const message = text().trim();
+    if (!message) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await controlDevice(props.session, props.page, props.device, {
+        sendMessage: { text: message },
+      });
+      setText("");
+    } catch (error) {
+      if (error instanceof BackendError && error.status === 401) {
+        props.onSignOut();
+        return;
+      }
+      setError(messageErrorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div class="flex flex-col gap-3 border-t-[1.5px] border-line pt-5">
+      <form class="flex flex-wrap gap-3" onSubmit={(event) => void send(event)}>
+        <input
+          type="text"
+          value={text()}
+          onInput={(event) => setText(event.currentTarget.value)}
+          placeholder={t("Message to the streamer")}
+          aria-label={t("Message to the streamer")}
+          maxLength={300}
+          autocomplete="off"
+          disabled={!props.enabled}
+          class={`${inputClass} min-w-0 flex-1 disabled:opacity-60`}
+        />
+        <button
+          type="submit"
+          class={buttonClass}
+          disabled={!props.enabled || busy() || !text().trim()}
+        >
+          <Icon name="chat" class="size-5" />
+          {t("Send")}
+        </button>
+      </form>
+      <Show when={error()}>
+        {(error) => (
+          <Notice error onClose={() => setError(null)}>
+            {error()}
+          </Notice>
+        )}
+      </Show>
+    </div>
+  );
+}
+
 export default function DeviceView(props: {
   session: string;
   page: string;
@@ -571,6 +645,13 @@ export default function DeviceView(props: {
                   connected={online()}
                   pending={pending()}
                   onControl={control}
+                />
+                <MomMessage
+                  session={props.session}
+                  page={props.page}
+                  device={props.device}
+                  enabled={props.remoteControl && online()}
+                  onSignOut={props.onSignOut}
                 />
               </div>
             </div>

@@ -182,7 +182,8 @@ export type Control =
   | { setFilter: { filter: Record<MoblinFilter, object>; on: boolean } }
   | { startMacro: { id: string } }
   | { stopMacro: { id: string } }
-  | { setGimbalTracking: { on: boolean } };
+  | { setGimbalTracking: { on: boolean } }
+  | { sendMessage: { text: string } };
 
 export type MoblinFilter =
   | "pixellate"

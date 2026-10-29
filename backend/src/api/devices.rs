@@ -195,13 +195,13 @@ pub(super) async fn handle_device_control(
                 "The streamer has not let you control Moblin.",
             ));
         }
-        let Json(control) = control.map_err(|_| {
-            failure(
+        let Some(Json(control)) = control.ok().filter(|Json(control)| control.valid()) else {
+            return Err(failure(
                 "invalid-control",
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "unknown control",
-            )
-        })?;
+            ));
+        };
         if matches!(control, Control::SetLive { on: true })
             && !may(&api, &signed_in.account, &id, Permission::GoLive)
         {
@@ -526,7 +526,11 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(counter(&api, "deviceControlsFailed:invalid-control"), 3);
+        let response = control(json!({"sendMessage": {"text": " "}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(counter(&api, "deviceControlsFailed:invalid-control"), 4);
         create_account(&api, "22", "Viewer", "viewer");
         let response = client
             .post(&url)

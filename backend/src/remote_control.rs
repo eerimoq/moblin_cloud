@@ -225,6 +225,9 @@ pub enum Control {
     SetGimbalTracking {
         on: bool,
     },
+    SendMessage {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -249,6 +252,13 @@ pub enum Filter {
 }
 
 impl Control {
+    pub fn valid(&self) -> bool {
+        match self {
+            Self::SendMessage { text } => !text.trim().is_empty() && text.chars().count() <= 300,
+            _ => true,
+        }
+    }
+
     fn changes_settings(&self) -> bool {
         matches!(
             self,
@@ -1358,6 +1368,22 @@ mod tests {
         assert!(serde_json::from_str::<Control>(r#"{"setMic":{"id":"bt"}}"#).is_ok());
         assert!(serde_json::from_str::<Control>(r#"{"getStatus":{}}"#).is_err());
         assert!(serde_json::from_str::<Control>(r#"{"tip":{}}"#).is_err());
+        assert_eq!(
+            control(
+                21,
+                Control::SendMessage {
+                    text: "Hi!".to_string()
+                }
+            ),
+            r#"{"request":{"id":21,"data":{"sendMessage":{"text":"Hi!"}}}}"#
+        );
+        let message = |text: &str| Control::SendMessage {
+            text: text.to_string(),
+        };
+        assert!(message("Hi!").valid());
+        assert!(!message(" ").valid());
+        assert!(message(&"å".repeat(300)).valid());
+        assert!(!message(&"å".repeat(301)).valid());
     }
 
     #[test]

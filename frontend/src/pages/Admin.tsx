@@ -1052,7 +1052,7 @@ function Loaded(props: { stats: AdminStats }) {
                   {
                     "not-found": "Device not in the list",
                     offline: "Device not connected",
-                    "invalid-control": "Unknown control or id",
+                    "invalid-control": "Unknown control, id or message",
                     "no-remote-control": "Moderator without remote control access",
                     "no-control": "Moderator who may only view",
                     "no-go-live": "Moderator not let go live",
