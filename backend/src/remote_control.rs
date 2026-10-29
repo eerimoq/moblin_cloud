@@ -152,6 +152,9 @@ enum Request {
     StopStatus {},
     StartPreview {},
     StopPreview {},
+    GetScenes {},
+    GetWidgets {},
+    GetCameras {},
     #[serde(untagged)]
     Control(Control),
 }
@@ -230,6 +233,34 @@ pub enum Control {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
+    CreateScene {
+        scene: Value,
+    },
+    UpdateScene {
+        scene: Value,
+    },
+    DeleteScene {
+        id: Uuid,
+    },
+    ReorderScenes {
+        ids: Vec<Uuid>,
+    },
+    CreateWidget {
+        widget: Value,
+    },
+    UpdateWidget {
+        widget: Value,
+    },
+    DeleteWidget {
+        id: Uuid,
+    },
+    ReorderWidgets {
+        ids: Vec<Uuid>,
+    },
+    SetWidgetImage {
+        id: Uuid,
+        image: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -255,19 +286,69 @@ pub enum Filter {
 
 impl Control {
     pub fn valid(&self) -> bool {
+        let identified = |item: &Value| {
+            item.get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| Uuid::parse_str(id).is_ok())
+        };
         match self {
             Self::SendMessage { text, .. } => {
                 !text.trim().is_empty() && text.chars().count() <= 300
             }
+            Self::CreateScene { scene } | Self::UpdateScene { scene } => identified(scene),
+            Self::CreateWidget { widget } | Self::UpdateWidget { widget } => identified(widget),
+            Self::ReorderScenes { ids } | Self::ReorderWidgets { ids } => ids.len() <= 1000,
+            Self::SetWidgetImage { image, .. } => BASE64_STANDARD
+                .decode(image)
+                .is_ok_and(|image| !image.is_empty() && image.len() <= 4 * 1024 * 1024),
             _ => true,
+        }
+    }
+
+    pub fn logged(&self) -> String {
+        match self {
+            Self::SetWidgetImage { id, image } => {
+                format!(
+                    r#"{{"setWidgetImage":{{"id":"{id}","image":"<{} bytes>"}}}}"#,
+                    image.len()
+                )
+            }
+            _ => serde_json::to_string(self).unwrap_or_default(),
         }
     }
 
     fn changes_settings(&self) -> bool {
         matches!(
             self,
-            Self::SetSrtConnectionPriority { .. } | Self::SetSrtConnectionPrioritiesEnabled { .. }
+            Self::SetSrtConnectionPriority { .. }
+                | Self::SetSrtConnectionPrioritiesEnabled { .. }
+                | Self::CreateScene { .. }
+                | Self::UpdateScene { .. }
+                | Self::DeleteScene { .. }
+                | Self::ReorderScenes { .. }
         )
+    }
+
+    fn changes_scenes(&self) -> bool {
+        matches!(
+            self,
+            Self::CreateScene { .. }
+                | Self::UpdateScene { .. }
+                | Self::DeleteScene { .. }
+                | Self::ReorderScenes { .. }
+                | Self::CreateWidget { .. }
+                | Self::UpdateWidget { .. }
+                | Self::DeleteWidget { .. }
+                | Self::ReorderWidgets { .. }
+                | Self::SetWidgetImage { .. }
+        )
+    }
+
+    fn wait(&self) -> Duration {
+        match self {
+            Self::SetWidgetImage { .. } => Duration::from_secs(30),
+            _ => Duration::from_secs(5),
+        }
     }
 }
 
@@ -332,6 +413,7 @@ pub enum Update {
     Connection {
         connected: bool,
     },
+    Scenes {},
 }
 
 impl Update {
@@ -341,6 +423,7 @@ impl Update {
             Self::State { .. } => "state",
             Self::Settings { .. } => "settings",
             Self::Connection { .. } => "connection",
+            Self::Scenes {} => "scenes",
         }
     }
 }
@@ -519,6 +602,7 @@ pub enum RequestError {
     Offline,
     Timeout,
     Failed,
+    Unsupported,
 }
 
 struct Session {
@@ -1116,13 +1200,14 @@ impl Streamers {
         control: Control,
     ) -> Result<(), RequestError> {
         let changes_settings = control.changes_settings();
-        self.request(
-            (page, device),
-            Request::Control(control),
-            Duration::from_secs(5),
-        )
-        .await?;
+        let changes_scenes = control.changes_scenes();
+        let wait = control.wait();
+        self.request((page, device), Request::Control(control), wait)
+            .await?;
         let mut sessions = self.sessions.lock().unwrap();
+        if changes_scenes && let Some(monitor) = sessions.monitor_mut(page, device) {
+            monitor.publish(Update::Scenes {});
+        }
         if changes_settings
             && sessions.monitor_mut(page, device).is_some()
             && let Some(session) = sessions.get_mut(page, device, None)
@@ -1130,6 +1215,25 @@ impl Streamers {
             session.send(Request::GetSettings {});
         }
         Ok(())
+    }
+
+    pub async fn scenes(&self, (page, device): (&str, &str)) -> Result<Value, RequestError> {
+        let wait = Duration::from_secs(10);
+        let (scenes, widgets, cameras) = tokio::try_join!(
+            self.request((page, device), Request::GetScenes {}, wait),
+            self.request((page, device), Request::GetWidgets {}, wait),
+            self.request((page, device), Request::GetCameras {}, wait),
+        )?;
+        let part = |data: Option<Value>, request: &str, name: &str| {
+            data.and_then(|mut data| data.get_mut(request)?.get_mut(name).map(Value::take))
+                .filter(Value::is_array)
+                .ok_or(RequestError::Failed)
+        };
+        Ok(serde_json::json!({
+            "scenes": part(scenes, "getScenes", "scenes")?,
+            "widgets": part(widgets, "getWidgets", "widgets")?,
+            "cameras": part(cameras, "getCameras", "cameras")?,
+        }))
     }
 
     fn remove(&self, page: &str, device: &str, number: u64) {
@@ -1211,8 +1315,10 @@ impl Streamers {
                 return Err(RequestError::Timeout);
             }
         };
-        if result != (Outcome::Ok {}) {
-            return Err(RequestError::Failed);
+        match result {
+            Outcome::Ok {} => {}
+            Outcome::UnknownRequest {} => return Err(RequestError::Unsupported),
+            _ => return Err(RequestError::Failed),
         }
         Ok(data)
     }
@@ -1306,7 +1412,24 @@ mod tests {
             request(19, Request::GetStatus {}),
             r#"{"request":{"id":19,"data":{"getStatus":{}}}}"#
         );
+        assert_eq!(
+            request(20, Request::GetScenes {}),
+            r#"{"request":{"id":20,"data":{"getScenes":{}}}}"#
+        );
+        assert_eq!(
+            request(21, Request::GetCameras {}),
+            r#"{"request":{"id":21,"data":{"getCameras":{}}}}"#
+        );
         let control = |id, control| request(id, Request::Control(control));
+        assert_eq!(
+            control(
+                22,
+                Control::ReorderWidgets {
+                    ids: vec!["E621E1F8-C36C-495A-93FC-0C247A3E6E5F".parse().unwrap()]
+                }
+            ),
+            r#"{"request":{"id":22,"data":{"reorderWidgets":{"ids":["e621e1f8-c36c-495a-93fc-0c247a3e6e5f"]}}}}"#
+        );
         assert_eq!(
             control(13, Control::SetMute { on: true }),
             r#"{"request":{"id":13,"data":{"setMute":{"on":true}}}}"#

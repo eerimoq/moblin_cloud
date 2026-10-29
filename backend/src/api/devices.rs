@@ -56,7 +56,24 @@ fn request_failure(error: RequestError) -> Failure {
             StatusCode::BAD_GATEWAY,
             "Moblin could not answer. Try again.",
         ),
+        RequestError::Unsupported => failure(
+            "moblin-unsupported",
+            StatusCode::CONFLICT,
+            "This Moblin can't do that. Update Moblin on the device and try again.",
+        ),
     }
+}
+
+fn controller(api: &Api, headers: &HeaderMap, page: &str) -> Result<SignedIn, Failure> {
+    let signed_in = watcher(api, headers, page)?;
+    if access(api, &signed_in.account, page) < Access::Control {
+        return Err(failure(
+            "no-control",
+            StatusCode::FORBIDDEN,
+            "The streamer has not let you control Moblin.",
+        ));
+    }
+    Ok(signed_in)
 }
 
 struct Streaming {
@@ -223,9 +240,24 @@ pub(super) async fn handle_device_control(
     info!(
         "{} sent {} to device {device} of page {id}",
         signed_in.id,
-        serde_json::to_string(&control).unwrap_or_default()
+        control.logged()
     );
     Ok(accepted())
+}
+
+pub(super) async fn handle_device_scenes(
+    State(api): State<Arc<Api>>,
+    Path((id, device)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, Failure> {
+    controller(&api, &headers, &id)?;
+    known_device(&api, &id, &device)?;
+    let scenes = api
+        .remote_control
+        .scenes((&id, &device))
+        .await
+        .map_err(request_failure)?;
+    Ok(Json(scenes))
 }
 
 #[cfg(test)]
@@ -565,6 +597,138 @@ mod tests {
         let (name, event) = events.next().await;
         assert_eq!(name, "settings");
         assert_eq!(event["data"]["srt"]["connectionPrioritiesEnabled"], true);
+    }
+
+    #[tokio::test]
+    async fn scenes_are_read_and_edited_on_moblin() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&api);
+        let mut socket = connect(&address, &key).await;
+        let base = format!("http://{address}/account/pages/{page}/devices/A");
+        let url = format!("{base}/control");
+        let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
+        let read = tokio::spawn(
+            client
+                .get(format!("{base}/scenes"))
+                .bearer_auth(&session)
+                .send(),
+        );
+        for _ in 0..3 {
+            let request = receive(&mut socket).await;
+            let data = &request["request"]["data"];
+            let answered = if data.get("getScenes").is_some() {
+                json!({"getScenes": {"scenes": [{"id": "C1", "name": "Main", "widgets": []}]}})
+            } else if data.get("getWidgets").is_some() {
+                json!({"getWidgets": {"widgets": [{"id": "W1", "name": "Clock", "type": "Text"}]}})
+            } else {
+                assert_eq!(data, &json!({"getCameras": {}}));
+                json!({"getCameras": {"cameras": [{"id": "N", "name": "None", "position": "None"}]}})
+            };
+            answer(&mut socket, &request, answered).await;
+        }
+        let response = read.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap(),
+            json!({
+                "scenes": [{"id": "C1", "name": "Main", "widgets": []}],
+                "widgets": [{"id": "W1", "name": "Clock", "type": "Text"}],
+                "cameras": [{"id": "N", "name": "None", "position": "None"}],
+            })
+        );
+        let mut events = Events::open(&client, &format!("{base}/events"), &session).await;
+        answer_monitoring(&mut socket, true).await;
+        assert_eq!(events.next().await.0, "snapshot");
+        assert_eq!(events.next().await.0, "settings");
+        let scene =
+            json!({"id": "3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b", "name": "New", "unknown": [1]});
+        let call = tokio::spawn(control(json!({"createScene": {"scene": scene}})));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"createScene": {"scene": scene}})
+        );
+        answer(&mut socket, &request, Value::Null).await;
+        assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
+        assert_eq!(events.next().await, ("scenes".to_string(), json!({})));
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"getSettings": {}}));
+        answer(
+            &mut socket,
+            &request,
+            json!({"getSettings": {"data": settings()}}),
+        )
+        .await;
+        assert_eq!(events.next().await.0, "settings");
+        let call = tokio::spawn(control(
+            json!({"setWidgetImage": {"id": "3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b", "image": "iVBORw0K"}}),
+        ));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"]["setWidgetImage"]["image"],
+            "iVBORw0K"
+        );
+        socket
+            .send(Message::text(
+                json!({"response": {"id": request["request"]["id"], "result": {"unknownRequest": {}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        let response = call.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "This Moblin can't do that. Update Moblin on the device and try again."
+        );
+        for body in [
+            json!({"createScene": {"scene": {"name": "No id"}}}),
+            json!({"updateWidget": {"widget": {"id": "W1"}}}),
+            json!({"setWidgetImage": {"id": "3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b", "image": "not base64!"}}),
+            json!({"deleteScene": {"id": "C1"}}),
+        ] {
+            let response = control(body).await.unwrap();
+            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    #[tokio::test]
+    async fn assistants_edit_scenes_only_with_control() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, _key, page) = streamer(&api);
+        create_account(&api, "21", "Mod 21", "mod21");
+        api.accounts
+            .add_assistant(
+                Platform::Twitch,
+                "1",
+                &twitch_assistant("21", "mod21", "Mod 21"),
+            )
+            .unwrap();
+        api.accounts
+            .set_assistant_access(Platform::Twitch, "1", "21", Access::View)
+            .unwrap();
+        let assistant = api.auth.session("21", 0);
+        let scenes = format!("http://{address}/account/pages/{page}/devices/A/scenes");
+        let response = client
+            .get(&scenes)
+            .bearer_auth(&assistant)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "The streamer has not let you control Moblin."
+        );
+        let response = client
+            .get(&scenes)
+            .bearer_auth(&session)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

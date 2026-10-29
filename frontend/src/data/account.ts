@@ -2,6 +2,7 @@ import { createSignal, onMount } from "solid-js";
 import { BackendError, backendUrl, call, isSignedOut, post } from "./backend";
 import { type Identity, type Page, type Platform, type Settings } from "./remoteControl";
 import { readStored, store } from "../storage";
+import { type Scene, type SceneConfig, type Widget } from "./scenes";
 
 export type Device = {
   id: string;
@@ -184,7 +185,16 @@ export type Control =
   | { startMacro: { id: string } }
   | { stopMacro: { id: string } }
   | { setGimbalTracking: { on: boolean } }
-  | { sendMessage: { text: string } };
+  | { sendMessage: { text: string } }
+  | { createScene: { scene: Scene } }
+  | { updateScene: { scene: Scene } }
+  | { deleteScene: { id: string } }
+  | { reorderScenes: { ids: string[] } }
+  | { createWidget: { widget: Widget } }
+  | { updateWidget: { widget: Widget } }
+  | { deleteWidget: { id: string } }
+  | { reorderWidgets: { ids: string[] } }
+  | { setWidgetImage: { id: string; image: string } };
 
 export type MoblinFilter =
   | "pixellate"
@@ -452,6 +462,9 @@ export const devicePreviewUrl = (page: string, device: string) =>
 
 export const controlDevice = (session: string, page: string, device: string, control: Control) =>
   call<object>(`${devicePath(page, device)}/control`, session, post(control));
+
+export const deviceScenes = (session: string, page: string, device: string) =>
+  call<SceneConfig>(`${devicePath(page, device)}/scenes`, session);
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>("/account/paypal/connect", session, post())).url;

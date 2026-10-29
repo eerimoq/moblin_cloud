@@ -9,6 +9,7 @@ import SectionMenu, {
 } from "../components/SectionMenu";
 import Icon from "../components/Icon";
 import { cardClass } from "../components/PageParts";
+import SceneEditor from "../components/SceneEditor";
 import { useDeviceFeed, usePreviewFeed, type DeviceFeed } from "../components/deviceFeed";
 import { formatBits } from "../data/moblin";
 import { t } from "../i18n";
@@ -46,6 +47,12 @@ export default function DeviceView(props: {
       label: t("Phone"),
       icon: "screen",
       status: () => connectedOrNot(online()),
+    },
+    {
+      id: "scenes",
+      label: t("Scenes"),
+      icon: "grid",
+      status: () => null,
     },
     {
       id: "graphs",
@@ -140,6 +147,18 @@ export default function DeviceView(props: {
                 />
               </div>
             </div>
+            <Show when={active() === "scenes"}>
+              <SceneEditor
+                session={props.session}
+                page={props.page}
+                device={props.device}
+                connected={online()}
+                version={feed().scenesVersion()}
+                enabled={props.remoteControl}
+                current={feed().state().scene}
+                onSignOut={props.onSignOut}
+              />
+            </Show>
             <div hidden={active() !== "graphs"}>
               <Graphs history={history()} />
             </div>

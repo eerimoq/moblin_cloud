@@ -210,7 +210,11 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route(
             "/account/pages/{id}/devices/{device}/control",
-            post(handle_device_control),
+            post(handle_device_control).layer(DefaultBodyLimit::max(6 * 1024 * 1024)),
+        )
+        .route(
+            "/account/pages/{id}/devices/{device}/scenes",
+            get(handle_device_scenes),
         )
         .route(
             "/account/pages/{id}/settings",

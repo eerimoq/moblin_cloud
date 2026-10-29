@@ -24,6 +24,7 @@ export type DeviceFeed = {
   settings: Accessor<DeviceSettings | null>;
   history: Accessor<Sample[]>;
   pending: Accessor<string[]>;
+  scenesVersion: Accessor<number>;
   control: (control: Control) => Promise<void>;
 };
 
@@ -72,6 +73,7 @@ function openDeviceFeed(
   const [settings, setSettings] = createSignal<DeviceSettings | null>(null);
   const [history, setHistory] = createSignal<Sample[]>([]);
   const [pending, setPending] = createSignal<string[]>([]);
+  const [scenesVersion, setScenesVersion] = createSignal(0);
 
   const stop = subscribe(deviceEventsUrl(page, device), session, {
     onOpen: () => setStreaming(true),
@@ -115,6 +117,9 @@ function openDeviceFeed(
           break;
         case "settings":
           setSettings((data as { data: DeviceSettings }).data);
+          break;
+        case "scenes":
+          setScenesVersion((version) => version + 1);
           break;
         case "connection": {
           const connected = (data as { connected: boolean }).connected;
@@ -164,6 +169,7 @@ function openDeviceFeed(
     settings,
     history,
     pending,
+    scenesVersion,
     control,
   };
 }

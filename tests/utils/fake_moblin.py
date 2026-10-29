@@ -72,6 +72,12 @@ class FakeMoblin:
                 "A1",
                 "M1",
                 "M2",
+                "W1",
+                "W2",
+                "W3",
+                "SW1",
+                "SW2",
+                "SW3",
             ]
         }
         self.database = database(self.ids, self.icon)
@@ -295,6 +301,9 @@ class FakeMoblin:
             return {"ok": {}}, {"getStatus": self.status()}
         elif kind == "getSettings":
             return {"ok": {}}, {"getSettings": {"data": self.settings()}}
+        elif kind in ("getScenes", "getWidgets", "getCameras"):
+            name = kind[3:].lower()
+            return {"ok": {}}, {kind: {name: self.database[name]}}
         elif kind == "startStatus":
             self.send_event({"state": {"data": self.state}})
             self._status_requested.set()
@@ -361,6 +370,8 @@ class FakeMoblin:
             for name, on in self.filters.items():
                 pairs += [{name: {}}, on]
             self.change_state(filters=pairs)
+        elif kind in self.editors():
+            return {"ok": {}} if self.editors()[kind](body) else {"error": {}}, None
         elif kind in ("startMacro", "stopMacro"):
             macros = [
                 {
@@ -373,6 +384,73 @@ class FakeMoblin:
             ]
             self.change_state(macros=macros)
         return {"ok": {}}, None
+
+    def editors(self) -> dict:
+        return {
+            "createScene": lambda body: self.create("scenes", body["scene"]),
+            "updateScene": lambda body: self.update("scenes", body["scene"]),
+            "deleteScene": lambda body: self.delete("scenes", body["id"]),
+            "reorderScenes": lambda body: self.reorder("scenes", body["ids"]),
+            "createWidget": lambda body: self.create("widgets", body["widget"]),
+            "updateWidget": lambda body: self.update("widgets", body["widget"]),
+            "deleteWidget": lambda body: self.delete("widgets", body["id"]),
+            "reorderWidgets": lambda body: self.reorder("widgets", body["ids"]),
+            "setWidgetImage": lambda body: self.find("widgets", body["id"]) is not None,
+        }
+
+    def find(self, kind: str, item_id: str) -> int | None:
+        return next(
+            (index for index, item in enumerate(self.database[kind]) if item["id"] == item_id.upper()),
+            None,
+        )
+
+    def normalized(self, item: dict) -> dict:
+        item = json.loads(json.dumps(item))
+        item["id"] = item["id"].upper()
+        for widget in item.get("widgets", []):
+            widget["id"] = widget.get("id", str(uuid.uuid4())).upper()
+            widget["widgetId"] = widget["widgetId"].upper()
+        return item
+
+    def edited_scenes(self):
+        widgets = {widget["id"] for widget in self.database["widgets"]}
+        for scene in self.database["scenes"]:
+            scene["widgets"] = [
+                widget for widget in scene.get("widgets", []) if widget["widgetId"] in widgets
+            ]
+        if self.find("scenes", self.state["scene"]) is None and self.database["scenes"]:
+            self.change_state(scene=self.database["scenes"][0]["id"])
+
+    def create(self, kind: str, item: dict) -> bool:
+        if self.find(kind, item["id"]) is not None:
+            return False
+        self.database[kind].append(self.normalized(item))
+        self.edited_scenes()
+        return True
+
+    def update(self, kind: str, item: dict) -> bool:
+        index = self.find(kind, item["id"])
+        if index is None:
+            return False
+        self.database[kind][index] = self.normalized(item)
+        self.edited_scenes()
+        return True
+
+    def delete(self, kind: str, item_id: str) -> bool:
+        index = self.find(kind, item_id)
+        if index is None:
+            return False
+        del self.database[kind][index]
+        self.edited_scenes()
+        return True
+
+    def reorder(self, kind: str, ids: list[str]) -> bool:
+        ids = [item_id.upper() for item_id in ids]
+        items = {item["id"]: item for item in self.database[kind]}
+        if len(ids) != len(items) or set(ids) != set(items):
+            return False
+        self.database[kind] = [items[item_id] for item_id in ids]
+        return True
 
     def zoom_preset(self, preset: str) -> dict:
         zoom = next((item["x"] for item in self.database["zoom"]["back"] if item["id"] == preset), 1.0)
