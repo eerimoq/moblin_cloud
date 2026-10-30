@@ -33,7 +33,7 @@ pub(super) struct StripePayment {
 
 pub(super) fn payee(api: &Api, id: &str, provider: Option<&str>) -> Result<Payee, Failure> {
     match provider.unwrap_or("paypal") {
-        "paypal" if api.paypal.is_some() => merchant_of(api, id).map(Payee::PayPal),
+        "paypal" => merchant_of(api, id).map(Payee::PayPal),
         "stripe" => stripe_of(api, id).map(Payee::Stripe),
         _ => None,
     }

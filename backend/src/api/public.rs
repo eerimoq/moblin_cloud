@@ -156,8 +156,8 @@ fn linked_tiers(account: Option<&Account>, tiers: Option<&Tiers>) -> Option<Tier
         .cloned()
 }
 
-fn merchant(account: Option<&Account>) -> Option<String> {
-    account.and_then(|account| account.merchant_id.clone())
+fn merchant(api: &Api, account: Option<&Account>) -> Option<String> {
+    payment_targets(api, account?).0
 }
 
 fn client_id(api: &Api, merchant_id: &Option<String>) -> Option<String> {
@@ -175,10 +175,9 @@ pub(super) struct PublicStripe {
 }
 
 fn public_stripe(api: &Api, account: Option<&Account>) -> Option<PublicStripe> {
-    let account = account.filter(|account| account.stripe_ready)?;
     Some(PublicStripe {
+        account_id: payment_targets(api, account?).1?,
         publishable_key: api.stripe.as_ref()?.publishable_key().to_string(),
-        account_id: account.stripe_account_id.clone()?,
     })
 }
 
@@ -205,7 +204,7 @@ pub(super) async fn handle_tips(
     let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let merchant_id = merchant(account.as_ref());
+    let merchant_id = merchant(&api, account.as_ref());
     let stripe = public_stripe(&api, account.as_ref());
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(TipsResponse {
@@ -252,7 +251,7 @@ pub(super) async fn handle_effects(
     let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let merchant_id = merchant(account.as_ref());
+    let merchant_id = merchant(&api, account.as_ref());
     let stripe = public_stripe(&api, account.as_ref());
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(EffectsResponse {
@@ -305,7 +304,7 @@ pub(super) async fn handle_spin(
     let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
     let currency = settings.currency().to_string();
-    let merchant_id = merchant(account.as_ref());
+    let merchant_id = merchant(&api, account.as_ref());
     let stripe = public_stripe(&api, account.as_ref());
     let payable = merchant_id.is_some() || stripe.is_some();
     Json(SpinResponse {

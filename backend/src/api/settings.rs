@@ -53,8 +53,8 @@ pub(super) fn settings_response(
     settings: Settings,
 ) -> Json<SettingsResponse> {
     let account = api.accounts.of_page(&id).unwrap_or_default();
-    let payable = account.merchant_id.is_some()
-        || (api.stripe.is_some() && account.stripe_ready && account.stripe_account_id.is_some());
+    let (merchant_id, stripe_account_id) = payment_targets(api, &account);
+    let payable = merchant_id.is_some() || stripe_account_id.is_some();
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
         currency: settings.currency().to_string(),
@@ -115,26 +115,29 @@ pub(super) struct SettingsRequest {
     font: Option<String>,
 }
 
+pub(super) fn payment_targets(api: &Api, account: &Account) -> (Option<String>, Option<String>) {
+    (
+        account.merchant_id.clone().filter(|_| api.paypal.is_some()),
+        account
+            .stripe_account_id
+            .clone()
+            .filter(|_| api.stripe.is_some() && account.stripe_ready),
+    )
+}
+
 pub(super) fn merchant_of(api: &Api, id: &str) -> Option<String> {
-    api.accounts
-        .of_page(id)
-        .and_then(|account| account.merchant_id)
+    payment_targets(api, &api.accounts.of_page(id)?).0
 }
 
 pub(super) fn stripe_of(api: &Api, id: &str) -> Option<String> {
-    api.stripe.as_ref()?;
-    api.accounts
-        .of_page(id)
-        .filter(|account| account.stripe_ready)
-        .and_then(|account| account.stripe_account_id)
+    payment_targets(api, &api.accounts.of_page(id)?).1
 }
 
 fn check_payable(api: &Api, id: &str) -> Result<(), (StatusCode, String)> {
     if api.paypal.is_none() && api.stripe.is_none() {
         return Err(payments_unavailable());
     }
-    let paypal = api.paypal.is_some() && merchant_of(api, id).is_some();
-    if !paypal && stripe_of(api, id).is_none() {
+    if merchant_of(api, id).is_none() && stripe_of(api, id).is_none() {
         return Err((
             StatusCode::CONFLICT,
             "connect PayPal or Stripe first".to_string(),
@@ -335,6 +338,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use crate::api::test_utils::*;
+    use crate::pages::{Feature, Settings, Tips};
 
     #[tokio::test]
     async fn custom_colors_and_fonts_are_for_pro_streamers() {
@@ -451,5 +455,35 @@ mod tests {
                 .unwrap();
             assert_eq!(response.status(), status, "{request}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_paypal_merchant_is_not_payable_without_paypal() {
+        let (address, api, _) = start_stripe_api().await;
+        let (session, _, id) = streamer(&address, &api).await;
+        connect_paypal(&api);
+        api.pages
+            .set(
+                &id,
+                Settings {
+                    tips: Some(Feature::on(Tips { amounts: vec![500] })),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let account = account_of(&address, &session).await;
+        assert_eq!(account["settings"]["payable"], false);
+        assert_eq!(
+            get_json(&address, &format!("/pages/{id}/tips")).await.1["tips"],
+            Value::Null
+        );
+        let response = reqwest::Client::new()
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"tips": {"amounts": [700]}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
     }
 }
