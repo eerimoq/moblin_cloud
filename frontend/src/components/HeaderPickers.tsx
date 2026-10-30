@@ -244,7 +244,6 @@ export function PagePicker(props: {
   const monitor = (): Option => ({
     value: monitorPage,
     label: t("Monitor"),
-    detail: t("Everything on one page"),
     badge: () => <PageBadge icon="layout" />,
   });
   const admin = (): Option => ({
