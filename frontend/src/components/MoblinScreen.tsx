@@ -24,7 +24,7 @@ const screenWidth = 852;
 const screenHeight = 393;
 const bezel = 12;
 
-const topLeftIcons: [TopLeftItem, IconName][] = [
+export const topLeftIcons: [TopLeftItem, IconName][] = [
   ["stream", "broadcast"],
   ["camera", "camera"],
   ["mic", "mic"],
@@ -35,7 +35,7 @@ const topLeftIcons: [TopLeftItem, IconName][] = [
   ["viewers", "eye"],
 ];
 
-const topRightIcons: [TopRightItem, IconName][] = [
+export const topRightIcons: [TopRightItem, IconName][] = [
   ["rtmpServer", "server"],
   ["moblink", "moblink"],
   ["remoteControl", "remote"],
@@ -359,9 +359,11 @@ export default function MoblinScreen(props: {
   remoteControl: boolean;
   connected: boolean;
   pending: string[];
+  fit?: boolean;
   onControl: (control: Control) => Promise<void>;
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
+  const [height, setHeight] = createSignal(screenHeight + 2 * bezel);
   const [verbose, setVerbose] = createSignal(true);
   const [panel, setPanel] = createSignal<Panel | null>(null);
   const [page, setPage] = createSignal(1);
@@ -379,9 +381,12 @@ export default function MoblinScreen(props: {
       return;
     }
     const observer = new ResizeObserver((entries) => {
-      const measured = entries[0]?.contentRect.width;
-      if (measured) {
-        setWidth(measured);
+      const measured = entries[0]?.contentRect;
+      if (measured?.width) {
+        setWidth(measured.width);
+      }
+      if (measured?.height) {
+        setHeight(measured.height);
       }
     });
     observer.observe(container);
@@ -390,7 +395,8 @@ export default function MoblinScreen(props: {
 
   const outerWidth = screenWidth + 2 * bezel;
   const outerHeight = screenHeight + 2 * bezel;
-  const scale = () => Math.min(1.2, width() / outerWidth);
+  const scale = () =>
+    Math.min(1.2, width() / outerWidth, props.fit ? height() / outerHeight : Infinity);
   const disabled = (key: string) =>
     !props.connected || !props.remoteControl || props.pending.includes(key);
   const confirmed = async (question: string, action: string, control: Control) => {
@@ -545,8 +551,17 @@ export default function MoblinScreen(props: {
   );
 
   return (
-    <div ref={(element) => (container = element)} class="w-full">
-      <div style={{ height: `${outerHeight * scale()}px` }}>
+    <div
+      ref={(element) => (container = element)}
+      class={props.fit ? "min-h-0 w-full flex-1 overflow-hidden" : "w-full"}
+    >
+      <div
+        class={props.fit ? "mx-auto" : ""}
+        style={{
+          height: `${outerHeight * scale()}px`,
+          width: props.fit ? `${outerWidth * scale()}px` : undefined,
+        }}
+      >
         <div
           class="rounded-[62px] bg-phone-bezel shadow-2xl ring-2 ring-phone-frame"
           style={{

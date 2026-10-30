@@ -383,6 +383,12 @@ export const fetchRecent = (
 export const resendRecent = (session: string, id: string, page?: string) =>
   call<object>(`${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, session, post());
 
+export const fetchMonitorLayout = (session: string, page: string) =>
+  call<{ layout: unknown }>(`${accountPath(page)}/monitor`, session);
+
+export const saveMonitorLayout = (session: string, page: string, layout: object) =>
+  call<void>(`${accountPath(page)}/monitor`, session, { ...post({ layout }), keepalive: true });
+
 export const addAssistant = (session: string, platform: Platform, username: string) =>
   call<Account>(`/account/assistants/${platform}`, session, post({ username }));
 

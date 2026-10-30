@@ -417,3 +417,20 @@
     opacity: 0;
   }
 }
+
+@utility arrival-flash {
+  animation: arrival-flash 8s ease-out;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes arrival-flash {
+  0%,
+  30% {
+    background-color: color-mix(in oklab, var(--color-leaf) 18%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}

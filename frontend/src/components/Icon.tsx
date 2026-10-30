@@ -76,7 +76,9 @@ export type IconName =
   | "shuffle"
   | "list"
   | "target"
-  | "video";
+  | "video"
+  | "layout"
+  | "more";
 
 type Props = {
   name: IconName;
@@ -387,6 +389,15 @@ export default function Icon(props: Props) {
         </Match>
         <Match when={props.name === "moon"}>
           <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
+        </Match>
+        <Match when={props.name === "layout"}>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M12 4v16M12 12h9" />
+        </Match>
+        <Match when={props.name === "more"}>
+          <circle cx="5" cy="12" r="1" />
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="19" cy="12" r="1" />
         </Match>
         <Match when={props.name === "grid"}>
           <rect x="4" y="4" width="16" height="16" rx="1.5" />

@@ -21,9 +21,12 @@ export const pages = {
   dashboard: "/dashboard/",
   account: "/account/",
   device: "/device/",
+  monitor: "/monitor/",
   admin: "/admin/",
   terms: "/terms/",
 } as const;
 
 export const deviceUrl = (page: string, device: string) =>
   `${asset(pages.device)}${encodeURIComponent(page)}/${encodeURIComponent(device)}`;
+
+export const monitorUrl = (page: string) => `${asset(pages.monitor)}${encodeURIComponent(page)}`;

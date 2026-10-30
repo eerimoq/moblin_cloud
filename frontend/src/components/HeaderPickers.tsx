@@ -8,6 +8,8 @@ export const channelKey = (channel: Assisting) => `${channel.platform}/${channel
 
 export const assistedChannelKey = "assistedChannel";
 
+export const monitorPage = ":monitor";
+
 export const rememberChannel = (key: string) => {
   try {
     sessionStorage.setItem(assistedChannelKey, key);
@@ -214,10 +216,10 @@ export function StreamerPicker(props: {
   );
 }
 
-function DashboardBadge() {
+function PageBadge(props: { icon: "grid" | "layout" }) {
   return (
     <span class="flex size-8 items-center justify-center rounded-full bg-ghost-hover text-ink">
-      <Icon name="grid" class="size-5" />
+      <Icon name={props.icon} class="size-5" />
     </span>
   );
 }
@@ -230,23 +232,32 @@ export function PagePicker(props: {
   const dashboard = (): Option => ({
     value: "",
     label: t("Dashboard"),
-    badge: () => <DashboardBadge />,
+    badge: () => <PageBadge icon="grid" />,
+  });
+  const monitor = (): Option => ({
+    value: monitorPage,
+    label: t("Monitor"),
+    detail: t("Everything on one page"),
+    badge: () => <PageBadge icon="layout" />,
   });
   return (
     <Picker
       label={t("Page")}
       value={props.picked}
       fallback={
-        props.picked
-          ? {
-              value: props.picked,
-              label: "Moblin",
-              badge: () => <DeviceBadge device={undefined} />,
-            }
-          : dashboard()
+        props.picked === monitorPage
+          ? monitor()
+          : props.picked
+            ? {
+                value: props.picked,
+                label: "Moblin",
+                badge: () => <DeviceBadge device={undefined} />,
+              }
+            : dashboard()
       }
       options={[
         dashboard(),
+        monitor(),
         ...props.devices.map((device) => ({
           value: device.id,
           label: device.name,

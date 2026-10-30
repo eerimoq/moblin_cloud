@@ -37,6 +37,7 @@ mod devices;
 mod effects;
 mod events;
 mod moblin;
+mod monitor;
 mod orders;
 mod providers;
 mod public;
@@ -58,6 +59,7 @@ use devices::*;
 use effects::*;
 use events::*;
 use moblin::*;
+use monitor::*;
 pub use orders::settle_orders;
 use orders::*;
 use providers::*;
@@ -192,6 +194,12 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route("/account/pages/{id}", get(handle_assistant_account))
         .route("/account/pages/{id}/events", get(handle_page_events))
+        .route(
+            "/account/pages/{id}/monitor",
+            get(handle_monitor_layout)
+                .post(handle_monitor_layout_save)
+                .layer(DefaultBodyLimit::max(16 * 1024)),
+        )
         .route(
             "/account/pages/{id}/devices/{device}/events",
             get(handle_device_events),

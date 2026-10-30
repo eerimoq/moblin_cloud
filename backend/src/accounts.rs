@@ -509,6 +509,41 @@ impl Accounts {
         Ok(())
     }
 
+    pub fn monitor_layout(&self, id: &str, page: &str) -> Option<String> {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT layout FROM monitor_layouts WHERE account = ?1
+                 ORDER BY page = ?2 DESC, updated_at DESC, rowid DESC LIMIT 1",
+                [id, page],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read the monitor layout of {id}: {error:#}");
+                None
+            })
+    }
+
+    pub fn set_monitor_layout(
+        &self,
+        id: &str,
+        page: &str,
+        layout: &str,
+    ) -> Result<(), AccountError> {
+        self.database
+            .lock()
+            .execute(
+                "INSERT INTO monitor_layouts (account, page, layout, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (account, page) DO UPDATE
+                 SET layout = excluded.layout, updated_at = excluded.updated_at",
+                params![id, page, layout, now()],
+            )
+            .map_err(not_saved)?;
+        Ok(())
+    }
+
     pub fn left_device(&self, page: &str, device: &str) {
         let result = self.database.lock().execute(
             &format!(
@@ -897,6 +932,8 @@ impl Accounts {
             ("DELETE FROM accounts WHERE id = ?1", id),
             ("DELETE FROM identities WHERE account = ?1", id),
             ("DELETE FROM devices WHERE account = ?1", id),
+            ("DELETE FROM monitor_layouts WHERE account = ?1", id),
+            ("DELETE FROM monitor_layouts WHERE page = ?1", page),
             ("DELETE FROM pages WHERE id = ?1", page),
             ("DELETE FROM page_images WHERE id = ?1", page),
             ("DELETE FROM page_icons WHERE id = ?1", page),

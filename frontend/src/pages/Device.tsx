@@ -1,438 +1,13 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
+import Graphs from "../components/Graphs";
 import Icon from "../components/Icon";
 import MoblinScreen from "../components/MoblinScreen";
+import MomMessage from "../components/MomMessage";
 import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
-import { buttonClass, cardClass, inputClass, Notice } from "../components/PageParts";
-import {
-  controlDevice,
-  deviceEventsUrl,
-  devicePreviewUrl,
-  type Control,
-  type DeviceSettings,
-  type DeviceSnapshot,
-  type DeviceState,
-  type DeviceStatus,
-  type Sample,
-  type StatusUpdate,
-} from "../data/account";
-import { BackendError } from "../data/backend";
+import { cardClass } from "../components/PageParts";
+import { useDeviceFeed, usePreviewFeed, type DeviceFeed } from "../components/deviceFeed";
 import { formatBits } from "../data/moblin";
 import { t } from "../i18n";
-import { subscribe } from "../sse";
-
-const emptyStatus = (): DeviceStatus => ({ general: {}, topLeft: {}, topRight: {} });
-
-const filled = <T extends object>(part: T) => (Object.keys(part).length > 0 ? part : undefined);
-
-const historyWindow = 60 * 1000;
-
-const perItem = ["setSrtConnectionPriority", "startMacro", "stopMacro"];
-
-const formatMilliseconds = (milliseconds: number) => `${Math.round(milliseconds)} ms`;
-
-const formatTime = (at: number) =>
-  new Date(at).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-
-const connectionColor = (index: number) => `var(--color-chart-${(index % 4) + 1})`;
-
-type Series = { name: string; color: string; points: (number | null)[]; wide?: boolean };
-
-function TimeChart(props: {
-  title: string;
-  times: number[];
-  series: Series[];
-  format: (value: number) => string;
-  empty: string;
-}) {
-  const [width, setWidth] = createSignal(600);
-  const [hover, setHover] = createSignal<number | null>(null);
-  let container: HTMLDivElement | undefined;
-  const height = 180;
-  const left = 56;
-  const right = 12;
-  const top = 12;
-  const bottom = 24;
-
-  onMount(() => {
-    if (!container) {
-      return;
-    }
-    const observer = new ResizeObserver((entries) => {
-      const measured = entries[0]?.contentRect.width;
-      if (measured) {
-        setWidth(Math.max(240, measured));
-      }
-    });
-    observer.observe(container);
-    onCleanup(() => observer.disconnect());
-  });
-
-  const end = () => props.times[props.times.length - 1] ?? Date.now();
-  const start = () => end() - historyWindow;
-  const max = createMemo(() => {
-    let highest = 0;
-    for (const series of props.series) {
-      for (const value of series.points) {
-        if (value !== null && value > highest) {
-          highest = value;
-        }
-      }
-    }
-    return highest > 0 ? highest * 1.1 : 1;
-  });
-  const x = (at: number) => left + ((at - start()) / historyWindow) * (width() - left - right);
-  const y = (value: number) => top + (1 - value / max()) * (height - top - bottom);
-  const hasData = () =>
-    props.series.some((series) => series.points.some((value) => value !== null));
-
-  const path = (series: Series) => {
-    let drawn = "";
-    let open = false;
-    let previous = 0;
-    props.times.forEach((at, index) => {
-      const value = series.points[index];
-      if (value === null || value === undefined || at < start()) {
-        open = false;
-        return;
-      }
-      if (at - previous > 5000) {
-        open = false;
-      }
-      drawn += `${open ? "L" : "M"}${x(at).toFixed(1)},${y(value).toFixed(1)}`;
-      open = true;
-      previous = at;
-    });
-    return drawn;
-  };
-
-  const gridValues = () => [0.25, 0.5, 0.75, 1].map((fraction) => (max() / 1.1) * fraction);
-  const xTicks = () =>
-    (width() < 480 ? [1, 2] : [1, 2, 3, 4]).map(
-      (step) => start() + (step * historyWindow) / (width() < 480 ? 3 : 5),
-    );
-
-  const onPointer = (event: PointerEvent) => {
-    if (!container || props.times.length === 0) {
-      return;
-    }
-    const x = event.clientX - container.getBoundingClientRect().left;
-    const at = start() + ((x - left) / (width() - left - right)) * historyWindow;
-    let nearest = 0;
-    let distance = Number.POSITIVE_INFINITY;
-    props.times.forEach((time, index) => {
-      const delta = Math.abs(time - at);
-      if (delta < distance) {
-        distance = delta;
-        nearest = index;
-      }
-    });
-    setHover(nearest);
-  };
-
-  const latest = (series: Series) => {
-    for (let index = series.points.length - 1; index >= 0; index -= 1) {
-      const value = series.points[index];
-      if (value !== null && value !== undefined) {
-        return value;
-      }
-    }
-    return null;
-  };
-
-  return (
-    <div class="flex flex-col gap-2">
-      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 class="text-[15px] font-semibold text-ink-2">{props.title}</h3>
-        <Show when={props.series.length === 1 && latest(props.series[0]!) !== null}>
-          <span class="font-mono text-[15px] text-ink">
-            {props.format(latest(props.series[0]!)!)}
-          </span>
-        </Show>
-      </div>
-      <div
-        ref={(element) => (container = element)}
-        class="relative w-full"
-        onPointerMove={onPointer}
-        onPointerLeave={() => setHover(null)}
-      >
-        <Show
-          when={hasData()}
-          fallback={<p class="py-6 text-center text-[15px] text-muted">{props.empty}</p>}
-        >
-          <svg
-            width={width()}
-            height={height}
-            class="block overflow-visible"
-            role="img"
-            aria-label={props.title}
-          >
-            <For each={gridValues()}>
-              {(value) => (
-                <>
-                  <line
-                    x1={left}
-                    x2={width() - right}
-                    y1={y(value)}
-                    y2={y(value)}
-                    class="stroke-line"
-                    stroke-width="1"
-                  />
-                  <text
-                    x={left - 8}
-                    y={y(value) + 4}
-                    text-anchor="end"
-                    class="fill-muted text-[11px]"
-                  >
-                    {props.format(value)}
-                  </text>
-                </>
-              )}
-            </For>
-            <For each={xTicks()}>
-              {(at) => (
-                <text x={x(at)} y={height - 6} text-anchor="middle" class="fill-muted text-[11px]">
-                  {formatTime(at)}
-                </text>
-              )}
-            </For>
-            <line
-              x1={left}
-              x2={width() - right}
-              y1={y(0)}
-              y2={y(0)}
-              class="stroke-line"
-              stroke-width="1"
-            />
-            <For each={props.series}>
-              {(series) => (
-                <path
-                  d={path(series)}
-                  fill="none"
-                  stroke={series.color}
-                  stroke-width={series.wide ? 3 : 2}
-                  stroke-linejoin="round"
-                  stroke-linecap="round"
-                />
-              )}
-            </For>
-            <Show when={hover() !== null && props.times[hover()!] !== undefined}>
-              <line
-                x1={x(props.times[hover()!]!)}
-                x2={x(props.times[hover()!]!)}
-                y1={top}
-                y2={height - bottom}
-                class="stroke-muted"
-                stroke-width="1"
-              />
-              <For each={props.series}>
-                {(series) => (
-                  <Show
-                    when={series.points[hover()!] !== null && series.points[hover()!] !== undefined}
-                  >
-                    <circle
-                      cx={x(props.times[hover()!]!)}
-                      cy={y(series.points[hover()!]!)}
-                      r="4"
-                      fill={series.color}
-                      class="stroke-card"
-                      stroke-width="2"
-                    />
-                  </Show>
-                )}
-              </For>
-            </Show>
-          </svg>
-          <Show when={hover() !== null && props.times[hover()!] !== undefined}>
-            <div
-              class="pointer-events-none absolute top-2 rounded-xl border-[1.5px] border-line bg-card px-3 py-2 text-[13px] shadow-lg"
-              style={{
-                left: `${Math.min(x(props.times[hover()!]!) + 12, width() - 170)}px`,
-              }}
-            >
-              <div class="text-muted">{formatTime(props.times[hover()!]!)}</div>
-              <For each={props.series}>
-                {(series) => (
-                  <div class="flex items-center gap-2">
-                    <span class="size-2 rounded-full" style={{ background: series.color }} />
-                    <span class="font-semibold text-ink">
-                      {series.points[hover()!] === null || series.points[hover()!] === undefined
-                        ? "–"
-                        : props.format(series.points[hover()!]!)}
-                    </span>
-                    <Show when={props.series.length > 1}>
-                      <span class="text-ink-2">{series.name}</span>
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
-        </Show>
-      </div>
-      <Show when={props.series.length > 1}>
-        <ul class="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
-          <For each={props.series}>
-            {(series) => (
-              <li class="flex items-center gap-2">
-                <span class="size-2.5 rounded-full" style={{ background: series.color }} />
-                <span class="text-ink-2">{series.name}</span>
-                <span class="font-mono text-ink">
-                  {latest(series) === null ? "–" : props.format(latest(series)!)}
-                </span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-    </div>
-  );
-}
-
-function Graphs(props: { history: Sample[] }) {
-  const recent = createMemo(() => {
-    const samples = props.history;
-    const last = samples[samples.length - 1]?.at ?? Date.now();
-    return samples.filter((sample) => sample.at >= last - historyWindow);
-  });
-  const times = createMemo(() => recent().map((sample) => sample.at));
-  const names = createMemo(() => {
-    const seen: string[] = [];
-    for (const sample of recent()) {
-      for (const connection of sample.bonding) {
-        if (!seen.includes(connection.name)) {
-          seen.push(connection.name);
-        }
-      }
-    }
-    return seen;
-  });
-  const bitrate = createMemo<Series[]>(() => [
-    {
-      name: t("Total"),
-      color: "var(--color-ink)",
-      wide: true,
-      points: recent().map((sample) => sample.bitrate),
-    },
-    ...names().map((name, index) => ({
-      name,
-      color: connectionColor(index),
-      points: recent().map((sample) => {
-        const connection = sample.bonding.find((candidate) => candidate.name === name);
-        return connection === undefined ? null : connection.bytesPerSecond * 8;
-      }),
-    })),
-  ]);
-  const rtts = createMemo<Series[]>(() =>
-    names().map((name, index) => ({
-      name,
-      color: connectionColor(index),
-      points: recent().map((sample) => {
-        const connection = sample.bonding.find((candidate) => candidate.name === name);
-        return connection?.rtt ?? null;
-      }),
-    })),
-  );
-
-  return (
-    <div class={cardClass}>
-      <h2 class="text-[23px] font-semibold">{t("Last minute")}</h2>
-      <TimeChart
-        title={t("Bitrate")}
-        times={times()}
-        series={bitrate()}
-        format={formatBits}
-        empty={t("No bitrate yet. It is shown while the stream is live.")}
-      />
-      <Show when={names().length > 0}>
-        <TimeChart
-          title={t("Round trip time")}
-          times={times()}
-          series={rtts()}
-          format={formatMilliseconds}
-          empty={t("No round trip times yet.")}
-        />
-      </Show>
-    </div>
-  );
-}
-
-const messageErrorText = (error: unknown) =>
-  error instanceof BackendError && [403, 409, 502, 504].includes(error.status) && error.message
-    ? error.message
-    : t("Something went wrong. Try again.");
-
-function MomMessage(props: {
-  session: string;
-  page: string;
-  device: string;
-  enabled: boolean;
-  onSignOut: () => void;
-}) {
-  const [text, setText] = createSignal("");
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const send = async (event: SubmitEvent) => {
-    event.preventDefault();
-    const message = text().trim();
-    if (!message) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await controlDevice(props.session, props.page, props.device, {
-        sendMessage: { text: message },
-      });
-      setText("");
-    } catch (error) {
-      if (error instanceof BackendError && error.status === 401) {
-        props.onSignOut();
-        return;
-      }
-      setError(messageErrorText(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div class="flex flex-col gap-3 border-t-[1.5px] border-line pt-5">
-      <form class="flex flex-wrap gap-3" onSubmit={(event) => void send(event)}>
-        <input
-          type="text"
-          value={text()}
-          onInput={(event) => setText(event.currentTarget.value)}
-          placeholder={t("Message to the streamer")}
-          aria-label={t("Message to the streamer")}
-          maxLength={300}
-          autocomplete="off"
-          disabled={!props.enabled}
-          class={`${inputClass} min-w-0 flex-1 disabled:opacity-60`}
-        />
-        <button
-          type="submit"
-          class={buttonClass}
-          disabled={!props.enabled || busy() || !text().trim()}
-        >
-          <Icon name="chat" class="size-5" />
-          {t("Send")}
-        </button>
-      </form>
-      <Show when={error()}>
-        {(error) => (
-          <Notice error onClose={() => setError(null)}>
-            {error()}
-          </Notice>
-        )}
-      </Show>
-    </div>
-  );
-}
 
 export default function DeviceView(props: {
   session: string;
@@ -444,109 +19,18 @@ export default function DeviceView(props: {
   nameOf: (device: string) => string | undefined;
   onSignOut: () => void;
 }) {
-  const [loaded, setLoaded] = createSignal(false);
-  const [shown, setShown] = createSignal({ device: "", name: "" });
-  const [connected, setConnected] = createSignal(false);
-  const [streaming, setStreaming] = createSignal(false);
-  const [status, setStatus] = createSignal<DeviceStatus>(emptyStatus());
-  const [state, setState] = createSignal<DeviceState>({});
-  const [settings, setSettings] = createSignal<DeviceSettings | null>(null);
-  const [preview, setPreview] = createSignal<string | null>(null);
-  const [history, setHistory] = createSignal<Sample[]>([]);
-  const [pending, setPending] = createSignal<string[]>([]);
-
-  createEffect(() => {
-    let fresh = true;
-    const device = props.device;
-    const stop = subscribe(deviceEventsUrl(props.page, device), props.session, {
-      onOpen: () => setStreaming(true),
-      onEvent: (kind, data) => {
-        switch (kind) {
-          case "snapshot": {
-            const snapshot = data as DeviceSnapshot;
-            if (fresh) {
-              fresh = false;
-              setStatus(emptyStatus());
-              setState({});
-              setSettings(null);
-              setHistory([]);
-            }
-            setLoaded(true);
-            setShown({ device, name: snapshot.name });
-            setConnected(snapshot.connected);
-            if (snapshot.connected) {
-              setStatus((current) => ({
-                general: filled(snapshot.status.general) ?? current.general,
-                topLeft: filled(snapshot.status.topLeft) ?? current.topLeft,
-                topRight: filled(snapshot.status.topRight) ?? current.topRight,
-              }));
-              setState((current) => ({ ...current, ...snapshot.state }));
-              setSettings((current) => snapshot.settings ?? current);
-            } else {
-              setStatus(emptyStatus());
-              setState({});
-              setSettings(snapshot.settings);
-            }
-            break;
-          }
-          case "status": {
-            const update = data as StatusUpdate;
-            setStatus((current) => ({
-              general: update.general ?? current.general,
-              topLeft: update.topLeft ?? current.topLeft,
-              topRight: update.topRight ?? current.topRight,
-            }));
-            if (update.sample) {
-              const sample = update.sample;
-              setHistory((current) => [...current.slice(-59), sample]);
-            }
-            break;
-          }
-          case "state":
-            setState((current) => ({ ...current, ...(data as { data: DeviceState }).data }));
-            break;
-          case "settings":
-            setSettings((data as { data: DeviceSettings }).data);
-            break;
-          case "connection": {
-            const connected = (data as { connected: boolean }).connected;
-            setConnected(connected);
-            if (!connected) {
-              setStatus(emptyStatus());
-              setState({});
-              setPreview(null);
-            }
-            break;
-          }
-          default:
-            break;
-        }
-      },
-      onError: (code) => {
-        setStreaming(false);
-        if (code === 401) {
-          props.onSignOut();
-        }
-      },
-    });
-    onCleanup(stop);
-  });
-
-  const control = async (control: Control) => {
-    const kind = Object.keys(control)[0] ?? "";
-    const body = Object.values(control)[0] as { id?: string };
-    const key = perItem.includes(kind) ? `${kind}:${body.id}` : kind;
-    setPending((current) => [...current, key]);
-    try {
-      await controlDevice(props.session, props.page, props.device, control);
-    } catch (error) {
-      if (error instanceof BackendError && error.status === 401) {
-        props.onSignOut();
-      }
-    } finally {
-      setPending((current) => current.filter((pending) => pending !== key));
-    }
-  };
+  const current = createMemo(() => ({
+    device: props.device,
+    feed: useDeviceFeed(props.session, props.page, props.device, props.onSignOut),
+  }));
+  const shown = createMemo<{ device: string; feed: DeviceFeed } | undefined>((previous) =>
+    current().feed.loaded() || !previous ? current() : previous,
+  );
+  const feed = () => shown()!.feed;
+  const loaded = () => feed().loaded();
+  const connected = () => feed().connected();
+  const streaming = () => feed().streaming();
+  const history = () => feed().history();
 
   const online = () => connected() && streaming();
   const sections: Section[] = [
@@ -570,22 +54,12 @@ export default function DeviceView(props: {
   ];
   const { active, select } = createSectionChoice(() => sections);
 
-  createEffect(() => {
-    if (active() !== "phone" || props.preview !== true) {
-      return;
-    }
-    const stop = subscribe(devicePreviewUrl(props.page, props.device), props.session, {
-      onEvent: (kind, data) => {
-        if (kind === "frame") {
-          setPreview((data as { image: string }).image);
-        }
-      },
-    });
-    onCleanup(() => {
-      stop();
-      setPreview(null);
-    });
-  });
+  const previewFeed = createMemo(() =>
+    active() === "phone" && props.preview === true
+      ? usePreviewFeed(props.session, props.page, props.device)
+      : null,
+  );
+  const preview = () => (connected() ? (previewFeed()?.() ?? null) : null);
 
   return (
     <>
@@ -599,7 +73,9 @@ export default function DeviceView(props: {
               <Icon name="smartphone" class="size-8" />
             </span>
             <span class="font-display text-2xl font-semibold text-ink">
-              {t("{name} is not connected", { name: props.nameOf(shown().device) ?? shown().name })}
+              {t("{name} is not connected", {
+                name: props.nameOf(shown()!.device) ?? feed().name(),
+              })}
             </span>
             <span class="text-[15px] text-ink-2">
               {t("This page updates as soon as it connects again.")}
@@ -636,15 +112,15 @@ export default function DeviceView(props: {
                 </Show>
                 <MoblinScreen
                   page={props.page}
-                  state={state()}
-                  status={status()}
-                  settings={settings()}
+                  state={feed().state()}
+                  status={feed().status()}
+                  settings={feed().settings()}
                   preview={preview()}
                   goLive={props.goLive}
                   remoteControl={props.remoteControl}
                   connected={online()}
-                  pending={pending()}
-                  onControl={control}
+                  pending={feed().pending()}
+                  onControl={(control) => feed().control(control)}
                 />
                 <MomMessage
                   session={props.session}

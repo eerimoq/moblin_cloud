@@ -25,6 +25,7 @@ import {
   Avatar,
   channelKey,
   assistedChannelKey,
+  monitorPage,
   PagePicker,
   rememberChannel,
   StreamerPicker,
@@ -79,7 +80,7 @@ import {
   type SettingsChanges,
 } from "../data/account";
 import { BackendError } from "../data/backend";
-import { deviceUrl, links, pages } from "../data/links";
+import { deviceUrl, links, monitorUrl, pages } from "../data/links";
 import {
   accentAttributes,
   accents,
@@ -109,6 +110,12 @@ import { language, t, tRich } from "../i18n";
 import CloudLanding from "../components/CloudLanding";
 
 const DeviceView = lazy(() => import("./Device"));
+const Monitor = lazy(() => import("./Monitor"));
+
+export const [fullWindow, setFullWindow] = createSignal(false);
+
+const urlOf = (page: string, device: string) =>
+  device === monitorPage ? monitorUrl(page) : deviceUrl(page, device);
 
 const accentNames: Record<string, string> = {
   green: t("Green"),
@@ -2263,6 +2270,10 @@ type Target = { channel: string; page: string | null; device: string };
 
 function readTarget(remembered: boolean): Target {
   const path = location.pathname.slice(import.meta.env.BASE_URL.length);
+  const monitor = path.match(/^monitor\/([^/]+)\/?$/);
+  if (monitor) {
+    return { channel: "", page: decodeURIComponent(monitor[1]), device: monitorPage };
+  }
   const device = path.match(/^device\/([^/]+)(?:\/([^/]+))?\/?$/);
   if (device) {
     return {
@@ -2811,12 +2822,14 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
     if (
       there.page !== page ||
       there.device !== device ||
-      (!device && location.pathname.startsWith(asset(pages.device)))
+      (!device &&
+        (location.pathname.startsWith(asset(pages.device)) ||
+          location.pathname.startsWith(asset(pages.monitor))))
     ) {
       history.replaceState(
         null,
         "",
-        `${device ? deviceUrl(page, device) : dashboardUrl(channel)}${location.search}${location.hash}`,
+        `${device ? urlOf(page, device) : dashboardUrl(channel)}${location.search}${location.hash}`,
       );
     }
   });
@@ -2825,15 +2838,17 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
   addEventListener("popstate", onPopState);
   onCleanup(() => removeEventListener("popstate", onPopState));
 
-  const hashes = { dashboard: "", device: "" };
+  const hashes = { dashboard: "", device: "", monitor: "" };
+  const kindOf = (to: string) =>
+    to === monitorPage ? "monitor" : to ? "device" : ("dashboard" as const);
   const show = (picked: Assisting | null, to: string) => {
     const id = picked?.id ?? props.account.settings.id;
-    hashes[device() ? "device" : "dashboard"] = location.hash;
+    hashes[kindOf(device())] = location.hash;
     scrollTo({ top: 0, behavior: "instant" });
     history.pushState(
       null,
       "",
-      `${to ? deviceUrl(id, to) : dashboardUrl(picked)}${hashes[to ? "device" : "dashboard"]}`,
+      `${to ? urlOf(id, to) : dashboardUrl(picked)}${hashes[kindOf(to)]}`,
     );
     setTarget(
       to
@@ -2844,8 +2859,8 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
 
   const pickStreamer = async (key: string) => {
     const picked = props.account.assisting.find((channel) => channelKey(channel) === key) ?? null;
-    if (!device()) {
-      show(picked, "");
+    if (!device() || device() === monitorPage) {
+      show(picked, device());
       return;
     }
     const id = picked?.id ?? props.account.settings.id;
@@ -2857,9 +2872,85 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
 
   let premiumDialog: HTMLDialogElement | undefined;
 
+  const monitor = () => device() === monitorPage;
+  createEffect(() => setFullWindow(monitor()));
+  onCleanup(() => setFullWindow(false));
+
+  const content = () => (
+    <Show when={page()} keyed>
+      {(id) => (
+        <Show
+          when={current()}
+          fallback={
+            <Show when={failure()?.page === id ? failure()?.message : null} fallback={<Spinner />}>
+              {(message) => <Notice status>{message()}</Notice>}
+            </Show>
+          }
+        >
+          {(account) => (
+            <Show
+              when={device()}
+              fallback={
+                <Admin
+                  session={props.session}
+                  account={account()}
+                  page={channel() ? id : undefined}
+                  recentChanges={recentChanges()}
+                  onAccount={update}
+                  onOpenDevice={(to) => show(channel(), to)}
+                  onSignOut={props.onSignOut}
+                />
+              }
+            >
+              {(picked) => (
+                <Show
+                  when={picked() !== monitorPage}
+                  fallback={
+                    <Monitor
+                      session={props.session}
+                      page={id}
+                      account={account()}
+                      assisted={channel() !== null}
+                      recentChanges={recentChanges()}
+                      onSignOut={props.onSignOut}
+                    />
+                  }
+                >
+                  <Show
+                    when={account().remoteControl !== "none"}
+                    fallback={
+                      <div class={cardClass}>
+                        <p class="text-ink-2">
+                          {t("The streamer has not let you use the remote control.")}
+                        </p>
+                      </div>
+                    }
+                  >
+                    <DeviceView
+                      session={props.session}
+                      page={id}
+                      device={picked()}
+                      preview={account().preview}
+                      goLive={account().goLive}
+                      remoteControl={account().remoteControl === "control"}
+                      nameOf={(device) =>
+                        account().devices.find((candidate) => candidate.id === device)?.name
+                      }
+                      onSignOut={props.onSignOut}
+                    />
+                  </Show>
+                </Show>
+              )}
+            </Show>
+          )}
+        </Show>
+      )}
+    </Show>
+  );
+
   return (
-    <>
-      <CloudHeader premium={props.account.premium}>
+    <div class={monitor() ? "flex h-dvh flex-col" : "contents"}>
+      <CloudHeader premium={props.account.premium} wide={monitor()}>
         <div class="ml-auto flex min-w-0 items-center gap-3">
           <Show when={!props.account.premium}>
             <GoPremium ref={(element) => (premiumDialog = element)} />
@@ -2905,69 +2996,12 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
           />
         </div>
       </CloudHeader>
-      <main>
-        <Band tight>
-          <Show when={page()} keyed>
-            {(id) => (
-              <Show
-                when={current()}
-                fallback={
-                  <Show
-                    when={failure()?.page === id ? failure()?.message : null}
-                    fallback={<Spinner />}
-                  >
-                    {(message) => <Notice status>{message()}</Notice>}
-                  </Show>
-                }
-              >
-                {(account) => (
-                  <Show
-                    when={device()}
-                    fallback={
-                      <Admin
-                        session={props.session}
-                        account={account()}
-                        page={channel() ? id : undefined}
-                        recentChanges={recentChanges()}
-                        onAccount={update}
-                        onOpenDevice={(to) => show(channel(), to)}
-                        onSignOut={props.onSignOut}
-                      />
-                    }
-                  >
-                    {(picked) => (
-                      <Show
-                        when={account().remoteControl !== "none"}
-                        fallback={
-                          <div class={cardClass}>
-                            <p class="text-ink-2">
-                              {t("The streamer has not let you use the remote control.")}
-                            </p>
-                          </div>
-                        }
-                      >
-                        <DeviceView
-                          session={props.session}
-                          page={id}
-                          device={picked()}
-                          preview={account().preview}
-                          goLive={account().goLive}
-                          remoteControl={account().remoteControl === "control"}
-                          nameOf={(device) =>
-                            account().devices.find((candidate) => candidate.id === device)?.name
-                          }
-                          onSignOut={props.onSignOut}
-                        />
-                      </Show>
-                    )}
-                  </Show>
-                )}
-              </Show>
-            )}
-          </Show>
-        </Band>
+      <main class={monitor() ? "min-h-0 flex-1 bg-band" : undefined}>
+        <Show when={monitor()} fallback={<Band tight>{content()}</Band>}>
+          {content()}
+        </Show>
       </main>
-    </>
+    </div>
   );
 }
 

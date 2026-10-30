@@ -121,6 +121,14 @@ impl Database {
                      id TEXT PRIMARY KEY,
                      icon TEXT NOT NULL
                  );
+                 CREATE TABLE IF NOT EXISTS monitor_layouts (
+                     account TEXT NOT NULL,
+                     page TEXT NOT NULL,
+                     layout TEXT NOT NULL,
+                     updated_at INTEGER NOT NULL,
+                     PRIMARY KEY (account, page)
+                 );
+                 CREATE INDEX IF NOT EXISTS monitor_layouts_page ON monitor_layouts (page);
                  CREATE TABLE IF NOT EXISTS orders (
                      id TEXT PRIMARY KEY,
                      streamer TEXT NOT NULL,

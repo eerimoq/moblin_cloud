@@ -10,7 +10,8 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 
 const path = location.pathname.slice(import.meta.env.BASE_URL.length);
 const streamer = path.match(/^(twitch|kick)\/([^/]+)\/?$/);
-const dashboard = /^(dashboard\/(twitch|kick)\/[^/]+|device\/[^/]+(\/[^/]+)?)\/?$/.test(path);
+const dashboard =
+  /^(dashboard\/(twitch|kick)\/[^/]+|device\/[^/]+(\/[^/]+)?|monitor\/[^/]+)\/?$/.test(path);
 
 if (streamer) {
   document.title = "Moblin";
