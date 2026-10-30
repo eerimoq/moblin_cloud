@@ -173,11 +173,7 @@ pub(super) async fn handle_assistant_recent(
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, Failure> {
     assistant(&api, &headers, &id)?;
-    let page = page_of(&api, &id).ok_or(failure(
-        "not-found",
-        StatusCode::NOT_FOUND,
-        "This page does not exist.",
-    ))?;
+    let page = page_of(&api, &id).ok_or_else(no_such_page)?;
     recent(&api, page, query, false).map_err(|(status, text)| Failure {
         reason: "invalid-kind",
         status,

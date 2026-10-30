@@ -201,11 +201,7 @@ pub(super) async fn handle_assistant_account(
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, Failure> {
     let signed_in = assistant(&api, &headers, &id)?;
-    let account = api.accounts.of_page(&id).ok_or(failure(
-        "not-found",
-        StatusCode::NOT_FOUND,
-        "This page does not exist.",
-    ))?;
+    let account = api.accounts.of_page(&id).ok_or_else(no_such_page)?;
     let settings = api.pages.get(&id);
     Ok(Json(AccountResponse {
         twitch: public_identity(&account, Platform::Twitch),

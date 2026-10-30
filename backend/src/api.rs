@@ -160,9 +160,9 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/recent/{order}/resend",
             post(handle_account_resend),
         )
-        .route("/account/test/tip", post(handle_account_test_tip))
-        .route("/account/test/spin", post(handle_account_test_spin))
-        .route("/account/test/effect", post(handle_account_test_effect))
+        .route("/account/test/tip", post(handle_test_tip))
+        .route("/account/test/spin", post(handle_test_spin))
+        .route("/account/test/effect", post(handle_test_effect))
         .route(
             "/account/assistants/{platform}",
             post(handle_account_assistant_add),
@@ -224,18 +224,9 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/pages/{id}/image/remove",
             post(handle_assistant_image_remove),
         )
-        .route(
-            "/account/pages/{id}/test/tip",
-            post(handle_assistant_test_tip),
-        )
-        .route(
-            "/account/pages/{id}/test/spin",
-            post(handle_assistant_test_spin),
-        )
-        .route(
-            "/account/pages/{id}/test/effect",
-            post(handle_assistant_test_effect),
-        )
+        .route("/account/pages/{id}/test/tip", post(handle_test_tip))
+        .route("/account/pages/{id}/test/spin", post(handle_test_spin))
+        .route("/account/pages/{id}/test/effect", post(handle_test_effect))
         .route("/admin/stats", get(handle_admin_stats))
         .route("/admin/stats/events", get(handle_admin_stats_events))
         .route("/pages/{id}", get(handle_page))
@@ -276,6 +267,14 @@ pub fn router(api: Arc<Api>) -> Router {
 
 pub(super) fn page_of(api: &Api, id: &str) -> Option<Page> {
     Some(api.accounts.of_page(id)?.page)
+}
+
+pub(super) fn no_such_page() -> Failure {
+    failure(
+        "not-found",
+        StatusCode::NOT_FOUND,
+        "This page does not exist.",
+    )
 }
 
 pub(super) fn not_signed_in() -> (StatusCode, String) {

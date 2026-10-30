@@ -53,26 +53,18 @@ fn moblin_not_connected() -> Failure {
     failure("offline", StatusCode::CONFLICT, "Connect Moblin first.")
 }
 
-pub(super) async fn handle_account_test_tip(
+pub(super) async fn handle_test_tip(
     State(api): State<Arc<Api>>,
+    page: Option<Path<String>>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_tip(&api, &headers, None, request).await;
+    let page = page.map(|Path(page)| page);
+    let result = test_tip(&api, &headers, page.as_deref(), request).await;
     counted(&api, "tipTests", result)
 }
 
-pub(super) async fn handle_assistant_test_tip(
-    State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Json(request): Json<TestRequest>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_tip(&api, &headers, Some(&id), request).await;
-    counted(&api, "tipTests", result)
-}
-
-async fn account_test_tip(
+async fn test_tip(
     api: &Api,
     headers: &HeaderMap,
     page: Option<&str>,
@@ -98,26 +90,18 @@ async fn account_test_tip(
     Ok(accepted())
 }
 
-pub(super) async fn handle_account_test_spin(
+pub(super) async fn handle_test_spin(
     State(api): State<Arc<Api>>,
+    page: Option<Path<String>>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_spin(&api, &headers, None, request).await;
+    let page = page.map(|Path(page)| page);
+    let result = test_spin(&api, &headers, page.as_deref(), request).await;
     counted(&api, "spinTests", result)
 }
 
-pub(super) async fn handle_assistant_test_spin(
-    State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Json(request): Json<TestRequest>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_spin(&api, &headers, Some(&id), request).await;
-    counted(&api, "spinTests", result)
-}
-
-async fn account_test_spin(
+async fn test_spin(
     api: &Api,
     headers: &HeaderMap,
     page: Option<&str>,
@@ -154,26 +138,18 @@ async fn account_test_spin(
     Ok(accepted())
 }
 
-pub(super) async fn handle_account_test_effect(
+pub(super) async fn handle_test_effect(
     State(api): State<Arc<Api>>,
+    page: Option<Path<String>>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_effect(&api, &headers, None, request).await;
+    let page = page.map(|Path(page)| page);
+    let result = test_effect(&api, &headers, page.as_deref(), request).await;
     counted(&api, "effectTests", result)
 }
 
-pub(super) async fn handle_assistant_test_effect(
-    State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Json(request): Json<TestRequest>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = account_test_effect(&api, &headers, Some(&id), request).await;
-    counted(&api, "effectTests", result)
-}
-
-async fn account_test_effect(
+async fn test_effect(
     api: &Api,
     headers: &HeaderMap,
     page: Option<&str>,
