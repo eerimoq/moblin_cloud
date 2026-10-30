@@ -1156,15 +1156,5 @@ function Stats(props: { session: string; onSignOut: () => void }) {
 }
 
 export default function AdminView(props: { session: string; onSignOut: () => void }) {
-  return (
-    <div class="flex flex-col gap-8">
-      <div class="flex flex-col gap-2">
-        <h1 class="font-display text-[34px] font-bold">Admin</h1>
-        <p class="text-[17px] text-ink-2 text-pretty">
-          How Moblin Cloud is doing. Numbers refresh every two seconds; days are UTC.
-        </p>
-      </div>
-      <Stats session={props.session} onSignOut={props.onSignOut} />
-    </div>
-  );
+  return <Stats session={props.session} onSignOut={props.onSignOut} />;
 }
