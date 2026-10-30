@@ -1,17 +1,8 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import Icon, { type IconName } from "../components/Icon";
 import { subscribe } from "../sse";
-import {
-  AccountMenu,
-  Band,
-  cardClass,
-  CloudHeader,
-  Hero,
-  Notice,
-  Spinner,
-  PlatformSignIn,
-} from "../components/PageParts";
-import { adminStatsEventsUrl, createAccountSession, type AdminStats } from "../data/account";
+import { cardClass, Notice, Spinner } from "../components/PageParts";
+import { adminStatsEventsUrl, type AdminStats } from "../data/account";
 
 type Counts = { today: number; week: number; total: number };
 
@@ -1164,68 +1155,16 @@ function Stats(props: { session: string; onSignOut: () => void }) {
   );
 }
 
-export default function Admin() {
-  const { session, loading, signInFailed, signOut } = createAccountSession();
-
+export default function AdminView(props: { session: string; onSignOut: () => void }) {
   return (
-    <>
-      <CloudHeader>
-        <Show
-          when={session()}
-          fallback={
-            <Show when={!loading()}>
-              <span class="flex items-center gap-2">
-                <PlatformSignIn platform="twitch" />
-                <PlatformSignIn platform="kick" />
-              </span>
-            </Show>
-          }
-        >
-          {(current) => (
-            <AccountMenu
-              name={current().account.name}
-              avatar={current().account.avatar}
-              onSignOut={signOut}
-            />
-          )}
-        </Show>
-      </CloudHeader>
-      <main>
-        <Hero title="Admin">
-          <p class="text-lg text-ink-2 text-pretty sm:text-[21px]">
-            How Moblin Cloud is doing. Numbers refresh every ten seconds; days are UTC.
-          </p>
-        </Hero>
-        <Band tight>
-          <Show when={!loading()} fallback={<Spinner />}>
-            <Show
-              when={session()}
-              keyed
-              fallback={
-                <Show
-                  when={signInFailed()}
-                  fallback={
-                    <p class="text-[17px] text-ink-2">
-                      Sign in with an admin Twitch account to see the statistics.
-                    </p>
-                  }
-                >
-                  <Notice status>Signing in failed. Try again.</Notice>
-                </Show>
-              }
-            >
-              {(current) => (
-                <Show
-                  when={current.account.admin}
-                  fallback={<Notice status>This account is not an admin.</Notice>}
-                >
-                  <Stats session={current.session} onSignOut={signOut} />
-                </Show>
-              )}
-            </Show>
-          </Show>
-        </Band>
-      </main>
-    </>
+    <div class="flex flex-col gap-8">
+      <div class="flex flex-col gap-2">
+        <h1 class="font-display text-[34px] font-bold">Admin</h1>
+        <p class="text-[17px] text-ink-2 text-pretty">
+          How Moblin Cloud is doing. Numbers refresh every two seconds; days are UTC.
+        </p>
+      </div>
+      <Stats session={props.session} onSignOut={props.onSignOut} />
+    </div>
   );
 }

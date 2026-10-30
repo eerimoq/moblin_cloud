@@ -10,6 +10,8 @@ export const assistedChannelKey = "assistedChannel";
 
 export const monitorPage = ":monitor";
 
+export const adminPage = ":admin";
+
 export const rememberChannel = (key: string) => {
   try {
     sessionStorage.setItem(assistedChannelKey, key);
@@ -216,7 +218,7 @@ export function StreamerPicker(props: {
   );
 }
 
-function PageBadge(props: { icon: "grid" | "layout" }) {
+function PageBadge(props: { icon: "grid" | "layout" | "chart" }) {
   return (
     <span class="flex size-8 items-center justify-center rounded-full bg-ghost-hover text-ink">
       <Icon name={props.icon} class="size-5" />
@@ -226,6 +228,7 @@ function PageBadge(props: { icon: "grid" | "layout" }) {
 
 export function PagePicker(props: {
   devices: Device[];
+  admin: boolean;
   picked: string;
   onPick: (device: string) => void;
 }) {
@@ -240,6 +243,11 @@ export function PagePicker(props: {
     detail: t("Everything on one page"),
     badge: () => <PageBadge icon="layout" />,
   });
+  const admin = (): Option => ({
+    value: adminPage,
+    label: t("Admin"),
+    badge: () => <PageBadge icon="chart" />,
+  });
   return (
     <Picker
       label={t("Page")}
@@ -247,17 +255,20 @@ export function PagePicker(props: {
       fallback={
         props.picked === monitorPage
           ? monitor()
-          : props.picked
-            ? {
-                value: props.picked,
-                label: "Moblin",
-                badge: () => <DeviceBadge device={undefined} />,
-              }
-            : dashboard()
+          : props.picked === adminPage
+            ? admin()
+            : props.picked
+              ? {
+                  value: props.picked,
+                  label: "Moblin",
+                  badge: () => <DeviceBadge device={undefined} />,
+                }
+              : dashboard()
       }
       options={[
         dashboard(),
         monitor(),
+        ...(props.admin ? [admin()] : []),
         ...props.devices.map((device) => ({
           value: device.id,
           label: device.name,
