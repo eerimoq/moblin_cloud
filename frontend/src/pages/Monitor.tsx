@@ -673,7 +673,7 @@ function DevicePanel(props: {
             return <StatusPanel device={props.device} feed={feed} />;
           default:
             return (
-              <div class="flex flex-col gap-2 p-3">
+              <div class="p-3">
                 <MomMessage
                   compact
                   session={props.session}
@@ -686,9 +686,6 @@ function DevicePanel(props: {
                   }
                   onSignOut={props.onSignOut}
                 />
-                <p class="text-[13px] text-muted">
-                  {t("Moblin shows the message in its chat on the phone.")}
-                </p>
               </div>
             );
         }
