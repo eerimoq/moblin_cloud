@@ -1388,7 +1388,7 @@ function dashboardLink(
   }
   const address = identityOf(channel, platform) ?? channel;
   return {
-    href: asset(`${pages.dashboard}${address.platform}/${encodeURIComponent(address.login)}`),
+    href: asset(`${pages.assisted}${address.platform}/${encodeURIComponent(address.login)}`),
     own: false,
   };
 }

@@ -49,7 +49,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       // One HTML entry per page. Sub pages live in their own directory so
-      // GitHub Pages serves them at clean URLs like /dashboard/.
+      // GitHub Pages serves them at clean URLs like /account/.
       input: [
         "index.html",
         "page/index.html",

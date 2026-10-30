@@ -18,7 +18,8 @@ export const links = {
 
 /** Pages, relative to the site root. */
 export const pages = {
-  dashboard: "/dashboard/",
+  dashboard: "/",
+  assisted: "/dashboard/",
   account: "/account/",
   device: "/device/",
   monitor: "/monitor/",

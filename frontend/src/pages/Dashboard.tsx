@@ -2329,7 +2329,7 @@ function resolve(account: Account, target: Target) {
 const dashboardUrl = (channel: Assisting | null) =>
   asset(
     channel
-      ? `${pages.dashboard}${channel.platform}/${encodeURIComponent(channel.login)}`
+      ? `${pages.assisted}${channel.platform}/${encodeURIComponent(channel.login)}`
       : pages.dashboard,
   );
 
