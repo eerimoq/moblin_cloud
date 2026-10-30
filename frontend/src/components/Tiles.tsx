@@ -13,7 +13,15 @@ import {
 import type { RecentKind } from "../data/account";
 import { t } from "../i18n";
 
-export const panelKinds = ["phone", "activity", "graphs", "status", "message", "web"] as const;
+export const panelKinds = [
+  "phone",
+  "activity",
+  "graphs",
+  "status",
+  "message",
+  "toybox",
+  "web",
+] as const;
 
 export type PanelKind = (typeof panelKinds)[number];
 

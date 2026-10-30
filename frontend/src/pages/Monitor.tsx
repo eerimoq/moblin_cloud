@@ -8,7 +8,7 @@ import MoblinScreen, {
   topRightIcons,
 } from "../components/MoblinScreen";
 import MomMessage from "../components/MomMessage";
-import { Spinner } from "../components/PageParts";
+import { Notice, Spinner } from "../components/PageParts";
 import Tiles, {
   type Leaf,
   type LeafActions,
@@ -23,9 +23,11 @@ import {
   type Device,
   fetchMonitorLayout,
   saveMonitorLayout,
+  sendTest,
   type StatusItem,
 } from "../data/account";
-import { isSignedOut } from "../data/backend";
+import { BackendError, isSignedOut } from "../data/backend";
+import { createFlash } from "../flash";
 import { t } from "../i18n";
 
 const defaultLayout = (): Pane => ({
@@ -51,6 +53,7 @@ const panelNames = (): Record<PanelKind, string> => ({
   graphs: t("Graphs"),
   status: t("Status"),
   message: t("Message to the streamer"),
+  toybox: t("Toybox"),
   web: t("Web page"),
 });
 
@@ -60,6 +63,7 @@ const panelIcons: Record<PanelKind, IconName> = {
   graphs: "chart",
   status: "info",
   message: "chat",
+  toybox: "sparkles",
   web: "globe",
 };
 
@@ -683,6 +687,131 @@ function WebPanel(props: { leaf: Leaf; account: Account; actions: LeafActions })
   );
 }
 
+function WhoopeeCushion(props: { squished: boolean }) {
+  return (
+    <svg viewBox="0 0 120 102" aria-hidden="true" class="w-24 overflow-visible">
+      <g class={props.squished ? "cushion-squish" : ""}>
+        <path
+          d="M50 62 L52 80 Q47 85 44 88 L76 88 Q73 85 68 80 L70 62 Z"
+          fill="var(--color-cushion)"
+          stroke="var(--color-cushion-dark)"
+          stroke-width="2"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M52 74 H68 M53 81 H67"
+          stroke="var(--color-cushion-dark)"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+        <ellipse
+          cx="60"
+          cy="38"
+          rx="50"
+          ry="30"
+          fill="var(--color-cushion)"
+          stroke="var(--color-cushion-dark)"
+          stroke-width="2"
+        />
+        <ellipse
+          cx="60"
+          cy="38"
+          rx="43"
+          ry="23"
+          fill="none"
+          stroke="var(--color-cushion-dark)"
+          stroke-width="1.5"
+          stroke-dasharray="3 4"
+          opacity="0.6"
+        />
+        <ellipse
+          cx="38"
+          cy="25"
+          rx="13"
+          ry="5"
+          fill="var(--color-cushion-shine)"
+          transform="rotate(-18 38 25)"
+        />
+      </g>
+      <Show when={props.squished}>
+        <g
+          class="cushion-puff"
+          fill="none"
+          stroke="var(--color-muted)"
+          stroke-width="2.5"
+          stroke-linecap="round"
+        >
+          <path d="M46 92 q-6 4 -10 10" />
+          <path d="M60 94 q2 4 0 8" />
+          <path d="M74 92 q6 4 10 10" />
+        </g>
+      </Show>
+    </svg>
+  );
+}
+
+function ToyboxPanel(props: { session: string; page?: string; onSignOut: () => void }) {
+  const [sending, setSending] = createSignal(false);
+  const [sent, flashSent] = createFlash(3000);
+  const [squished, squish] = createFlash(700);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const fart = async () => {
+    setError(null);
+    setSending(true);
+    try {
+      await sendTest(props.session, "effect", { effect: "fart" }, props.page);
+      flashSent();
+    } catch (error) {
+      if (isSignedOut(error)) {
+        props.onSignOut();
+        return;
+      }
+      setError(
+        error instanceof BackendError && error.status < 500 && error.message
+          ? error.message
+          : t("Something went wrong. Try again."),
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div class="flex flex-col gap-2 p-3">
+      <div class="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={sending()}
+          onClick={() => {
+            squish();
+            void fart();
+          }}
+          class="flex w-32 flex-col items-center gap-1 rounded-2xl p-2 outline-none hover:bg-ghost focus-visible:bg-ghost disabled:opacity-70"
+        >
+          <WhoopeeCushion squished={squished()} />
+          <span
+            aria-live="polite"
+            class="flex items-center gap-1 font-display text-[15px] font-semibold text-ink"
+          >
+            <Show when={sent()}>
+              <Icon name="check" class="size-4 text-leaf" />
+            </Show>
+            {sent() ? t("Queued for Moblin") : t("Fart")}
+          </span>
+        </button>
+      </div>
+      <Show when={error()}>
+        {(error) => (
+          <Notice error onClose={() => setError(null)}>
+            {error()}
+          </Notice>
+        )}
+      </Show>
+    </div>
+  );
+}
+
 function DevicePanel(props: {
   session: string;
   page: string;
@@ -810,6 +939,12 @@ export default function Monitor(props: {
               kinds={leaf().kinds}
               recentChanges={props.recentChanges}
               onKinds={(kinds) => actions.change({ ...leaf(), kinds })}
+              onSignOut={props.onSignOut}
+            />
+          ) : panel === "toybox" ? (
+            <ToyboxPanel
+              session={props.session}
+              page={props.assisted ? props.page : undefined}
               onSignOut={props.onSignOut}
             />
           ) : panel === "web" ? (

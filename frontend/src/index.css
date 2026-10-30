@@ -55,6 +55,9 @@
   --color-phone-switch: #30d158;
   --color-phone-live: #ff3b30;
   --color-phone-warn: #ffd60a;
+  --color-cushion: #ec4d78;
+  --color-cushion-dark: #b3284f;
+  --color-cushion-shine: rgb(255 255 255 / 0.4);
 
   --font-display: "Fredoka", "Arial Rounded MT Bold", "Nunito Sans", sans-serif;
   --font-body: "Nunito Sans", "Helvetica Neue", Arial, sans-serif;
@@ -255,6 +258,46 @@
 @keyframes cheer-fade {
   from {
     opacity: 0;
+  }
+}
+
+@utility cushion-squish {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cushion-squish 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes cushion-squish {
+  30% {
+    transform: scale(1.14, 0.74);
+  }
+  65% {
+    transform: scale(0.96, 1.05);
+  }
+}
+
+@utility cushion-puff {
+  animation: cushion-puff 0.7s ease-out both;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+@keyframes cushion-puff {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
 
