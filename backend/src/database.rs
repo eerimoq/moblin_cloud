@@ -16,38 +16,6 @@ impl Database {
                 .with_context(|| format!("failed to open {}", path.display()))?,
             None => Connection::open_in_memory()?,
         };
-        let columns = |table: &str, column: &str| -> Result<bool> {
-            let count: u32 = connection
-                .query_row(
-                    "SELECT count(*) FROM pragma_table_info(?1) WHERE name = ?2",
-                    [table, column],
-                    |row| row.get(0),
-                )
-                .with_context(|| format!("failed to read the {table} columns"))?;
-            Ok(count > 0)
-        };
-        for platform in ["twitch", "kick"] {
-            if columns(&format!("{platform}_moderators"), "moderator")? {
-                connection
-                    .execute_batch(&format!(
-                        "ALTER TABLE {platform}_moderators RENAME TO {platform}_assistants;
-                         ALTER TABLE {platform}_assistants RENAME COLUMN moderator TO assistant;
-                         DROP INDEX IF EXISTS {platform}_moderators_moderator;"
-                    ))
-                    .with_context(|| format!("failed to rename the {platform} moderators"))?;
-            }
-        }
-        for table in ["twitch_assistants", "kick_assistants"] {
-            for column in ["preview", "go_live", "edit_tips", "remote_control"] {
-                if columns(table, "broadcaster")? && !columns(table, column)? {
-                    connection
-                        .execute_batch(&format!(
-                            "ALTER TABLE {table} ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
-                        ))
-                        .with_context(|| format!("failed to add the {table} {column} column"))?;
-                }
-            }
-        }
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
@@ -214,60 +182,6 @@ pub fn remove(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn old_moderators_become_assistants_without_permissions_on_start() {
-        let path = temporary_path("moderators-renamed");
-        let connection = Connection::open(&path).unwrap();
-        connection
-            .execute_batch(
-                "CREATE TABLE twitch_moderators (
-                     broadcaster TEXT NOT NULL,
-                     moderator TEXT NOT NULL,
-                     login TEXT NOT NULL,
-                     name TEXT NOT NULL,
-                     PRIMARY KEY (broadcaster, moderator)
-                 );
-                 CREATE INDEX twitch_moderators_moderator ON twitch_moderators (moderator);
-                 INSERT INTO twitch_moderators VALUES ('42', '1', 'mod', 'Mod');",
-            )
-            .unwrap();
-        drop(connection);
-        for _ in 0..2 {
-            let database = Database::open(Some(&path)).unwrap();
-            let connection = database.lock();
-            for table in ["twitch_assistants", "kick_assistants"] {
-                let columns: u32 = connection
-                    .query_row(
-                        "SELECT count(*) FROM pragma_table_info(?1) WHERE name IN ('preview', 'go_live', 'edit_tips', 'remote_control')",
-                        [table],
-                        |row| row.get(0),
-                    )
-                    .unwrap();
-                assert_eq!(columns, 4);
-            }
-            let moderators: u32 = connection
-                .query_row(
-                    "SELECT count(*) FROM sqlite_master WHERE name LIKE '%moderator%'",
-                    [],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(moderators, 0);
-            let (preview, go_live, edit_tips, remote_control): (bool, bool, bool, bool) = connection
-                .query_row(
-                    "SELECT preview, go_live, edit_tips, remote_control FROM twitch_assistants WHERE assistant = '1'",
-                    [],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-                )
-                .unwrap();
-            assert!(!preview);
-            assert!(!go_live);
-            assert!(!edit_tips);
-            assert!(!remote_control);
-        }
-        remove(&path);
-    }
 
     #[test]
     fn size_is_the_files_on_disk() {
