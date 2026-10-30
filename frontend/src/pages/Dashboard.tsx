@@ -2873,6 +2873,16 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
   let premiumDialog: HTMLDialogElement | undefined;
 
   const monitor = () => device() === monitorPage;
+  const copyTargets = () => [
+    { id: props.account.settings.id, label: t("You") },
+    ...props.account.assisting
+      .filter((channel, index, all) => all.findIndex((other) => other.id === channel.id) === index)
+      .map((channel) => ({
+        id: channel.id,
+        label:
+          channel.platform === "kick" ? t("{name} on Kick", { name: channel.name }) : channel.name,
+      })),
+  ];
   createEffect(() => setFullWindow(monitor()));
   onCleanup(() => setFullWindow(false));
 
@@ -2911,6 +2921,7 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
                       page={id}
                       account={account()}
                       assisted={channel() !== null}
+                      copyTargets={copyTargets()}
                       recentChanges={recentChanges()}
                       onSignOut={props.onSignOut}
                     />

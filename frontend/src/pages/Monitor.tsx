@@ -81,8 +81,18 @@ const twitchChatUrl = (login: string) =>
 const menuItemClass =
   "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[14px] text-ink transition-colors hover:bg-ghost disabled:opacity-50";
 
-function PaneMenu(props: { leaf: Leaf; actions: LeafActions; onReset: () => void }) {
+type CopyTarget = { id: string; label: string };
+
+function PaneMenu(props: {
+  leaf: Leaf;
+  actions: LeafActions;
+  onReset: () => void;
+  copyTargets: CopyTarget[];
+  onCopy: (page: string) => Promise<void>;
+}) {
   const [open, setOpen] = createSignal(false);
+  const [copied, setCopied] = createSignal<string[]>([]);
+  createEffect(() => open() || setCopied([]));
   let menu: HTMLDivElement | undefined;
 
   createEffect(() => {
@@ -169,6 +179,33 @@ function PaneMenu(props: { leaf: Leaf; actions: LeafActions; onReset: () => void
           >
             {t("Reset layout")}
           </button>
+          <Show when={props.copyTargets.length > 0}>
+            <div class="my-1 border-t border-line" />
+            <span class="px-3 py-1 text-[12px] font-semibold text-muted">
+              {t("Copy layout to")}
+            </span>
+            <For each={props.copyTargets}>
+              {(target) => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  class={menuItemClass}
+                  disabled={copied().includes(target.id)}
+                  onClick={() =>
+                    void props
+                      .onCopy(target.id)
+                      .then(() => setCopied([...copied(), target.id]))
+                      .catch(() => {})
+                  }
+                >
+                  <span class="min-w-0 flex-1 truncate">{target.label}</span>
+                  <Show when={copied().includes(target.id)}>
+                    <Icon name="check" class="size-4 shrink-0 text-leaf" />
+                  </Show>
+                </button>
+              )}
+            </For>
+          </Show>
         </div>
       </Show>
     </div>
@@ -316,6 +353,8 @@ function PaneFrame(props: {
   devices: Device[];
   device: Device | undefined;
   onReset: () => void;
+  copyTargets: CopyTarget[];
+  onCopy: (page: string) => Promise<void>;
   children: JSX.Element;
 }) {
   const hasDevice = () => devicePanels.includes(props.leaf.panel) && props.devices.length > 1;
@@ -372,7 +411,13 @@ function PaneFrame(props: {
           title={t("Drag to move this pane")}
           class="flex-1 cursor-grab self-stretch active:cursor-grabbing"
         />
-        <PaneMenu leaf={props.leaf} actions={props.actions} onReset={props.onReset} />
+        <PaneMenu
+          leaf={props.leaf}
+          actions={props.actions}
+          onReset={props.onReset}
+          copyTargets={props.copyTargets}
+          onCopy={props.onCopy}
+        />
       </header>
       <div class="relative min-h-0 flex-1 overflow-auto rounded-b-xl">{props.children}</div>
     </section>
@@ -668,6 +713,7 @@ export default function Monitor(props: {
   page: string;
   account: Account;
   assisted: boolean;
+  copyTargets: CopyTarget[];
   recentChanges: number;
   onSignOut: () => void;
 }) {
@@ -701,6 +747,21 @@ export default function Monitor(props: {
     saveTimer = setTimeout(flush, 1000);
   };
   onCleanup(flush);
+
+  const copy = (target: string) => {
+    const shown = layout();
+    if (!shown) {
+      return Promise.resolve();
+    }
+    return saveMonitorLayout(props.session, target, shown).then(
+      () => void layouts.set(target, shown),
+      (error) => {
+        failed(error);
+        throw error;
+      },
+    );
+  };
+  const copyTargets = () => props.copyTargets.filter((target) => target.id !== props.page);
 
   const deviceOf = (leaf: Leaf) => {
     const devices = props.account.devices;
@@ -767,6 +828,8 @@ export default function Monitor(props: {
               devices={props.account.devices}
               device={deviceOf(leaf())}
               onReset={() => change(defaultLayout())}
+              copyTargets={copyTargets()}
+              onCopy={copy}
             >
               {body(leaf, actions)}
             </PaneFrame>
