@@ -1,3 +1,5 @@
+import type { IconName } from "../components/Icon";
+import { BackendError } from "./backend";
 import { t } from "../i18n";
 
 export type Alignment =
@@ -294,3 +296,237 @@ export const moved = <T>(items: T[], index: number, by: number) => {
 };
 
 export const sameId = (a: string, b: string) => a.toUpperCase() === b.toUpperCase();
+
+export const hasAlignment = hasPosition;
+
+export { isHorizontalCenter, isLeft, isVerticalCenter };
+
+export const mirrorsHorizontally = (alignment: Alignment) =>
+  alignment === "TopRight" || alignment === "BottomRight" || alignment === "RightCenter";
+
+export const mirrorsVertically = (alignment: Alignment) =>
+  alignment === "BottomLeft" || alignment === "BottomRight" || alignment === "BottomCenter";
+
+export const canvasWidth = 1920;
+
+export const canvasHeight = 1080;
+
+export const widgetIcons: Record<WidgetType, IconName> = {
+  Image: "image",
+  Browser: "globe",
+  Text: "text",
+  Crop: "crop",
+  Map: "map",
+  Snapshot: "aperture",
+  Chat: "chat",
+  "Chat emote combo": "sparkles",
+  Scene: "scenes",
+  Slideshow: "film",
+  "QR code": "qr-code",
+  Alerts: "megaphone",
+  "Video source": "video",
+  Scoreboard: "scoreboard",
+  VTuber: "user",
+  PNGTuber: "user",
+  "Wheel of luck": "flame",
+  "Bingo card": "grid",
+  "Pomodoro timer": "timer",
+};
+
+export const nestedSceneId = (widget: Widget) =>
+  (widget.scene as { sceneId?: string } | undefined)?.sceneId;
+
+export type WidgetInScene = { scene: Scene; layout: SceneWidget; widget: Widget };
+
+export const sceneWidgetsOf = (scene: Scene, config: SceneConfig): WidgetInScene[] => {
+  const added = new Set<string>();
+  const collect = (scene: Scene): WidgetInScene[] =>
+    scene.widgets.flatMap((layout) => {
+      const widget = config.widgets.find((widget) => sameId(widget.id, layout.widgetId));
+      if (!widget) {
+        return [];
+      }
+      const nested = widget.type === "Scene" ? nestedSceneId(widget) : undefined;
+      if (widget.type !== "Scene") {
+        return [{ scene, layout, widget }];
+      }
+      if (!nested || added.has(nested.toUpperCase())) {
+        return [];
+      }
+      added.add(nested.toUpperCase());
+      const inner = config.scenes.find((candidate) => sameId(candidate.id, nested));
+      return [{ scene, layout, widget }, ...(inner ? collect(inner) : [])];
+    });
+  const found = new Set<string>();
+  return collect(scene).filter((item) => {
+    const id = item.widget.id.toUpperCase();
+    if (found.has(id)) {
+      return false;
+    }
+    found.add(id);
+    return true;
+  });
+};
+
+export type WidgetOutline = {
+  key: string;
+  widget: Widget;
+  layout: SceneWidget;
+  rect: [number, number, number, number];
+  sized: boolean;
+  inScene: boolean;
+};
+
+const outlineSize = (widget: Widget, layout: SceneWidget): [number, number] | null => {
+  const box: [number, number] = [
+    (layout.size * canvasWidth) / 100,
+    (layout.size * canvasHeight) / 100,
+  ];
+  const side = (layout.size * canvasHeight) / 100;
+  const fit = (width: number, height: number): [number, number] | null => {
+    if (width <= 0 || height <= 0) {
+      return null;
+    }
+    const scale = Math.min(box[0] / width, box[1] / height);
+    return [width * scale, height * scale];
+  };
+  switch (widget.type) {
+    case "Map":
+    case "QR code":
+      return [side, side];
+    case "Bingo card":
+      return [side + 10, side + 10];
+    case "Browser":
+      return fit(widget.browser?.width ?? 0, widget.browser?.height ?? 0) ?? box;
+    case "Chat emote combo":
+      return [2 * side, side];
+    case "Pomodoro timer":
+      return [
+        ((widget.pomodoroTimer as { width?: number } | undefined)?.width ?? 1.6) * side,
+        0.64 * side,
+      ];
+    case "Wheel of luck": {
+      const wheel = (400 * canvasWidth) / 1920;
+      return [wheel + (0.3 * wheel) / 12, wheel];
+    }
+    case "Chat": {
+      const chat = widget.chat as { fontSize?: number; height?: number } | undefined;
+      return [20 * (chat?.fontSize ?? 19), (chat?.height ?? 1) * canvasHeight];
+    }
+    case "Text":
+    case "Alerts":
+    case "Scoreboard":
+    case "Crop":
+    case "Scene":
+      return null;
+    default:
+      return box;
+  }
+};
+
+const pixelOffset = (offset: number, size: number, total: number, center: boolean, near: boolean) =>
+  center
+    ? (total - size) / 2
+    : near
+      ? (offset * total) / 100
+      : total - (offset * total) / 100 - size;
+
+export const outlinesOf = (sceneId: string, config: SceneConfig): WidgetOutline[] => {
+  const scene = config.scenes.find((candidate) => sameId(candidate.id, sceneId));
+  if (!scene) {
+    return [];
+  }
+  const outlines: WidgetOutline[] = [];
+  const added: Scene[] = [];
+  const draw = (current: Scene) => {
+    if (added.includes(current)) {
+      return;
+    }
+    added.push(current);
+    for (const layout of current.widgets) {
+      const widget = config.widgets.find((candidate) => sameId(candidate.id, layout.widgetId));
+      if (!widget?.enabled) {
+        continue;
+      }
+      if (widget.type === "Scene") {
+        const nested = nestedSceneId(widget);
+        const inner = nested && config.scenes.find((candidate) => sameId(candidate.id, nested));
+        if (inner) {
+          draw(inner);
+        }
+      } else if (
+        !outlines.some((outline) => sameId(outline.widget.id, widget.id)) &&
+        hasPosition(widget.type)
+      ) {
+        const size = outlineSize(widget, layout);
+        const [width, height] = size ?? [0, 0];
+        outlines.push({
+          key: `${current.id}:${layout.id}`,
+          widget,
+          layout,
+          rect: [
+            pixelOffset(
+              layout.x,
+              width,
+              canvasWidth,
+              isHorizontalCenter(layout.alignment),
+              isLeft(layout.alignment),
+            ),
+            pixelOffset(
+              layout.y,
+              height,
+              canvasHeight,
+              isVerticalCenter(layout.alignment),
+              isTop(layout.alignment),
+            ),
+            width,
+            height,
+          ],
+          sized: size !== null,
+          inScene: current === scene,
+        });
+      }
+    }
+  };
+  draw(scene);
+  return outlines;
+};
+
+export const uniqueName = (name: string, existing: { name: string }[]) => {
+  const names = existing.map((item) => item.name);
+  if (!names.includes(name)) {
+    return name;
+  }
+  let number = 1;
+  while (names.includes(`${name} ${number}`)) {
+    number += 1;
+  }
+  return `${name} ${number}`;
+};
+
+export const clonedScene = (scene: Scene, name: string): Scene => ({
+  ...JSON.parse(JSON.stringify(scene)),
+  id: newId(),
+  name,
+  widgets: scene.widgets.map((layout) => ({ ...layout, id: newId() })),
+});
+
+export const widgetTypeDescriptions = (): Partial<Record<WidgetType, string>> => ({
+  Text: t("A text widget shows text, weather, clock and much more."),
+  Browser: t("A browser widget shows a webpage."),
+  Image: t("An image widget shows an image."),
+  Alerts: t("An alerts widget shows various alerts (subscriptions, raids, ...)."),
+  Map: t("A map widget shows a map with your location."),
+  Chat: t("A chat widget shows your chat."),
+  "QR code": t("A QR code widget shows a QR code of any text."),
+  "Wheel of luck": t("A wheel of luck widget shows a wheel of luck that you can spin."),
+  "Bingo card": t("A bingo card widget shows an interactive bingo card."),
+  "Pomodoro timer": t("A Pomodoro timer widget shows a focus and break timer."),
+});
+
+export const sceneErrorText = (error: unknown) =>
+  error instanceof BackendError && [403, 409, 502].includes(error.status) && error.message
+    ? error.message
+    : error instanceof BackendError && error.status === 504
+      ? t("Moblin did not answer. Editing scenes needs a recent version of Moblin.")
+      : t("Something went wrong. Try again.");

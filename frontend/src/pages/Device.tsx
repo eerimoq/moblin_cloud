@@ -11,6 +11,8 @@ import Icon from "../components/Icon";
 import { cardClass } from "../components/PageParts";
 import SceneEditor from "../components/SceneEditor";
 import { useDeviceFeed, usePreviewFeed, type DeviceFeed } from "../components/deviceFeed";
+import { deviceScenes } from "../data/account";
+import { isSignedOut } from "../data/backend";
 import { formatBits } from "../data/moblin";
 import { t } from "../i18n";
 import { readStored, store } from "../storage";
@@ -128,6 +130,7 @@ export default function DeviceView(props: {
                 </Show>
                 <MoblinScreen
                   page={props.page}
+                  device={props.device}
                   state={feed().state()}
                   status={feed().status()}
                   settings={feed().settings()}
@@ -136,6 +139,15 @@ export default function DeviceView(props: {
                   remoteControl={props.remoteControl}
                   connected={online()}
                   pending={feed().pending()}
+                  scenesVersion={feed().scenesVersion()}
+                  loadScenes={() =>
+                    deviceScenes(props.session, props.page, props.device).catch((error) => {
+                      if (isSignedOut(error)) {
+                        props.onSignOut();
+                      }
+                      throw error;
+                    })
+                  }
                   onControl={(control) => feed().control(control)}
                 />
                 <MomMessage

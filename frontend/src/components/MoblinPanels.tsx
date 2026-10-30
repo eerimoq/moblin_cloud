@@ -1,4 +1,4 @@
-import { createSignal, For, Match, Show, Switch } from "solid-js";
+import { For, Match, Show, Switch, type JSX } from "solid-js";
 import Icon from "./Icon";
 import {
   Choices,
@@ -11,10 +11,20 @@ import {
   type Remote,
   rowClass,
 } from "./MoblinParts";
+import { ScenePageContent, scenePageTitle, type ScenePage, type Scenes } from "./MoblinScenes";
 import { formatBits } from "../data/moblin";
 import { t } from "../i18n";
 
-export type Panel = "mic" | "bitrate" | "priorities" | "autoSceneSwitcher" | "macros" | "settings";
+export type Panel =
+  | "mic"
+  | "bitrate"
+  | "priorities"
+  | "autoSceneSwitcher"
+  | "macros"
+  | "settings"
+  | "sceneWidgets";
+
+export type Page = { kind: "macros" } | ScenePage;
 
 function Mics(props: { remote: Remote; footer?: string }) {
   return (
@@ -176,34 +186,54 @@ function Macros(props: { remote: Remote }) {
   );
 }
 
-type SettingsPage = "root" | "macros";
+const backLabel = (title: string) => (title.length > 10 ? t("Back") : title);
 
-function Settings(props: { remote: Remote }) {
-  const [page, setPage] = createSignal<SettingsPage>("root");
-  const titles = (): Record<SettingsPage, string> => ({
-    root: t("Settings"),
-    macros: t("Macros"),
-  });
+function Navigator(props: {
+  root: { title: string; content: () => JSX.Element };
+  stack: Page[];
+  remote: Remote;
+  scenes: Scenes;
+  onStack: (stack: Page[]) => void;
+}) {
+  const title = (page: Page) =>
+    page.kind === "macros" ? t("Macros") : scenePageTitle(page, props.scenes);
+  const top = () => props.stack.at(-1);
+  const push = (page: Page) => props.onStack([...props.stack, page]);
+  const pop = (count: number) => props.onStack(props.stack.slice(0, -count));
   return (
     <PanelView
-      title={titles()[page()]}
-      back={page() === "root" ? undefined : { label: t("Settings"), onBack: () => setPage("root") }}
+      title={top() ? title(top()!) : props.root.title}
+      back={
+        top()
+          ? {
+              label: backLabel(
+                props.stack.length > 1 ? title(props.stack.at(-2)!) : props.root.title,
+              ),
+              onBack: () => pop(1),
+            }
+          : undefined
+      }
     >
-      <Switch>
-        <Match when={page() === "root"}>
-          <Group footer={t("Only the settings Moblin shares over remote control are here.")}>
-            <NavRow icon="list" label={t("Macros")} onClick={() => setPage("macros")} />
-          </Group>
-        </Match>
-        <Match when={page() === "macros"}>
-          <Macros remote={props.remote} />
-        </Match>
-      </Switch>
+      <Show when={top()} keyed fallback={props.root.content()}>
+        {(page) =>
+          page.kind === "macros" ? (
+            <Macros remote={props.remote} />
+          ) : (
+            <ScenePageContent page={page} scenes={props.scenes} push={push} pop={pop} />
+          )
+        }
+      </Show>
     </PanelView>
   );
 }
 
-export default function Panels(props: { panel: Panel; remote: Remote }) {
+export default function Panels(props: {
+  panel: Panel;
+  remote: Remote;
+  scenes: Scenes;
+  stack: Page[];
+  onStack: (stack: Page[]) => void;
+}) {
   return (
     <Switch>
       <Match when={props.panel === "mic"}>
@@ -232,7 +262,48 @@ export default function Panels(props: { panel: Panel; remote: Remote }) {
         </PanelView>
       </Match>
       <Match when={props.panel === "settings"}>
-        <Settings remote={props.remote} />
+        <Navigator
+          root={{
+            title: t("Settings"),
+            content: () => (
+              <Group footer={t("Only the settings Moblin shares over remote control are here.")}>
+                <NavRow
+                  icon="scenes"
+                  label={t("Scenes")}
+                  onClick={() => props.onStack([{ kind: "scenes" }])}
+                />
+                <NavRow
+                  icon="list"
+                  label={t("Macros")}
+                  onClick={() => props.onStack([{ kind: "macros" }])}
+                />
+              </Group>
+            ),
+          }}
+          stack={props.stack}
+          remote={props.remote}
+          scenes={props.scenes}
+          onStack={props.onStack}
+        />
+      </Match>
+      <Match when={props.panel === "sceneWidgets"}>
+        <Navigator
+          root={{
+            title: t("Scene widgets"),
+            content: () => (
+              <ScenePageContent
+                page={{ kind: "sceneWidgets" }}
+                scenes={props.scenes}
+                push={(page) => props.onStack([page])}
+                pop={() => props.onStack([])}
+              />
+            ),
+          }}
+          stack={props.stack}
+          remote={props.remote}
+          scenes={props.scenes}
+          onStack={props.onStack}
+        />
       </Match>
     </Switch>
   );

@@ -73,7 +73,25 @@ export type IconName =
   | "layout"
   | "maximize"
   | "minimize"
-  | "more";
+  | "more"
+  | "scenes"
+  | "text"
+  | "crop"
+  | "map"
+  | "aperture"
+  | "qr-code"
+  | "scoreboard"
+  | "timer"
+  | "lock"
+  | "lock-open"
+  | "drag"
+  | "arrow-left-circle"
+  | "arrow-right-circle"
+  | "arrow-up-circle"
+  | "arrow-down-circle"
+  | "resize-up"
+  | "resize-down"
+  | "square-fill";
 
 export const kindIcons: Record<RecentKind, IconName> = {
   tip: "heart",
@@ -388,6 +406,75 @@ export default function Icon(props: Props) {
         <Match when={props.name === "video"}>
           <rect x="3" y="6" width="13" height="12" rx="2" />
           <path d="m16 10.5 5-3v9l-5-3" />
+        </Match>
+        <Match when={props.name === "scenes"}>
+          <rect x="6" y="3" width="15" height="12" rx="2" />
+          <path d="M3 8v11a2 2 0 0 0 2 2h11M9 12l3-3 2 2 2-2 3 3" />
+        </Match>
+        <Match when={props.name === "text"}>
+          <path d="M3 18 8 6l5 12M4.6 14h6.8M15.5 11.5a3 3 0 0 1 5.5 1.5v5M21 15.5c-2.5-.8-5.5-.3-5.5 1.5 0 1.3 1.2 1.8 2.3 1.6 1.6-.3 3.2-1.4 3.2-3.1" />
+        </Match>
+        <Match when={props.name === "crop"}>
+          <path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" />
+        </Match>
+        <Match when={props.name === "map"}>
+          <path d="m9 4-6 2.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4ZM9 4v13.5M15 6.5V20" />
+        </Match>
+        <Match when={props.name === "aperture"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="m14.3 8 5.7 9.9M9.7 8h11.4M7.4 12l5.7-9.9M9.7 16 4 6.1M14.3 16H2.9M16.6 12l-5.7 9.9" />
+        </Match>
+        <Match when={props.name === "qr-code"}>
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3" />
+        </Match>
+        <Match when={props.name === "scoreboard"}>
+          <rect x="2" y="5" width="20" height="14" rx="2" />
+          <path d="M12 5v14" />
+        </Match>
+        <Match when={props.name === "timer"}>
+          <circle cx="12" cy="13" r="8" />
+          <path d="M12 9v4l2 2M10 2h4" />
+        </Match>
+        <Match when={props.name === "lock"}>
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </Match>
+        <Match when={props.name === "lock-open"}>
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 7.8-1.2" />
+        </Match>
+        <Match when={props.name === "drag"}>
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </Match>
+        <Match when={props.name === "arrow-left-circle"}>
+          <circle cx="12" cy="12" r="9.5" />
+          <path d="M16.5 12h-9M11 8l-4 4 4 4" />
+        </Match>
+        <Match when={props.name === "arrow-right-circle"}>
+          <circle cx="12" cy="12" r="9.5" />
+          <path d="M7.5 12h9M13 8l4 4-4 4" />
+        </Match>
+        <Match when={props.name === "arrow-up-circle"}>
+          <circle cx="12" cy="12" r="9.5" />
+          <path d="M12 16.5v-9M8 11l4-4 4 4" />
+        </Match>
+        <Match when={props.name === "arrow-down-circle"}>
+          <circle cx="12" cy="12" r="9.5" />
+          <path d="M12 7.5v9M8 13l4 4 4-4" />
+        </Match>
+        <Match when={props.name === "resize-up"}>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M10 7h7v7M17 7l-8 8" />
+        </Match>
+        <Match when={props.name === "resize-down"}>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M14 17H7v-7M7 17l8-8" />
+        </Match>
+        <Match when={props.name === "square-fill"}>
+          <rect x="5" y="5" width="14" height="14" rx="1.5" fill="currentColor" />
         </Match>
       </Switch>
     </svg>

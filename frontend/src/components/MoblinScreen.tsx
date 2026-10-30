@@ -2,7 +2,8 @@ import { createResource, createSignal, For, onCleanup, onMount, Show } from "sol
 import Icon, { type IconName } from "./Icon";
 import { ask } from "./Modal";
 import { PanelButtons, panelWidth, type Remote } from "./MoblinParts";
-import Panels, { type Panel } from "./MoblinPanels";
+import Panels, { type Page, type Panel } from "./MoblinPanels";
+import { createScenes, WidgetOutlines } from "./MoblinScenes";
 import {
   type AudioLevel,
   type Control,
@@ -17,6 +18,7 @@ import {
 } from "../data/account";
 import { moblinIconUrl } from "../data/backend";
 import { filtersOf } from "../data/moblin";
+import { outlinesOf, type SceneConfig } from "../data/scenes";
 import { streamerProfile } from "../data/remoteControl";
 import { t } from "../i18n";
 import { readStored, store } from "../storage";
@@ -85,6 +87,7 @@ const quickButtons = (): QuickButton[] => [
   { type: "Macros", name: t("Macros"), page: 3 },
   { type: "Gimbal tracking", name: t("Gimbal tracking"), page: 3 },
   { type: "Preview stream", name: t("Preview stream"), page: 3 },
+  { type: "Widgets", name: t("Scene widgets"), page: 3 },
 ];
 
 const buttonIcons: Record<string, IconName> = {
@@ -117,6 +120,7 @@ const buttonIcons: Record<string, IconName> = {
   "Preview stream": "video",
   "Camera man": "video",
   "Moblin in mouth": "sparkles",
+  Widgets: "scenes",
 };
 
 const filters: Record<string, MoblinFilter> = {
@@ -144,6 +148,7 @@ const panels: Record<string, Panel> = {
   "Connection priorities": "priorities",
   "Auto scene switcher": "autoSceneSwitcher",
   Macros: "macros",
+  Widgets: "sceneWidgets",
 };
 
 function Chip(props: { icon: IconName; text?: string; ok?: boolean; before?: boolean }) {
@@ -352,6 +357,7 @@ function QuickButtonView(props: {
 
 export default function MoblinScreen(props: {
   page: string;
+  device: string;
   state: DeviceState;
   status: DeviceStatus;
   settings: DeviceSettings | null;
@@ -361,12 +367,15 @@ export default function MoblinScreen(props: {
   connected: boolean;
   pending: string[];
   fit?: boolean;
+  scenesVersion: number;
+  loadScenes: () => Promise<SceneConfig>;
   onControl: (control: Control) => Promise<void>;
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
   const [height, setHeight] = createSignal(screenHeight + 2 * bezel);
   const [verbose, setVerbose] = createSignal(readStored("statusCollapsed") !== "1");
-  const [panel, setPanel] = createSignal<Panel | null>(null);
+  const [panel, setPanelSignal] = createSignal<Panel | null>(null);
+  const [stack, setStack] = createSignal<Page[]>([]);
   const [panelHidden, setPanelHidden] = createSignal(false);
   const [page, setPage] = createSignal(1);
   const [icon] = createResource(
@@ -405,9 +414,28 @@ export default function MoblinScreen(props: {
       await props.onControl(control);
     }
   };
-  const toggle = (next: Panel | null) => {
-    setPanel((current) => (current === next ? null : next));
+  const setPanel = (next: Panel | null) => {
+    setStack([]);
+    setPanelSignal(next);
     setPanelHidden(false);
+  };
+  const toggle = (next: Panel) => setPanel(panel() === next ? null : next);
+  const outlinesShown = () =>
+    panel() === "sceneWidgets" || (panel() === "settings" && stack()[0]?.kind === "scenes");
+  const sceneEditor = createScenes({
+    device: () => props.device,
+    active: outlinesShown,
+    allowed: () => props.remoteControl,
+    connected: () => props.connected,
+    current: () => props.state.scene,
+    version: () => props.scenesVersion,
+    load: () => props.loadScenes(),
+    control: (control) => props.onControl(control),
+  });
+  const outlines = () => {
+    const config = sceneEditor.config();
+    const scene = props.state.scene;
+    return outlinesShown() && config && scene ? outlinesOf(scene, config) : [];
   };
   const remote: Remote = {
     get state() {
@@ -527,9 +555,14 @@ export default function MoblinScreen(props: {
     <PanelButtons
       hidden={panelHidden()}
       onToggleHidden={() => setPanelHidden((hidden) => !hidden)}
-      onClose={() => toggle(null)}
+      onClose={() => setPanel(null)}
     />
   );
+  const stream = () => {
+    const width = Math.min(areaWidth(), (screenHeight * 16) / 9);
+    const height = (width * 9) / 16;
+    return { left: areaWidth() - width, top: (screenHeight - height) / 2, width, height };
+  };
   const scenes = () => props.settings?.scenes ?? [];
   const zoomPresets = () => props.state.zoomPresets ?? [];
   const previewSource = () =>
@@ -596,6 +629,19 @@ export default function MoblinScreen(props: {
                   />
                 )}
               </Show>
+              <Show when={outlines().length > 0}>
+                <div
+                  class="pointer-events-none absolute"
+                  style={{
+                    left: `${stream().left}px`,
+                    top: `${stream().top}px`,
+                    width: `${stream().width}px`,
+                    height: `${stream().height}px`,
+                  }}
+                >
+                  <WidgetOutlines outlines={outlines()} width={stream().width} />
+                </div>
+              </Show>
               <Statuses
                 status={props.status}
                 verbose={verbose()}
@@ -625,7 +671,13 @@ export default function MoblinScreen(props: {
                   style={{ width: `${shownPanelWidth()}px` }}
                 >
                   <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
-                    <Panels panel={shown()} remote={remote} />
+                    <Panels
+                      panel={shown()}
+                      remote={remote}
+                      scenes={sceneEditor}
+                      stack={stack()}
+                      onStack={setStack}
+                    />
                   </div>
                   <Show when={!panelHidden()}>{panelButtons()}</Show>
                 </div>

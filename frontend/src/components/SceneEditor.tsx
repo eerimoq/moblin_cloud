@@ -1,7 +1,7 @@
-import { createEffect, createMemo, createSignal, For, Index, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, on, Show, type JSX } from "solid-js";
 import Icon from "./Icon";
 import { ask } from "./Modal";
-import { buttonClass, cardClass, ghostButtonClass, inputClass, Notice, Spinner } from "./PageParts";
+import { cardClass, ghostButtonClass, Notice, Spinner } from "./PageParts";
 import { controlDevice, deviceScenes, type Control } from "../data/account";
 import { BackendError } from "../data/backend";
 import {
@@ -20,6 +20,7 @@ import {
   resizedBy,
   newSceneWidget,
   sameId,
+  sceneErrorText,
   withCamera,
   widgetTypeNames,
   type Alignment,
@@ -34,19 +35,22 @@ import { t } from "../i18n";
 const smallInputClass =
   "h-10 w-full rounded-xl border-[1.5px] border-line bg-well px-3 text-[15px] text-ink placeholder:text-muted focus:border-leaf focus:outline-none disabled:opacity-60";
 
+const smallButtonClass =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-full bg-moss px-4 font-display text-[15px] font-semibold whitespace-nowrap text-white transition-colors hover:bg-moss-bright disabled:opacity-60";
+
+const smallGhostButtonClass =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
+
+const labelClass = "flex min-w-0 flex-col gap-1 text-[13px] text-muted";
+
+const checkboxLabelClass = "flex h-10 items-center gap-2 text-[15px] whitespace-nowrap text-ink-2";
+
 const iconButtonClass =
-  "grid size-9 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-ghost-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent";
+  "grid size-8 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-ghost-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent";
 
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-
-const errorText = (error: unknown) =>
-  error instanceof BackendError && [403, 409, 502].includes(error.status) && error.message
-    ? error.message
-    : error instanceof BackendError && error.status === 504
-      ? t("Moblin did not answer. Editing scenes needs a recent version of Moblin.")
-      : t("Something went wrong. Try again.");
 
 const readBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -72,7 +76,7 @@ function MoveButtons(props: {
         disabled={props.disabled || props.index === 0}
         onClick={() => props.onMove(-1)}
       >
-        <Icon name="chevron-down" class="size-5 rotate-180" />
+        <Icon name="chevron-down" class="size-[18px] rotate-180" />
       </button>
       <button
         type="button"
@@ -82,7 +86,7 @@ function MoveButtons(props: {
         disabled={props.disabled || props.index === props.count - 1}
         onClick={() => props.onMove(1)}
       >
-        <Icon name="chevron-down" class="size-5" />
+        <Icon name="chevron-down" class="size-[18px]" />
       </button>
     </>
   );
@@ -152,7 +156,7 @@ function SceneCanvas(props: {
   return (
     <div
       ref={(element) => (canvas = element)}
-      class="relative aspect-video w-full touch-none overflow-hidden rounded-2xl border-[1.5px] border-line bg-well select-none"
+      class="relative aspect-video w-full touch-none overflow-hidden rounded-xl border-[1.5px] border-line bg-well select-none"
       role="group"
       aria-label={t("Layout")}
     >
@@ -227,7 +231,7 @@ function NumberField(props: {
   onChange: (value: number) => void;
 }) {
   return (
-    <label class="flex min-w-0 flex-col gap-1 text-[13px] text-muted">
+    <label class={labelClass}>
       {props.label}
       <input
         type="number"
@@ -263,21 +267,23 @@ function SceneWidgetRow(props: {
   const type = () => props.widget?.type ?? "Image";
   return (
     <li
-      class="flex flex-col gap-3 rounded-2xl border-[1.5px] p-3"
-      classList={{ "border-leaf": props.selected, "border-line": !props.selected }}
+      class="rounded-xl border-[1.5px]"
+      classList={{ "border-leaf bg-leaf/10": props.selected, "border-line": !props.selected }}
       onFocusIn={() => props.onSelect()}
       onClick={() => props.onSelect()}
     >
-      <div class="flex items-center gap-2">
-        <div class="min-w-0 flex-1">
-          <div class="truncate font-semibold text-ink">
-            {props.widget?.name ?? t("Unknown widget")}
-          </div>
-          <div class="text-[13px] text-muted">
+      <div class="flex items-center gap-1 py-0.5 pr-0.5 pl-3">
+        <button
+          type="button"
+          class="min-w-0 flex-1 truncate py-1.5 text-left"
+          aria-pressed={props.selected}
+        >
+          <span class="font-semibold text-ink">{props.widget?.name ?? t("Unknown widget")}</span>
+          <span class="ml-2 text-[13px] text-muted">
             {props.widget ? widgetTypeNames()[props.widget.type] : ""}
             <Show when={props.widget && !props.widget.enabled}> · {t("Off")}</Show>
-          </div>
-        </div>
+          </span>
+        </button>
         <MoveButtons
           index={props.index}
           count={props.count}
@@ -292,11 +298,11 @@ function SceneWidgetRow(props: {
           disabled={props.disabled}
           onClick={() => props.onRemove()}
         >
-          <Icon name="close" class="size-5" />
+          <Icon name="close" class="size-[18px]" />
         </button>
       </div>
-      <Show when={hasPosition(type())}>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <Show when={props.selected && hasPosition(type())}>
+        <div class="grid grid-cols-2 gap-2 px-3 pb-3 @md:grid-cols-4">
           <NumberField
             label={t("X (%)")}
             value={props.layout.x}
@@ -318,7 +324,7 @@ function SceneWidgetRow(props: {
               onChange={(size) => props.onChange({ ...props.layout, size })}
             />
           </Show>
-          <label class="flex min-w-0 flex-col gap-1 text-[13px] text-muted">
+          <label class={labelClass}>
             {t("Alignment")}
             <select
               value={props.layout.alignment}
@@ -336,21 +342,49 @@ function SceneWidgetRow(props: {
               </For>
             </select>
           </label>
+          <label class={`${checkboxLabelClass} col-span-full`}>
+            <input
+              type="checkbox"
+              checked={props.layout.positioningLock ?? false}
+              disabled={props.disabled}
+              onChange={(event) =>
+                props.onChange({ ...props.layout, positioningLock: event.currentTarget.checked })
+              }
+              class="size-4 accent-moss"
+            />
+            {t("Lock position")}
+          </label>
         </div>
-        <label class="flex items-center gap-2 text-[15px] text-ink-2">
-          <input
-            type="checkbox"
-            checked={props.layout.positioningLock ?? false}
-            disabled={props.disabled}
-            onChange={(event) =>
-              props.onChange({ ...props.layout, positioningLock: event.currentTarget.checked })
-            }
-            class="size-4 accent-moss"
-          />
-          {t("Lock position")}
-        </label>
       </Show>
     </li>
+  );
+}
+
+function SaveButtons(props: {
+  label: string;
+  dirty: boolean;
+  disabled: boolean;
+  valid: boolean;
+  onDiscard: () => void;
+}) {
+  return (
+    <div class="flex flex-wrap gap-2">
+      <button
+        type="submit"
+        class={smallButtonClass}
+        disabled={props.disabled || !props.dirty || !props.valid}
+      >
+        {props.label}
+      </button>
+      <button
+        type="button"
+        class={smallGhostButtonClass}
+        disabled={props.disabled || !props.dirty}
+        onClick={() => props.onDiscard()}
+      >
+        {t("Discard changes")}
+      </button>
+    </div>
   );
 }
 
@@ -362,6 +396,7 @@ function SceneForm(props: {
   onChange: (scene: Scene) => void;
   onSave: () => void;
   onDiscard: () => void;
+  children: JSX.Element;
 }) {
   const [selected, setSelected] = createSignal<string | null>(null);
   const [adding, setAdding] = createSignal("");
@@ -376,14 +411,100 @@ function SceneForm(props: {
 
   return (
     <form
-      class="flex flex-col gap-5 border-t-[1.5px] border-line pt-5"
+      class="@container flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
         props.onSave();
       }}
     >
-      <div class="grid gap-4 sm:grid-cols-2">
-        <label class="flex flex-col gap-2 text-[15px] text-ink-2">
+      <div class="flex flex-col gap-2">
+        <SceneCanvas
+          scene={props.scene}
+          widgets={props.config.widgets}
+          selected={selected()}
+          disabled={props.disabled}
+          onSelect={setSelected}
+          onMove={(index, layout) =>
+            setWidgets(props.scene.widgets.map((old, at) => (at === index ? layout : old)))
+          }
+        />
+        <p class="text-[13px] text-muted">
+          {t(
+            "Drag a widget to move it, or its corner handle to resize it. The boxes show where widgets are on the stream, not their exact shape.",
+          )}
+        </p>
+      </div>
+      <div class="grid gap-4 @2xl:grid-cols-2 @2xl:items-start">
+        {props.children}
+        <div class="@container flex min-w-0 flex-col gap-2">
+          <h3 class="text-[13px] font-semibold text-muted">{t("Widgets in this scene")}</h3>
+          <Show
+            when={props.scene.widgets.length > 0}
+            fallback={<p class="text-[15px] text-muted">{t("No widgets in this scene yet.")}</p>}
+          >
+            <ul class="flex flex-col gap-1.5">
+              <Index each={props.scene.widgets}>
+                {(layout, index) => (
+                  <SceneWidgetRow
+                    layout={layout()}
+                    widget={widgetOf(layout())}
+                    index={index}
+                    count={props.scene.widgets.length}
+                    selected={selected() === layout().id}
+                    disabled={props.disabled}
+                    onSelect={() => setSelected(layout().id)}
+                    onChange={(changed) =>
+                      setWidgets(
+                        props.scene.widgets.map((old, at) => (at === index ? changed : old)),
+                      )
+                    }
+                    onMove={(by) => setWidgets(moved(props.scene.widgets, index, by))}
+                    onRemove={() => setWidgets(props.scene.widgets.filter((_, at) => at !== index))}
+                  />
+                )}
+              </Index>
+            </ul>
+          </Show>
+          <Show when={addable().length > 0}>
+            <div class="flex gap-2">
+              <select
+                aria-label={t("Widget to add")}
+                value={adding()}
+                disabled={props.disabled}
+                onChange={(event) => setAdding(event.currentTarget.value)}
+                class={`${smallInputClass} min-w-0 flex-1`}
+              >
+                <option value="">{t("Pick a widget to add")}</option>
+                <For each={addable()}>
+                  {(widget) => (
+                    <option value={widget.id}>
+                      {widget.name} ({widgetTypeNames()[widget.type] ?? widget.type})
+                    </option>
+                  )}
+                </For>
+              </select>
+              <button
+                type="button"
+                class={smallGhostButtonClass}
+                disabled={props.disabled || !adding()}
+                onClick={() => {
+                  const widget = addable().find((candidate) => candidate.id === adding());
+                  if (widget) {
+                    const layout = newSceneWidget(widget);
+                    setWidgets([...props.scene.widgets, layout]);
+                    setSelected(layout.id);
+                    setAdding("");
+                  }
+                }}
+              >
+                {t("Add")}
+              </button>
+            </div>
+          </Show>
+        </div>
+      </div>
+      <div class="grid items-end gap-3 border-t-[1.5px] border-line pt-4 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <label class={labelClass}>
           {t("Name")}
           <input
             type="text"
@@ -391,10 +512,10 @@ function SceneForm(props: {
             maxLength={100}
             disabled={props.disabled}
             onInput={(event) => props.onChange({ ...props.scene, name: event.currentTarget.value })}
-            class={`${inputClass} disabled:opacity-60`}
+            class={smallInputClass}
           />
         </label>
-        <label class="flex flex-col gap-2 text-[15px] text-ink-2">
+        <label class={labelClass}>
           {t("Camera")}
           <select
             value={camera()?.id ?? ""}
@@ -407,7 +528,7 @@ function SceneForm(props: {
                 props.onChange(withCamera(props.scene, picked));
               }
             }}
-            class={`${inputClass} disabled:opacity-60`}
+            class={smallInputClass}
           >
             <Show when={!camera()}>
               <option value="">{props.scene.cameraPosition ?? t("Unknown camera")}</option>
@@ -417,119 +538,26 @@ function SceneForm(props: {
             </For>
           </select>
         </label>
+        <label class={checkboxLabelClass}>
+          <input
+            type="checkbox"
+            checked={props.scene.enabled}
+            disabled={props.disabled}
+            onChange={(event) =>
+              props.onChange({ ...props.scene, enabled: event.currentTarget.checked })
+            }
+            class="size-4 accent-moss"
+          />
+          {t("Shown in Moblin's scene picker")}
+        </label>
       </div>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={props.scene.enabled}
-          disabled={props.disabled}
-          onChange={(event) =>
-            props.onChange({ ...props.scene, enabled: event.currentTarget.checked })
-          }
-          class="size-5 accent-moss"
-        />
-        {t("Shown in Moblin's scene picker")}
-      </label>
-      <div class="flex flex-col gap-2">
-        <h3 class="text-[17px] font-semibold text-ink">{t("Layout")}</h3>
-        <p class="text-[15px] text-ink-2">
-          {t(
-            "Drag a widget to move it, or its corner handle to resize it. The boxes show where widgets are on the stream, not their exact shape.",
-          )}
-        </p>
-        <SceneCanvas
-          scene={props.scene}
-          widgets={props.config.widgets}
-          selected={selected()}
-          disabled={props.disabled}
-          onSelect={setSelected}
-          onMove={(index, layout) =>
-            setWidgets(props.scene.widgets.map((old, at) => (at === index ? layout : old)))
-          }
-        />
-      </div>
-      <div class="flex flex-col gap-3">
-        <h3 class="text-[17px] font-semibold text-ink">{t("Widgets in this scene")}</h3>
-        <Show
-          when={props.scene.widgets.length > 0}
-          fallback={<p class="text-[15px] text-muted">{t("No widgets in this scene yet.")}</p>}
-        >
-          <ul class="flex flex-col gap-3">
-            <Index each={props.scene.widgets}>
-              {(layout, index) => (
-                <SceneWidgetRow
-                  layout={layout()}
-                  widget={widgetOf(layout())}
-                  index={index}
-                  count={props.scene.widgets.length}
-                  selected={selected() === layout().id}
-                  disabled={props.disabled}
-                  onSelect={() => setSelected(layout().id)}
-                  onChange={(changed) =>
-                    setWidgets(props.scene.widgets.map((old, at) => (at === index ? changed : old)))
-                  }
-                  onMove={(by) => setWidgets(moved(props.scene.widgets, index, by))}
-                  onRemove={() => setWidgets(props.scene.widgets.filter((_, at) => at !== index))}
-                />
-              )}
-            </Index>
-          </ul>
-        </Show>
-        <Show when={addable().length > 0}>
-          <div class="flex flex-wrap gap-3">
-            <select
-              aria-label={t("Widget to add")}
-              value={adding()}
-              disabled={props.disabled}
-              onChange={(event) => setAdding(event.currentTarget.value)}
-              class={`${inputClass} min-w-0 flex-1 disabled:opacity-60`}
-            >
-              <option value="">{t("Pick a widget to add")}</option>
-              <For each={addable()}>
-                {(widget) => (
-                  <option value={widget.id}>
-                    {widget.name} ({widgetTypeNames()[widget.type] ?? widget.type})
-                  </option>
-                )}
-              </For>
-            </select>
-            <button
-              type="button"
-              class={ghostButtonClass}
-              disabled={props.disabled || !adding()}
-              onClick={() => {
-                const widget = addable().find((candidate) => candidate.id === adding());
-                if (widget) {
-                  const layout = newSceneWidget(widget);
-                  setWidgets([...props.scene.widgets, layout]);
-                  setSelected(layout.id);
-                  setAdding("");
-                }
-              }}
-            >
-              <Icon name="check" class="size-5" />
-              {t("Add")}
-            </button>
-          </div>
-        </Show>
-      </div>
-      <div class="flex flex-wrap gap-3">
-        <button
-          type="submit"
-          class={buttonClass}
-          disabled={props.disabled || !props.dirty || !props.scene.name.trim()}
-        >
-          {t("Save scene")}
-        </button>
-        <button
-          type="button"
-          class={ghostButtonClass}
-          disabled={props.disabled || !props.dirty}
-          onClick={() => props.onDiscard()}
-        >
-          {t("Discard changes")}
-        </button>
-      </div>
+      <SaveButtons
+        label={t("Save scene")}
+        dirty={props.dirty}
+        disabled={props.disabled}
+        valid={!!props.scene.name.trim()}
+        onDiscard={props.onDiscard}
+      />
     </form>
   );
 }
@@ -555,13 +583,40 @@ function WidgetForm(props: {
 
   return (
     <form
-      class="flex flex-col gap-5 border-t-[1.5px] border-line pt-5"
+      class="@container flex flex-col gap-4 border-t-[1.5px] border-line pt-4"
       onSubmit={(event) => {
         event.preventDefault();
         props.onSave();
       }}
     >
-      <p class="text-[15px] text-ink-2">
+      <div class="grid items-end gap-3 @xl:grid-cols-[minmax(0,1fr)_auto]">
+        <label class={labelClass}>
+          {t("Name")}
+          <input
+            type="text"
+            value={props.widget.name}
+            maxLength={100}
+            disabled={props.disabled}
+            onInput={(event) =>
+              props.onChange({ ...props.widget, name: event.currentTarget.value })
+            }
+            class={smallInputClass}
+          />
+        </label>
+        <label class={checkboxLabelClass}>
+          <input
+            type="checkbox"
+            checked={props.widget.enabled}
+            disabled={props.disabled}
+            onChange={(event) =>
+              props.onChange({ ...props.widget, enabled: event.currentTarget.checked })
+            }
+            class="size-4 accent-moss"
+          />
+          {t("Shown on the stream")}
+        </label>
+      </div>
+      <p class="-mt-2 text-[13px] text-muted">
         {usedIn().length === 0
           ? t("Not in any scene.")
           : t("In {scenes}.", {
@@ -570,84 +625,63 @@ function WidgetForm(props: {
                 .join(", "),
             })}
       </p>
-      <label class="flex flex-col gap-2 text-[15px] text-ink-2">
-        {t("Name")}
-        <input
-          type="text"
-          value={props.widget.name}
-          maxLength={100}
-          disabled={props.disabled}
-          onInput={(event) => props.onChange({ ...props.widget, name: event.currentTarget.value })}
-          class={`${inputClass} disabled:opacity-60`}
-        />
-      </label>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={props.widget.enabled}
-          disabled={props.disabled}
-          onChange={(event) =>
-            props.onChange({ ...props.widget, enabled: event.currentTarget.checked })
-          }
-          class="size-5 accent-moss"
-        />
-        {t("Shown on the stream")}
-      </label>
       <Show when={props.widget.type === "Text"}>
-        <label class="flex flex-col gap-2 text-[15px] text-ink-2">
-          {t("Text")}
-          <textarea
-            rows="3"
-            value={part("text").formatString ?? ""}
-            disabled={props.disabled}
-            onInput={(event) => setPart("text", { formatString: event.currentTarget.value })}
-            class={`${inputClass} h-auto py-3 disabled:opacity-60`}
-          />
-          <span class="text-[13px] text-muted">
-            {t("Moblin replaces placeholders like {time}, {date}, {speed} and {bitrate}.", {
-              time: "{time}",
-              date: "{date}",
-              speed: "{speed}",
-              bitrate: "{bitrate}",
-            })}
-          </span>
-        </label>
-        <label class="flex max-w-40 flex-col gap-2 text-[15px] text-ink-2">
-          {t("Font size")}
-          <input
-            type="number"
-            min="10"
-            max="200"
-            value={part("text").fontSize ?? 30}
-            disabled={props.disabled}
-            onChange={(event) =>
-              setPart("text", {
-                fontSize: Math.max(
-                  10,
-                  Math.min(200, Math.round(Number(event.currentTarget.value) || 30)),
-                ),
-              })
-            }
-            class={`${inputClass} disabled:opacity-60`}
-          />
-        </label>
+        <div class="grid gap-3 @xl:grid-cols-[minmax(0,1fr)_7rem]">
+          <label class={labelClass}>
+            {t("Text")}
+            <textarea
+              rows="2"
+              value={part("text").formatString ?? ""}
+              disabled={props.disabled}
+              onInput={(event) => setPart("text", { formatString: event.currentTarget.value })}
+              class={smallInputClass.replace("h-10", "py-2")}
+            />
+            <span>
+              {t("Moblin replaces placeholders like {time}, {date}, {speed} and {bitrate}.", {
+                time: "{time}",
+                date: "{date}",
+                speed: "{speed}",
+                bitrate: "{bitrate}",
+              })}
+            </span>
+          </label>
+          <label class={`${labelClass} max-w-28 self-start`}>
+            {t("Font size")}
+            <input
+              type="number"
+              min="10"
+              max="200"
+              value={part("text").fontSize ?? 30}
+              disabled={props.disabled}
+              onChange={(event) =>
+                setPart("text", {
+                  fontSize: Math.max(
+                    10,
+                    Math.min(200, Math.round(Number(event.currentTarget.value) || 30)),
+                  ),
+                })
+              }
+              class={smallInputClass}
+            />
+          </label>
+        </div>
       </Show>
       <Show when={props.widget.type === "Browser"}>
-        <label class="flex flex-col gap-2 text-[15px] text-ink-2">
-          {t("URL")}
-          <input
-            type="url"
-            value={part("browser").url ?? ""}
-            disabled={props.disabled}
-            placeholder="https://"
-            onInput={(event) => setPart("browser", { url: event.currentTarget.value })}
-            class={`${inputClass} disabled:opacity-60`}
-          />
-        </label>
-        <div class="flex flex-wrap gap-4">
+        <div class="grid grid-cols-2 gap-3 @xl:grid-cols-[minmax(0,1fr)_7rem_7rem]">
+          <label class={`${labelClass} col-span-2 @xl:col-span-1`}>
+            {t("URL")}
+            <input
+              type="url"
+              value={part("browser").url ?? ""}
+              disabled={props.disabled}
+              placeholder="https://"
+              onInput={(event) => setPart("browser", { url: event.currentTarget.value })}
+              class={smallInputClass}
+            />
+          </label>
           <For each={["width", "height"] as const}>
             {(key) => (
-              <label class="flex max-w-40 flex-col gap-2 text-[15px] text-ink-2">
+              <label class={labelClass}>
                 {key === "width" ? t("Width") : t("Height")}
                 <input
                   type="number"
@@ -663,7 +697,7 @@ function WidgetForm(props: {
                       ),
                     })
                   }
-                  class={`${inputClass} disabled:opacity-60`}
+                  class={smallInputClass}
                 />
               </label>
             )}
@@ -671,19 +705,19 @@ function WidgetForm(props: {
         </div>
       </Show>
       <Show when={props.widget.type === "QR code"}>
-        <label class="flex flex-col gap-2 text-[15px] text-ink-2">
+        <label class={labelClass}>
           {t("Message")}
           <input
             type="text"
             value={part("qrCode").message ?? ""}
             disabled={props.disabled}
             onInput={(event) => setPart("qrCode", { message: event.currentTarget.value })}
-            class={`${inputClass} disabled:opacity-60`}
+            class={smallInputClass}
           />
         </label>
       </Show>
       <Show when={props.widget.type === "Image"}>
-        <label class="flex flex-col gap-2 text-[15px] text-ink-2">
+        <label class={labelClass}>
           {t("Image")}
           <input
             type="file"
@@ -696,35 +730,23 @@ function WidgetForm(props: {
                 props.onImage(file);
               }
             }}
-            class="text-[15px] text-ink-2 file:mr-4 file:rounded-full file:border-0 file:bg-ghost file:px-4 file:py-2 file:font-semibold file:text-ink disabled:opacity-60"
+            class="text-[15px] text-ink-2 file:mr-3 file:h-10 file:rounded-full file:border-0 file:bg-ghost file:px-4 file:font-semibold file:text-ink disabled:opacity-60"
           />
-          <span class="text-[13px] text-muted">
-            {t("At most 4 MB. It replaces the image at once.")}
-          </span>
+          <span>{t("At most 4 MB. It replaces the image at once.")}</span>
         </label>
       </Show>
       <Show when={!["Text", "Browser", "QR code", "Image"].includes(props.widget.type)}>
-        <p class="text-[15px] text-muted">
+        <p class="text-[13px] text-muted">
           {t("The other settings of this widget are changed in Moblin.")}
         </p>
       </Show>
-      <div class="flex flex-wrap gap-3">
-        <button
-          type="submit"
-          class={buttonClass}
-          disabled={props.disabled || !props.dirty || !props.widget.name.trim()}
-        >
-          {t("Save widget")}
-        </button>
-        <button
-          type="button"
-          class={ghostButtonClass}
-          disabled={props.disabled || !props.dirty}
-          onClick={() => props.onDiscard()}
-        >
-          {t("Discard changes")}
-        </button>
-      </div>
+      <SaveButtons
+        label={t("Save widget")}
+        dirty={props.dirty}
+        disabled={props.disabled}
+        valid={!!props.widget.name.trim()}
+        onDiscard={props.onDiscard}
+      />
     </form>
   );
 }
@@ -742,17 +764,17 @@ function ItemRow(props: {
 }) {
   return (
     <li
-      class="flex items-center gap-2 rounded-2xl border-[1.5px] py-1 pr-1 pl-4"
+      class="flex items-center gap-1 rounded-xl border-[1.5px] py-0.5 pr-0.5 pl-3"
       classList={{ "border-leaf bg-leaf/10": props.selected, "border-line": !props.selected }}
     >
       <button
         type="button"
-        class="min-w-0 flex-1 py-2 text-left"
+        class="min-w-0 flex-1 truncate py-1.5 text-left"
         aria-pressed={props.selected}
         onClick={() => props.onSelect()}
       >
-        <div class="truncate font-semibold text-ink">{props.name}</div>
-        <div class="truncate text-[13px] text-muted">{props.detail}</div>
+        <span class="font-semibold text-ink">{props.name}</span>
+        <span class="ml-2 text-[13px] text-muted">{props.detail}</span>
       </button>
       <MoveButtons
         index={props.index}
@@ -768,7 +790,7 @@ function ItemRow(props: {
         disabled={props.disabled}
         onClick={() => props.onDelete()}
       >
-        <Icon name="trash" class="size-5" />
+        <Icon name="trash" class="size-[18px]" />
       </button>
     </li>
   );
@@ -838,7 +860,7 @@ export default function SceneEditor(props: {
       props.onSignOut();
       return null;
     }
-    return errorText(error);
+    return sceneErrorText(error);
   };
 
   const load = async () => {
@@ -952,6 +974,15 @@ export default function SceneEditor(props: {
     }
   };
 
+  createEffect(() => {
+    const scenes = config()?.scenes;
+    if (scenes && scenes.length > 0 && scene.id() === null) {
+      scene.select(
+        scenes.find((item) => props.current && sameId(props.current, item.id)) ?? scenes[0]!,
+      );
+    }
+  });
+
   const widgetCounts = createMemo(() => {
     const counts = new Map<string, number>();
     for (const item of config()?.scenes ?? []) {
@@ -1016,174 +1047,194 @@ export default function SceneEditor(props: {
             </div>
           }
         >
-          {(config) => (
-            <div class="flex flex-col gap-6">
-              <div class={cardClass}>
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <h2 class="text-[23px] font-semibold">{t("Scenes")}</h2>
-                  <button
-                    type="button"
-                    class={ghostButtonClass}
-                    disabled={disabled()}
-                    onClick={newScene}
-                  >
-                    <Icon name="screen" class="size-5" />
-                    {t("New scene")}
-                  </button>
-                </div>
-                <p class="text-[15px] text-ink-2">
-                  {t(
-                    "The scenes on the device, in the order Moblin shows them. Changes are saved on the device right away.",
-                  )}
-                </p>
-                <ul class="flex flex-col gap-2">
-                  <For each={config().scenes}>
-                    {(item, index) => (
-                      <ItemRow
-                        name={item.name}
-                        detail={[
-                          props.current && sameId(props.current, item.id) ? t("Shown now") : null,
-                          item.enabled ? null : t("Off"),
-                          cameraOf(item, config().cameras)?.name ?? item.cameraPosition,
-                          widgetCounts().get(item.id) === 1
-                            ? t("1 widget")
-                            : t("{count} widgets", {
-                                count: String(widgetCounts().get(item.id) ?? 0),
-                              }),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                        index={index()}
-                        count={config().scenes.length}
-                        selected={scene.id() !== null && sameId(scene.id()!, item.id)}
-                        disabled={disabled()}
-                        onSelect={() =>
-                          scene.select(sameId(scene.id() ?? "", item.id) ? null : item)
-                        }
-                        onMove={(by) =>
-                          void run({
-                            reorderScenes: {
-                              ids: moved(config().scenes, index(), by).map((scene) => scene.id),
-                            },
-                          })
-                        }
-                        onDelete={() => void deleteScene(item)}
-                      />
-                    )}
-                  </For>
-                </ul>
-                <Show when={scene.draft()}>
-                  {(draft) => (
-                    <SceneForm
-                      scene={draft()}
-                      config={config()}
-                      dirty={scene.dirty()}
+          {(config) => {
+            const sceneList = () => (
+              <ul class="flex flex-col gap-1.5">
+                <For each={config().scenes}>
+                  {(item, index) => (
+                    <ItemRow
+                      name={item.name}
+                      detail={[
+                        props.current && sameId(props.current, item.id) ? t("Shown now") : null,
+                        item.enabled ? null : t("Off"),
+                        cameraOf(item, config().cameras)?.name ?? item.cameraPosition,
+                        widgetCounts().get(item.id) === 1
+                          ? t("1 widget")
+                          : t("{count} widgets", {
+                              count: String(widgetCounts().get(item.id) ?? 0),
+                            }),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      index={index()}
+                      count={config().scenes.length}
+                      selected={scene.id() !== null && sameId(scene.id()!, item.id)}
                       disabled={disabled()}
-                      onChange={scene.setDraft}
-                      onSave={() =>
-                        void run(
-                          { updateScene: { scene: { ...draft(), name: draft().name.trim() } } },
-                          scene.saved,
-                        )
+                      onSelect={() => {
+                        if (!sameId(scene.id() ?? "", item.id)) {
+                          scene.select(item);
+                        }
+                      }}
+                      onMove={(by) =>
+                        void run({
+                          reorderScenes: {
+                            ids: moved(config().scenes, index(), by).map((scene) => scene.id),
+                          },
+                        })
                       }
-                      onDiscard={scene.discard}
+                      onDelete={() => void deleteScene(item)}
                     />
                   )}
-                </Show>
-              </div>
-              <div class={cardClass}>
-                <h2 class="text-[23px] font-semibold">{t("Widgets")}</h2>
-                <p class="text-[15px] text-ink-2">
-                  {t("Every widget on the device. A widget is shown in the scenes it is added to.")}
-                </p>
-                <ul class="flex flex-col gap-2">
-                  <For each={config().widgets}>
-                    {(item, index) => (
-                      <ItemRow
-                        name={item.name}
-                        detail={[
-                          widgetTypeNames()[item.type] ?? item.type,
-                          item.enabled ? null : t("Off"),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                        index={index()}
-                        count={config().widgets.length}
-                        selected={widget.id() !== null && sameId(widget.id()!, item.id)}
-                        disabled={disabled()}
-                        onSelect={() =>
-                          widget.select(sameId(widget.id() ?? "", item.id) ? null : item)
-                        }
-                        onMove={(by) =>
-                          void run({
-                            reorderWidgets: {
-                              ids: moved(config().widgets, index(), by).map((widget) => widget.id),
-                            },
-                          })
-                        }
-                        onDelete={() => void deleteWidget(item)}
-                      />
-                    )}
-                  </For>
-                </ul>
-                <Show when={widget.draft()}>
-                  {(draft) => (
-                    <WidgetForm
-                      widget={draft()}
-                      config={config()}
-                      dirty={widget.dirty()}
-                      disabled={disabled()}
-                      onChange={widget.setDraft}
-                      onSave={() =>
-                        void run(
-                          { updateWidget: { widget: { ...draft(), name: draft().name.trim() } } },
-                          widget.saved,
-                        )
-                      }
-                      onDiscard={widget.discard}
-                      onImage={(file) => void uploadImage(file)}
-                    />
-                  )}
-                </Show>
-                <form
-                  class="flex flex-col gap-3 border-t-[1.5px] border-line pt-5"
-                  onSubmit={createWidget}
-                >
-                  <h3 class="text-[17px] font-semibold text-ink">{t("New widget")}</h3>
-                  <div class="flex flex-wrap gap-3">
-                    <input
-                      type="text"
-                      value={newName()}
-                      maxLength={100}
-                      placeholder={t("Name")}
-                      aria-label={t("Name")}
-                      disabled={disabled()}
-                      onInput={(event) => setNewName(event.currentTarget.value)}
-                      class={`${inputClass} min-w-0 flex-1 basis-48 disabled:opacity-60`}
-                    />
-                    <select
-                      aria-label={t("Type")}
-                      value={newType()}
-                      disabled={disabled()}
-                      onChange={(event) => setNewType(event.currentTarget.value as WidgetType)}
-                      class={`${inputClass} min-w-0 flex-1 basis-40 disabled:opacity-60`}
-                    >
-                      <For each={creatableWidgetTypes}>
-                        {(type) => <option value={type}>{widgetTypeNames()[type]}</option>}
-                      </For>
-                    </select>
+                </For>
+              </ul>
+            );
+            return (
+              <div class="flex flex-col gap-6">
+                <div class={cardClass}>
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h2 class="text-[23px] font-semibold">{t("Scenes")}</h2>
                     <button
-                      type="submit"
-                      class={buttonClass}
-                      disabled={disabled() || !newName().trim()}
+                      type="button"
+                      class={smallGhostButtonClass}
+                      disabled={disabled()}
+                      onClick={newScene}
                     >
-                      {t("Create")}
+                      <Icon name="screen" class="size-[18px]" />
+                      {t("New scene")}
                     </button>
                   </div>
-                </form>
+                  <p class="-mt-2 text-[15px] text-ink-2">
+                    {t(
+                      "The scenes on the device, in the order Moblin shows them. Changes are saved on the device right away.",
+                    )}
+                  </p>
+                  <Show
+                    when={scene.draft()}
+                    fallback={
+                      <div class="@container flex flex-col gap-4">
+                        <div class="aspect-video w-full rounded-xl border-[1.5px] border-line bg-well" />
+                        <div class="grid gap-4 @2xl:grid-cols-2">{sceneList()}</div>
+                      </div>
+                    }
+                  >
+                    {(draft) => (
+                      <SceneForm
+                        scene={draft()}
+                        config={config()}
+                        dirty={scene.dirty()}
+                        disabled={disabled()}
+                        onChange={scene.setDraft}
+                        onSave={() =>
+                          void run(
+                            { updateScene: { scene: { ...draft(), name: draft().name.trim() } } },
+                            scene.saved,
+                          )
+                        }
+                        onDiscard={scene.discard}
+                      >
+                        {sceneList()}
+                      </SceneForm>
+                    )}
+                  </Show>
+                </div>
+                <div class={cardClass}>
+                  <h2 class="text-[23px] font-semibold">{t("Widgets")}</h2>
+                  <p class="-mt-2 text-[15px] text-ink-2">
+                    {t(
+                      "Every widget on the device. A widget is shown in the scenes it is added to.",
+                    )}
+                  </p>
+                  <ul class="flex flex-col gap-1.5">
+                    <For each={config().widgets}>
+                      {(item, index) => (
+                        <ItemRow
+                          name={item.name}
+                          detail={[
+                            widgetTypeNames()[item.type] ?? item.type,
+                            item.enabled ? null : t("Off"),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                          index={index()}
+                          count={config().widgets.length}
+                          selected={widget.id() !== null && sameId(widget.id()!, item.id)}
+                          disabled={disabled()}
+                          onSelect={() =>
+                            widget.select(sameId(widget.id() ?? "", item.id) ? null : item)
+                          }
+                          onMove={(by) =>
+                            void run({
+                              reorderWidgets: {
+                                ids: moved(config().widgets, index(), by).map(
+                                  (widget) => widget.id,
+                                ),
+                              },
+                            })
+                          }
+                          onDelete={() => void deleteWidget(item)}
+                        />
+                      )}
+                    </For>
+                  </ul>
+                  <Show when={widget.draft()}>
+                    {(draft) => (
+                      <WidgetForm
+                        widget={draft()}
+                        config={config()}
+                        dirty={widget.dirty()}
+                        disabled={disabled()}
+                        onChange={widget.setDraft}
+                        onSave={() =>
+                          void run(
+                            { updateWidget: { widget: { ...draft(), name: draft().name.trim() } } },
+                            widget.saved,
+                          )
+                        }
+                        onDiscard={widget.discard}
+                        onImage={(file) => void uploadImage(file)}
+                      />
+                    )}
+                  </Show>
+                  <form
+                    class="flex flex-col gap-2 border-t-[1.5px] border-line pt-4"
+                    onSubmit={createWidget}
+                  >
+                    <h3 class="text-[13px] font-semibold text-muted">{t("New widget")}</h3>
+                    <div class="flex flex-wrap gap-2">
+                      <input
+                        type="text"
+                        value={newName()}
+                        maxLength={100}
+                        placeholder={t("Name")}
+                        aria-label={t("Name")}
+                        disabled={disabled()}
+                        onInput={(event) => setNewName(event.currentTarget.value)}
+                        class={`${smallInputClass} min-w-0 flex-1 basis-48`}
+                      />
+                      <select
+                        aria-label={t("Type")}
+                        value={newType()}
+                        disabled={disabled()}
+                        onChange={(event) => setNewType(event.currentTarget.value as WidgetType)}
+                        class={`${smallInputClass} min-w-0 flex-1 basis-40`}
+                      >
+                        <For each={creatableWidgetTypes}>
+                          {(type) => <option value={type}>{widgetTypeNames()[type]}</option>}
+                        </For>
+                      </select>
+                      <button
+                        type="submit"
+                        class={smallButtonClass}
+                        disabled={disabled() || !newName().trim()}
+                      >
+                        {t("Create")}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          }}
         </Show>
       </Show>
     </>

@@ -21,6 +21,7 @@ import { useDeviceFeed, usePreviewFeed, type DeviceFeed } from "../components/de
 import {
   type Account,
   type Device,
+  deviceScenes,
   fetchMonitorLayout,
   saveMonitorLayout,
   sendTest,
@@ -516,6 +517,7 @@ function PhonePanel(props: {
   account: Account;
   hidden: boolean;
   feed: DeviceFeed;
+  onSignOut: () => void;
 }) {
   const previewFeed = createMemo(() =>
     props.account.preview && !props.hidden
@@ -543,6 +545,7 @@ function PhonePanel(props: {
         <MoblinScreen
           fit
           page={props.page}
+          device={props.device.id}
           state={props.feed.state()}
           status={props.feed.status()}
           settings={props.feed.settings()}
@@ -551,6 +554,15 @@ function PhonePanel(props: {
           remoteControl={control()}
           connected={online()}
           pending={props.feed.pending()}
+          scenesVersion={props.feed.scenesVersion()}
+          loadScenes={() =>
+            deviceScenes(props.session, props.page, props.device.id).catch((error) => {
+              if (isSignedOut(error)) {
+                props.onSignOut();
+              }
+              throw error;
+            })
+          }
           onControl={(control) => props.feed.control(control)}
         />
         <Show when={props.feed.loaded() && !online()}>
@@ -872,6 +884,7 @@ function DevicePanel(props: {
                 account={props.account}
                 hidden={props.leaf.hidePreview === true}
                 feed={feed}
+                onSignOut={props.onSignOut}
               />
             );
           case "graphs":
