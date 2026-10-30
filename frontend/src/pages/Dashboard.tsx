@@ -2019,7 +2019,7 @@ function Admin(props: {
     {
       id: "assistants",
       label: t("Assistants"),
-      icon: "shield",
+      icon: "users",
       shown: () => !assisting() && (account().twitch !== null || account().kick !== null),
       status: () => null,
     },

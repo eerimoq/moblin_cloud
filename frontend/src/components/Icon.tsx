@@ -34,7 +34,7 @@ export type IconName =
   | "play"
   | "pause"
   | "trash"
-  | "shield"
+  | "users"
   | "user"
   | "sign-out"
   | "chart"
@@ -119,9 +119,10 @@ export default function Icon(props: Props) {
           <circle cx="12" cy="8" r="4" />
           <path d="M4 21c0-4 3.5-6.5 8-6.5s8 2.5 8 6.5" />
         </Match>
-        <Match when={props.name === "shield"}>
-          <path d="M12 3l8 3v6c0 4.5-3.5 8-8 9-4.5-1-8-4.5-8-9V6l8-3Z" />
-          <path d="M9 12l2 2 4-4" />
+        <Match when={props.name === "users"}>
+          <circle cx="9" cy="8" r="3.5" />
+          <path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5" />
+          <path d="M15 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c2.4.6 4 2.3 4 5.2" />
         </Match>
         <Match when={props.name === "failed"}>
           <circle cx="12" cy="12" r="9" />
