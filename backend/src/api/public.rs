@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::accounts::Platform;
 use crate::effects::EFFECTS;
 use crate::icons;
-use crate::pages::{SpinOption, Tiers};
+use crate::pages::{Settings, SpinOption, Tiers};
 use crate::paypal::PayPal;
 use crate::remote_control::Wheel;
 
@@ -156,17 +156,6 @@ fn linked_tiers(account: Option<&Account>, tiers: Option<&Tiers>) -> Option<Tier
         .cloned()
 }
 
-fn merchant(api: &Api, account: Option<&Account>) -> Option<String> {
-    payment_targets(api, account?).0
-}
-
-fn client_id(api: &Api, merchant_id: &Option<String>) -> Option<String> {
-    api.paypal
-        .as_ref()
-        .filter(|_| merchant_id.is_some())
-        .map(|paypal| paypal.client_id().to_string())
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct PublicStripe {
@@ -174,22 +163,49 @@ pub(super) struct PublicStripe {
     account_id: String,
 }
 
-fn public_stripe(api: &Api, account: Option<&Account>) -> Option<PublicStripe> {
-    Some(PublicStripe {
-        account_id: payment_targets(api, account?).1?,
-        publishable_key: api.stripe.as_ref()?.publishable_key().to_string(),
-    })
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct PublicTips {
-    amounts: Vec<u32>,
+pub(super) struct PublicPayment {
     currency: String,
     client_id: Option<String>,
     merchant_id: Option<String>,
     environment: Option<&'static str>,
     stripe: Option<PublicStripe>,
+}
+
+fn public_payment(
+    api: &Api,
+    account: Option<&Account>,
+    settings: &Settings,
+) -> Option<PublicPayment> {
+    let (merchant_id, stripe_account_id) = payment_targets(api, account?);
+    let stripe = stripe_account_id.and_then(|account_id| {
+        Some(PublicStripe {
+            publishable_key: api.stripe.as_ref()?.publishable_key().to_string(),
+            account_id,
+        })
+    });
+    if merchant_id.is_none() && stripe.is_none() {
+        return None;
+    }
+    Some(PublicPayment {
+        currency: settings.currency().to_string(),
+        client_id: api
+            .paypal
+            .as_ref()
+            .filter(|_| merchant_id.is_some())
+            .map(|paypal| paypal.client_id().to_string()),
+        merchant_id,
+        environment: api.paypal.as_ref().map(PayPal::environment),
+        stripe,
+    })
+}
+
+#[derive(Serialize)]
+pub(super) struct PublicTips {
+    amounts: Vec<u32>,
+    #[serde(flatten)]
+    payment: PublicPayment,
 }
 
 #[derive(Serialize)]
@@ -201,21 +217,16 @@ pub(super) async fn handle_tips(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<TipsResponse> {
-    let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
-    let currency = settings.currency().to_string();
-    let merchant_id = merchant(&api, account.as_ref());
-    let stripe = public_stripe(&api, account.as_ref());
-    let payable = merchant_id.is_some() || stripe.is_some();
+    let payment = public_payment(&api, api.accounts.of_page(&id).as_ref(), &settings);
     Json(TipsResponse {
-        tips: settings.tips().filter(|_| payable).map(|tips| PublicTips {
-            amounts: tips.amounts.clone(),
-            currency,
-            client_id: client_id(&api, &merchant_id),
-            merchant_id,
-            environment: api.paypal.as_ref().map(PayPal::environment),
-            stripe,
-        }),
+        tips: settings
+            .tips()
+            .zip(payment)
+            .map(|(tips, payment)| PublicTips {
+                amounts: tips.amounts.clone(),
+                payment,
+            }),
     })
 }
 
@@ -226,14 +237,10 @@ pub(super) struct PublicEffect {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub(super) struct PublicEffects {
     price: u32,
-    currency: String,
-    client_id: Option<String>,
-    merchant_id: Option<String>,
-    environment: Option<&'static str>,
-    stripe: Option<PublicStripe>,
+    #[serde(flatten)]
+    payment: PublicPayment,
 }
 
 #[derive(Serialize)]
@@ -250,11 +257,15 @@ pub(super) async fn handle_effects(
 ) -> Json<EffectsResponse> {
     let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
-    let currency = settings.currency().to_string();
-    let merchant_id = merchant(&api, account.as_ref());
-    let stripe = public_stripe(&api, account.as_ref());
-    let payable = merchant_id.is_some() || stripe.is_some();
+    let payment = public_payment(&api, account.as_ref(), &settings);
     Json(EffectsResponse {
+        effects: settings
+            .effects()
+            .zip(payment)
+            .map(|(effects, payment)| PublicEffects {
+                price: effects.price,
+                payment,
+            }),
         sub_effects: linked_tiers(account.as_ref(), settings.sub_effects()),
         options: EFFECTS
             .iter()
@@ -263,29 +274,14 @@ pub(super) async fn handle_effects(
                 kind: effect.kind,
             })
             .collect(),
-        effects: settings
-            .effects()
-            .filter(|_| payable)
-            .map(|effects| PublicEffects {
-                price: effects.price,
-                currency,
-                client_id: client_id(&api, &merchant_id),
-                merchant_id,
-                environment: api.paypal.as_ref().map(PayPal::environment),
-                stripe,
-            }),
     })
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub(super) struct PublicSpin {
     options: Vec<SpinOption>,
-    currency: String,
-    client_id: Option<String>,
-    merchant_id: Option<String>,
-    environment: Option<&'static str>,
-    stripe: Option<PublicStripe>,
+    #[serde(flatten)]
+    payment: PublicPayment,
 }
 
 #[derive(Serialize)]
@@ -303,20 +299,16 @@ pub(super) async fn handle_spin(
 ) -> Json<SpinResponse> {
     let account = api.accounts.of_page(&id);
     let settings = api.pages.get(&id);
-    let currency = settings.currency().to_string();
-    let merchant_id = merchant(&api, account.as_ref());
-    let stripe = public_stripe(&api, account.as_ref());
-    let payable = merchant_id.is_some() || stripe.is_some();
+    let payment = public_payment(&api, account.as_ref(), &settings);
     Json(SpinResponse {
+        spin: settings
+            .spin()
+            .zip(payment)
+            .map(|(spin, payment)| PublicSpin {
+                options: spin.options.clone(),
+                payment,
+            }),
         sub_spins: linked_tiers(account.as_ref(), settings.sub_spins()),
-        spin: settings.spin().filter(|_| payable).map(|spin| PublicSpin {
-            options: spin.options.clone(),
-            currency,
-            client_id: client_id(&api, &merchant_id),
-            merchant_id,
-            environment: api.paypal.as_ref().map(PayPal::environment),
-            stripe,
-        }),
         wheel: api.remote_control.wheel(&id),
         connected: api.remote_control.is_connected(&id),
     })
