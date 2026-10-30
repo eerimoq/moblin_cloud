@@ -368,20 +368,6 @@ function PaneFrame(props: {
             }
           />
         </Show>
-        <Show when={devicePanels.includes(props.leaf.panel) && props.device}>
-          {(device) => (
-            <span
-              title={
-                device().connected
-                  ? t("Connected")
-                  : device().reconnecting
-                    ? t("Reconnecting")
-                    : t("Not connected")
-              }
-              class={`size-2 shrink-0 rounded-full ${connectionDot(device())}`}
-            />
-          )}
-        </Show>
         <span
           title={t("Drag to move this pane")}
           class="flex-1 cursor-grab self-stretch active:cursor-grabbing"
