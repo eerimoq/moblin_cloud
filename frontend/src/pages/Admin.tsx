@@ -903,6 +903,11 @@ function Loaded(props: { stats: AdminStats }) {
       attention: integrations().some(([, , on]) => !on) || serverErrors() > 0,
     },
     {
+      id: "moblin",
+      label: "Moblin",
+      caption: `${format(props.stats.moblin.connectedDevices)} connected`,
+    },
+    {
       id: "problems",
       label: "Problems",
       caption: `${format(problemsToday())} today`,
@@ -924,11 +929,6 @@ function Loaded(props: { stats: AdminStats }) {
       id: "tests",
       label: "Tests",
       caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
-    },
-    {
-      id: "moblin",
-      label: "Moblin",
-      caption: `${format(props.stats.moblin.connectedDevices)} connected`,
     },
   ];
 
@@ -1062,6 +1062,20 @@ function Loaded(props: { stats: AdminStats }) {
               <DatabaseTable database={props.stats.database} />
             </div>
           </Section>
+          <Section id="moblin" title="Moblin">
+            <div class="grid gap-4 lg:grid-cols-2">
+              <MessageTable
+                title="Sent to Moblin"
+                hint="Remote control messages sent on Moblin's WebSocket connections since the backend started, per request: tips, status and settings requests for the device page, controls and so on. Counted in memory, so a restart starts over."
+                kinds={props.stats.moblin.messages.sent}
+              />
+              <MessageTable
+                title="Received from Moblin"
+                hint="Remote control messages Moblin sent since the backend started, per event, with responses split by their result and messages that could not be read as invalid. Counted in memory, so a restart starts over."
+                kinds={props.stats.moblin.messages.received}
+              />
+            </div>
+          </Section>
           <Section
             id="problems"
             title="Problems"
@@ -1118,20 +1132,6 @@ function Loaded(props: { stats: AdminStats }) {
                   </div>
                 )}
               </For>
-            </div>
-          </Section>
-          <Section id="moblin" title="Moblin">
-            <div class="grid gap-4 lg:grid-cols-2">
-              <MessageTable
-                title="Sent to Moblin"
-                hint="Remote control messages sent on Moblin's WebSocket connections since the backend started, per request: tips, status and settings requests for the device page, controls and so on. Counted in memory, so a restart starts over."
-                kinds={props.stats.moblin.messages.sent}
-              />
-              <MessageTable
-                title="Received from Moblin"
-                hint="Remote control messages Moblin sent since the backend started, per event, with responses split by their result and messages that could not be read as invalid. Counted in memory, so a restart starts over."
-                kinds={props.stats.moblin.messages.received}
-              />
             </div>
           </Section>
         </div>
