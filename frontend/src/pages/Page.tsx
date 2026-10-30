@@ -18,6 +18,7 @@ import { asset } from "../asset";
 import { BackendError, moblinIconUrl } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon from "../components/Icon";
+import Mascot from "../components/Mascot";
 import { fireConfetti } from "../confetti";
 import { subscribeChanges } from "../sse";
 import {
@@ -597,9 +598,8 @@ function CheerCard(props: {
         <Show
           when={props.streamer}
           fallback={
-            <img
-              src={asset("logos/logo-party.png")}
-              alt=""
+            <Mascot
+              variant="party"
               class="absolute -top-20 left-1/2 h-40 w-auto -translate-x-1/2 drop-shadow-xl"
             />
           }
