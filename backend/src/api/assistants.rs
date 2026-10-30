@@ -652,7 +652,7 @@ mod tests {
             assert_eq!(response.json::<Value>().await.unwrap()["items"], json!([]));
         }
         assert_eq!(
-            recent(&mod1, "song").await.status(),
+            recent(&mod1, "other").await.status(),
             StatusCode::BAD_REQUEST
         );
         settings(false).await;

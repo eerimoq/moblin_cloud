@@ -446,7 +446,7 @@ mod tests {
                 .bearer_auth(&session);
             async move { request.send().await.unwrap() }
         };
-        for kind in ["gift", "song"] {
+        for kind in ["gift", "other"] {
             let response = recent(format!("kind={kind}")).await;
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         }

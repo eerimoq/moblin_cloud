@@ -106,16 +106,16 @@ mod tests {
                 .take("p", "v", kind, allowance, |_| Ok(()))
                 .unwrap()
         };
-        assert_eq!(take("song", 2), Some(1));
-        assert_eq!(take("song", 2), Some(0));
-        assert_eq!(take("song", 2), None);
+        assert_eq!(take("effect", 2), Some(1));
+        assert_eq!(take("effect", 2), Some(0));
+        assert_eq!(take("effect", 2), None);
         assert_eq!(take("spin", 1), Some(0));
         assert_eq!(take("spin", 1), None);
-        assert_eq!(allowances.left("p", "v", "song", 3).unwrap(), 1);
-        assert_eq!(allowances.left("p", "other", "song", 3).unwrap(), 3);
-        assert_eq!(allowances.left("other", "v", "song", 3).unwrap(), 3);
+        assert_eq!(allowances.left("p", "v", "effect", 3).unwrap(), 1);
+        assert_eq!(allowances.left("p", "other", "effect", 3).unwrap(), 3);
+        assert_eq!(allowances.left("other", "v", "effect", 3).unwrap(), 3);
         allowances.last_month();
-        assert_eq!(take("song", 3), Some(2));
+        assert_eq!(take("effect", 3), Some(2));
         allowances.prune();
         let rows: u32 = allowances
             .database
@@ -125,7 +125,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(rows, 1);
-        assert_eq!(allowances.left("p", "v", "song", 3).unwrap(), 2);
+        assert_eq!(allowances.left("p", "v", "effect", 3).unwrap(), 2);
         assert_eq!(allowances.left("p", "v", "spin", 1).unwrap(), 1);
     }
 
@@ -134,9 +134,11 @@ mod tests {
         let allowances = Allowances::new(Database::memory());
         assert!(
             allowances
-                .take("p", "v", "song", 2, |_| Err(rusqlite::Error::InvalidQuery))
+                .take("p", "v", "effect", 2, |_| Err(
+                    rusqlite::Error::InvalidQuery
+                ))
                 .is_err()
         );
-        assert_eq!(allowances.left("p", "v", "song", 2).unwrap(), 2);
+        assert_eq!(allowances.left("p", "v", "effect", 2).unwrap(), 2);
     }
 }

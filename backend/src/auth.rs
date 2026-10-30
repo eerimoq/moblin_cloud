@@ -125,17 +125,12 @@ pub struct StateError {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Viewer {
-    #[serde(default = "twitch")]
     pub platform: Platform,
     pub id: String,
     pub name: String,
     pub page: String,
     pub tier: Option<u8>,
     pub issued: u64,
-}
-
-fn twitch() -> Platform {
-    Platform::Twitch
 }
 
 impl Viewer {
@@ -784,7 +779,6 @@ fn now() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
 
     use super::*;
 
@@ -953,11 +947,6 @@ mod tests {
         let kick = auth.viewer_of(&kick).unwrap();
         assert_eq!(kick.platform, Platform::Kick);
         assert_eq!(kick.key(), "kick:7");
-        let old = auth.sign(&format!(
-            "{VIEWER_PREFIX}{}",
-            json!({"id": "7", "name": "Viewer", "page": "page", "tier": null, "issued": now()})
-        ));
-        assert_eq!(auth.viewer_of(&old).unwrap().platform, Platform::Twitch);
         assert_eq!(auth.session_of(&session), None);
         assert_eq!(new_auth("other").viewer_of(&session), None);
         assert_eq!(auth.viewer_of(&auth.session("1", 0)), None);
