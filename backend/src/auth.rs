@@ -11,7 +11,7 @@ use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::accounts::{Access, Assistant, Identity, Platform};
+use crate::accounts::{Assistant, Identity, Platform};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
@@ -135,10 +135,7 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn key(&self) -> String {
-        match self.platform {
-            Platform::Twitch => self.id.clone(),
-            Platform::Kick => format!("kick:{}", self.id),
-        }
+        self.platform.user_key(&self.id)
     }
 }
 
@@ -199,7 +196,19 @@ impl Auth {
         format!("{}/auth/{}/callback", self.backend_url, platform.name())
     }
 
-    pub fn twitch_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
+    pub fn login_url(
+        &self,
+        platform: Platform,
+        page: Option<&str>,
+        link: bool,
+    ) -> Option<(String, String)> {
+        match platform {
+            Platform::Twitch => self.twitch_login_url(page, link),
+            Platform::Kick => self.kick_login_url(page, link),
+        }
+    }
+
+    fn twitch_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
         let app = self.twitch.as_ref()?;
         let state = self.new_state(SignInState {
             page: page.map(str::to_string),
@@ -225,7 +234,7 @@ impl Auth {
         .map(|url| (url.into(), state))
     }
 
-    pub fn kick_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
+    fn kick_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
         let app = self.kick.as_ref()?;
         let verifier = self.random_token()?;
         let challenge = BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()));
@@ -562,17 +571,27 @@ impl Auth {
             .any(|badge| badge.kind == "subscriber" && badge.active))
     }
 
-    pub async fn kick_user(&self, username: &str) -> Result<Option<Assistant>> {
+    async fn app_token(
+        &self,
+        token_url: &str,
+        client_id: &str,
+        client_secret: &str,
+    ) -> Result<String> {
+        self.access_token(
+            token_url,
+            &[
+                ("client_id", client_id),
+                ("client_secret", client_secret),
+                ("grant_type", "client_credentials"),
+            ],
+        )
+        .await
+    }
+
+    async fn kick_user(&self, username: &str) -> Result<Option<Assistant>> {
         let app = self.kick.as_ref().context("Kick not configured")?;
         let token = self
-            .access_token(
-                &app.token_url,
-                &[
-                    ("client_id", app.client_id.as_str()),
-                    ("client_secret", app.client_secret.as_str()),
-                    ("grant_type", "client_credentials"),
-                ],
-            )
+            .app_token(&app.token_url, &app.client_id, &app.client_secret)
             .await?;
         #[derive(Deserialize)]
         struct Channels {
@@ -601,29 +620,19 @@ impl Auth {
             .data
             .into_iter()
             .find(|channel| !channel.broadcaster_user_id.is_empty() && !channel.slug.is_empty())
-            .map(|channel| Assistant {
-                id: channel.broadcaster_user_id,
-                name: channel.slug.clone(),
-                login: channel.slug.to_lowercase(),
-                avatar: None,
-                preview: false,
-                go_live: false,
-                edit_tips: false,
-                remote_control: Access::None,
+            .map(|channel| {
+                Assistant::new(
+                    channel.broadcaster_user_id,
+                    channel.slug.to_lowercase(),
+                    channel.slug,
+                )
             }))
     }
 
-    pub async fn twitch_user(&self, username: &str) -> Result<Option<Assistant>> {
+    async fn twitch_user(&self, username: &str) -> Result<Option<Assistant>> {
         let app = self.twitch.as_ref().context("Twitch not configured")?;
         let token = self
-            .access_token(
-                &app.token_url,
-                &[
-                    ("client_id", app.client_id.as_str()),
-                    ("client_secret", app.client_secret.as_str()),
-                    ("grant_type", "client_credentials"),
-                ],
-            )
+            .app_token(&app.token_url, &app.client_id, &app.client_secret)
             .await?;
         #[derive(Deserialize)]
         struct Users {
@@ -653,18 +662,14 @@ impl Auth {
             .data
             .into_iter()
             .find(|user| !user.id.is_empty() && !user.login.is_empty())
-            .map(|user| Assistant {
-                id: user.id,
-                name: user
-                    .display_name
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or_else(|| user.login.clone()),
-                login: user.login.to_lowercase(),
-                avatar: None,
-                preview: false,
-                go_live: false,
-                edit_tips: false,
-                remote_control: Access::None,
+            .map(|user| {
+                Assistant::new(
+                    user.id,
+                    user.login.to_lowercase(),
+                    user.display_name
+                        .filter(|name| !name.is_empty())
+                        .unwrap_or(user.login),
+                )
             }))
     }
 

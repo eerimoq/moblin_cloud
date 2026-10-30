@@ -3,7 +3,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -17,10 +16,7 @@ use crate::payments::{Item, Order, Payee, insert_captured};
 use super::*;
 
 pub(super) fn viewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<Viewer, Failure> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
+    bearer(headers)
         .and_then(|session| api.auth.viewer_of(session))
         .filter(|viewer| viewer.page == id)
         .filter(|viewer| {

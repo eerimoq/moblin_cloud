@@ -16,6 +16,13 @@ pub enum Platform {
 }
 
 impl Platform {
+    pub fn user_key(self, user_id: &str) -> String {
+        match self {
+            Platform::Twitch => user_id.to_string(),
+            Platform::Kick => format!("kick:{user_id}"),
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Platform::Twitch => "twitch",
@@ -69,10 +76,7 @@ impl Identity {
     }
 
     pub fn admin_key(&self) -> String {
-        match self.platform {
-            Platform::Twitch => self.user_id.clone(),
-            Platform::Kick => format!("kick:{}", self.user_id),
-        }
+        self.platform.user_key(&self.user_id)
     }
 }
 
@@ -169,6 +173,21 @@ pub struct Assistant {
     pub go_live: bool,
     pub edit_tips: bool,
     pub remote_control: Access,
+}
+
+impl Assistant {
+    pub fn new(id: String, login: String, name: String) -> Self {
+        Self {
+            id,
+            login,
+            name,
+            avatar: None,
+            preview: false,
+            go_live: false,
+            edit_tips: false,
+            remote_control: Access::None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -287,11 +287,15 @@ pub(super) struct SignedIn {
     fresh: bool,
 }
 
-pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
-    let session = headers
+pub(super) fn bearer(headers: &HeaderMap) -> Option<&str> {
+    headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
+}
+
+pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
+    let session = bearer(headers)
         .and_then(|session| api.auth.session_of(session))
         .ok_or_else(not_signed_in)?;
     let fresh = session.is_fresh();

@@ -24,39 +24,32 @@ pub(super) async fn handle_twitch_login(
     State(api): State<Arc<Api>>,
     Query(query): Query<LoginQuery>,
 ) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
-    if let Some(page) = &query.page
-        && api
-            .accounts
-            .of_page(page)
-            .is_none_or(|account| account.twitch().is_none())
-    {
-        return Err(StatusCode::NOT_FOUND);
-    }
-    let (url, state) = api
-        .auth
-        .twitch_login_url(query.page.as_deref(), query.link.is_some())
-        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    Ok((
-        [(SET_COOKIE, api.auth.state_cookie(&state))],
-        Redirect::to(&url),
-    ))
+    login(&api, Platform::Twitch, query)
 }
 
 pub(super) async fn handle_kick_login(
     State(api): State<Arc<Api>>,
     Query(query): Query<LoginQuery>,
 ) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
+    login(&api, Platform::Kick, query)
+}
+
+fn login(
+    api: &Api,
+    platform: Platform,
+    query: LoginQuery,
+) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
     if let Some(page) = &query.page
         && api
             .accounts
             .of_page(page)
-            .is_none_or(|account| account.kick().is_none())
+            .is_none_or(|account| account.identity(platform).is_none())
     {
         return Err(StatusCode::NOT_FOUND);
     }
     let (url, state) = api
         .auth
-        .kick_login_url(query.page.as_deref(), query.link.is_some())
+        .login_url(platform, query.page.as_deref(), query.link.is_some())
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     Ok((
         [(SET_COOKIE, api.auth.state_cookie(&state))],
