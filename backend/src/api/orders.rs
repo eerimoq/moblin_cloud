@@ -12,6 +12,8 @@ use crate::counters;
 use crate::deliveries;
 use crate::pages::format_price;
 use crate::payments::{CaptureError, Item, Order, Payee, PaymentStatus, RefundError, Stage};
+use crate::paypal::PayPal;
+use crate::stripe::Stripe;
 
 use super::*;
 
@@ -40,6 +42,67 @@ pub(super) fn payee(api: &Api, id: &str, provider: Option<&str>) -> Result<Payee
     .ok_or_else(payment_unavailable)
 }
 
+enum Provider<'a> {
+    PayPal(&'a PayPal, &'a str),
+    Stripe(&'a Stripe, &'a str),
+}
+
+impl<'a> Provider<'a> {
+    fn of(api: &'a Api, payee: &'a Payee) -> Option<Self> {
+        match payee {
+            Payee::PayPal(merchant_id) => Some(Provider::PayPal(api.paypal.as_ref()?, merchant_id)),
+            Payee::Stripe(account) => Some(Provider::Stripe(api.stripe.as_ref()?, account)),
+            Payee::Twitch(_) | Payee::Kick => None,
+        }
+    }
+
+    async fn create(&self, order: &Order) -> Result<(String, Option<String>)> {
+        match self {
+            Provider::PayPal(paypal, merchant_id) => {
+                Ok((paypal.create_order(order, merchant_id).await?, None))
+            }
+            Provider::Stripe(stripe, account) => {
+                let (order_id, client_secret) = stripe.create_payment(order, account).await?;
+                Ok((order_id, Some(client_secret)))
+            }
+        }
+    }
+
+    async fn capture(&self, order_id: &str, order: &Order) -> Result<(), CaptureError> {
+        match self {
+            Provider::PayPal(paypal, merchant_id) => {
+                paypal.capture(order_id, order, merchant_id).await
+            }
+            Provider::Stripe(stripe, account) => stripe.capture(order_id, order, account).await,
+        }
+    }
+
+    async fn status(&self, order_id: &str, order: &Order) -> Result<PaymentStatus> {
+        match self {
+            Provider::PayPal(paypal, merchant_id) => {
+                paypal.status(order_id, order, merchant_id).await
+            }
+            Provider::Stripe(stripe, account) => stripe.status(order_id, order, account).await,
+        }
+    }
+
+    async fn refund(&self, order_id: &str) -> Result<(), RefundError> {
+        match self {
+            Provider::PayPal(paypal, merchant_id) => paypal.refund(order_id, merchant_id).await,
+            Provider::Stripe(stripe, account) => stripe.refund(order_id, account).await,
+        }
+    }
+
+    async fn cancel(&self, order_id: &str) -> Result<bool> {
+        match self {
+            Provider::PayPal(..) => Ok(false),
+            Provider::Stripe(stripe, account) => {
+                stripe.cancel(order_id, account).await.map(|_| true)
+            }
+        }
+    }
+}
+
 pub(super) async fn start_order(api: &Api, order: Order) -> Result<OrderResponse, Failure> {
     let name = format!("{}Orders", order.payee.slug());
     let result = create_order(api, order).await;
@@ -50,28 +113,18 @@ async fn create_order(api: &Api, order: Order) -> Result<OrderResponse, Failure>
     let provider = order.payee.provider();
     let created = async {
         api.orders.make_room()?;
-        match &order.payee {
-            Payee::PayPal(merchant_id) => {
-                let paypal = api.paypal.as_ref().context("no PayPal")?;
-                let order_id = paypal.create_order(&order, merchant_id).await?;
-                anyhow::Ok((order_id, None))
-            }
-            Payee::Stripe(account) => {
-                let stripe = api.stripe.as_ref().context("no Stripe")?;
-                let (order_id, client_secret) = stripe.create_payment(&order, account).await?;
-                Ok((
-                    order_id,
-                    Some(StripePayment {
-                        client_secret,
-                        price: order.price,
-                        currency: order.currency.clone(),
-                    }),
-                ))
-            }
-            Payee::Twitch(_) | Payee::Kick => {
-                anyhow::bail!("free requests are not paid")
-            }
-        }
+        let (order_id, client_secret) = Provider::of(api, &order.payee)
+            .context("no such provider")?
+            .create(&order)
+            .await?;
+        anyhow::Ok((
+            order_id,
+            client_secret.map(|client_secret| StripePayment {
+                client_secret,
+                price: order.price,
+                currency: order.currency.clone(),
+            }),
+        ))
     };
     let (order_id, stripe) = created.await.map_err(|error| {
         warn!(
@@ -183,11 +236,11 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         Stage::Created => {}
     }
     if kind == "spin" && api.remote_control.wheel(id).is_none() {
-        if let Payee::Stripe(account) = &order.payee
-            && let Some(stripe) = &api.stripe
+        if let Payee::Stripe(_) = &order.payee
+            && let Some(provider) = Provider::of(api, &order.payee)
         {
             api.orders.remove(order_id);
-            if let Err(error) = stripe.cancel(order_id, account).await {
+            if let Err(error) = provider.cancel(order_id).await {
                 warn!("cancelling Stripe payment {order_id} failed: {error:#}");
             }
         }
@@ -218,17 +271,10 @@ async fn capture_at_provider(
     kind: &str,
 ) -> Result<(), Failure> {
     let provider = order.payee.provider();
-    let captured = match &order.payee {
-        Payee::PayPal(merchant_id) => {
-            let paypal = api.paypal.as_ref().ok_or_else(payment_unavailable)?;
-            paypal.capture(order_id, order, merchant_id).await
-        }
-        Payee::Stripe(account) => {
-            let stripe = api.stripe.as_ref().ok_or_else(payment_unavailable)?;
-            stripe.capture(order_id, order, account).await
-        }
-        Payee::Twitch(_) | Payee::Kick => return Err(payment_unavailable()),
-    };
+    let captured = Provider::of(api, &order.payee)
+        .ok_or_else(payment_unavailable)?
+        .capture(order_id, order)
+        .await;
     let result = match captured {
         Ok(()) => {
             info!(
@@ -287,17 +333,10 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
 
 async fn settle_one(api: &Api, order_id: &str, order: &Order, late: bool) -> Option<PaymentStatus> {
     let provider = order.payee.provider();
-    let status = match &order.payee {
-        Payee::PayPal(merchant_id) => {
-            api.paypal
-                .as_ref()?
-                .status(order_id, order, merchant_id)
-                .await
-        }
-        Payee::Stripe(account) => api.stripe.as_ref()?.status(order_id, order, account).await,
-        Payee::Twitch(_) | Payee::Kick => return None,
-    };
-    let status = match status {
+    let status = match Provider::of(api, &order.payee)?
+        .status(order_id, order)
+        .await
+    {
         Ok(status) => status,
         Err(error) => {
             warn!("settling {provider} order {order_id} failed: {error:#}");
@@ -337,12 +376,7 @@ async fn settle_one(api: &Api, order_id: &str, order: &Order, late: bool) -> Opt
 async fn refund_late(api: &Api, order_id: &str, order: &Order) -> Option<PaymentStatus> {
     let provider = order.payee.provider();
     let slug = order.payee.slug();
-    let refunded = match &order.payee {
-        Payee::PayPal(merchant_id) => api.paypal.as_ref()?.refund(order_id, merchant_id).await,
-        Payee::Stripe(account) => api.stripe.as_ref()?.refund(order_id, account).await,
-        Payee::Twitch(_) | Payee::Kick => return None,
-    };
-    match refunded {
+    match Provider::of(api, &order.payee)?.refund(order_id).await {
         Ok(()) => {
             info!(
                 "{:?} paid {} {} in {provider} order {order_id} too late, refunded it",
@@ -381,11 +415,10 @@ pub(super) async fn expire_orders(api: &Api) {
 }
 
 async fn cancel_expired(api: &Api, order_id: &str, order: &Order) {
-    if let Payee::Stripe(account) = &order.payee
-        && let Some(stripe) = &api.stripe
-    {
-        match stripe.cancel(order_id, account).await {
-            Ok(()) => info!("cancelled expired Stripe payment {order_id}"),
+    if let Some(provider) = Provider::of(api, &order.payee) {
+        match provider.cancel(order_id).await {
+            Ok(false) => {}
+            Ok(true) => info!("cancelled expired Stripe payment {order_id}"),
             Err(error) => {
                 warn!("cancelling expired Stripe payment {order_id} failed: {error:#}")
             }
