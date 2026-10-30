@@ -57,7 +57,6 @@ export default defineConfig({
         "account/index.html",
         "admin/index.html",
         "terms/index.html",
-        "song-requests/index.html",
         "404.html",
       ],
     },

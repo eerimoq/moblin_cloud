@@ -83,7 +83,7 @@ import { t, tRich } from "../i18n";
 import { sameData } from "../same";
 import { readStored, store } from "../storage";
 
-const nameKey = "songRequestName";
+const nameKey = "viewerName";
 
 const readName = () => readStored(nameKey) ?? "";
 

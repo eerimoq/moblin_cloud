@@ -253,7 +253,7 @@ export type AdminStats = {
   counters: { name: string; today: number; week: number; total: number }[];
 };
 
-const sessionKey = "songRequestSession";
+const sessionKey = "session";
 
 export const readSession = () => readStored(sessionKey);
 
