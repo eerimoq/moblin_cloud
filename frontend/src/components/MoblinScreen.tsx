@@ -718,3 +718,34 @@ export default function MoblinScreen(props: {
     </div>
   );
 }
+
+export function NotConnected(props: { name: string; pane?: boolean }) {
+  return (
+    <div
+      class={`cheer-fade inset-0 z-10 flex items-center justify-center bg-page/60 backdrop-blur-md ${
+        props.pane ? "absolute overflow-hidden rounded-xl p-3" : "fixed px-4"
+      }`}
+    >
+      <div
+        role="status"
+        class={`cheer-pop flex flex-col items-center border-[1.5px] border-line bg-card text-center shadow-2xl ${
+          props.pane
+            ? "max-w-sm gap-3 rounded-2xl px-6 py-5"
+            : "max-w-md gap-4 rounded-3xl px-10 py-8"
+        }`}
+      >
+        <span
+          class={`grid place-items-center rounded-full bg-ghost text-muted ${props.pane ? "size-12" : "size-16"}`}
+        >
+          <Icon name="smartphone" class={props.pane ? "size-6" : "size-8"} />
+        </span>
+        <span class={`font-display font-semibold text-ink ${props.pane ? "text-lg" : "text-2xl"}`}>
+          {t("{name} is not connected", { name: props.name })}
+        </span>
+        <span class={`text-ink-2 ${props.pane ? "text-[13px]" : "text-[15px]"}`}>
+          {t("This page updates as soon as it connects again.")}
+        </span>
+      </div>
+    </div>
+  );
+}

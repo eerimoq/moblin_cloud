@@ -1,7 +1,6 @@
 import { createMemo, Show } from "solid-js";
 import Graphs from "../components/Graphs";
-import Icon from "../components/Icon";
-import MoblinScreen from "../components/MoblinScreen";
+import MoblinScreen, { NotConnected } from "../components/MoblinScreen";
 import MomMessage from "../components/MomMessage";
 import SectionMenu, {
   connectedOrNot,
@@ -68,24 +67,7 @@ export default function DeviceView(props: {
   return (
     <>
       <Show when={loaded() && streaming() && !connected()}>
-        <div class="cheer-fade fixed inset-0 z-10 flex items-center justify-center bg-page/60 px-4 backdrop-blur-md">
-          <div
-            role="status"
-            class="cheer-pop flex max-w-md flex-col items-center gap-4 rounded-3xl border-[1.5px] border-line bg-card px-10 py-8 text-center shadow-2xl"
-          >
-            <span class="grid size-16 place-items-center rounded-full bg-ghost text-muted">
-              <Icon name="smartphone" class="size-8" />
-            </span>
-            <span class="font-display text-2xl font-semibold text-ink">
-              {t("{name} is not connected", {
-                name: props.nameOf(shown()!.device) ?? feed().name(),
-              })}
-            </span>
-            <span class="text-[15px] text-ink-2">
-              {t("This page updates as soon as it connects again.")}
-            </span>
-          </div>
-        </div>
+        <NotConnected name={props.nameOf(shown()!.device) ?? feed().name()} />
       </Show>
       <Show when={loaded()}>
         <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">

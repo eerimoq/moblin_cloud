@@ -2,7 +2,11 @@ import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show 
 import Activity from "../components/Activity";
 import Graphs from "../components/Graphs";
 import Icon, { type IconName } from "../components/Icon";
-import MoblinScreen, { topLeftIcons, topRightIcons } from "../components/MoblinScreen";
+import MoblinScreen, {
+  NotConnected,
+  topLeftIcons,
+  topRightIcons,
+} from "../components/MoblinScreen";
 import MomMessage from "../components/MomMessage";
 import { Spinner } from "../components/PageParts";
 import Tiles, {
@@ -470,22 +474,7 @@ function PhonePanel(props: {
           onControl={(control) => props.feed.control(control)}
         />
         <Show when={props.feed.loaded() && !online()}>
-          <div class="cheer-fade absolute inset-0 z-10 flex items-center justify-center overflow-hidden rounded-xl bg-page/60 p-3 backdrop-blur-md">
-            <div
-              role="status"
-              class="cheer-pop flex max-w-sm flex-col items-center gap-3 rounded-2xl border-[1.5px] border-line bg-card px-6 py-5 text-center shadow-2xl"
-            >
-              <span class="grid size-12 place-items-center rounded-full bg-ghost text-muted">
-                <Icon name="smartphone" class="size-6" />
-              </span>
-              <span class="font-display text-lg font-semibold text-ink">
-                {t("{name} is not connected", { name: props.device.name })}
-              </span>
-              <span class="text-[13px] text-ink-2">
-                {t("This page updates as soon as it connects again.")}
-              </span>
-            </div>
-          </div>
+          <NotConnected name={props.device.name} pane />
         </Show>
       </div>
     </div>
