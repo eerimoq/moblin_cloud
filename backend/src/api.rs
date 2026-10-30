@@ -173,15 +173,15 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route(
             "/account/assistants/{platform}/{assistant}/preview",
-            post(handle_account_assistant_preview),
+            assistant_permission(Permission::Preview),
         )
         .route(
             "/account/assistants/{platform}/{assistant}/go-live",
-            post(handle_account_assistant_go_live),
+            assistant_permission(Permission::GoLive),
         )
         .route(
             "/account/assistants/{platform}/{assistant}/edit-tips",
-            post(handle_account_assistant_edit_tips),
+            assistant_permission(Permission::EditTips),
         )
         .route(
             "/account/assistants/{platform}/{assistant}/remote-control",

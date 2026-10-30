@@ -751,22 +751,13 @@ impl Accounts {
         permission: Permission,
         on: bool,
     ) -> Result<(), AccountError> {
-        let table = assistants_table(platform);
-        let column = permission.column();
-        let changed = self
-            .database
-            .lock()
-            .execute(
-                &format!(
-                    "UPDATE {table} SET {column} = ?3 WHERE broadcaster = ?1 AND assistant = ?2"
-                ),
-                (broadcaster, assistant, on),
-            )
-            .map_err(not_saved)?;
-        if changed == 0 {
-            return Err(AccountError::UnknownAssistant);
-        }
-        Ok(())
+        self.set_assistant_column(
+            platform,
+            broadcaster,
+            assistant,
+            permission.column(),
+            on as u8,
+        )
     }
 
     pub fn set_assistant_access(
@@ -776,15 +767,32 @@ impl Accounts {
         assistant: &str,
         access: Access,
     ) -> Result<(), AccountError> {
+        self.set_assistant_column(
+            platform,
+            broadcaster,
+            assistant,
+            "remote_control",
+            access as u8,
+        )
+    }
+
+    fn set_assistant_column(
+        &self,
+        platform: Platform,
+        broadcaster: &str,
+        assistant: &str,
+        column: &str,
+        value: u8,
+    ) -> Result<(), AccountError> {
         let table = assistants_table(platform);
         let changed = self
             .database
             .lock()
             .execute(
                 &format!(
-                    "UPDATE {table} SET remote_control = ?3 WHERE broadcaster = ?1 AND assistant = ?2"
+                    "UPDATE {table} SET {column} = ?3 WHERE broadcaster = ?1 AND assistant = ?2"
                 ),
-                (broadcaster, assistant, access as u8),
+                (broadcaster, assistant, value),
             )
             .map_err(not_saved)?;
         if changed == 0 {

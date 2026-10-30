@@ -4,10 +4,11 @@ use anyhow::Result;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
+use axum::routing::{MethodRouter, post};
 use log::{info, warn};
 use serde::Deserialize;
 
-use crate::accounts::{Access, Permission, Platform};
+use crate::accounts::{Access, AccountError, Permission, Platform};
 
 use super::*;
 
@@ -21,6 +22,21 @@ pub(super) struct PermissionRequest {
     on: bool,
 }
 
+fn broadcaster(
+    api: &Api,
+    platform: &str,
+    headers: &HeaderMap,
+) -> Result<(Platform, SignedIn, String), (StatusCode, String)> {
+    let platform = platform_of(platform)?;
+    let signed_in = signed_in(api, headers)?;
+    let broadcaster = signed_in
+        .account
+        .identity(platform)
+        .map(|identity| identity.user_id.clone())
+        .ok_or_else(|| platform_needed(platform))?;
+    Ok((platform, signed_in, broadcaster))
+}
+
 #[derive(Deserialize)]
 pub(super) struct AccessRequest {
     access: Access,
@@ -32,12 +48,8 @@ pub(super) async fn handle_account_assistant_add(
     headers: HeaderMap,
     Json(request): Json<AssistantRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let platform = platform_of(&platform)?;
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let broadcaster = account
-        .identity(platform)
-        .map(|identity| identity.user_id.clone())
-        .ok_or_else(|| platform_needed(platform))?;
+    let (platform, SignedIn { id, account, .. }, broadcaster) =
+        broadcaster(&api, &platform, &headers)?;
     let username = request
         .username
         .trim()
@@ -102,12 +114,8 @@ pub(super) async fn handle_account_assistant_remove(
     Path((platform, assistant)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let platform = platform_of(&platform)?;
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let broadcaster = account
-        .identity(platform)
-        .map(|identity| identity.user_id.clone())
-        .ok_or_else(|| platform_needed(platform))?;
+    let (platform, SignedIn { id, account, .. }, broadcaster) =
+        broadcaster(&api, &platform, &headers)?;
     api.accounts
         .remove_assistant(platform, &broadcaster, &assistant)
         .map_err(account_error)?;
@@ -116,51 +124,33 @@ pub(super) async fn handle_account_assistant_remove(
     Ok(account_response(&api, account))
 }
 
-pub(super) async fn handle_account_assistant_preview(
-    State(api): State<Arc<Api>>,
-    Path((platform, assistant)): Path<(String, String)>,
-    headers: HeaderMap,
-    Json(request): Json<PermissionRequest>,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    set_permission(
-        &api,
-        &platform,
-        &assistant,
-        &headers,
-        Permission::Preview,
-        request.on,
-    )
-}
-
-pub(super) async fn handle_account_assistant_go_live(
-    State(api): State<Arc<Api>>,
-    Path((platform, assistant)): Path<(String, String)>,
-    headers: HeaderMap,
-    Json(request): Json<PermissionRequest>,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    set_permission(
-        &api,
-        &platform,
-        &assistant,
-        &headers,
-        Permission::GoLive,
-        request.on,
-    )
-}
-
-pub(super) async fn handle_account_assistant_edit_tips(
-    State(api): State<Arc<Api>>,
-    Path((platform, assistant)): Path<(String, String)>,
-    headers: HeaderMap,
-    Json(request): Json<PermissionRequest>,
-) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    set_permission(
-        &api,
-        &platform,
-        &assistant,
-        &headers,
-        Permission::EditTips,
-        request.on,
+pub(super) fn assistant_permission(permission: Permission) -> MethodRouter<Arc<Api>> {
+    post(
+        move |State(api): State<Arc<Api>>,
+              Path((platform, assistant)): Path<(String, String)>,
+              headers: HeaderMap,
+              Json(request): Json<PermissionRequest>| async move {
+            let on = request.on;
+            set_assistant(
+                &api,
+                &platform,
+                &assistant,
+                &headers,
+                |accounts, platform, broadcaster| {
+                    accounts.set_assistant_permission(
+                        platform,
+                        broadcaster,
+                        &assistant,
+                        permission,
+                        on,
+                    )
+                },
+                format!(
+                    "turned {permission:?} {} for",
+                    if on { "on" } else { "off" }
+                ),
+            )
+        },
     )
 }
 
@@ -170,46 +160,30 @@ pub(super) async fn handle_account_assistant_remote_control(
     headers: HeaderMap,
     Json(request): Json<AccessRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let platform = platform_of(&platform)?;
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let broadcaster = account
-        .identity(platform)
-        .map(|identity| identity.user_id.clone())
-        .ok_or_else(|| platform_needed(platform))?;
-    api.accounts
-        .set_assistant_access(platform, &broadcaster, &assistant, request.access)
-        .map_err(account_error)?;
-    info!(
-        "{id} set the remote control access of {} assistant {assistant} to {:?}",
-        platform.title(),
-        request.access
-    );
-    assistants_changed(&api, &account.page.id, platform, &assistant);
-    Ok(account_response(&api, account))
+    set_assistant(
+        &api,
+        &platform,
+        &assistant,
+        &headers,
+        |accounts, platform, broadcaster| {
+            accounts.set_assistant_access(platform, broadcaster, &assistant, request.access)
+        },
+        format!("set the remote control access to {:?} of", request.access),
+    )
 }
 
-fn set_permission(
+fn set_assistant(
     api: &Api,
     platform: &str,
     assistant: &str,
     headers: &HeaderMap,
-    permission: Permission,
-    on: bool,
+    set: impl FnOnce(&Accounts, Platform, &str) -> Result<(), AccountError>,
+    change: String,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let platform = platform_of(platform)?;
-    let SignedIn { id, account, .. } = signed_in(api, headers)?;
-    let broadcaster = account
-        .identity(platform)
-        .map(|identity| identity.user_id.clone())
-        .ok_or_else(|| platform_needed(platform))?;
-    api.accounts
-        .set_assistant_permission(platform, &broadcaster, assistant, permission, on)
-        .map_err(account_error)?;
-    info!(
-        "{id} turned {permission:?} {} for {} assistant {assistant}",
-        if on { "on" } else { "off" },
-        platform.title()
-    );
+    let (platform, SignedIn { id, account, .. }, broadcaster) =
+        broadcaster(api, platform, headers)?;
+    set(&api.accounts, platform, &broadcaster).map_err(account_error)?;
+    info!("{id} {change} {} assistant {assistant}", platform.title());
     assistants_changed(api, &account.page.id, platform, assistant);
     Ok(account_response(api, account))
 }
