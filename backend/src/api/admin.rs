@@ -56,6 +56,25 @@ fn resident_memory() -> Option<u64> {
 #[derive(Serialize)]
 pub(super) struct DatabaseStats {
     bytes: u64,
+    files: Vec<DatabaseFile>,
+}
+
+#[derive(Serialize)]
+pub(super) struct DatabaseFile {
+    name: String,
+    bytes: u64,
+}
+
+fn database_stats(database: &Database) -> DatabaseStats {
+    let files: Vec<DatabaseFile> = database
+        .files()
+        .into_iter()
+        .map(|(name, bytes)| DatabaseFile { name, bytes })
+        .collect();
+    DatabaseStats {
+        bytes: files.iter().map(|file| file.bytes).sum(),
+        files,
+    }
 }
 
 #[derive(Serialize)]
@@ -110,9 +129,7 @@ pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
             orders: api.orders.unfinished(),
             deliveries: api.deliveries.count(),
         },
-        database: DatabaseStats {
-            bytes: api.database.size(),
-        },
+        database: database_stats(&api.database),
         counters: api.counters.all(),
     }
 }
@@ -216,7 +233,7 @@ mod tests {
                 "accounts": {"total": 2, "paypal": 0, "stripe": 0, "premium": 1},
                 "moblin": {"connectedDevices": 1},
                 "pending": {"orders": 0, "deliveries": 0},
-                "database": { "bytes": 0 },
+                "database": {"bytes": 0, "files": []},
                 "counters": [
                     {"name": "moblinConnections", "today": 1, "week": 1, "total": 1},
                     {"name": "tipOrders", "today": 2, "week": 2, "total": 2},

@@ -152,15 +152,21 @@ impl Database {
         self.connection.lock().unwrap()
     }
 
-    pub fn size(&self) -> u64 {
+    pub fn files(&self) -> Vec<(String, u64)> {
         let Some(path) = &self.path else {
-            return 0;
+            return vec![];
         };
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
         ["", "-wal", "-shm"]
             .into_iter()
-            .filter_map(|suffix| std::fs::metadata(format!("{}{suffix}", path.display())).ok())
-            .map(|metadata| metadata.len())
-            .sum()
+            .filter_map(|suffix| {
+                let metadata = std::fs::metadata(format!("{}{suffix}", path.display())).ok()?;
+                Some((format!("{name}{suffix}"), metadata.len()))
+            })
+            .collect()
     }
 }
 
@@ -184,21 +190,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn size_is_the_files_on_disk() {
-        assert_eq!(Database::memory().size(), 0);
+    fn files_are_the_files_on_disk() {
+        assert!(Database::memory().files().is_empty());
         let path = temporary_path("size");
         let database = Database::open(Some(&path)).unwrap();
         database
             .lock()
             .execute("INSERT INTO pages (id, settings) VALUES ('a', '{}')", [])
             .unwrap();
-        let expected: u64 = ["", "-wal", "-shm"]
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let expected: Vec<(String, u64)> = ["", "-wal", "-shm"]
             .into_iter()
-            .filter_map(|suffix| std::fs::metadata(format!("{}{suffix}", path.display())).ok())
-            .map(|metadata| metadata.len())
-            .sum();
-        assert!(expected > std::fs::metadata(&path).unwrap().len());
-        assert_eq!(database.size(), expected);
+            .filter_map(|suffix| {
+                let metadata = std::fs::metadata(format!("{}{suffix}", path.display())).ok()?;
+                Some((format!("{name}{suffix}"), metadata.len()))
+            })
+            .collect();
+        assert!(expected.len() > 1);
+        assert_eq!(database.files(), expected);
         drop(database);
         remove(&path);
     }

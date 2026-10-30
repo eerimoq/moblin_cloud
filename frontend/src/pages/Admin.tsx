@@ -575,6 +575,63 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
   );
 }
 
+function DatabaseTable(props: { database: AdminStats["database"] }) {
+  return (
+    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+      <table class="w-full">
+        <thead>
+          <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+            <th class="px-4 pt-3 pb-2 text-left sm:px-5">
+              Database file
+              <Info>
+                The SQLite database and its write-ahead log and shared memory files, as they are on
+                disk right now.
+              </Info>
+            </th>
+            <th class="w-24 px-2 pt-3 pb-2 text-right sm:px-4">Size</th>
+            <th class="w-32 px-2 pt-3 pb-2 text-right sm:px-4">Bytes</th>
+          </tr>
+        </thead>
+        <tbody class="border-t-[1.5px] border-line [&>tr:first-child>td]:pt-3 [&>tr:last-child>td]:pb-3">
+          <Show
+            when={props.database.files.length > 0}
+            fallback={
+              <tr>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={3}>
+                  In memory, no files on disk.
+                </td>
+              </tr>
+            }
+          >
+            <For each={props.database.files}>
+              {(file) => (
+                <tr>
+                  <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">{file.name}</td>
+                  <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
+                    {formatBytes(file.bytes)}
+                  </td>
+                  <td class="px-2 py-0.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
+                    {format(file.bytes)}
+                  </td>
+                </tr>
+              )}
+            </For>
+            <tr class="font-semibold">
+              <td class="px-4 pt-1.5 text-[14px] sm:px-5">Total</td>
+              <td class="px-2 pt-1.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
+                {formatBytes(props.database.bytes)}
+              </td>
+              <td class="px-2 pt-1.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
+                {format(props.database.bytes)}
+              </td>
+            </tr>
+          </Show>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function MessageTable(props: {
   title: string;
   hint: string;
@@ -938,7 +995,7 @@ function Loaded(props: { stats: AdminStats }) {
         <Tile
           label="Database"
           value={formatBytes(props.stats.database.bytes)}
-          hint={`${format(props.stats.database.bytes)} bytes on disk for the SQLite database and its WAL files.`}
+          hint={`${format(props.stats.database.bytes)} bytes on disk for the SQLite database and its WAL files. Per file under Server.`}
         />
       </div>
       <div class="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
@@ -1105,6 +1162,7 @@ function Loaded(props: { stats: AdminStats }) {
               </div>
               <StatusTable statuses={statuses()} total={server().requests.total} />
               <EndpointTable endpoints={server().requests.endpoints} />
+              <DatabaseTable database={props.stats.database} />
             </div>
           </Section>
         </div>

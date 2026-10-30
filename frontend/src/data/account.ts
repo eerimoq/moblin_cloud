@@ -249,7 +249,7 @@ export type AdminStats = {
     messages: Record<"sent" | "received", { kind: string; messages: number; bytes: number }[]>;
   };
   pending: { orders: number; deliveries: number };
-  database: { bytes: number };
+  database: { bytes: number; files: { name: string; bytes: number }[] };
   counters: { name: string; today: number; week: number; total: number }[];
 };
 
