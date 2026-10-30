@@ -178,7 +178,7 @@ function Macros(props: { remote: Remote }) {
 
 type SettingsPage = "root" | "macros";
 
-function Settings(props: { remote: Remote; onClose: () => void }) {
+function Settings(props: { remote: Remote }) {
   const [page, setPage] = createSignal<SettingsPage>("root");
   const titles = (): Record<SettingsPage, string> => ({
     root: t("Settings"),
@@ -188,7 +188,6 @@ function Settings(props: { remote: Remote; onClose: () => void }) {
     <PanelView
       title={titles()[page()]}
       back={page() === "root" ? undefined : { label: t("Settings"), onBack: () => setPage("root") }}
-      onClose={props.onClose}
     >
       <Switch>
         <Match when={page() === "root"}>
@@ -204,36 +203,36 @@ function Settings(props: { remote: Remote; onClose: () => void }) {
   );
 }
 
-export default function Panels(props: { panel: Panel; remote: Remote; onClose: () => void }) {
+export default function Panels(props: { panel: Panel; remote: Remote }) {
   return (
     <Switch>
       <Match when={props.panel === "mic"}>
-        <PanelView title={t("Mic")} onClose={props.onClose}>
+        <PanelView title={t("Mic")}>
           <Mics remote={props.remote} footer={t("Highest priority mic at the top of the list.")} />
         </PanelView>
       </Match>
       <Match when={props.panel === "bitrate"}>
-        <PanelView title={t("Bitrate")} onClose={props.onClose}>
+        <PanelView title={t("Bitrate")}>
           <Bitrates remote={props.remote} />
         </PanelView>
       </Match>
       <Match when={props.panel === "priorities"}>
-        <PanelView title={t("Connection priorities")} onClose={props.onClose}>
+        <PanelView title={t("Connection priorities")}>
           <Priorities remote={props.remote} />
         </PanelView>
       </Match>
       <Match when={props.panel === "autoSceneSwitcher"}>
-        <PanelView title={t("Auto scene switcher")} onClose={props.onClose}>
+        <PanelView title={t("Auto scene switcher")}>
           <AutoSceneSwitchers remote={props.remote} />
         </PanelView>
       </Match>
       <Match when={props.panel === "macros"}>
-        <PanelView title={t("Macros")} onClose={props.onClose}>
+        <PanelView title={t("Macros")}>
           <Macros remote={props.remote} />
         </PanelView>
       </Match>
       <Match when={props.panel === "settings"}>
-        <Settings remote={props.remote} onClose={props.onClose} />
+        <Settings remote={props.remote} />
       </Match>
     </Switch>
   );

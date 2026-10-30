@@ -15,10 +15,43 @@ export type Remote = {
 export const rowClass =
   "flex min-h-[44px] w-full items-center gap-3 px-4 py-2 text-left text-[17px] disabled:opacity-50";
 
+export function PanelButtons(props: {
+  hidden: boolean;
+  onToggleHidden: () => void;
+  onClose: () => void;
+}) {
+  const buttonClass =
+    "grid size-[30px] place-items-center rounded-full border border-phone-border text-phone-border";
+  return (
+    <div
+      class={`absolute top-[3px] z-20 flex gap-[14px] rounded-[7px] p-[4px] ${
+        props.hidden ? "right-[2px] bg-phone-row" : "right-[3px]"
+      }`}
+    >
+      <button
+        type="button"
+        aria-label={props.hidden ? t("Show panel") : t("Hide panel")}
+        title={props.hidden ? t("Show panel") : t("Hide panel")}
+        class={buttonClass}
+        onClick={() => props.onToggleHidden()}
+      >
+        <Icon name={props.hidden ? "eye" : "eye-off"} class="size-[18px]" />
+      </button>
+      <button
+        type="button"
+        aria-label={t("Close")}
+        class={buttonClass}
+        onClick={() => props.onClose()}
+      >
+        <Icon name="close" class="size-[14px]" />
+      </button>
+    </div>
+  );
+}
+
 export function PanelView(props: {
   title: string;
   back?: { label: string; onBack: () => void };
-  onClose: () => void;
   children: JSX.Element;
 }) {
   return (
@@ -37,14 +70,6 @@ export function PanelView(props: {
           )}
         </Show>
         <span class="truncate text-[17px] font-semibold">{props.title}</span>
-        <button
-          type="button"
-          aria-label={t("Close")}
-          class="absolute right-[10px] grid size-[30px] place-items-center rounded-full border border-phone-border text-phone-border"
-          onClick={() => props.onClose()}
-        >
-          <Icon name="close" class="size-[14px]" />
-        </button>
       </div>
       <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 pb-6 [scrollbar-width:none]">
         {props.children}

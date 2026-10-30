@@ -1,7 +1,7 @@
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import Icon, { type IconName } from "./Icon";
 import { ask } from "./Modal";
-import { panelWidth, type Remote } from "./MoblinParts";
+import { PanelButtons, panelWidth, type Remote } from "./MoblinParts";
 import Panels, { type Panel } from "./MoblinPanels";
 import {
   type AudioLevel,
@@ -367,6 +367,7 @@ export default function MoblinScreen(props: {
   const [height, setHeight] = createSignal(screenHeight + 2 * bezel);
   const [verbose, setVerbose] = createSignal(readStored("statusCollapsed") !== "1");
   const [panel, setPanel] = createSignal<Panel | null>(null);
+  const [panelHidden, setPanelHidden] = createSignal(false);
   const [page, setPage] = createSignal(1);
   const [icon] = createResource(
     () => props.page,
@@ -404,7 +405,10 @@ export default function MoblinScreen(props: {
       await props.onControl(control);
     }
   };
-  const toggle = (next: Panel) => setPanel((current) => (current === next ? null : next));
+  const toggle = (next: Panel | null) => {
+    setPanel((current) => (current === next ? null : next));
+    setPanelHidden(false);
+  };
   const remote: Remote = {
     get state() {
       return props.state;
@@ -517,7 +521,15 @@ export default function MoblinScreen(props: {
     );
   };
 
-  const areaWidth = () => screenWidth - controlBarWidth - (panel() ? panelWidth : 0);
+  const shownPanelWidth = () => (panel() ? (panelHidden() ? 1 : panelWidth) : 0);
+  const areaWidth = () => screenWidth - controlBarWidth - shownPanelWidth();
+  const panelButtons = () => (
+    <PanelButtons
+      hidden={panelHidden()}
+      onToggleHidden={() => setPanelHidden((hidden) => !hidden)}
+      onClose={() => toggle(null)}
+    />
+  );
   const scenes = () => props.settings?.scenes ?? [];
   const zoomPresets = () => props.state.zoomPresets ?? [];
   const previewSource = () =>
@@ -604,9 +616,20 @@ export default function MoblinScreen(props: {
                 {scenePicker()}
               </div>
               <span class="absolute top-1/2 left-[12px] h-[118px] w-[34px] -translate-y-1/2 rounded-full bg-phone-screen" />
+              <Show when={panel() && panelHidden()}>{panelButtons()}</Show>
             </div>
             <Show when={panel()}>
-              {(shown) => <Panels panel={shown()} remote={remote} onClose={() => setPanel(null)} />}
+              {(shown) => (
+                <div
+                  class="relative h-full shrink-0 overflow-hidden bg-phone-screen"
+                  style={{ width: `${shownPanelWidth()}px` }}
+                >
+                  <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
+                    <Panels panel={shown()} remote={remote} />
+                  </div>
+                  <Show when={!panelHidden()}>{panelButtons()}</Show>
+                </div>
+              )}
             </Show>
             <div
               class="flex h-full shrink-0 bg-phone-screen"
