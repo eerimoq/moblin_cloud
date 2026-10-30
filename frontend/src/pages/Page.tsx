@@ -13,6 +13,7 @@ import {
   onMount,
   Show,
   Switch,
+  type JSX,
 } from "solid-js";
 import { asset } from "../asset";
 import { BackendError, isSignedOut, moblinIconUrl } from "../data/backend";
@@ -192,19 +193,34 @@ type PayOptions = {
   onError: (provider: Provider) => void;
 };
 
-function payOptions(props: {
-  start: () => boolean;
+function createPay(props: {
+  failed?: string | null;
+  ready: () => boolean;
+  name: () => string;
   order: (provider: Provider) => Promise<Order>;
   capture: (orderId: string) => Promise<unknown>;
   paid: () => void;
   cancelled: string;
-  showError: (error: unknown) => void;
-  setBusy: (busy: boolean) => void;
-  setResult: (result: Result | null) => void;
-}): PayOptions {
+  onError: (error: unknown) => void;
+}) {
+  const [busy, setBusy] = createSignal(false);
+  const [result, setResult] = createSignal<Result | null>(
+    props.failed ? { text: props.failed } : null,
+  );
+  const showError = (error: unknown) => {
+    setResult({ text: errorText(error) });
+    props.onError(error);
+  };
   let orderError: unknown = null;
-  return {
-    start: props.start,
+  const options: PayOptions = {
+    start: () => {
+      setResult(null);
+      if (busy() || !props.ready()) {
+        return false;
+      }
+      saveName(props.name().trim());
+      return true;
+    },
     createOrder: async (provider) => {
       orderError = null;
       try {
@@ -215,23 +231,23 @@ function payOptions(props: {
       }
     },
     complete: async (orderId) => {
-      props.setBusy(true);
-      props.setResult(null);
+      setBusy(true);
+      setResult(null);
       try {
         await props.capture(orderId);
         props.paid();
       } catch (error) {
-        props.showError(error);
+        showError(error);
       } finally {
-        props.setBusy(false);
+        setBusy(false);
       }
     },
-    onCancel: () => props.setResult({ text: props.cancelled }),
+    onCancel: () => setResult({ text: props.cancelled }),
     onError: (provider) => {
       if (orderError) {
-        props.showError(orderError);
+        showError(orderError);
       } else {
-        props.setResult({
+        setResult({
           text: t("{provider} could not complete the tip. Try again.", {
             provider: providerName(provider),
           }),
@@ -239,6 +255,23 @@ function payOptions(props: {
       }
     },
   };
+  const request = async (send: () => Promise<unknown>, done: () => void, after: () => void) => {
+    if (busy()) {
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      await send();
+      done();
+    } catch (error) {
+      showError(error);
+    } finally {
+      setBusy(false);
+      after();
+    }
+  };
+  return { busy, result, closeResult: () => setResult(null), options, request };
 }
 
 function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabled: boolean }) {
@@ -528,6 +561,38 @@ function PayButtons(props: {
 }
 
 type Result = { text: string };
+
+function PayFooter(props: {
+  label?: JSX.Element;
+  price: string;
+  detail?: JSX.Element;
+  pay: ReturnType<typeof createPay>;
+  payment: Payment;
+  disabled: boolean;
+  resetKey: string;
+}) {
+  return (
+    <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
+      <p class="flex flex-col items-center gap-1 text-center">
+        <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
+          {props.label ?? t("Your tip")}
+        </span>
+        <span class="font-display text-4xl font-semibold">{props.price}</span>
+        {props.detail}
+      </p>
+      <ResultLine result={props.pay.result()} onClose={props.pay.closeResult} />
+      <PayButtons
+        payment={props.payment}
+        options={props.pay.options}
+        disabled={props.disabled}
+        resetKey={props.resetKey}
+      />
+      <p class="text-center text-sm text-muted">
+        {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
+      </p>
+    </div>
+  );
+}
 
 function CheerCard(props: {
   title: string;
@@ -883,8 +948,6 @@ function TipJar(props: {
   createEffect(() => {
     draft.tip = { choice: choice(), other: other(), message: message() };
   });
-  const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<Result | null>(null);
   let form: HTMLFormElement | undefined;
 
   const amount = () => {
@@ -896,20 +959,9 @@ function TipJar(props: {
     return cents >= Math.min(...props.tips.amounts) ? cents : null;
   };
 
-  const showError = (error: unknown) => {
-    setResult({ text: errorText(error) });
-    props.onError(error);
-  };
-
-  const options = payOptions({
-    start: () => {
-      setResult(null);
-      if (busy() || amount() === null || !form?.reportValidity()) {
-        return false;
-      }
-      saveName(props.name.trim());
-      return true;
-    },
+  const pay = createPay({
+    ready: () => amount() !== null && !!form?.reportValidity(),
+    name: () => props.name,
     order: (provider) =>
       orderTip(props.id, amount() ?? 0, props.name.trim(), message().trim(), provider),
     capture: (orderId) => captureOrder("tip", props.id, orderId),
@@ -918,9 +970,7 @@ function TipJar(props: {
       setMessage("");
     },
     cancelled: t("Tip cancelled."),
-    showError,
-    setBusy,
-    setResult,
+    onError: (error) => props.onError(error),
   });
 
   return (
@@ -969,28 +1019,15 @@ function TipJar(props: {
         onMessage={setMessage}
         placeholder={t("Love the stream!")}
       />
-      <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
-        <p class="flex flex-col items-center gap-1 text-center">
-          <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
-            {t("Your tip")}
-          </span>
-          <span class="font-display text-4xl font-semibold">
-            {amount() === null
-              ? "–"
-              : formatPrice({ price: amount()!, currency: props.tips.currency })}
-          </span>
-        </p>
-        <ResultLine result={result()} onClose={() => setResult(null)} />
-        <PayButtons
-          payment={props.tips.payment}
-          options={options}
-          disabled={busy() || amount() === null}
-          resetKey={`${amount()}\n${props.name}\n${message()}`}
-        />
-        <p class="text-center text-sm text-muted">
-          {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
-        </p>
-      </div>
+      <PayFooter
+        price={
+          amount() === null ? "–" : formatPrice({ price: amount()!, currency: props.tips.currency })
+        }
+        pay={pay}
+        payment={props.tips.payment}
+        disabled={pay.busy() || amount() === null}
+        resetKey={`${amount()}\n${props.name}\n${message()}`}
+      />
     </form>
   );
 }
@@ -1018,10 +1055,6 @@ function EffectJar(props: {
   createEffect(() => {
     draft.effect = { effect: chosen(), message: message() };
   });
-  const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<Result | null>(
-    props.signInFailed ? { text: props.signInFailed } : null,
-  );
   let form: HTMLFormElement | undefined;
 
   const effect = () => {
@@ -1029,20 +1062,10 @@ function EffectJar(props: {
     return props.options.some((option) => option.id === current) ? current : null;
   };
 
-  const showError = (error: unknown) => {
-    setResult({ text: errorText(error) });
-    props.onError(error);
-  };
-
-  const options = payOptions({
-    start: () => {
-      setResult(null);
-      if (busy() || effect() === null || !form?.reportValidity()) {
-        return false;
-      }
-      saveName(props.name.trim());
-      return true;
-    },
+  const pay = createPay({
+    failed: props.signInFailed,
+    ready: () => effect() !== null && !!form?.reportValidity(),
+    name: () => props.name,
     order: (provider) =>
       orderEffect(
         props.id,
@@ -1058,28 +1081,23 @@ function EffectJar(props: {
       setMessage("");
     },
     cancelled: t("Tip cancelled. No effect was played."),
-    showError,
-    setBusy,
-    setResult,
+    onError: (error) => props.onError(error),
   });
 
-  const playAsSubscriber = async () => {
+  const playAsSubscriber = () => {
+    const viewer = props.viewer;
     const current = effect();
-    if (busy() || !props.viewer || current === null) {
+    if (!viewer || current === null) {
       return;
     }
-    setBusy(true);
-    setResult(null);
-    try {
-      await requestSubscriberEffect(props.id, props.viewer, current, message().trim());
-      props.onPaid(t("Your effect is on its way to the streamer."), t("Enjoy the effect!"));
-      setMessage("");
-    } catch (error) {
-      showError(error);
-    } finally {
-      setBusy(false);
-      props.onAllowance();
-    }
+    void pay.request(
+      () => requestSubscriberEffect(props.id, viewer, current, message().trim()),
+      () => {
+        props.onPaid(t("Your effect is on its way to the streamer."), t("Enjoy the effect!"));
+        setMessage("");
+      },
+      props.onAllowance,
+    );
   };
 
   return (
@@ -1142,29 +1160,18 @@ function EffectJar(props: {
       />
       <Show when={props.effects} keyed>
         {(effects) => (
-          <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
-            <p class="flex flex-col items-center gap-1 text-center">
-              <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
-                {t("Your tip")}
-              </span>
-              <span class="font-display text-4xl font-semibold">
-                {formatPrice({ price: effects.price, currency: effects.currency })}
-              </span>
+          <PayFooter
+            price={formatPrice({ price: effects.price, currency: effects.currency })}
+            detail={
               <span class="text-ink-2">
                 {effect() === null ? t("Pick an effect") : effectName(effect()!)}
               </span>
-            </p>
-            <ResultLine result={result()} onClose={() => setResult(null)} />
-            <PayButtons
-              payment={effects.payment}
-              options={options}
-              disabled={busy() || effect() === null}
-              resetKey={`${effect()}\n${effects.price}\n${props.name}\n${message()}`}
-            />
-            <p class="text-center text-sm text-muted">
-              {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
-            </p>
-          </div>
+            }
+            pay={pay}
+            payment={effects.payment}
+            disabled={pay.busy() || effect() === null}
+            resetKey={`${effect()}\n${effects.price}\n${props.name}\n${message()}`}
+          />
         )}
       </Show>
       <Show when={props.subEffects} keyed>
@@ -1176,12 +1183,12 @@ function EffectJar(props: {
             allowance={props.allowance}
             signedIn={props.viewer !== null}
             paid={props.effects !== null}
-            disabled={busy() || effect() === null}
-            result={result()}
-            onCloseResult={() => setResult(null)}
+            disabled={pay.busy() || effect() === null}
+            result={pay.result()}
+            onCloseResult={pay.closeResult}
             onSignIn={props.onSignIn}
             onSignOut={props.onSignOut}
-            onRequest={() => void playAsSubscriber()}
+            onRequest={playAsSubscriber}
           />
         )}
       </Show>
@@ -1553,25 +1560,11 @@ function SpinWheel(props: {
   createEffect(() => {
     draft.spin = { spins: choice().spins, price: choice().price, message: message() };
   });
-  const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<Result | null>(
-    props.signInFailed ? { text: props.signInFailed } : null,
-  );
 
-  const showError = (error: unknown) => {
-    setResult({ text: errorText(error) });
-    props.onError(error);
-  };
-
-  const options = payOptions({
-    start: () => {
-      setResult(null);
-      if (busy()) {
-        return false;
-      }
-      saveName(props.name.trim());
-      return true;
-    },
+  const pay = createPay({
+    failed: props.signInFailed,
+    ready: () => true,
+    name: () => props.name,
     order: (provider) =>
       orderSpin(props.id, choice(), props.name.trim(), message().trim(), provider),
     capture: (orderId) => captureOrder("spin", props.id, orderId),
@@ -1584,27 +1577,22 @@ function SpinWheel(props: {
       setMessage("");
     },
     cancelled: t("Tip cancelled. The wheel was not spun."),
-    showError,
-    setBusy,
-    setResult,
+    onError: (error) => props.onError(error),
   });
 
-  const spinAsSubscriber = async () => {
-    if (busy() || !props.viewer) {
+  const spinAsSubscriber = () => {
+    const viewer = props.viewer;
+    if (!viewer) {
       return;
     }
-    setBusy(true);
-    setResult(null);
-    try {
-      await requestSubscriberSpin(props.id, props.viewer, message().trim());
-      props.onPaid(t("Your spin starts on stream in a moment."), t("Enjoy the spin!"));
-      setMessage("");
-    } catch (error) {
-      showError(error);
-    } finally {
-      setBusy(false);
-      props.onAllowance();
-    }
+    void pay.request(
+      () => requestSubscriberSpin(props.id, viewer, message().trim()),
+      () => {
+        props.onPaid(t("Your spin starts on stream in a moment."), t("Enjoy the spin!"));
+        setMessage("");
+      },
+      props.onAllowance,
+    );
   };
 
   return (
@@ -1667,28 +1655,16 @@ function SpinWheel(props: {
       />
       <Show when={props.spin} keyed>
         {(spin) => (
-          <div class="flex w-full flex-col gap-4 border-t border-line pt-6">
-            <p class="flex flex-col items-center gap-1 text-center">
-              <span class="font-title text-sm font-semibold tracking-wider text-muted uppercase">
-                {tRich("Your tip · {spins}", {
-                  spins: <span class="font-body">{spinsText(choice().spins)}</span>,
-                })}
-              </span>
-              <span class="font-display text-4xl font-semibold">
-                {formatPrice({ price: choice().price, currency: spin.currency })}
-              </span>
-            </p>
-            <ResultLine result={result()} onClose={() => setResult(null)} />
-            <PayButtons
-              payment={spin.payment}
-              options={options}
-              disabled={busy() || !props.wheel}
-              resetKey={`${choice().spins}\n${choice().price}\n${props.name}\n${message()}`}
-            />
-            <p class="text-center text-sm text-muted">
-              {tRich("Your tip goes straight to the streamer. {terms}", { terms: <TermsLink /> })}
-            </p>
-          </div>
+          <PayFooter
+            label={tRich("Your tip · {spins}", {
+              spins: <span class="font-body">{spinsText(choice().spins)}</span>,
+            })}
+            price={formatPrice({ price: choice().price, currency: spin.currency })}
+            pay={pay}
+            payment={spin.payment}
+            disabled={pay.busy() || !props.wheel}
+            resetKey={`${choice().spins}\n${choice().price}\n${props.name}\n${message()}`}
+          />
         )}
       </Show>
       <Show when={props.subSpins} keyed>
@@ -1700,12 +1676,12 @@ function SpinWheel(props: {
             allowance={props.allowance}
             signedIn={props.viewer !== null}
             paid={props.spin !== null}
-            disabled={busy() || !props.wheel}
-            result={result()}
-            onCloseResult={() => setResult(null)}
+            disabled={pay.busy() || !props.wheel}
+            result={pay.result()}
+            onCloseResult={pay.closeResult}
             onSignIn={props.onSignIn}
             onSignOut={props.onSignOut}
-            onRequest={() => void spinAsSubscriber()}
+            onRequest={spinAsSubscriber}
           />
         )}
       </Show>
