@@ -23,12 +23,6 @@ const add = (a: Counts, b: Counts): Counts => ({
 const reasonLabels: Record<string, string> = {
   "too-late": "Viewer approved after 30 minutes",
   refunded: "Paid after 30 minutes, refunded",
-  "unknown-key": "Unknown or replaced key",
-  "no-device-id": "No device id",
-  "too-many-devices": "More than 5 devices",
-  unattested: "No valid App Attest",
-  missing: "No attestation (older Moblin)",
-  invalid: "Attestation failed",
   "feature-off": "Turned off on the page",
   offline: "Streamer offline",
   "no-wheel": "No wheel in Moblin",
@@ -931,7 +925,11 @@ function Loaded(props: { stats: AdminStats }) {
       label: "Tests",
       caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
     },
-    { id: "moblin", label: "Moblin", caption: `${format(today("moblinConnections"))} today` },
+    {
+      id: "moblin",
+      label: "Moblin",
+      caption: `${format(props.stats.moblin.connectedDevices)} connected`,
+    },
   ];
 
   const server = () => props.stats.server;
@@ -1123,47 +1121,6 @@ function Loaded(props: { stats: AdminStats }) {
             </div>
           </Section>
           <Section id="moblin" title="Moblin">
-            <StepTable
-              steps={[
-                counters().step(
-                  "moblinConnections",
-                  "Connections",
-                  "Moblin connecting to Moblin Cloud with the key of an account.",
-                  ["unknown-key", "no-device-id", "too-many-devices", "unattested"],
-                ),
-                counters().step(
-                  "moblinAttestations",
-                  "App Attest",
-                  "Moblin proving it is the Moblin app when it connects. Connections without one are only counted here until the backend is started with --require-attested-moblin, which refuses them.",
-                  ["missing", "invalid"],
-                ),
-                counters().step(
-                  "deviceControls",
-                  "Controls",
-                  "The streamer or an assistant controlling a device from its device page: going live, muting, switching scene and so on. Watching a device's status is not counted.",
-                  [
-                    "account",
-                    "not-assistant",
-                    "no-remote-control",
-                    "no-control",
-                    "no-go-live",
-                    "not-found",
-                    "offline",
-                    "invalid-control",
-                    "moblin-timeout",
-                    "moblin-error",
-                  ],
-                  {
-                    "not-found": "Device not in the list",
-                    offline: "Device not connected",
-                    "invalid-control": "Unknown control, id or message",
-                    "no-remote-control": "Assistant without remote control access",
-                    "no-control": "Assistant who may only view",
-                    "no-go-live": "Assistant not let go live",
-                  },
-                ),
-              ]}
-            />
             <div class="grid gap-4 lg:grid-cols-2">
               <MessageTable
                 title="Sent to Moblin"

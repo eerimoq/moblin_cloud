@@ -314,7 +314,6 @@ mod tests {
 
     use crate::accounts::Platform;
     use crate::api::test_utils::*;
-    use crate::counters::Counter;
 
     #[tokio::test]
     async fn new_moblin_cloud_keys_keep_the_page() {
@@ -556,14 +555,6 @@ mod tests {
             .await
             .is_err()
         );
-        assert_eq!(
-            api.counters.all(),
-            [Counter {
-                name: "moblinConnectionsFailed:unknown-key".to_string(),
-                today: 1,
-                week: 1,
-                total: 1,
-            }]
-        );
+        assert!(api.counters.all().is_empty());
     }
 }

@@ -186,45 +186,41 @@ pub(super) async fn handle_device_control(
     headers: HeaderMap,
     control: Result<Json<Control>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let result = async {
-        let signed_in = watcher(&api, &headers, &id)?;
-        if access(&api, &signed_in.account, &id) < Access::Control {
-            return Err(failure(
-                "no-control",
-                StatusCode::FORBIDDEN,
-                "The streamer has not let you control Moblin.",
-            ));
-        }
-        let Some(Json(control)) = control.ok().filter(|Json(control)| control.valid()) else {
-            return Err(failure(
-                "invalid-control",
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "unknown control",
-            ));
-        };
-        if matches!(control, Control::SetLive { on: true })
-            && !may(&api, &signed_in.account, &id, Permission::GoLive)
-        {
-            return Err(failure(
-                "no-go-live",
-                StatusCode::FORBIDDEN,
-                "The streamer has not let you go live.",
-            ));
-        }
-        known_device(&api, &id, &device)?;
-        api.remote_control
-            .control((&id, &device), control.clone())
-            .await
-            .map_err(request_failure)?;
-        info!(
-            "{} sent {} to device {device} of page {id}",
-            signed_in.id,
-            serde_json::to_string(&control).unwrap_or_default()
-        );
-        Ok(accepted())
+    let signed_in = watcher(&api, &headers, &id)?;
+    if access(&api, &signed_in.account, &id) < Access::Control {
+        return Err(failure(
+            "no-control",
+            StatusCode::FORBIDDEN,
+            "The streamer has not let you control Moblin.",
+        ));
     }
-    .await;
-    counted(&api, "deviceControls", result)
+    let Some(Json(control)) = control.ok().filter(|Json(control)| control.valid()) else {
+        return Err(failure(
+            "invalid-control",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unknown control",
+        ));
+    };
+    if matches!(control, Control::SetLive { on: true })
+        && !may(&api, &signed_in.account, &id, Permission::GoLive)
+    {
+        return Err(failure(
+            "no-go-live",
+            StatusCode::FORBIDDEN,
+            "The streamer has not let you go live.",
+        ));
+    }
+    known_device(&api, &id, &device)?;
+    api.remote_control
+        .control((&id, &device), control.clone())
+        .await
+        .map_err(request_failure)?;
+    info!(
+        "{} sent {} to device {device} of page {id}",
+        signed_in.id,
+        serde_json::to_string(&control).unwrap_or_default()
+    );
+    Ok(accepted())
 }
 
 #[cfg(test)]
@@ -476,7 +472,6 @@ mod tests {
         answer(&mut socket, &request, Value::Null).await;
         let response = call.await.unwrap().unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        assert_eq!(counter(&api, "deviceControls"), 1);
         let call = tokio::spawn(control(json!({"setMic": {"id": "bt"}})));
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], json!({"setMic": {"id": "bt"}}));
@@ -493,7 +488,6 @@ mod tests {
             response.text().await.unwrap(),
             "Moblin could not answer. Try again."
         );
-        assert_eq!(counter(&api, "deviceControlsFailed:moblin-error"), 1);
         let response = control(json!({"tip": {"name": "x"}})).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let response = control(json!({"setScene": {"id": "C2"}})).await.unwrap();
@@ -514,7 +508,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(counter(&api, "deviceControlsFailed:invalid-control"), 4);
         create_account(&api, "22", "Viewer", "viewer");
         let response = client
             .post(&url)
@@ -524,7 +517,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        assert_eq!(counter(&api, "deviceControlsFailed:not-assistant"), 1);
         let mut events = Events::open(
             &client,
             &format!("http://{address}/account/pages/{page}/devices/A/events"),
@@ -683,8 +675,6 @@ mod tests {
             )
             .await;
         }
-        assert_eq!(counter(&api, "deviceControlsFailed:no-remote-control"), 1);
-        assert_eq!(counter(&api, "deviceControlsFailed:no-control"), 2);
         assert_eq!(grant("control").await.status(), StatusCode::OK);
         assert_eq!(granted(&assistant).await, "control");
         let call = tokio::spawn(control(&assistant, json!({"setTorch": {"on": true}})));
@@ -761,7 +751,6 @@ mod tests {
             response.text().await.unwrap(),
             "The streamer has not let you go live."
         );
-        assert_eq!(counter(&api, "deviceControlsFailed:no-go-live"), 1);
         let call = tokio::spawn(control(&assistant, json!({"setLive": {"on": false}})));
         let request = receive(&mut socket).await;
         assert_eq!(

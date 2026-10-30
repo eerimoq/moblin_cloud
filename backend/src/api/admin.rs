@@ -235,7 +235,6 @@ mod tests {
                 "pending": {"orders": 0, "deliveries": 0},
                 "database": {"bytes": 0, "files": []},
                 "counters": [
-                    {"name": "moblinConnections", "today": 1, "week": 1, "total": 1},
                     {"name": "tipOrders", "today": 2, "week": 2, "total": 2},
                 ],
             })

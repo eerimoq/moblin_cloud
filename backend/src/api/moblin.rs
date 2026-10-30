@@ -14,7 +14,6 @@ pub(super) async fn handle_remote_control_streamer(
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
     let Some(page) = api.accounts.page_of_key(&key) else {
-        api.counters.bump("moblinConnectionsFailed:unknown-key");
         return Err(StatusCode::NOT_FOUND);
     };
     Ok(upgrade.on_upgrade(move |mut socket| async move {
@@ -26,7 +25,6 @@ pub(super) async fn handle_remote_control_streamer(
             }
         };
         let Some(device) = identity.device else {
-            api.counters.bump("moblinConnectionsFailed:no-device-id");
             api.remote_control.refuse(socket).await;
             return;
         };
@@ -34,34 +32,23 @@ pub(super) async fn handle_remote_control_streamer(
             let attested = match &identity.app_attest {
                 Some(attestation) => app_attest
                     .verify(attestation, &identity.challenge)
-                    .map_err(|error| ("invalid", error)),
-                None => Err(("missing", anyhow!("no app attest in identify"))),
+                    .map_err(|error| error.context("invalid app attest")),
+                None => Err(anyhow!("no app attest in identify")),
             };
-            match attested {
-                Ok(()) => api.counters.bump("moblinAttestations"),
-                Err((reason, error)) => {
-                    info!(
-                        "remote control streamer {page} device {device} is not attested: {error:#}"
-                    );
-                    api.counters
-                        .bump(&format!("moblinAttestationsFailed:{reason}"));
-                    if api.require_attested_moblin {
-                        api.counters.bump("moblinConnectionsFailed:unattested");
-                        api.remote_control.refuse(socket).await;
-                        return;
-                    }
+            if let Err(error) = attested {
+                info!("remote control streamer {page} device {device} is not attested: {error:#}");
+                if api.require_attested_moblin {
+                    api.remote_control.refuse(socket).await;
+                    return;
                 }
             }
         }
         let Some(connection) = api.remote_control.connect(&page, &device) else {
             info!("remote control streamer {page} device {device} rejected, too many devices");
-            api.counters
-                .bump("moblinConnectionsFailed:too-many-devices");
             api.remote_control.refuse(socket).await;
             return;
         };
         api.accounts.seen_device(&page, &device);
-        api.counters.bump("moblinConnections");
         api.deliveries.notify();
         api.remote_control
             .serve(connection, socket, |icon| {
@@ -292,9 +279,6 @@ mod tests {
             ])
         );
         assert_eq!(api.remote_control.connected_count(), 5);
-        assert_eq!(counter(&api, "moblinConnections"), 6);
-        assert_eq!(counter(&api, "moblinConnectionsFailed:too-many-devices"), 1);
-        assert_eq!(counter(&api, "moblinConnectionsFailed:no-device-id"), 1);
         let rename = |device: &str, name: &str| {
             client
                 .post(format!("http://{address}/account/devices/{device}/name"))
@@ -382,16 +366,8 @@ mod tests {
         socket
     }
 
-    fn count(api: &Api, name: &str) -> Option<u64> {
-        api.counters
-            .all()
-            .into_iter()
-            .find(|counter| counter.name == name)
-            .map(|counter| counter.total)
-    }
-
     #[tokio::test]
-    async fn unattested_moblins_are_counted_until_required() {
+    async fn unattested_moblins_are_accepted_until_required() {
         let (address, api) = start_attested(false).await;
         let (_, key, id) = streamer(&api);
         let _plain = connect_as(&address, &key, "a").await;
@@ -403,10 +379,6 @@ mod tests {
         )
         .await;
         assert_eq!(api.remote_control.devices(&id).len(), 3);
-        assert_eq!(count(&api, "moblinConnections"), Some(3));
-        assert_eq!(count(&api, "moblinAttestations"), None);
-        assert_eq!(count(&api, "moblinAttestationsFailed:missing"), Some(1));
-        assert_eq!(count(&api, "moblinAttestationsFailed:invalid"), Some(2));
     }
 
     #[tokio::test]
@@ -421,10 +393,6 @@ mod tests {
         .await;
         refused(&address, &key, bogus_identify("a")).await;
         assert!(!api.remote_control.is_connected(&id));
-        assert_eq!(count(&api, "moblinConnections"), None);
-        assert_eq!(count(&api, "moblinConnectionsFailed:unattested"), Some(2));
-        assert_eq!(count(&api, "moblinAttestationsFailed:missing"), Some(1));
-        assert_eq!(count(&api, "moblinAttestationsFailed:invalid"), Some(1));
     }
 
     async fn send_event(socket: &mut Socket, event: Value) {
