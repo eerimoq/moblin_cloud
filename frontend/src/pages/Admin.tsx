@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createSignal, For, Index, onCleanup, onMount, Show, type JSX } from "solid-js";
 import Icon, { type IconName } from "../components/Icon";
 import { subscribe } from "../sse";
 import { cardClass, Notice, Spinner } from "../components/PageParts";
@@ -765,23 +765,23 @@ function Nav(props: { items: NavItem[] }) {
       aria-label="Sections"
       class="flex flex-wrap gap-2 lg:sticky lg:top-24 lg:flex-col lg:flex-nowrap"
     >
-      <For each={props.items}>
+      <Index each={props.items}>
         {(item) => (
           <a
-            href={`#${item.id}`}
+            href={`#${item().id}`}
             class="flex items-baseline gap-2 rounded-2xl border-[1.5px] border-ghost-line bg-ghost px-4 py-2 text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink lg:border-transparent lg:bg-transparent lg:py-2.5 lg:hover:bg-ghost"
           >
-            <span class="font-display text-[16px] font-semibold">{item.label}</span>
+            <span class="font-display text-[16px] font-semibold">{item().label}</span>
             <span
               class={`text-[13px] whitespace-nowrap lg:ml-auto ${
-                item.attention ? "font-semibold text-amber" : "text-muted"
+                item().attention ? "font-semibold text-amber" : "text-muted"
               }`}
             >
-              {item.caption}
+              {item().caption}
             </span>
           </a>
         )}
-      </For>
+      </Index>
     </nav>
   );
 }
