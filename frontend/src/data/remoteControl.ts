@@ -5,7 +5,7 @@ export type Tips = {
   amounts: number[];
 };
 
-export type SpinOption = {
+type SpinOption = {
   spins: number;
   price: number;
 };

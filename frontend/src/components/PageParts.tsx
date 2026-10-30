@@ -53,7 +53,7 @@ export function Notice(props: {
   );
 }
 
-export const platformButtonClass = (platform: Platform) =>
+const platformButtonClass = (platform: Platform) =>
   platform === "twitch"
     ? "bg-twitch text-white hover:bg-twitch-bright"
     : "bg-kick text-black hover:bg-kick-bright";

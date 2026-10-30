@@ -1,6 +1,6 @@
 import Icon from "./Icon";
 
-export type BrandName = "twitch" | "youtube" | "kick" | "facebook" | "obs";
+type BrandName = "twitch" | "youtube" | "kick" | "facebook" | "obs";
 
 /** Each brand's colors, matching the logos the Moblin app ships with. */
 const brandColors: Record<BrandName, { background: string; color: string }> = {

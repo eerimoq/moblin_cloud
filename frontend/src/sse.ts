@@ -1,6 +1,6 @@
-export type EventHandler = (name: string, data: unknown) => void;
+type EventHandler = (name: string, data: unknown) => void;
 
-export type StreamHandlers = {
+type StreamHandlers = {
   onEvent: EventHandler;
   onError?: (status: number | null) => void;
   onOpen?: () => void;

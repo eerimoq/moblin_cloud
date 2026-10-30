@@ -84,7 +84,7 @@ export type TopRightItem =
   | "djiDevices"
   | "systemMonitor";
 
-export type StatusGeneral = {
+type StatusGeneral = {
   batteryCharging?: boolean;
   batteryLevel?: number;
   flame?: "White" | "Yellow" | "Red";
@@ -94,7 +94,7 @@ export type StatusGeneral = {
   isMuted?: boolean;
 };
 
-export type StatusTopRight = {
+type StatusTopRight = {
   audioInfo?: { audioLevel: AudioLevel; numberOfAudioChannels: number };
   bitrateInfo?: { bitsPerSecond: number; totalBytes: number };
   bondingInfo?: { name: string; bytesPerSecond: number; rtt?: number }[];
@@ -262,7 +262,7 @@ export function readSession() {
   }
 }
 
-export function saveSession(session: string | null) {
+function saveSession(session: string | null) {
   try {
     if (session) {
       localStorage.setItem(sessionKey, session);
@@ -272,7 +272,7 @@ export function saveSession(session: string | null) {
   } catch {}
 }
 
-export function takeSignInResult(): {
+function takeSignInResult(): {
   session: string | null;
   failed: boolean;
   link: string | null;
@@ -447,14 +447,13 @@ export const setAssistantRemoteControl = (
     post({ access }),
   );
 
-export const linkAccount = (session: string, token: string) =>
+const linkAccount = (session: string, token: string) =>
   call<Account>("/account/link", session, post({ token }));
 
 export const unlinkAccount = (session: string, platform: Platform) =>
   call<Account>(`/account/unlink/${platform}`, session, post());
 
-export const signOutEverywhere = (session: string) =>
-  call<void>("/account/sign-out", session, post());
+const signOutEverywhere = (session: string) => call<void>("/account/sign-out", session, post());
 
 export const deleteAccount = (session: string) => call<void>("/account/delete", session, post());
 

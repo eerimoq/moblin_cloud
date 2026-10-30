@@ -29,7 +29,7 @@ export type Split = { split: "row" | "column"; sizes: number[]; children: Pane[]
 
 export type Pane = Leaf | Split;
 
-export type Path = number[];
+type Path = number[];
 
 export type LeafActions = {
   change: (leaf: Leaf) => void;
@@ -44,7 +44,7 @@ export type LeafActions = {
 
 type Zone = "left" | "right" | "top" | "bottom" | "center";
 
-export const isSplit = (pane: Pane): pane is Split => "split" in pane;
+const isSplit = (pane: Pane): pane is Split => "split" in pane;
 
 const normalized = (sizes: number[]) => {
   const total = sizes.reduce((sum, size) => sum + size, 0);
@@ -100,7 +100,7 @@ export function sanitize(value: unknown, depth = 0): Pane | null {
   return leaf;
 }
 
-export const leavesOf = (pane: Pane, path: Path = []): { leaf: Leaf; path: Path }[] =>
+const leavesOf = (pane: Pane, path: Path = []): { leaf: Leaf; path: Path }[] =>
   isSplit(pane)
     ? pane.children.flatMap((child, index) => leavesOf(child, [...path, index]))
     : [{ leaf: pane, path }];

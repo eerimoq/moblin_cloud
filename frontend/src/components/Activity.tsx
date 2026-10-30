@@ -8,7 +8,7 @@ import { effectName } from "../data/effects";
 import { formatPrice, providerName, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
 
-export const recentKinds: RecentKind[] = ["tip", "spin", "effect"];
+const recentKinds: RecentKind[] = ["tip", "spin", "effect"];
 
 const kindIcons: Record<RecentKind, IconName> = { tip: "heart", spin: "wheel", effect: "sparkles" };
 
