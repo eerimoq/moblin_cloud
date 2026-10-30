@@ -12,6 +12,10 @@ export const monitorPage = ":monitor";
 
 export const adminPage = ":admin";
 
+export const accountPage = ":account";
+
+export const ownPages = [adminPage, accountPage];
+
 export const rememberChannel = (key: string) => {
   try {
     sessionStorage.setItem(assistedChannelKey, key);
@@ -218,7 +222,7 @@ export function StreamerPicker(props: {
   );
 }
 
-function PageBadge(props: { icon: "grid" | "layout" | "chart" }) {
+function PageBadge(props: { icon: "grid" | "layout" | "chart" | "user" }) {
   return (
     <span class="flex size-8 items-center justify-center rounded-full bg-ghost-hover text-ink">
       <Icon name={props.icon} class="size-5" />
@@ -257,13 +261,15 @@ export function PagePicker(props: {
           ? monitor()
           : props.picked === adminPage
             ? admin()
-            : props.picked
-              ? {
-                  value: props.picked,
-                  label: "Moblin",
-                  badge: () => <DeviceBadge device={undefined} />,
-                }
-              : dashboard()
+            : props.picked === accountPage
+              ? { value: accountPage, label: t("Account"), badge: () => <PageBadge icon="user" /> }
+              : props.picked
+                ? {
+                    value: props.picked,
+                    label: "Moblin",
+                    badge: () => <DeviceBadge device={undefined} />,
+                  }
+                : dashboard()
       }
       options={[
         dashboard(),

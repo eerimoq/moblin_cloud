@@ -1,19 +1,8 @@
-import { createEffect, createSignal, For, Show } from "solid-js";
-import { asset } from "../asset";
+import { createSignal, For, Show } from "solid-js";
 import BrandIcon from "../components/BrandIcon";
 import { ask } from "../components/Modal";
+import { cardClass, ghostButtonClass, Notice } from "../components/PageParts";
 import {
-  AccountMenu,
-  Band,
-  cardClass,
-  CloudHeader,
-  ghostButtonClass,
-  Hero,
-  Notice,
-  Spinner,
-} from "../components/PageParts";
-import {
-  createAccountSession,
   deleteAccount,
   linkUrl,
   type LinkResult,
@@ -21,7 +10,6 @@ import {
   type Account,
 } from "../data/account";
 import { BackendError } from "../data/backend";
-import { pages } from "../data/links";
 import { channelText, type Platform, platformNames, platforms } from "../data/remoteControl";
 import { t } from "../i18n";
 
@@ -217,56 +205,31 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
   );
 }
 
-export default function AccountPage() {
-  const { session, loading, linkResult, signOut, signOutAll } = createAccountSession();
+export default function AccountView(props: {
+  session: string;
+  account: Account;
+  linkResult: LinkResult | null;
+  onAccount: (account: Account) => void;
+  onSignOut: () => void;
+  onSignOutEverywhere: () => Promise<void>;
+}) {
   const [account, setAccount] = createSignal<Account | null>(null);
 
-  createEffect(() => {
-    if (!loading() && !session()) {
-      location.replace(asset(pages.dashboard));
-    }
-  });
-
   return (
-    <>
-      <CloudHeader premium={session()?.account.premium}>
-        <Show when={session()}>
-          {(current) => (
-            <AccountMenu
-              name={current().account.name}
-              avatar={current().account.avatar}
-              items={[{ label: t("Dashboard"), icon: "chart", href: asset(pages.dashboard) }]}
-              onSignOut={signOut}
-            />
-          )}
-        </Show>
-      </CloudHeader>
-      <main>
-        <Hero title={t("Account")}>
-          <a href={asset(pages.dashboard)} class="text-lg text-leaf hover:text-leaf-bright">
-            {t("Back to the dashboard")}
-          </a>
-        </Hero>
-        <Band tight>
-          <Show when={!loading()} fallback={<Spinner />}>
-            <Show when={session()} keyed>
-              {(current) => (
-                <>
-                  <LinkedAccounts
-                    session={current.session}
-                    account={account() ?? current.account}
-                    result={linkResult()}
-                    onAccount={setAccount}
-                    onSignOut={signOut}
-                  />
-                  <SignOutEverywhere onSignOutEverywhere={signOutAll} />
-                  <DeleteAccount session={current.session} onSignOut={signOut} />
-                </>
-              )}
-            </Show>
-          </Show>
-        </Band>
-      </main>
-    </>
+    <div class="flex flex-col gap-8">
+      <h1 class="font-display text-[34px] font-bold">{t("Account")}</h1>
+      <LinkedAccounts
+        session={props.session}
+        account={account() ?? props.account}
+        result={props.linkResult}
+        onAccount={(account) => {
+          setAccount(account);
+          props.onAccount(account);
+        }}
+        onSignOut={props.onSignOut}
+      />
+      <SignOutEverywhere onSignOutEverywhere={props.onSignOutEverywhere} />
+      <DeleteAccount session={props.session} onSignOut={props.onSignOut} />
+    </div>
   );
 }

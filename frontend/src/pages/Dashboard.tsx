@@ -25,8 +25,10 @@ import {
   Avatar,
   channelKey,
   assistedChannelKey,
+  accountPage,
   adminPage,
   monitorPage,
+  ownPages,
   PagePicker,
   rememberChannel,
   StreamerPicker,
@@ -75,6 +77,7 @@ import {
   uploadImage,
   type Access,
   type Account,
+  type LinkResult,
   type Device,
   type Recent,
   type RecentKind,
@@ -113,6 +116,7 @@ import CloudLanding from "../components/CloudLanding";
 const DeviceView = lazy(() => import("./Device"));
 const Monitor = lazy(() => import("./Monitor"));
 const AdminView = lazy(() => import("./Admin"));
+const AccountView = lazy(() => import("./Account"));
 
 export const [fullWindow, setFullWindow] = createSignal(false);
 
@@ -121,7 +125,9 @@ const urlOf = (page: string, device: string) =>
     ? monitorUrl(page)
     : device === adminPage
       ? asset(pages.admin)
-      : deviceUrl(page, device);
+      : device === accountPage
+        ? asset(pages.account)
+        : deviceUrl(page, device);
 
 const accentNames: Record<string, string> = {
   green: t("Green"),
@@ -2284,8 +2290,13 @@ function rememberedChannel() {
 
 function readTarget(remembered: boolean): Target {
   const path = location.pathname.slice(import.meta.env.BASE_URL.length);
-  if (/^admin\/?$/.test(path)) {
-    return { channel: rememberedChannel(), page: null, device: adminPage };
+  const own = path.match(/^(admin|account)\/?$/);
+  if (own) {
+    return {
+      channel: rememberedChannel(),
+      page: null,
+      device: own[1] === "admin" ? adminPage : accountPage,
+    };
   }
   const monitor = path.match(/^monitor\/([^/]+)\/?$/);
   if (monitor) {
@@ -2320,9 +2331,11 @@ function resolve(account: Account, target: Target) {
       ? account.admin
         ? adminPage
         : ""
-      : target.page === page
-        ? target.device
-        : "";
+      : target.device === accountPage
+        ? accountPage
+        : target.page === page
+          ? target.device
+          : "";
   return { channel, page, device };
 }
 
@@ -2761,7 +2774,13 @@ function GoPremium(props: { ref: (dialog: HTMLDialogElement) => void }) {
 const smallButtonClass =
   "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
 
-function SignedIn(props: { session: string; account: Account; onSignOut: () => void }) {
+function SignedIn(props: {
+  session: string;
+  account: Account;
+  linkResult: LinkResult | null;
+  onSignOut: () => void;
+  onSignOutEverywhere: () => Promise<void>;
+}) {
   const [target, setTarget] = createSignal(readTarget(true));
   const shown = createMemo(() => resolve(props.account, target()), undefined, {
     equals: (a, b) => a.channel === b.channel && a.page === b.page && a.device === b.device,
@@ -2840,7 +2859,8 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
       (!device &&
         (location.pathname.startsWith(asset(pages.device)) ||
           location.pathname.startsWith(asset(pages.monitor)) ||
-          location.pathname.startsWith(asset(pages.admin))))
+          location.pathname.startsWith(asset(pages.admin)) ||
+          location.pathname.startsWith(asset(pages.account))))
     ) {
       history.replaceState(
         null,
@@ -2854,15 +2874,17 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
   addEventListener("popstate", onPopState);
   onCleanup(() => removeEventListener("popstate", onPopState));
 
-  const hashes = { dashboard: "", device: "", monitor: "", admin: "" };
+  const hashes = { dashboard: "", device: "", monitor: "", admin: "", account: "" };
   const kindOf = (to: string) =>
     to === monitorPage
       ? "monitor"
       : to === adminPage
         ? "admin"
-        : to
-          ? "device"
-          : ("dashboard" as const);
+        : to === accountPage
+          ? "account"
+          : to
+            ? "device"
+            : ("dashboard" as const);
   const show = (picked: Assisting | null, to: string) => {
     const id = picked?.id ?? props.account.settings.id;
     hashes[kindOf(device())] = location.hash;
@@ -2881,8 +2903,8 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
 
   const pickStreamer = async (key: string) => {
     const picked = props.account.assisting.find((channel) => channelKey(channel) === key) ?? null;
-    if (!device() || device() === monitorPage || device() === adminPage) {
-      show(picked, device() === adminPage ? "" : device());
+    if (!device() || device() === monitorPage || ownPages.includes(device())) {
+      show(picked, ownPages.includes(device()) ? "" : device());
       return;
     }
     const id = picked?.id ?? props.account.settings.id;
@@ -2910,8 +2932,24 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
 
   const content = () => (
     <Show
-      when={device() !== adminPage}
-      fallback={<AdminView session={props.session} onSignOut={props.onSignOut} />}
+      when={!ownPages.includes(device())}
+      fallback={
+        <Show
+          when={device() === adminPage}
+          fallback={
+            <AccountView
+              session={props.session}
+              account={known.get(props.account.settings.id) ?? props.account}
+              linkResult={props.linkResult}
+              onAccount={update}
+              onSignOut={props.onSignOut}
+              onSignOutEverywhere={props.onSignOutEverywhere}
+            />
+          }
+        >
+          <AdminView session={props.session} onSignOut={props.onSignOut} />
+        </Show>
+      }
     >
       <Show when={page()} keyed>
         {(id) => (
@@ -3022,7 +3060,11 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
                       onClick: () => premiumDialog?.showModal(),
                     },
                   ]),
-              { label: t("Account"), icon: "user", href: asset(pages.account) },
+              {
+                label: t("Account"),
+                icon: "user",
+                onClick: () => show(channel(), accountPage),
+              },
             ]}
             onSignOut={props.onSignOut}
           />
@@ -3038,7 +3080,14 @@ function SignedIn(props: { session: string; account: Account; onSignOut: () => v
 }
 
 export default function Dashboard() {
-  const { session, loading, signInFailed, signOut } = createAccountSession();
+  const { session, loading, signInFailed, linkResult, signOut, signOutAll } =
+    createAccountSession();
+
+  createEffect(() => {
+    if (!loading() && !session() && location.pathname !== asset(pages.dashboard)) {
+      history.replaceState(null, "", `${asset(pages.dashboard)}${location.search}${location.hash}`);
+    }
+  });
 
   return (
     <Show
@@ -3065,7 +3114,13 @@ export default function Dashboard() {
       }
     >
       {(current) => (
-        <SignedIn session={current.session} account={current.account} onSignOut={signOut} />
+        <SignedIn
+          session={current.session}
+          account={current.account}
+          linkResult={linkResult()}
+          onSignOut={signOut}
+          onSignOutEverywhere={signOutAll}
+        />
       )}
     </Show>
   );
