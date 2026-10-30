@@ -87,6 +87,16 @@ const menuItemClass =
 
 type CopyTarget = { id: string; label: string };
 
+function popupPlacement(anchor: Element, popup: HTMLElement | undefined, limit: number) {
+  const rect = anchor.getBoundingClientRect();
+  const below = innerHeight - rect.bottom - 12;
+  const above = rect.top - 12;
+  const flip = (popup?.scrollHeight ?? 0) > below && above > below;
+  return { above: flip, room: Math.min(limit, flip ? above : below) };
+}
+
+const popupSide = (above: boolean) => (above ? "bottom-full mb-1" : "top-full mt-1");
+
 function PaneMenu(props: {
   leaf: Leaf;
   actions: LeafActions;
@@ -97,12 +107,15 @@ function PaneMenu(props: {
   const [open, setOpen] = createSignal(false);
   const [copied, setCopied] = createSignal<string[]>([]);
   createEffect(() => open() || setCopied([]));
+  const [placement, setPlacement] = createSignal({ above: false, room: Infinity });
   let menu: HTMLDivElement | undefined;
+  let popup: HTMLDivElement | undefined;
 
   createEffect(() => {
     if (!open()) {
       return;
     }
+    setPlacement(popupPlacement(menu!, popup, Infinity));
     const onPointerDown = (event: PointerEvent) => {
       if (!menu?.contains(event.target as Node)) {
         setOpen(false);
@@ -136,8 +149,10 @@ function PaneMenu(props: {
       </button>
       <Show when={open()}>
         <div
+          ref={(element) => (popup = element)}
           role="menu"
-          class="absolute top-full right-0 z-30 mt-1 flex w-max min-w-48 flex-col rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl"
+          style={{ "max-height": `${placement().room}px` }}
+          class={`absolute right-0 z-30 flex w-max ${popupSide(placement().above)} min-w-48 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
         >
           <button
             type="button"
@@ -228,6 +243,7 @@ function PanePicker(props: {
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = createSignal(false);
+  const [placement, setPlacement] = createSignal({ above: false, room: 320 });
   let picker: HTMLDivElement | undefined;
   let button: HTMLButtonElement | undefined;
   let list: HTMLDivElement | undefined;
@@ -246,6 +262,7 @@ function PanePicker(props: {
     if (!open()) {
       return;
     }
+    setPlacement(popupPlacement(button!, list, 320));
     const selected = items().findIndex((item) => item.getAttribute("aria-selected") === "true");
     focusItem(Math.max(selected, 0));
     const onPointerDown = (event: PointerEvent) => {
@@ -312,7 +329,8 @@ function PanePicker(props: {
           role="listbox"
           aria-label={props.label}
           onKeyDown={onKeyDown}
-          class="absolute top-full left-0 z-30 mt-1 flex max-h-80 w-max max-w-72 min-w-44 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl"
+          style={{ "max-height": `${placement().room}px` }}
+          class={`absolute left-0 z-30 flex w-max ${popupSide(placement().above)} max-w-72 min-w-44 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
         >
           <For each={props.options}>
             {(option) => (
