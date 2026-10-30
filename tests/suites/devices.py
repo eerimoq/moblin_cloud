@@ -307,9 +307,10 @@ class DevicesControls(DevicesTestCase):
         mute = {"setMute": {"on": True}}
         self.assert_equal(self.dashboard.control_device(self.page_id, "K1", mute), {})
         self.wait_until(lambda: mute in device.requests, "the control to reach the device")
-        message = {"sendMessage": {"text": "Drink some water!"}}
+        message = {"sendMessage": {"text": "Drink some water!", "name": "Someone else"}}
         self.assert_equal(self.dashboard.control_device(self.page_id, "K1", message), {})
-        self.wait_until(lambda: message in device.requests, "the message to reach the device")
+        signed = {"sendMessage": {"text": "Drink some water!", "name": self.dashboard.account()["name"]}}
+        self.wait_until(lambda: signed in device.requests, "the message to reach the device under our name")
         for invalid in [
             {},
             {"setMute": {}},

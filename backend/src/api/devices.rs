@@ -194,7 +194,7 @@ pub(super) async fn handle_device_control(
             "The streamer has not let you control Moblin.",
         ));
     }
-    let Some(Json(control)) = control.ok().filter(|Json(control)| control.valid()) else {
+    let Some(Json(mut control)) = control.ok().filter(|Json(control)| control.valid()) else {
         return Err(failure(
             "invalid-control",
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -209,6 +209,9 @@ pub(super) async fn handle_device_control(
             StatusCode::FORBIDDEN,
             "The streamer has not let you go live.",
         ));
+    }
+    if let Control::SendMessage { name, .. } = &mut control {
+        *name = Some(signed_in.account.name().to_string()).filter(|name| !name.is_empty());
     }
     known_device(&api, &id, &device)?;
     api.remote_control
@@ -488,6 +491,17 @@ mod tests {
             response.text().await.unwrap(),
             "Moblin could not answer. Try again."
         );
+        let call = tokio::spawn(control(
+            json!({"sendMessage": {"text": "Hi!", "name": "Someone else"}}),
+        ));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"sendMessage": {"text": "Hi!", "name": "Erik"}})
+        );
+        answer(&mut socket, &request, Value::Null).await;
+        let response = call.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
         let response = control(json!({"tip": {"name": "x"}})).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let response = control(json!({"setScene": {"id": "C2"}})).await.unwrap();

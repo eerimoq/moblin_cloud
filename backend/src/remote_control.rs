@@ -227,6 +227,8 @@ pub enum Control {
     },
     SendMessage {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
     },
 }
 
@@ -254,7 +256,9 @@ pub enum Filter {
 impl Control {
     pub fn valid(&self) -> bool {
         match self {
-            Self::SendMessage { text } => !text.trim().is_empty() && text.chars().count() <= 300,
+            Self::SendMessage { text, .. } => {
+                !text.trim().is_empty() && text.chars().count() <= 300
+            }
             _ => true,
         }
     }
@@ -1372,13 +1376,25 @@ mod tests {
             control(
                 21,
                 Control::SendMessage {
-                    text: "Hi!".to_string()
+                    text: "Hi!".to_string(),
+                    name: None
                 }
             ),
             r#"{"request":{"id":21,"data":{"sendMessage":{"text":"Hi!"}}}}"#
         );
+        assert_eq!(
+            control(
+                22,
+                Control::SendMessage {
+                    text: "Hi!".to_string(),
+                    name: Some("Erik".to_string())
+                }
+            ),
+            r#"{"request":{"id":22,"data":{"sendMessage":{"text":"Hi!","name":"Erik"}}}}"#
+        );
         let message = |text: &str| Control::SendMessage {
             text: text.to_string(),
+            name: None,
         };
         assert!(message("Hi!").valid());
         assert!(!message(" ").valid());
