@@ -427,6 +427,23 @@ impl PayPal {
         }
     }
 
+    async fn get_order(
+        &self,
+        token: &str,
+        order_id: &str,
+        merchant_id: &str,
+    ) -> Result<reqwest::Response> {
+        self.partner(
+            self.client
+                .get(format!("{}/v2/checkout/orders/{order_id}", self.url)),
+        )
+        .bearer_auth(token)
+        .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
+        .send()
+        .await
+        .context("failed to look a PayPal order up")
+    }
+
     pub async fn status(
         &self,
         order_id: &str,
@@ -435,16 +452,7 @@ impl PayPal {
     ) -> Result<PaymentStatus> {
         check_order_id(order_id)?;
         let token = self.token().await?;
-        let response = self
-            .partner(
-                self.client
-                    .get(format!("{}/v2/checkout/orders/{order_id}", self.url)),
-            )
-            .bearer_auth(&token)
-            .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
-            .send()
-            .await
-            .context("failed to look a PayPal order up")?;
+        let response = self.get_order(&token, order_id, merchant_id).await?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(PaymentStatus::Gone);
         }
@@ -484,20 +492,13 @@ impl PayPal {
         check_order_id(order_id).map_err(unknown)?;
         let token = self.token().await.map_err(unknown)?;
         let order: Value = async {
-            self.partner(
-                self.client
-                    .get(format!("{}/v2/checkout/orders/{order_id}", self.url)),
-            )
-            .bearer_auth(&token)
-            .header("PayPal-Auth-Assertion", self.auth_assertion(merchant_id))
-            .send()
-            .await
-            .context("failed to look a PayPal order up")?
-            .checked("look an order up")
-            .await?
-            .json()
-            .await
-            .context("unexpected answer to a PayPal order lookup")
+            self.get_order(&token, order_id, merchant_id)
+                .await?
+                .checked("look an order up")
+                .await?
+                .json()
+                .await
+                .context("unexpected answer to a PayPal order lookup")
         }
         .await
         .map_err(unknown)?;

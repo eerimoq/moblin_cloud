@@ -8,7 +8,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::accounts::Platform;
+use crate::accounts::{Account, AccountError, Platform};
 use crate::paypal::Seller;
 use crate::stripe;
 
@@ -24,12 +24,7 @@ pub(super) async fn handle_account_paypal_connect(
     headers: HeaderMap,
 ) -> Result<Json<SignUpResponse>, (StatusCode, String)> {
     let signed_in = signed_in(&api, &headers)?;
-    if !signed_in.fresh {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "sign in again to connect PayPal".to_string(),
-        ));
-    }
+    freshly_signed_in(&signed_in, "PayPal")?;
     let paypal = api.paypal.as_ref().ok_or_else(payments_unavailable)?;
     let tracking_id = api.remote_control.new_request_id().ok_or((
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -46,7 +41,7 @@ pub(super) async fn handle_account_paypal_connect(
                 "creating a PayPal referral for {} failed: {error:#}",
                 signed_in.id
             );
-            paypal_unreachable()
+            unreachable("PayPal")
         })?;
     api.accounts
         .start_paypal(&signed_in.id, tracking_id.clone())
@@ -61,11 +56,36 @@ pub(super) async fn handle_account_paypal_connect(
     Ok(Json(SignUpResponse { url }))
 }
 
-fn paypal_unreachable() -> (StatusCode, String) {
+fn freshly_signed_in(signed_in: &SignedIn, provider: &str) -> Result<(), (StatusCode, String)> {
+    if !signed_in.fresh {
+        return Err((
+            StatusCode::FORBIDDEN,
+            format!("sign in again to connect {provider}"),
+        ));
+    }
+    Ok(())
+}
+
+fn unreachable(provider: &str) -> (StatusCode, String) {
     (
         StatusCode::BAD_GATEWAY,
-        "PayPal could not be reached".to_string(),
+        format!("{provider} could not be reached"),
     )
+}
+
+fn disconnect(
+    api: &Api,
+    headers: &HeaderMap,
+    provider: &str,
+    forget: impl FnOnce(&Accounts, &str) -> Result<Account, AccountError>,
+) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(api, headers)?;
+    let page = account.page.id;
+    forget(&api.accounts, &id).map_err(account_error)?;
+    info!("{id} disconnected {provider}");
+    api.remote_control.changes.notify(&page, Change::Page);
+    let settings = api.pages.get(&page);
+    Ok(settings_response(api, page, settings))
 }
 
 pub(super) async fn handle_account_paypal_check(
@@ -78,7 +98,7 @@ pub(super) async fn handle_account_paypal_check(
     if let Some(tracking_id) = account.paypal_tracking_id {
         let seller = paypal.seller(&tracking_id).await.map_err(|error| {
             warn!("looking up PayPal tracking ID {tracking_id} of {id} failed: {error:#}");
-            paypal_unreachable()
+            unreachable("PayPal")
         })?;
         let seller = seller.ok_or((
             StatusCode::NOT_FOUND,
@@ -94,13 +114,7 @@ pub(super) async fn handle_account_paypal_disconnect(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.id;
-    api.accounts.forget_paypal(&id).map_err(account_error)?;
-    info!("{id} disconnected PayPal");
-    api.remote_control.changes.notify(&page, Change::Page);
-    let settings = api.pages.get(&page);
-    Ok(settings_response(&api, page, settings))
+    disconnect(&api, &headers, "PayPal", Accounts::forget_paypal)
 }
 
 fn finish_onboarding(
@@ -212,13 +226,9 @@ pub(super) async fn handle_account_stripe_connect(
     headers: HeaderMap,
     request: Option<Json<StripeConnectRequest>>,
 ) -> Result<Json<SignUpResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, fresh } = signed_in(&api, &headers)?;
-    if !fresh {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "sign in again to connect Stripe".to_string(),
-        ));
-    }
+    let signed_in = signed_in(&api, &headers)?;
+    freshly_signed_in(&signed_in, "Stripe")?;
+    let SignedIn { id, account, .. } = signed_in;
     let stripe = api.stripe.as_ref().ok_or_else(payments_unavailable)?;
     let stripe_account_id = match account.stripe_account_id {
         Some(stripe_account_id) => stripe_account_id,
@@ -268,17 +278,10 @@ pub(super) async fn handle_account_stripe_connect(
         .await
         .map_err(|error| {
             warn!("creating a Stripe account link for {id} failed: {error:#}");
-            stripe_unreachable()
+            unreachable("Stripe")
         })?;
     info!("{id} started connecting Stripe account {stripe_account_id}");
     Ok(Json(SignUpResponse { url }))
-}
-
-fn stripe_unreachable() -> (StatusCode, String) {
-    (
-        StatusCode::BAD_GATEWAY,
-        "Stripe could not be reached".to_string(),
-    )
 }
 
 pub(super) async fn handle_account_stripe_check(
@@ -294,7 +297,7 @@ pub(super) async fn handle_account_stripe_check(
             .await
             .map_err(|error| {
                 warn!("looking up Stripe account {stripe_account_id} of {id} failed: {error:#}");
-                stripe_unreachable()
+                unreachable("Stripe")
             })?;
         api.accounts
             .stripe_ready(&id, &stripe_account_id, ready)
@@ -318,13 +321,7 @@ pub(super) async fn handle_account_stripe_disconnect(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.id;
-    api.accounts.forget_stripe(&id).map_err(account_error)?;
-    info!("{id} disconnected Stripe");
-    api.remote_control.changes.notify(&page, Change::Page);
-    let settings = api.pages.get(&page);
-    Ok(settings_response(&api, page, settings))
+    disconnect(&api, &headers, "Stripe", Accounts::forget_stripe)
 }
 
 #[cfg(test)]
