@@ -770,11 +770,9 @@ export default function Monitor(props: {
             <Activity
               session={props.session}
               page={props.assisted ? props.page : undefined}
-              kinds={leaf().kinds ?? []}
+              kinds={leaf().kinds}
               recentChanges={props.recentChanges}
-              onKinds={(kinds) =>
-                actions.change({ ...leaf(), kinds: kinds.length > 0 ? kinds : undefined })
-              }
+              onKinds={(kinds) => actions.change({ ...leaf(), kinds })}
               onSignOut={props.onSignOut}
             />
           ) : panel === "web" ? (

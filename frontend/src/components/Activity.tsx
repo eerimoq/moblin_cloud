@@ -94,9 +94,9 @@ function ActivityRow(props: {
 export default function Activity(props: {
   session: string;
   page: string | undefined;
-  kinds: RecentKind[];
+  kinds: RecentKind[] | undefined;
   recentChanges: number;
-  onKinds: (kinds: RecentKind[]) => void;
+  onKinds: (kinds: RecentKind[] | undefined) => void;
   onSignOut: () => void;
 }) {
   const guard = (error: unknown) => {
@@ -122,6 +122,8 @@ export default function Activity(props: {
     ),
   );
 
+  const shownKinds = () => props.kinds ?? recentKinds;
+
   const items = createMemo(() => {
     const lists = recent();
     if (!lists) {
@@ -136,7 +138,7 @@ export default function Activity(props: {
         .forEach((item) => arrivals.set(item.id, Date.now()));
     }
     latest = newest;
-    const kinds = props.kinds.length > 0 ? props.kinds : recentKinds;
+    const kinds = shownKinds();
     let oldest = 0;
     for (const kind of kinds) {
       const list = lists[kind];
@@ -164,8 +166,7 @@ export default function Activity(props: {
 
   const more = () => {
     const lists = recent();
-    const kinds = props.kinds.length > 0 ? props.kinds : recentKinds;
-    return lists ? kinds.filter((kind) => lists[kind].more) : [];
+    return lists ? shownKinds().filter((kind) => lists[kind].more) : [];
   };
 
   const showMore = async () => {
@@ -183,9 +184,9 @@ export default function Activity(props: {
   }, guard);
 
   const toggle = (kind: RecentKind) => {
-    const shown = props.kinds.length > 0 ? props.kinds : recentKinds;
+    const shown = shownKinds();
     const next = shown.includes(kind) ? shown.filter((other) => other !== kind) : [...shown, kind];
-    props.onKinds(next.length === recentKinds.length || next.length === 0 ? [] : next);
+    props.onKinds(next.length === recentKinds.length ? undefined : next);
   };
 
   return (
@@ -195,7 +196,7 @@ export default function Activity(props: {
           {(kind) => (
             <button
               type="button"
-              aria-pressed={props.kinds.length === 0 || props.kinds.includes(kind)}
+              aria-pressed={shownKinds().includes(kind)}
               onClick={() => toggle(kind)}
               class="inline-flex h-7 items-center gap-1 rounded-full border border-line px-2.5 text-[13px] font-semibold text-muted transition-colors hover:bg-ghost aria-pressed:border-leaf/50 aria-pressed:bg-ghost aria-pressed:text-ink"
             >
