@@ -902,6 +902,12 @@ function Loaded(props: { stats: AdminStats }) {
 
   const navItems = (): NavItem[] => [
     {
+      id: "server",
+      label: "Server",
+      caption: props.stats.server.version,
+      attention: integrations().some(([, , on]) => !on) || serverErrors() > 0,
+    },
+    {
       id: "problems",
       label: "Problems",
       caption: `${format(problemsToday())} today`,
@@ -926,12 +932,6 @@ function Loaded(props: { stats: AdminStats }) {
       caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
     },
     { id: "moblin", label: "Moblin", caption: `${format(today("moblinConnections"))} today` },
-    {
-      id: "server",
-      label: "Server",
-      caption: props.stats.server.version,
-      attention: integrations().some(([, , on]) => !on) || serverErrors() > 0,
-    },
   ];
 
   const server = () => props.stats.server;
@@ -1001,6 +1001,62 @@ function Loaded(props: { stats: AdminStats }) {
       <div class="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
         <Nav items={navItems()} />
         <div class="flex min-w-0 flex-col gap-10">
+          <Section id="server" title="Server" hint="The backend, right now.">
+            <div class="flex flex-col gap-4">
+              <div class="grid gap-4 sm:grid-cols-3">
+                <Tile
+                  label="Version"
+                  value={server().version}
+                  hint="The release tag the backend image was built from, dev for local builds."
+                />
+                <Tile
+                  label="Uptime"
+                  value={formatDuration(Math.max(0, server().now - server().started))}
+                  hint={`Running since ${new Date(server().started * 1000).toLocaleString("en")}, the last deploy or restart.`}
+                />
+                <Tile
+                  label="Memory"
+                  value={server().memory === null ? "–" : formatBytes(server().memory ?? 0)}
+                  hint="Resident memory of the backend process. Only known on Linux."
+                />
+              </div>
+              <div
+                class={`${cardClass} flex-row! flex-wrap gap-x-6! gap-y-2! px-5! py-3! sm:px-5! sm:py-3!`}
+              >
+                <For each={integrations()}>
+                  {([label, hint, on]) => (
+                    <span class="flex items-center gap-2 text-[15px] font-semibold text-ink-2">
+                      <span
+                        class={`size-2 rounded-full ${on ? "bg-leaf" : "bg-amber"}`}
+                        aria-hidden="true"
+                      />
+                      {label}
+                      <span class={`font-mono text-[13px] ${on ? "text-muted" : "text-amber-ink"}`}>
+                        {on ? "On" : "Off"}
+                      </span>
+                      <Info>{hint}</Info>
+                    </span>
+                  )}
+                </For>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <Tile
+                  label="Requests"
+                  value={format(server().requests.total)}
+                  hint="HTTP requests answered since the backend started, Moblin's WebSocket connections included. Counted in memory, so a restart starts over."
+                />
+                <Tile
+                  label="Server errors"
+                  value={format(serverErrors())}
+                  hint="Requests answered with a 5xx status since the backend started."
+                  attention={serverErrors() > 0}
+                />
+              </div>
+              <StatusTable statuses={statuses()} total={server().requests.total} />
+              <EndpointTable endpoints={server().requests.endpoints} />
+              <DatabaseTable database={props.stats.database} />
+            </div>
+          </Section>
           <Section
             id="problems"
             title="Problems"
@@ -1119,50 +1175,6 @@ function Loaded(props: { stats: AdminStats }) {
                 hint="Remote control messages Moblin sent since the backend started, per event, with responses split by their result and messages that could not be read as invalid. Counted in memory, so a restart starts over."
                 kinds={props.stats.moblin.messages.received}
               />
-            </div>
-          </Section>
-          <Section id="server" title="Server" hint="The backend, right now.">
-            <div class="flex flex-col gap-4">
-              <div class="grid gap-4 sm:grid-cols-3">
-                <Tile
-                  label="Version"
-                  value={server().version}
-                  hint="The release tag the backend image was built from, dev for local builds."
-                />
-                <Tile
-                  label="Uptime"
-                  value={formatDuration(Math.max(0, server().now - server().started))}
-                  hint={`Running since ${new Date(server().started * 1000).toLocaleString("en")}, the last deploy or restart.`}
-                />
-                <Tile
-                  label="Memory"
-                  value={server().memory === null ? "–" : formatBytes(server().memory ?? 0)}
-                  hint="Resident memory of the backend process. Only known on Linux."
-                />
-              </div>
-              <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <For each={integrations()}>
-                  {([label, hint, on]) => (
-                    <Tile label={label} value={on ? "On" : "Off"} hint={hint} attention={!on} />
-                  )}
-                </For>
-              </div>
-              <div class="grid gap-4 sm:grid-cols-2">
-                <Tile
-                  label="Requests"
-                  value={format(server().requests.total)}
-                  hint="HTTP requests answered since the backend started, Moblin's WebSocket connections included. Counted in memory, so a restart starts over."
-                />
-                <Tile
-                  label="Server errors"
-                  value={format(serverErrors())}
-                  hint="Requests answered with a 5xx status since the backend started."
-                  attention={serverErrors() > 0}
-                />
-              </div>
-              <StatusTable statuses={statuses()} total={server().requests.total} />
-              <EndpointTable endpoints={server().requests.endpoints} />
-              <DatabaseTable database={props.stats.database} />
             </div>
           </Section>
         </div>
