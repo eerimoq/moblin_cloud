@@ -91,15 +91,30 @@ const menuItemClass =
 
 type CopyTarget = { id: string; label: string };
 
-function popupPlacement(anchor: Element, popup: HTMLElement | undefined, limit: number) {
+type Placement = { above: boolean; right: boolean; room: number };
+
+function popupPlacement(
+  anchor: Element,
+  popup: HTMLElement | undefined,
+  limit: number,
+  right: boolean,
+): Placement {
   const rect = anchor.getBoundingClientRect();
   const below = innerHeight - rect.bottom - 12;
   const above = rect.top - 12;
   const flip = (popup?.scrollHeight ?? 0) > below && above > below;
-  return { above: flip, room: Math.min(limit, flip ? above : below) };
+  const width = popup?.offsetWidth ?? 0;
+  const fitsLeft = rect.left + width <= innerWidth - 12;
+  const fitsRight = rect.right - width >= 12;
+  return {
+    above: flip,
+    right: right ? fitsRight || !fitsLeft : !fitsLeft && fitsRight,
+    room: Math.min(limit, flip ? above : below),
+  };
 }
 
-const popupSide = (above: boolean) => (above ? "bottom-full mb-1" : "top-full mt-1");
+const popupSide = (placement: Placement) =>
+  `${placement.above ? "bottom-full mb-1" : "top-full mt-1"} ${placement.right ? "right-0" : "left-0"}`;
 
 function PaneMenu(props: {
   leaf: Leaf;
@@ -111,7 +126,11 @@ function PaneMenu(props: {
   const [open, setOpen] = createSignal(false);
   const [copied, setCopied] = createSignal<string[]>([]);
   createEffect(() => open() || setCopied([]));
-  const [placement, setPlacement] = createSignal({ above: false, room: Infinity });
+  const [placement, setPlacement] = createSignal<Placement>({
+    above: false,
+    right: true,
+    room: Infinity,
+  });
   let menu: HTMLDivElement | undefined;
   let popup: HTMLDivElement | undefined;
 
@@ -119,7 +138,7 @@ function PaneMenu(props: {
     if (!open()) {
       return;
     }
-    setPlacement(popupPlacement(menu!, popup, Infinity));
+    setPlacement(popupPlacement(menu!, popup, Infinity, true));
     const onPointerDown = (event: PointerEvent) => {
       if (!menu?.contains(event.target as Node)) {
         setOpen(false);
@@ -156,7 +175,7 @@ function PaneMenu(props: {
           ref={(element) => (popup = element)}
           role="menu"
           style={{ "max-height": `${placement().room}px` }}
-          class={`absolute right-0 z-30 flex w-max ${popupSide(placement().above)} min-w-48 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
+          class={`absolute z-30 flex w-max ${popupSide(placement())} min-w-48 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
         >
           <button
             type="button"
@@ -247,7 +266,11 @@ function PanePicker(props: {
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = createSignal(false);
-  const [placement, setPlacement] = createSignal({ above: false, room: 320 });
+  const [placement, setPlacement] = createSignal<Placement>({
+    above: false,
+    right: false,
+    room: 320,
+  });
   let picker: HTMLDivElement | undefined;
   let button: HTMLButtonElement | undefined;
   let list: HTMLDivElement | undefined;
@@ -266,7 +289,7 @@ function PanePicker(props: {
     if (!open()) {
       return;
     }
-    setPlacement(popupPlacement(button!, list, 320));
+    setPlacement(popupPlacement(button!, list, 320, false));
     const selected = items().findIndex((item) => item.getAttribute("aria-selected") === "true");
     focusItem(Math.max(selected, 0));
     const onPointerDown = (event: PointerEvent) => {
@@ -334,7 +357,7 @@ function PanePicker(props: {
           aria-label={props.label}
           onKeyDown={onKeyDown}
           style={{ "max-height": `${placement().room}px` }}
-          class={`absolute left-0 z-30 flex w-max ${popupSide(placement().above)} max-w-72 min-w-44 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
+          class={`absolute z-30 flex w-max ${popupSide(placement())} max-w-72 min-w-44 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
         >
           <For each={props.options}>
             {(option) => (
