@@ -396,8 +396,7 @@ export default function MoblinScreen(props: {
 
   const outerWidth = screenWidth + 2 * bezel;
   const outerHeight = screenHeight + 2 * bezel;
-  const scale = () =>
-    Math.min(1.2, width() / outerWidth, props.fit ? height() / outerHeight : Infinity);
+  const scale = () => Math.min(width() / outerWidth, props.fit ? height() / outerHeight : 1.2);
   const disabled = (key: string) =>
     !props.connected || !props.remoteControl || props.pending.includes(key);
   const confirmed = async (question: string, action: string, control: Control) => {

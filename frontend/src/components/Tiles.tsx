@@ -1,10 +1,12 @@
 import {
   createContext,
+  createEffect,
   createSignal,
   For,
   Index,
   type JSX,
   Match,
+  on,
   onCleanup,
   Show,
   Switch,
@@ -44,6 +46,8 @@ export type LeafActions = {
   change: (leaf: Leaf) => void;
   split: (direction: Split["split"]) => void;
   remove: (() => void) | null;
+  maximized: boolean;
+  maximize: (() => void) | null;
   drag: {
     draggable: true;
     onDragStart: (event: DragEvent) => void;
@@ -360,8 +364,20 @@ type Dragging = {
 
 const DragContext = createContext<Dragging>();
 
+type Maximizing = {
+  path: () => Path | null;
+  available: () => boolean;
+  toggle: (path: Path) => void;
+  change: (layout: Pane) => void;
+};
+
+const MaximizeContext = createContext<Maximizing>();
+
 const samePath = (a: Path | null, b: Path) =>
   a !== null && a.length === b.length && a.every((index, at) => index === b[at]);
+
+const within = (path: Path, maximized: Path) =>
+  path.length <= maximized.length && path.every((index, at) => index === maximized[at]);
 
 function LeafSlot(props: { path: Path; class?: string; children: JSX.Element }) {
   const dragging = useContext(DragContext)!;
@@ -418,6 +434,7 @@ function SplitView(props: {
   leaf: (leaf: () => Leaf, actions: LeafActions) => JSX.Element;
   added: () => Leaf;
 }) {
+  const maximizing = useContext(MaximizeContext)!;
   const [dragged, setDragged] = createSignal<number[] | null>(null);
   const sizes = () => dragged() ?? props.split.sizes;
   const row = () => props.split.split === "row";
@@ -487,20 +504,29 @@ function SplitView(props: {
       class={`relative flex size-full min-h-0 min-w-0 ${row() ? "flex-row" : "flex-col"}`}
     >
       <Index each={props.split.children}>
-        {(child, index) => (
-          <div class="flex min-h-0 min-w-0" style={{ flex: `${sizes()[index] ?? 0} 1 0px` }}>
-            <Node
-              pane={child()}
-              path={[...props.path, index]}
-              root={props.root}
-              onChange={props.onChange}
-              leaf={props.leaf}
-              added={props.added}
-            />
-          </div>
-        )}
+        {(child, index) => {
+          const shown = () => {
+            const maximized = maximizing.path();
+            return maximized === null ? null : within([...props.path, index], maximized);
+          };
+          return (
+            <div
+              class={`min-h-0 min-w-0 ${shown() === false ? "hidden" : "flex"}`}
+              style={{ flex: shown() ? "1 1 0px" : `${sizes()[index] ?? 0} 1 0px` }}
+            >
+              <Node
+                pane={child()}
+                path={[...props.path, index]}
+                root={props.root}
+                onChange={props.onChange}
+                leaf={props.leaf}
+                added={props.added}
+              />
+            </div>
+          );
+        }}
       </Index>
-      <Index each={props.split.children.slice(1)}>
+      <Index each={maximizing.path() === null ? props.split.children.slice(1) : []}>
         {(_, at) => {
           const index = at + 1;
           return (
@@ -543,6 +569,7 @@ function Node(props: {
   added: () => Leaf;
 }) {
   const dragging = useContext(DragContext)!;
+  const maximizing = useContext(MaximizeContext)!;
   return (
     <Switch>
       <Match when={isSplit(props.pane) && props.pane}>
@@ -562,7 +589,7 @@ function Node(props: {
           <LeafSlot path={props.path}>
             {props.leaf(
               () => leaf() as Leaf,
-              actionsOf(props, () => props.path, dragging),
+              actionsOf(props, () => props.path, dragging, maximizing),
             )}
           </LeafSlot>
         )}
@@ -575,11 +602,18 @@ const actionsOf = (
   props: { root: () => Pane; onChange: (layout: Pane) => void; added: () => Leaf },
   path: () => Path,
   dragging: Dragging,
+  maximizing: Maximizing,
 ): LeafActions => ({
-  change: (leaf) => props.onChange(updateAt(props.root(), path(), () => leaf)),
+  change: (leaf) => maximizing.change(updateAt(props.root(), path(), () => leaf)),
   split: (direction) => props.onChange(splitAt(props.root(), path(), direction, props.added())),
   get remove() {
     return path().length > 0 ? () => props.onChange(removeAt(props.root(), path())) : null;
+  },
+  get maximized() {
+    return samePath(maximizing.path(), path());
+  },
+  get maximize() {
+    return maximizing.available() ? () => maximizing.toggle(path()) : null;
   },
   drag: {
     draggable: true,
@@ -611,6 +645,24 @@ export default function Tiles(props: {
     return { panel: panelKinds.find((kind) => !shown.has(kind)) ?? "web" };
   };
   const shared = { root: () => props.layout, onChange: props.onChange, added };
+  const [maximized, setMaximized] = createSignal<Path | null>(null);
+  let changed: Pane | null = null;
+  createEffect(
+    on(
+      () => props.layout,
+      (layout) => layout !== changed && setMaximized(null),
+      { defer: true },
+    ),
+  );
+  const maximizing: Maximizing = {
+    path: () => (wide() ? maximized() : null),
+    available: () => wide() && isSplit(props.layout),
+    toggle: (path) => setMaximized(samePath(maximized(), path) ? null : path),
+    change: (layout) => {
+      changed = layout;
+      props.onChange(layout);
+    },
+  };
   const [from, setFrom] = createSignal<Path | null>(null);
   const changes = (moved: (from: Path) => Pane) => {
     const dragged = from();
@@ -640,35 +692,37 @@ export default function Tiles(props: {
 
   return (
     <DragContext.Provider value={dragging}>
-      <Show
-        when={wide()}
-        fallback={
-          <div class="flex h-full flex-col overflow-y-auto p-[3px]">
-            <For each={leavesOf(props.layout)}>
-              {(entry) => (
-                <LeafSlot path={entry.path} class="h-[30rem] w-full shrink-0">
-                  {props.leaf(
-                    () => entry.leaf,
-                    actionsOf(shared, () => entry.path, dragging),
-                  )}
-                </LeafSlot>
-              )}
-            </For>
+      <MaximizeContext.Provider value={maximizing}>
+        <Show
+          when={wide()}
+          fallback={
+            <div class="flex h-full flex-col overflow-y-auto p-[3px]">
+              <For each={leavesOf(props.layout)}>
+                {(entry) => (
+                  <LeafSlot path={entry.path} class="h-[30rem] w-full shrink-0">
+                    {props.leaf(
+                      () => entry.leaf,
+                      actionsOf(shared, () => entry.path, dragging, maximizing),
+                    )}
+                  </LeafSlot>
+                )}
+              </For>
+            </div>
+          }
+        >
+          <div class="relative flex size-full p-[3px]">
+            <WindowEdges />
+            <Node
+              pane={props.layout}
+              path={[]}
+              root={shared.root}
+              onChange={props.onChange}
+              leaf={props.leaf}
+              added={added}
+            />
           </div>
-        }
-      >
-        <div class="relative flex size-full p-[3px]">
-          <WindowEdges />
-          <Node
-            pane={props.layout}
-            path={[]}
-            root={shared.root}
-            onChange={props.onChange}
-            leaf={props.leaf}
-            added={added}
-          />
-        </div>
-      </Show>
+        </Show>
+      </MaximizeContext.Provider>
     </DragContext.Provider>
   );
 }

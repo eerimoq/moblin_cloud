@@ -71,6 +71,8 @@ export type IconName =
   | "target"
   | "video"
   | "layout"
+  | "maximize"
+  | "minimize"
   | "more";
 
 export const kindIcons: Record<RecentKind, IconName> = {
@@ -353,6 +355,12 @@ export default function Icon(props: Props) {
         <Match when={props.name === "layout"}>
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <path d="M12 4v16M12 12h9" />
+        </Match>
+        <Match when={props.name === "maximize"}>
+          <path d="M14 4h6v6M10 20H4v-6M20 4l-6 6M4 20l6-6" />
+        </Match>
+        <Match when={props.name === "minimize"}>
+          <path d="M4 14h6v6M20 10h-6V4M10 14l-6 6M14 10l6-6" />
         </Match>
         <Match when={props.name === "more"}>
           <circle cx="5" cy="12" r="1" />

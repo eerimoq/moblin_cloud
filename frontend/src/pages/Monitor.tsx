@@ -478,6 +478,20 @@ function PaneFrame(props: {
             {props.leaf.hidePreview ? t("Show stream preview") : t("Hide stream preview")}
           </button>
         </Show>
+        <Show when={props.actions.maximize}>
+          {(maximize) => (
+            <button
+              type="button"
+              aria-pressed={props.actions.maximized}
+              aria-label={props.actions.maximized ? t("Restore pane") : t("Maximize pane")}
+              title={props.actions.maximized ? t("Restore pane") : t("Maximize pane")}
+              onClick={() => maximize()()}
+              class="grid size-7 shrink-0 place-items-center rounded-full text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink"
+            >
+              <Icon name={props.actions.maximized ? "minimize" : "maximize"} class="size-4" />
+            </button>
+          )}
+        </Show>
         <PaneMenu
           leaf={props.leaf}
           actions={props.actions}
