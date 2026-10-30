@@ -409,7 +409,7 @@
   "Very hot": "Erittäin kuuma",
   "View and control": "Katselu ja ohjaus",
   "View only": "Vain katselu",
-  "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.": "Vain katselu näyttää laitesivun puhelimen ja kaavioiden kanssa. Katselu ja ohjaus antaa myös käyttää sen painikkeita.",
+  "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.": "Vain katselu näyttää vain laitesivun puhelimen ja kaavioiden kanssa ja antaa lähettää striimaajalle viestejä. Katselu ja ohjaus antaa käyttää myös sen painikkeita.",
   "Viewers can send messages": "Katsojat voivat lähettää viestejä",
   "Viewers can't spin the wheel right now, as Moblin is not connected.": "Katsojat eivät voi pyörittää pyörää juuri nyt, koska Moblin ei ole yhteydessä.",
   "Viewers can't spin the wheel right now, as no wheel is picked under Settings → Moblin Cloud → Wheel of luck in Moblin.": "Katsojat eivät voi pyörittää pyörää juuri nyt, koska Moblinissa ei ole valittu pyörää kohdassa Asetukset → Moblin Cloud → Onnenpyörä.",

@@ -135,7 +135,7 @@ export default function DeviceView(props: {
                   session={props.session}
                   page={props.page}
                   device={props.device}
-                  enabled={props.remoteControl && online()}
+                  enabled={online()}
                   onSignOut={props.onSignOut}
                 />
               </div>

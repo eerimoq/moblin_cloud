@@ -187,7 +187,9 @@ pub(super) async fn handle_device_control(
     control: Result<Json<Control>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let signed_in = watcher(&api, &headers, &id)?;
-    if access(&api, &signed_in.account, &id) < Access::Control {
+    if !matches!(control, Ok(Json(Control::SendMessage { .. })))
+        && access(&api, &signed_in.account, &id) < Access::Control
+    {
         return Err(failure(
             "no-control",
             StatusCode::FORBIDDEN,
@@ -598,7 +600,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn assistants_view_and_control_the_device_only_when_allowed() {
+    async fn assistants_view_and_send_messages_but_control_the_device_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
         let (session, key, page) = streamer(&api);
@@ -689,6 +691,20 @@ mod tests {
             )
             .await;
         }
+        let call = tokio::spawn(control(&assistant, json!({"sendMessage": {"text": "Hi!"}})));
+        let request = loop {
+            let request = receive(&mut socket).await;
+            if request["request"]["data"].get("sendMessage").is_some() {
+                break request;
+            }
+            answer(&mut socket, &request, Value::Null).await;
+        };
+        assert_eq!(
+            request["request"]["data"],
+            json!({"sendMessage": {"text": "Hi!", "name": "Mod 21"}})
+        );
+        answer(&mut socket, &request, Value::Null).await;
+        assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
         assert_eq!(grant("control").await.status(), StatusCode::OK);
         assert_eq!(granted(&assistant).await, "control");
         let call = tokio::spawn(control(&assistant, json!({"setTorch": {"on": true}})));

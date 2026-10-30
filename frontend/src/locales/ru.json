@@ -409,7 +409,7 @@
   "Very hot": "Очень горячо",
   "View and control": "Просмотр и управление",
   "View only": "Только просмотр",
-  "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.": "«Только просмотр» показывает страницу устройства с телефоном и графиками. «Просмотр и управление» позволяет также пользоваться её кнопками.",
+  "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.": "Только просмотр показывает лишь страницу устройства с телефоном и графиками и позволяет отправлять стримеру сообщения. Просмотр и управление позволяет ещё пользоваться его кнопками.",
   "Viewers can send messages": "Зрители могут отправлять сообщения",
   "Viewers can't spin the wheel right now, as Moblin is not connected.": "Зрители сейчас не могут крутить колесо, так как Moblin не подключён.",
   "Viewers can't spin the wheel right now, as no wheel is picked under Settings → Moblin Cloud → Wheel of luck in Moblin.": "Зрители сейчас не могут крутить колесо, так как в Moblin в Настройки → Moblin Cloud → Колесо удачи не выбрано колесо.",

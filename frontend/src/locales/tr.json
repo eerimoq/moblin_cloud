@@ -409,7 +409,7 @@
   "Very hot": "Çok sıcak",
   "View and control": "Görüntüle ve kontrol et",
   "View only": "Yalnızca görüntüle",
-  "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.": "Yalnızca görüntüle, telefonun ve grafiklerin olduğu cihaz sayfasını gösterir. Görüntüle ve kontrol et ise düğmelerini de kullanmalarını sağlar.",
+  "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.": "Sadece görüntüleme, telefonu ve grafikleri içeren cihaz sayfasını gösterir ve yayıncıya mesaj göndermelerini sağlar. Görüntüleme ve kontrol ise düğmelerini de kullanmalarına izin verir.",
   "Viewers can send messages": "İzleyiciler mesaj gönderebilir",
   "Viewers can't spin the wheel right now, as Moblin is not connected.": "Moblin bağlı olmadığı için izleyiciler şu anda çarkı çeviremiyor.",
   "Viewers can't spin the wheel right now, as no wheel is picked under Settings → Moblin Cloud → Wheel of luck in Moblin.": "Moblin'de Ayarlar → Moblin Cloud → Şans çarkı altında çark seçilmediği için izleyiciler şu anda çarkı çeviremiyor.",

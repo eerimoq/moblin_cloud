@@ -1288,7 +1288,7 @@ function AccessPicker(props: {
       </select>
       <span id={help} role="tooltip" class={tooltipClass}>
         {t(
-          "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.",
+          "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.",
         )}
       </span>
     </span>

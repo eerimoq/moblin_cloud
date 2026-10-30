@@ -409,7 +409,7 @@
   "Very hot": "非常燙",
   "View and control": "檢視與控制",
   "View only": "僅檢視",
-  "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.": "「僅檢視」只會顯示有手機和圖表的裝置頁面。「檢視與控制」還能使用其中的按鈕。",
+  "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.": "僅檢視只會顯示有手機和圖表的裝置頁面,並可傳訊息給實況主。檢視與控制還能使用裝置上的按鈕。",
   "Viewers can send messages": "允許觀眾傳送留言",
   "Viewers can't spin the wheel right now, as Moblin is not connected.": "觀眾目前無法轉動轉盤，因為 Moblin 未連線。",
   "Viewers can't spin the wheel right now, as no wheel is picked under Settings → Moblin Cloud → Wheel of luck in Moblin.": "觀眾目前無法轉動轉盤，因為 Moblin 的「設定 → Moblin Cloud → 幸運轉盤」中未選擇轉盤。",

@@ -409,7 +409,7 @@
   "Very hot": "Très chaud",
   "View and control": "Affichage et contrôle",
   "View only": "Lecture seule",
-  "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.": "Lecture seule affiche la page de l'appareil, avec le téléphone et les graphiques. Affichage et contrôle permet aussi d'utiliser ses boutons.",
+  "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.": "Lecture seule affiche uniquement la page de l'appareil, avec le téléphone et les graphiques, et permet d'envoyer des messages au streamer. Lecture et contrôle permet aussi d'utiliser ses boutons.",
   "Viewers can send messages": "Les viewers peuvent envoyer des messages",
   "Viewers can't spin the wheel right now, as Moblin is not connected.": "Les viewers ne peuvent pas faire tourner la roue pour le moment, car Moblin n'est pas connecté.",
   "Viewers can't spin the wheel right now, as no wheel is picked under Settings → Moblin Cloud → Wheel of luck in Moblin.": "Les viewers ne peuvent pas faire tourner la roue pour le moment, car aucune roue n'est choisie dans Moblin sous Réglages → Moblin Cloud → Roue de la fortune.",

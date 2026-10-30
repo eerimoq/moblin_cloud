@@ -409,7 +409,7 @@
   "Very hot": "Mycket varmt",
   "View and control": "Visa och styra",
   "View only": "Endast visning",
-  "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.": "Endast visning visar enhetssidan, med telefonen och graferna. Visa och styra låter dem också använda knapparna.",
+  "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.": "Endast visning visar enhetssidan, med telefonen och graferna, och låter dem skicka meddelanden till streamern. Visa och styra låter dem också använda knapparna.",
   "Viewers can send messages": "Tittare kan skicka meddelanden",
   "Viewers can't spin the wheel right now, as Moblin is not connected.": "Tittare kan inte snurra hjulet just nu eftersom Moblin inte är ansluten.",
   "Viewers can't spin the wheel right now, as no wheel is picked under Settings → Moblin Cloud → Wheel of luck in Moblin.": "Tittare kan inte snurra hjulet just nu eftersom inget hjul är valt i Moblin under Inställningar → Moblin Cloud → Lyckohjul.",

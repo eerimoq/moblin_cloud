@@ -409,7 +409,7 @@
   "Very hot": "非常に高温",
   "View and control": "閲覧と操作",
   "View only": "閲覧のみ",
-  "View only shows the device page, with the phone and the graphs. View and control also lets them use its buttons.": "「閲覧のみ」では、スマホとグラフのあるデバイスページを表示できます。「閲覧と操作」では、ボタンも使えます。",
+  "View only shows the device page, with the phone and the graphs, and lets them send the streamer messages. View and control also lets them use its buttons.": "「閲覧のみ」では、スマホとグラフが表示されるデバイスページだけが見られ、配信者にメッセージを送れます。「閲覧と操作」では、ボタンも使えます。",
   "Viewers can send messages": "視聴者がメッセージを送れる",
   "Viewers can't spin the wheel right now, as Moblin is not connected.": "Moblinが接続されていないため、現在視聴者はホイールを回せません。",
   "Viewers can't spin the wheel right now, as no wheel is picked under Settings → Moblin Cloud → Wheel of luck in Moblin.": "Moblinの「設定 → Moblin Cloud → ラッキーホイール」でホイールが選ばれていないため、現在視聴者はホイールを回せません。",

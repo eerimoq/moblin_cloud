@@ -873,9 +873,7 @@ function DevicePanel(props: {
                   page={props.page}
                   device={props.device.id}
                   enabled={
-                    props.account.remoteControl === "control" &&
-                    feed.connected() &&
-                    feed.streaming()
+                    props.account.remoteControl !== "none" && feed.connected() && feed.streaming()
                   }
                   onSignOut={props.onSignOut}
                 />
