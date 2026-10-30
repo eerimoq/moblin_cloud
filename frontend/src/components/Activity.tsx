@@ -1,11 +1,11 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import Icon, { kindIcons } from "./Icon";
-import { createRecent, timeAgo } from "./Latest";
+import { amountLabel, createRecent, createResend, ReceivedDevices, timeAgo } from "./Latest";
 import { Spinner } from "./PageParts";
 import { fetchRecent, resendRecent, type Recent, type RecentKind } from "../data/account";
 import { isSignedOut } from "../data/backend";
 import { effectName } from "../data/effects";
-import { formatPrice, providerName, spinsText } from "../data/remoteControl";
+import { providerName, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
 
 const recentKinds: RecentKind[] = ["tip", "spin", "effect"];
@@ -39,13 +39,7 @@ function ActivityRow(props: {
         <div class="flex items-baseline gap-2">
           <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
             <span class="truncate font-semibold text-ink">{item().user}</span>
-            <span class="text-ink-2">
-              {item().kickSubscriber
-                ? t("Kick subscriber")
-                : item().tier
-                  ? t("Tier {tier} subscriber", { tier: item().tier! })
-                  : formatPrice({ price: item().amount, currency: item().currency })}
-            </span>
+            <span class="text-ink-2">{amountLabel(item())}</span>
             <Show when={item().spins}>
               {(spins) => <span class="text-ink-2">· {spinsText(spins())}</span>}
             </Show>
@@ -87,23 +81,7 @@ function ActivityRow(props: {
             </Show>
           }
         >
-          {(devices) => (
-            <ul class="flex flex-wrap gap-x-2.5 text-[12px]">
-              <For each={devices()}>
-                {(device) => (
-                  <li
-                    class={`flex items-center gap-0.5 ${device.received ? "text-leaf" : "text-muted"}`}
-                  >
-                    <Icon name={device.received ? "check" : "clock"} class="size-3 shrink-0" />
-                    <span class="sr-only">
-                      {device.received ? t("Received:") : t("Not received yet:")}
-                    </span>
-                    {device.name}
-                  </li>
-                )}
-              </For>
-            </ul>
-          )}
+          {(devices) => <ReceivedDevices devices={devices()} compact />}
         </Show>
         <Show when={props.failed}>
           <span class="text-[12px] text-danger">{t("Sending did not work. Try again.")}</span>
@@ -131,8 +109,6 @@ export default function Activity(props: {
     guard,
   );
   const [loading, setLoading] = createSignal(false);
-  const [resending, setResending] = createSignal<string | null>(null);
-  const [failed, setFailed] = createSignal<string | null>(null);
   let latest: number | null = null;
   const arrivals = new Map<string, number>();
   const stable = new Map<string, { json: string; item: Item }>();
@@ -201,22 +177,10 @@ export default function Activity(props: {
     }
   };
 
-  const resend = async (item: Recent) => {
-    if (resending()) {
-      return;
-    }
-    setFailed(null);
-    setResending(item.id);
-    try {
-      await resendRecent(props.session, item.id, props.page);
-      await loadRecent();
-    } catch (error) {
-      guard(error);
-      setFailed(item.id);
-    } finally {
-      setResending(null);
-    }
-  };
+  const { resending, failed, resend } = createResend(async (item) => {
+    await resendRecent(props.session, item.id, props.page);
+    await loadRecent();
+  }, guard);
 
   const toggle = (kind: RecentKind) => {
     const shown = props.kinds.length > 0 ? props.kinds : recentKinds;

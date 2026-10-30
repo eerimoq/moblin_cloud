@@ -25,6 +25,63 @@ export function timeAgo(at: number) {
   return relativeTime.format(-Math.round(seconds / 86_400), "day");
 }
 
+export const amountLabel = (item: Recent) =>
+  item.kickSubscriber
+    ? t("Kick subscriber")
+    : item.tier
+      ? t("Tier {tier} subscriber", { tier: item.tier })
+      : formatPrice({ price: item.amount, currency: item.currency });
+
+export function ReceivedDevices(props: {
+  devices: NonNullable<Recent["devices"]>;
+  compact?: boolean;
+}) {
+  return (
+    <ul
+      class={`flex flex-wrap ${props.compact ? "gap-x-2.5 text-[12px]" : "gap-x-3 gap-y-0.5 text-[15px]"}`}
+    >
+      <For each={props.devices}>
+        {(device) => (
+          <li
+            class={`flex items-center ${props.compact ? "gap-0.5" : "gap-1"} ${device.received ? "text-leaf" : "text-muted"}`}
+          >
+            <Icon
+              name={device.received ? "check" : "clock"}
+              class={`${props.compact ? "size-3" : "size-4"} shrink-0`}
+            />
+            <span class="sr-only">{device.received ? t("Received:") : t("Not received yet:")}</span>
+            {device.name}
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+}
+
+export function createResend(
+  send: (item: Recent) => Promise<void>,
+  onError: (error: unknown) => void = () => {},
+) {
+  const [resending, setResending] = createSignal<string | null>(null);
+  const [failed, setFailed] = createSignal<string | null>(null);
+  const resend = async (item: Recent) => {
+    if (resending()) {
+      return;
+    }
+    setFailed(null);
+    setResending(item.id);
+    try {
+      await send(item);
+    } catch (error) {
+      onError(error);
+      setFailed(item.id);
+    } finally {
+      setResending(null);
+    }
+  };
+  return { resending, failed, resend };
+}
+
 export function Latest(props: {
   kind: RecentKind;
   list: RecentList | undefined;
@@ -32,8 +89,7 @@ export function Latest(props: {
   onResend: (item: Recent) => Promise<void>;
 }) {
   const [loading, setLoading] = createSignal(false);
-  const [resending, setResending] = createSignal<string | null>(null);
-  const [failed, setFailed] = createSignal<string | null>(null);
+  const { resending, failed, resend } = createResend((item) => props.onResend(item));
   const title = () =>
     ({ tip: t("Received messages"), spin: t("Received spins"), effect: t("Received effects") })[
       props.kind
@@ -50,21 +106,6 @@ export function Latest(props: {
       setLoading(false);
     }
   };
-  const resend = async (item: Recent) => {
-    if (resending()) {
-      return;
-    }
-    setFailed(null);
-    setResending(item.id);
-    try {
-      await props.onResend(item);
-    } catch {
-      setFailed(item.id);
-    } finally {
-      setResending(null);
-    }
-  };
-
   return (
     <section class={cardClass}>
       <div class="flex flex-col gap-1">
@@ -82,11 +123,7 @@ export function Latest(props: {
                       <span class="flex flex-wrap items-baseline gap-x-2">
                         <span class="font-semibold">{item.user}</span>
                         <span class="text-ink-2">
-                          {item.kickSubscriber
-                            ? t("Kick subscriber")
-                            : item.tier
-                              ? t("Tier {tier} subscriber", { tier: item.tier })
-                              : formatPrice({ price: item.amount, currency: item.currency })}
+                          {amountLabel(item)}
                           <Show when={item.provider}>
                             {(provider) => (
                               <span class="text-muted">
@@ -112,26 +149,7 @@ export function Latest(props: {
                         {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
                       </Show>
                       <Show when={item.devices && item.devices.length > 0 && item.devices}>
-                        {(devices) => (
-                          <ul class="flex flex-wrap gap-x-3 gap-y-0.5 text-[15px]">
-                            <For each={devices()}>
-                              {(device) => (
-                                <li
-                                  class={`flex items-center gap-1 ${device.received ? "text-leaf" : "text-muted"}`}
-                                >
-                                  <Icon
-                                    name={device.received ? "check" : "clock"}
-                                    class="size-4 shrink-0"
-                                  />
-                                  <span class="sr-only">
-                                    {device.received ? t("Received:") : t("Not received yet:")}
-                                  </span>
-                                  {device.name}
-                                </li>
-                              )}
-                            </For>
-                          </ul>
-                        )}
+                        {(devices) => <ReceivedDevices devices={devices()} />}
                       </Show>
                     </div>
                     <div class="flex flex-col items-end gap-1 text-[15px]">
