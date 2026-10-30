@@ -106,10 +106,8 @@ export function CloudHeader(props: { premium?: boolean; wide?: boolean; children
   return (
     <header class="sticky top-0 z-20 bg-page/92 backdrop-blur border-b border-line/40">
       <div
-        class={`mx-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-2 ${
-          props.wide
-            ? "min-h-14 px-3 py-1.5"
-            : "min-h-16 max-w-[1120px] px-5 py-2.5 sm:px-8 lg:min-h-18"
+        class={`mx-auto flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1.5 ${
+          props.wide ? "px-3" : "max-w-[1120px] px-5 sm:px-8"
         }`}
       >
         <a

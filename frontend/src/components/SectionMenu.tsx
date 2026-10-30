@@ -52,7 +52,7 @@ export default function SectionMenu(props: {
   return (
     <nav
       aria-label={props.label}
-      class="overflow-hidden rounded-2xl border border-line bg-card lg:sticky lg:top-[calc(4.5rem+1px+3rem)] lg:flex lg:max-h-[calc(100dvh-4.5rem-1px-6rem)] lg:flex-col lg:overflow-y-auto lg:rounded-none lg:border-0 lg:bg-transparent"
+      class="overflow-hidden rounded-2xl border border-line bg-card lg:sticky lg:top-[calc(3.5rem+1px+3rem)] lg:flex lg:max-h-[calc(100dvh-3.5rem-1px-6rem)] lg:flex-col lg:overflow-y-auto lg:rounded-none lg:border-0 lg:bg-transparent"
     >
       <button
         type="button"
