@@ -19,6 +19,7 @@ import { moblinIconUrl } from "../data/backend";
 import { filtersOf } from "../data/moblin";
 import { streamerProfile } from "../data/remoteControl";
 import { t } from "../i18n";
+import { readStored, store } from "../storage";
 
 const screenWidth = 852;
 const screenHeight = 393;
@@ -364,7 +365,7 @@ export default function MoblinScreen(props: {
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
   const [height, setHeight] = createSignal(screenHeight + 2 * bezel);
-  const [verbose, setVerbose] = createSignal(true);
+  const [verbose, setVerbose] = createSignal(readStored("statusCollapsed") !== "1");
   const [panel, setPanel] = createSignal<Panel | null>(null);
   const [page, setPage] = createSignal(1);
   const [icon] = createResource(
@@ -587,7 +588,10 @@ export default function MoblinScreen(props: {
               <Statuses
                 status={props.status}
                 verbose={verbose()}
-                onToggle={() => setVerbose((current) => !current)}
+                onToggle={() => {
+                  setVerbose((current) => !current);
+                  store("statusCollapsed", verbose() ? null : "1");
+                }}
               />
               <Show when={props.state.muted}>
                 <div class="pointer-events-none absolute inset-0 grid place-items-center">
