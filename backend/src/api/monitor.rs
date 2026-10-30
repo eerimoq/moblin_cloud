@@ -81,7 +81,7 @@ mod tests {
     #[tokio::test]
     async fn layouts_are_saved_per_page() {
         let (address, api) = start_api(None).await;
-        let (session, _, page) = streamer(&address, &api).await;
+        let (session, _, page) = streamer(&api);
         let other = create_account(&api, "2", "Other", "other").page.id;
         api.accounts
             .add_assistant(
@@ -122,7 +122,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_layouts_are_refused() {
         let (address, api) = start_api(None).await;
-        let (session, _, page) = streamer(&address, &api).await;
+        let (session, _, page) = streamer(&api);
         let stranger = create_account(&api, "2", "Other", "other").page.id;
         assert_eq!(
             save(&address, Some(&session), &page, &json!({"layout": [1, 2]})).await,
@@ -159,7 +159,7 @@ mod tests {
     #[tokio::test]
     async fn layouts_are_deleted_with_the_account() {
         let (address, api) = start_api(None).await;
-        let (session, _, page) = streamer(&address, &api).await;
+        let (session, _, page) = streamer(&api);
         create_account(&api, "2", "Other", "other");
         api.accounts
             .add_assistant(

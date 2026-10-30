@@ -588,7 +588,7 @@ mod tests {
     async fn stripe_holds_are_released_when_the_wheel_is_gone() {
         let (address, api, fake) = start_stripe_api().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         connect_stripe(&api);
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -643,7 +643,7 @@ mod tests {
     }
 
     async fn paypal_tip_order(address: &str, api: &Api) -> String {
-        paypal_tip_order_as(address, api).await.1
+        paypal_tip_order_in(address, api, "USD").await.1
     }
 
     #[tokio::test]
@@ -694,17 +694,10 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
-        let counters = api.counters.all();
-        let count = |name: &str| {
-            counters
-                .iter()
-                .find(|counter| counter.name == name)
-                .map_or(0, |counter| counter.total)
-        };
-        assert_eq!(count("tipPayments"), 1);
-        assert_eq!(count("paypalOrders"), 1);
-        assert_eq!(count("paypalPaymentsFailed:unknown"), 1);
-        assert_eq!(count("paypalPayments"), 1);
+        assert_eq!(counter(&api, "tipPayments"), 1);
+        assert_eq!(counter(&api, "paypalOrders"), 1);
+        assert_eq!(counter(&api, "paypalPaymentsFailed:unknown"), 1);
+        assert_eq!(counter(&api, "paypalPayments"), 1);
     }
 
     #[tokio::test]
@@ -778,16 +771,9 @@ mod tests {
         assert_eq!(api.orders.get("ORDER1"), None);
         assert!(api.deliveries.pending().is_empty());
         assert_eq!(*fake.refunds.lock().unwrap(), ["refund-CAPTURE1"]);
-        let counters = api.counters.all();
-        let count = |name: &str| {
-            counters
-                .iter()
-                .find(|counter| counter.name == name)
-                .map_or(0, |counter| counter.total)
-        };
-        assert_eq!(count("tipRefunds"), 1);
-        assert_eq!(count("paypalRefunds"), 1);
-        assert_eq!(count("tipPayments"), 0);
+        assert_eq!(counter(&api, "tipRefunds"), 1);
+        assert_eq!(counter(&api, "paypalRefunds"), 1);
+        assert_eq!(counter(&api, "tipPayments"), 0);
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
     }
@@ -866,15 +852,8 @@ mod tests {
         );
         assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Capturing);
         assert!(api.deliveries.pending().is_empty());
-        let count = |name: &str| {
-            api.counters
-                .all()
-                .iter()
-                .find(|counter| counter.name == name)
-                .map_or(0, |counter| counter.total)
-        };
-        assert_eq!(count("tipPaymentsFailed:declined"), 1);
-        assert_eq!(count("paypalPaymentsFailed:declined"), 1);
+        assert_eq!(counter(&api, "tipPaymentsFailed:declined"), 1);
+        assert_eq!(counter(&api, "paypalPaymentsFailed:declined"), 1);
     }
 
     #[tokio::test]
@@ -963,7 +942,7 @@ mod tests {
     #[tokio::test]
     async fn processing_stripe_captures_are_settled_once_succeeded() {
         let (address, api, fake) = start_stripe_api().await;
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         connect_stripe(&api);
         let client = reqwest::Client::new();
         let response = client
@@ -1006,7 +985,7 @@ mod tests {
     #[tokio::test]
     async fn late_stripe_payments_are_refunded() {
         let (address, api, fake) = start_stripe_api().await;
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         connect_stripe(&api);
         let client = reqwest::Client::new();
         let response = client
@@ -1062,7 +1041,7 @@ mod tests {
     #[tokio::test]
     async fn lost_stripe_capture_answers_are_settled() {
         let (address, api, fake) = start_stripe_api().await;
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         connect_stripe(&api);
         let client = reqwest::Client::new();
         let response = client

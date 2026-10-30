@@ -6,6 +6,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Value, json};
 
+use super::serve_local;
 use super::*;
 use crate::stripe::Stripe;
 
@@ -204,9 +205,7 @@ pub(crate) async fn start_stripe() -> (String, FakeStripe) {
                 }
             }),
         );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, router).await });
+    let address = serve_local(router).await;
     (format!("http://{address}"), fake)
 }
 

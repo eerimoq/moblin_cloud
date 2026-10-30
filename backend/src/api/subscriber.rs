@@ -335,7 +335,7 @@ mod tests {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap();
-        let (_, _, id) = streamer(&address, &api).await;
+        let (_, _, id) = streamer(&api);
         let response = client
             .get(format!("http://{address}/auth/twitch/login?page=unknown"))
             .send()
@@ -460,7 +460,7 @@ mod tests {
     async fn twitch_subscribers_spin_the_wheel_every_month() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {
             api.auth.viewer_session(
                 Platform::Twitch,
@@ -609,20 +609,13 @@ mod tests {
         assert_eq!(recent["items"][0]["tier"], 1);
         assert_eq!(recent["items"][0]["spins"], 1);
         assert_eq!(recent["items"][0]["status"], "delivered");
-        let counters = api.counters.all();
-        let count = |name: &str| {
-            counters
-                .iter()
-                .find(|counter| counter.name == name)
-                .map_or(0, |counter| counter.total)
-        };
-        assert_eq!(count("subSpins"), 1);
-        assert_eq!(count("subSpinsFailed:no-spins-left"), 1);
-        assert_eq!(count("subSpinsFailed:tier-excluded"), 1);
-        assert_eq!(count("subSpinsFailed:not-subscribed"), 1);
-        assert_eq!(count("subSpinsFailed:feature-off"), 1);
-        assert_eq!(count("subSpinsFailed:offline"), 1);
-        assert_eq!(count("spinDeliveries"), 1);
+        assert_eq!(counter(&api, "subSpins"), 1);
+        assert_eq!(counter(&api, "subSpinsFailed:no-spins-left"), 1);
+        assert_eq!(counter(&api, "subSpinsFailed:tier-excluded"), 1);
+        assert_eq!(counter(&api, "subSpinsFailed:not-subscribed"), 1);
+        assert_eq!(counter(&api, "subSpinsFailed:feature-off"), 1);
+        assert_eq!(counter(&api, "subSpinsFailed:offline"), 1);
+        assert_eq!(counter(&api, "spinDeliveries"), 1);
         let racer = viewer("13", Some(1));
         let (first, second) = tokio::join!(spin(&racer), spin(&racer));
         let mut statuses = [first.status(), second.status()];

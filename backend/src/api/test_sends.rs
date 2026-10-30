@@ -184,7 +184,7 @@ mod tests {
     async fn tests_are_rate_limited_per_page() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, _, _) = streamer(&address, &api).await;
+        let (session, _, _) = streamer(&api);
         for _ in 0..10 {
             let response = client
                 .post(format!("http://{address}/account/test/spin"))
@@ -213,7 +213,7 @@ mod tests {
     async fn streamers_send_themselves_free_tests() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, _) = streamer(&address, &api).await;
+        let (session, key, _) = streamer(&api);
         let test = |kind: &str, body: Value| {
             client
                 .post(format!("http://{address}/account/test/{kind}"))

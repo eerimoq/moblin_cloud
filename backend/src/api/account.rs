@@ -319,7 +319,7 @@ mod tests {
     #[tokio::test]
     async fn new_moblin_cloud_keys_keep_the_page() {
         let (address, api) = start_api(None).await;
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         assert!(api.remote_control.is_connected(&id));
         let account: Value = reqwest::Client::new()
@@ -364,7 +364,7 @@ mod tests {
     #[tokio::test]
     async fn signing_out_ends_every_session() {
         let (address, api) = start_api(None).await;
-        let (session, _, _) = streamer(&address, &api).await;
+        let (session, _, _) = streamer(&api);
         let other = api.auth.session("1", 0);
         let client = reqwest::Client::new();
         let response = client
@@ -395,7 +395,7 @@ mod tests {
     #[tokio::test]
     async fn deleting_an_account_removes_everything_it_owns() {
         let (address, api) = start_api(None).await;
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         let assistant = create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -511,7 +511,7 @@ mod tests {
     #[tokio::test]
     async fn account_routes_need_a_session() {
         let (address, api) = start_api(None).await;
-        let (session, _, _) = streamer(&address, &api).await;
+        let (session, _, _) = streamer(&api);
         let unknown = api.auth.session("2", 0);
         let old = api.auth.session("1", 1);
         let (payload, _) = session.split_once('.').unwrap();

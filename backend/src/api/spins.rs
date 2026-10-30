@@ -96,7 +96,7 @@ mod tests {
     async fn spin_captures_need_the_wheel() {
         let (address, api, _) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         connect_paypal(&api);
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -161,7 +161,7 @@ mod tests {
     #[tokio::test]
     async fn wheels_are_pushed_by_the_streamer() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&address, &api).await;
+        let (_, key, id) = streamer(&api);
         let spin_url = format!("http://{address}/pages/{id}/spin");
         let wheel = || async {
             reqwest::get(&spin_url)
@@ -219,10 +219,9 @@ mod tests {
 
     #[tokio::test]
     async fn sessions_wait_for_the_device_to_reconnect() {
-        let (address, api) =
-            start_api_lingering(None, None, None, None, None, Duration::from_secs(60)).await;
+        let (address, api) = start_api_lingering(Duration::from_secs(60)).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         let options = json!([{"text": "Yes", "weight": 1}]);
         socket
@@ -318,7 +317,7 @@ mod tests {
     async fn spins_are_sent_to_the_streamer() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         connect_paypal(&api);
         let spin_url = format!("http://{address}/pages/{id}/spin");
         let public: Value = client

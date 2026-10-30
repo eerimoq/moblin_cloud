@@ -358,7 +358,7 @@ mod tests {
                 .json(&json!({"font": font}))
                 .send()
         };
-        let (session, _, _) = streamer(&address, &api).await;
+        let (session, _, _) = streamer(&api);
         let response = save(session.clone(), "#123abc").await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let response = save_font(session.clone(), "handwritten").await.unwrap();
@@ -411,7 +411,7 @@ mod tests {
     #[tokio::test]
     async fn the_currency_only_changes_while_paid_features_are_off() {
         let (address, api, _) = start_paid().await;
-        let (session, _, _) = streamer(&address, &api).await;
+        let (session, _, _) = streamer(&api);
         connect_paypal(&api);
         let client = reqwest::Client::new();
         for (request, status) in [
@@ -460,7 +460,7 @@ mod tests {
     #[tokio::test]
     async fn a_paypal_merchant_is_not_payable_without_paypal() {
         let (address, api, _) = start_stripe_api().await;
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         connect_paypal(&api);
         api.pages
             .set(

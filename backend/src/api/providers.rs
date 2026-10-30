@@ -338,7 +338,7 @@ mod tests {
     async fn stripe_connects_and_takes_tips() {
         let (address, api, fake) = start_stripe_api().await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         let post = |path: &str| {
             client
                 .post(format!("http://{address}{path}"))
@@ -478,19 +478,13 @@ mod tests {
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(api.deliveries.pending().len(), 1);
-        let counters = api.counters.all();
-        let count = |name: &str| {
-            counters
-                .iter()
-                .find(|counter| counter.name == name)
-                .map_or(0, |counter| counter.total)
-        };
-        assert_eq!(count("stripeOrders"), 1);
-        assert_eq!(count("stripePaymentsFailed:not-approved"), 1);
-        assert_eq!(count("stripePayments"), 1);
-        assert_eq!(count("tipPayments"), 1);
+        assert_eq!(counter(&api, "stripeOrders"), 1);
+        assert_eq!(counter(&api, "stripePaymentsFailed:not-approved"), 1);
+        assert_eq!(counter(&api, "stripePayments"), 1);
+        assert_eq!(counter(&api, "tipPayments"), 1);
         assert!(
-            !counters
+            !api.counters
+                .all()
                 .iter()
                 .any(|counter| counter.name.starts_with("paypal"))
         );
@@ -517,7 +511,7 @@ mod tests {
     async fn paypal_is_connected_through_onboarding() {
         let (paypal_url, fake) = start_paypal().await;
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         let old = api.auth.session_at("1", 0, crate::deliveries::now() - 601);
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
@@ -680,7 +674,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let (paypal_url, fake) = start_paypal().await;
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         let response = client
             .post(format!("http://{address}/account/paypal/connect"))
             .bearer_auth(&session)

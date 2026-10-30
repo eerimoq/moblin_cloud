@@ -8,6 +8,7 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use serde_json::{Value, json};
 
+use super::serve_local;
 use crate::paypal::PayPal;
 
 #[derive(Clone, Default)]
@@ -306,8 +307,6 @@ pub(crate) async fn start_paypal() -> (String, FakePayPal) {
                 }
             }),
         );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, router).await });
+    let address = serve_local(router).await;
     (format!("http://{address}"), fake)
 }

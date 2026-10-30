@@ -153,7 +153,7 @@ mod tests {
                 .body(body)
                 .send()
         };
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         let response = upload(session, images::tests::png(1200, 400))
             .await
             .unwrap();
@@ -235,15 +235,8 @@ mod tests {
             client.get(&image_url).send().await.unwrap().status(),
             StatusCode::NOT_FOUND
         );
-        let counters = api.counters.all();
-        let count = |name: &str| {
-            counters
-                .iter()
-                .find(|counter| counter.name == name)
-                .map(|counter| counter.total)
-        };
-        assert_eq!(count("imageUploads"), Some(2));
-        assert_eq!(count("imageUploadsFailed:not-premium"), Some(1));
-        assert_eq!(count("imageUploadsFailed:invalid-image"), Some(1));
+        assert_eq!(counter(&api, "imageUploads"), 2);
+        assert_eq!(counter(&api, "imageUploadsFailed:not-premium"), 1);
+        assert_eq!(counter(&api, "imageUploadsFailed:invalid-image"), 1);
     }
 }

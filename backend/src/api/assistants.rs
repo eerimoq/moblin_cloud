@@ -419,7 +419,7 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         let add = async |username: &str| {
             client
                 .post(format!("http://{address}/account/assistants/twitch"))
@@ -520,7 +520,7 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
@@ -635,7 +635,7 @@ mod tests {
     async fn assistants_use_the_streamers_dashboard() {
         let (address, api, _fake) = start_paid_fake().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         connect_paypal(&api);
         api.pages
             .set(
@@ -872,17 +872,10 @@ mod tests {
         assert_eq!(tip["kind"]["message"]["currency"], "SEK");
         answer(&mut socket, &request, Value::Null).await;
         wait_until_added(&api).await;
-        let counters = api.counters.all();
-        let count = |name: &str| {
-            counters
-                .iter()
-                .find(|counter| counter.name == name)
-                .map_or(0, |counter| counter.total)
-        };
-        assert_eq!(count("tipTests"), 1);
-        assert_eq!(count("tipTestsFailed:not-assistant"), 2);
-        assert_eq!(count("spinTestsFailed:offline"), 1);
-        assert_eq!(count("imageUploadsFailed:not-premium"), 1);
-        assert_eq!(count("imageUploadsFailed:not-assistant"), 0);
+        assert_eq!(counter(&api, "tipTests"), 1);
+        assert_eq!(counter(&api, "tipTestsFailed:not-assistant"), 2);
+        assert_eq!(counter(&api, "spinTestsFailed:offline"), 1);
+        assert_eq!(counter(&api, "imageUploadsFailed:not-premium"), 1);
+        assert_eq!(counter(&api, "imageUploadsFailed:not-assistant"), 0);
     }
 }

@@ -263,7 +263,7 @@ mod tests {
     #[tokio::test]
     async fn tips_reach_every_known_device_also_after_reconnecting() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&address, &api).await;
+        let (_, key, id) = streamer(&api);
         let mut main = connect_as(&address, &key, "main").await;
         let backup = connect_as(&address, &key, "backup").await;
         for _ in 0..100 {
@@ -325,7 +325,7 @@ mod tests {
     async fn tips_are_sent_to_the_streamer() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         connect_paypal(&api);
         let tips_url = format!("http://{address}/pages/{id}/tips");
         let public: Value = client

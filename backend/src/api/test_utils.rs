@@ -10,7 +10,7 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::*;
-use crate::accounts::{Access, Account, Accounts, Assistant, Identity, Page, Platform};
+use crate::accounts::{Access, Account, Accounts, Assistant, Identity, Page};
 use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::counters::Counters;
 use crate::database::Database;
@@ -34,11 +34,7 @@ pub(crate) use fake_stripe::*;
 pub(crate) use fake_twitch::*;
 
 pub(crate) async fn start() -> String {
-    start_with(None).await
-}
-
-pub(crate) async fn start_with(paypal: Option<PayPal>) -> String {
-    start_api(paypal).await.0
+    start_api(None).await.0
 }
 
 pub(crate) async fn start_api(paypal: Option<PayPal>) -> (String, Arc<Api>) {
@@ -52,18 +48,19 @@ pub(crate) async fn start_api_with(
     kick: Option<KickApp>,
     pages: Option<Pages>,
 ) -> (String, Arc<Api>) {
-    start_api_lingering(paypal, stripe, twitch, kick, pages, Duration::ZERO).await
+    start_api_built(build_api(
+        paypal,
+        stripe,
+        twitch,
+        kick,
+        pages,
+        Duration::ZERO,
+    ))
+    .await
 }
 
-pub(crate) async fn start_api_lingering(
-    paypal: Option<PayPal>,
-    stripe: Option<Stripe>,
-    twitch: Option<OAuthApp>,
-    kick: Option<KickApp>,
-    pages: Option<Pages>,
-    linger: Duration,
-) -> (String, Arc<Api>) {
-    start_api_built(build_api(paypal, stripe, twitch, kick, pages, linger)).await
+pub(crate) async fn start_api_lingering(linger: Duration) -> (String, Arc<Api>) {
+    start_api_built(build_api(None, None, None, None, None, linger)).await
 }
 
 pub(crate) fn build_api(
@@ -113,13 +110,14 @@ pub(crate) async fn start_api_built(api: Api) -> (String, Arc<Api>) {
         let api = api.clone();
         async move { api.deliveries.run(&api.remote_control).await }
     });
+    (serve_local(router(api.clone())).await.to_string(), api)
+}
+
+pub(crate) async fn serve_local(router: axum::Router) -> std::net::SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    tokio::spawn({
-        let api = api.clone();
-        async move { axum::serve(listener, router(api)).await }
-    });
-    (format!("127.0.0.1:{}", address.port()), api)
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    address
 }
 
 pub(crate) async fn receive<S>(socket: &mut S) -> Value
@@ -172,6 +170,13 @@ where
         .unwrap();
 }
 
+pub(crate) async fn send_event(socket: &mut Socket, event: Value) {
+    socket
+        .send(Message::text(json!({"event": {"data": event}}).to_string()))
+        .await
+        .unwrap();
+}
+
 pub(crate) type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -199,16 +204,12 @@ pub(crate) async fn start_paid_fake() -> (String, Arc<Api>, FakePayPal) {
     (address, api, fake)
 }
 
-pub(crate) async fn paypal_tip_order_as(address: &str, api: &Api) -> (String, String) {
-    paypal_tip_order_in(address, api, "USD").await
-}
-
 pub(crate) async fn paypal_tip_order_in(
     address: &str,
     api: &Api,
     currency: &str,
 ) -> (String, String) {
-    let (session, _, id) = streamer(address, api).await;
+    let (session, _, id) = streamer(api);
     connect_paypal(api);
     let client = reqwest::Client::new();
     let response = client
@@ -249,21 +250,11 @@ pub(crate) fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Ac
     let page = api.remote_control.new_page_id().unwrap();
     api.accounts
         .signed_in(
-            &twitch_identity(id, name, login),
+            &Identity::twitch(id, name, login),
             (id.to_string(), Page { id: page, key }),
         )
         .unwrap()
         .1
-}
-
-pub(crate) fn twitch_identity(id: &str, name: &str, login: &str) -> Identity {
-    Identity {
-        platform: Platform::Twitch,
-        user_id: id.to_string(),
-        login: login.to_string(),
-        name: name.to_string(),
-        avatar: None,
-    }
 }
 
 pub(crate) fn twitch_assistant(id: &str, login: &str, name: &str) -> Assistant {
@@ -279,13 +270,21 @@ pub(crate) fn twitch_assistant(id: &str, login: &str, name: &str) -> Assistant {
     }
 }
 
-pub(crate) async fn streamer(_address: &str, api: &Api) -> (String, String, String) {
+pub(crate) fn streamer(api: &Api) -> (String, String, String) {
     let account = create_account(api, "1", "Erik", "erik");
     (
         api.auth.session("1", 0),
         account.page.key.clone(),
         account.page.id,
     )
+}
+
+pub(crate) fn counter(api: &Api, name: &str) -> u64 {
+    api.counters
+        .all()
+        .into_iter()
+        .find(|counter| counter.name == name)
+        .map_or(0, |counter| counter.total)
 }
 
 pub(crate) async fn wait_until_added(api: &Api) {

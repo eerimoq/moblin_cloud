@@ -165,7 +165,7 @@ mod tests {
     async fn dashboards_hear_about_changes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/events");
         let mut events = Events::open(&client, &url, &session).await;
         let mut socket = connect(&address, &key).await;
@@ -209,7 +209,7 @@ mod tests {
     async fn assistants_hear_about_their_channels() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, _, page) = streamer(&address, &api).await;
+        let (session, _, page) = streamer(&api);
         let assistant = create_account(&api, "21", "Mod 21", "mod21");
         let assistant_session = api.auth.session("21", 0);
         let url = format!("http://{address}/account/pages/{page}/events");
@@ -256,7 +256,7 @@ mod tests {
     async fn tip_pages_hear_about_changes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let mut events = Events::open(
             &client,
             &format!("http://{address}/pages/{page}/events"),
@@ -312,7 +312,7 @@ mod tests {
     async fn admins_get_the_stats_streamed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, _, _) = streamer(&address, &api).await;
+        let (session, _, _) = streamer(&api);
         let url = format!("http://{address}/admin/stats/events");
         let response = client.get(&url).bearer_auth(&session).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);

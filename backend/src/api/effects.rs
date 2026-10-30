@@ -90,7 +90,7 @@ mod tests {
     async fn effects_are_played_by_moblin() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         connect_paypal(&api);
         let effects_url = format!("http://{address}/pages/{id}/effects");
         let orders_url = format!("{effects_url}/orders");
@@ -208,7 +208,7 @@ mod tests {
     async fn streamers_test_their_effects() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, _) = streamer(&address, &api).await;
+        let (session, key, _) = streamer(&api);
         let test = |request: Value| {
             client
                 .post(format!("http://{address}/account/test/effect"))
@@ -250,7 +250,7 @@ mod tests {
     async fn subscribers_play_effects_every_month() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {
             api.auth.viewer_session(
                 Platform::Twitch,

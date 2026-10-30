@@ -242,7 +242,7 @@ mod tests {
     #[tokio::test]
     async fn recent_payments_are_listed_to_the_streamer() {
         let (address, api, _) = start_paid_fake().await;
-        let (session, capture_url) = paypal_tip_order_as(&address, &api).await;
+        let (session, capture_url) = paypal_tip_order_in(&address, &api, "USD").await;
         let client = reqwest::Client::new();
         let recent = || async {
             client
@@ -308,7 +308,7 @@ mod tests {
     #[tokio::test]
     async fn recent_payments_can_be_sent_again() {
         let (address, api, _) = start_paid_fake().await;
-        let (session, capture_url) = paypal_tip_order_as(&address, &api).await;
+        let (session, capture_url) = paypal_tip_order_in(&address, &api, "USD").await;
         let client = reqwest::Client::new();
         let status = || async {
             client
@@ -385,7 +385,7 @@ mod tests {
     #[tokio::test]
     async fn recent_lists_are_paged_per_kind() {
         let (address, api) = start_api(None).await;
-        let (session, _, id) = streamer(&address, &api).await;
+        let (session, _, id) = streamer(&api);
         let order = |item: Item, price: u32| Order {
             streamer: id.clone(),
             item,

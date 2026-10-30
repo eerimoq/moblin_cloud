@@ -274,27 +274,11 @@ mod tests {
         .await;
     }
 
-    async fn send_event(socket: &mut Socket, event: Value) {
-        socket
-            .send(Message::text(json!({"event": {"data": event}}).to_string()))
-            .await
-            .unwrap();
-    }
-
-    fn counter(api: &crate::api::Api, name: &str) -> u64 {
-        api.counters
-            .all()
-            .into_iter()
-            .find(|counter| counter.name == name)
-            .map(|counter| counter.total)
-            .unwrap_or(0)
-    }
-
     #[tokio::test]
     async fn watchers_get_the_status_moblin_pushes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/events");
         let mut socket = connect(&address, &key).await;
         let mut events = Events::open(&client, &url, &session).await;
@@ -433,7 +417,7 @@ mod tests {
     async fn watchers_of_an_offline_device_wait_for_it() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         api.accounts.seen_device(&page, "B");
         let url = format!("http://{address}/account/pages/{page}/devices/B/events");
         let mut events = Events::open(&client, &url, &session).await;
@@ -477,7 +461,7 @@ mod tests {
     async fn controls_are_sent_to_moblin() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/control");
         let mut socket = connect(&address, &key).await;
         let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
@@ -579,7 +563,7 @@ mod tests {
     async fn watchers_get_the_preview() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
         let mut preview = Events::open(&client, &url, &session).await;
@@ -611,7 +595,7 @@ mod tests {
     async fn assistants_view_and_control_the_device_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
@@ -727,7 +711,7 @@ mod tests {
     async fn assistants_go_live_only_when_allowed_but_always_end_the_stream() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
@@ -815,7 +799,7 @@ mod tests {
     async fn assistants_get_the_preview_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
@@ -916,7 +900,7 @@ mod tests {
     async fn streams_end_when_the_backend_stops() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/events");
         let mut socket = connect(&address, &key).await;
         let mut events = Events::open(&client, &url, &session).await;
@@ -937,10 +921,9 @@ mod tests {
 
     #[tokio::test]
     async fn watching_follows_a_reconnecting_device() {
-        let (address, api) =
-            start_api_lingering(None, None, None, None, None, Duration::from_secs(5)).await;
+        let (address, api) = start_api_lingering(Duration::from_secs(5)).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&address, &api).await;
+        let (session, key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/events");
         let socket = connect(&address, &key).await;
         let mut events = Events::open(&client, &url, &session).await;

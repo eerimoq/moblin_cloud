@@ -131,7 +131,7 @@ mod tests {
         let url = format!("http://{address}/admin/stats");
         let response = client.get(&url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        let (session, key, _) = streamer(&address, &api).await;
+        let (session, key, _) = streamer(&api);
         let response = client.get(&url).bearer_auth(&session).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let account: Value = client

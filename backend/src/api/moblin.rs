@@ -114,7 +114,7 @@ mod tests {
     #[tokio::test]
     async fn the_pages_of_logins_are_answered_with_their_addresses() {
         let (address, api) = start_api(None).await;
-        streamer(&address, &api).await;
+        streamer(&api);
         create_account(&api, "2", "Anna", "anna");
         let (status, body) = get_json(
             &address,
@@ -133,9 +133,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_closing_device_is_answered_at_once_while_its_session_lingers() {
-        let (address, api) =
-            start_api_lingering(None, None, None, None, None, Duration::from_secs(60)).await;
-        let (session, key, _) = streamer(&address, &api).await;
+        let (address, api) = start_api_lingering(Duration::from_secs(60)).await;
+        let (session, key, _) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         socket
             .close(Some(CloseFrame {
@@ -160,7 +159,7 @@ mod tests {
     #[tokio::test]
     async fn moblins_icon_is_shown_on_the_page_and_in_its_address() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&address, &api).await;
+        let (_, key, id) = streamer(&api);
         let icon = async || {
             let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
             let (_, addresses) = get_json(&address, "/pages/addresses?logins=twitch:erik").await;
@@ -259,7 +258,7 @@ mod tests {
     async fn up_to_5_devices_connect_with_one_key() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         let mut sockets = Vec::new();
         for device in ["a", "b", "c", "d", "e"] {
             sockets.push(connect_as(&address, &key, device).await);
@@ -293,16 +292,9 @@ mod tests {
             ])
         );
         assert_eq!(api.remote_control.connected_count(), 5);
-        let counters = api.counters.all();
-        let count = |name: &str| {
-            counters
-                .iter()
-                .find(|counter| counter.name == name)
-                .map(|counter| counter.total)
-        };
-        assert_eq!(count("moblinConnections"), Some(6));
-        assert_eq!(count("moblinConnectionsFailed:too-many-devices"), Some(1));
-        assert_eq!(count("moblinConnectionsFailed:no-device-id"), Some(1));
+        assert_eq!(counter(&api, "moblinConnections"), 6);
+        assert_eq!(counter(&api, "moblinConnectionsFailed:too-many-devices"), 1);
+        assert_eq!(counter(&api, "moblinConnectionsFailed:no-device-id"), 1);
         let rename = |device: &str, name: &str| {
             client
                 .post(format!("http://{address}/account/devices/{device}/name"))
@@ -401,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn unattested_moblins_are_counted_until_required() {
         let (address, api) = start_attested(false).await;
-        let (_, key, id) = streamer(&address, &api).await;
+        let (_, key, id) = streamer(&api);
         let _plain = connect_as(&address, &key, "a").await;
         let _bogus = connect_with(&address, &key, bogus_identify("b")).await;
         let _malformed = connect_with(
@@ -420,7 +412,7 @@ mod tests {
     #[tokio::test]
     async fn unattested_moblins_are_refused_when_required() {
         let (address, api) = start_attested(true).await;
-        let (_, key, id) = streamer(&address, &api).await;
+        let (_, key, id) = streamer(&api);
         refused(
             &address,
             &key,
@@ -436,10 +428,7 @@ mod tests {
     }
 
     async fn send_event(socket: &mut Socket, event: Value) {
-        socket
-            .send(Message::text(json!({"event": {"data": event}}).to_string()))
-            .await
-            .unwrap();
+        crate::api::test_utils::send_event(socket, event).await;
         socket
             .send(Message::text(json!({"ping": {}}).to_string()))
             .await
@@ -450,7 +439,7 @@ mod tests {
     #[tokio::test]
     async fn a_moblin_that_stops_reading_is_disconnected() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&address, &api).await;
+        let (_, key, id) = streamer(&api);
         let mut socket = connect(&address, &key).await;
         let api_tips = api.clone();
         let page = id.clone();
@@ -489,7 +478,7 @@ mod tests {
     async fn spins_go_to_the_first_device_with_a_wheel_and_tips_to_all() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&address, &api).await;
+        let (session, key, id) = streamer(&api);
         let mut main = connect_as(&address, &key, "main").await;
         let mut other = connect_as(&address, &key, "other").await;
         send_event(
