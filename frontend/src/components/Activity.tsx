@@ -190,8 +190,8 @@ export default function Activity(props: {
   };
 
   return (
-    <div class="flex h-full min-h-0 flex-col">
-      <div class="flex shrink-0 flex-wrap gap-1.5 border-b border-line px-3 py-1.5">
+    <div class="flex flex-col">
+      <div class="sticky top-0 flex flex-wrap gap-1.5 border-b border-line bg-card px-3 py-1.5">
         <For each={recentKinds}>
           {(kind) => (
             <button
@@ -206,41 +206,39 @@ export default function Activity(props: {
           )}
         </For>
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto">
-        <Show when={items()} fallback={<Spinner />}>
-          {(shown) => (
-            <Show
-              when={shown().length > 0}
-              fallback={<p class="px-3 py-4 text-[14px] text-muted">{t("Nothing yet.")}</p>}
-            >
-              <ul class="flex flex-col divide-y divide-line">
-                <For each={shown()}>
-                  {(item) => (
-                    <ActivityRow
-                      item={item}
-                      fresh={isFresh(item.id)}
-                      resending={resending() === item.id}
-                      disabled={resending() !== null}
-                      failed={failed() === item.id}
-                      onResend={() => void resend(item)}
-                    />
-                  )}
-                </For>
-              </ul>
-              <Show when={more().length > 0}>
-                <button
-                  type="button"
-                  disabled={loading()}
-                  onClick={() => void showMore()}
-                  class="w-full py-2 text-[13px] font-semibold text-leaf hover:bg-ghost disabled:opacity-60"
-                >
-                  {loading() ? t("Loading…") : t("Show more")}
-                </button>
-              </Show>
+      <Show when={items()} fallback={<Spinner />}>
+        {(shown) => (
+          <Show
+            when={shown().length > 0}
+            fallback={<p class="px-3 py-4 text-[14px] text-muted">{t("Nothing yet.")}</p>}
+          >
+            <ul class="flex flex-col divide-y divide-line">
+              <For each={shown()}>
+                {(item) => (
+                  <ActivityRow
+                    item={item}
+                    fresh={isFresh(item.id)}
+                    resending={resending() === item.id}
+                    disabled={resending() !== null}
+                    failed={failed() === item.id}
+                    onResend={() => void resend(item)}
+                  />
+                )}
+              </For>
+            </ul>
+            <Show when={more().length > 0}>
+              <button
+                type="button"
+                disabled={loading()}
+                onClick={() => void showMore()}
+                class="w-full py-2 text-[13px] font-semibold text-leaf hover:bg-ghost disabled:opacity-60"
+              >
+                {loading() ? t("Loading…") : t("Show more")}
+              </button>
             </Show>
-          )}
-        </Show>
-      </div>
+          </Show>
+        )}
+      </Show>
     </div>
   );
 }
