@@ -895,6 +895,7 @@ function Loaded(props: { stats: AdminStats }) {
   const today = (name: string) => counters().get(name).today;
 
   const navItems = (): NavItem[] => [
+    { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
     {
       id: "server",
       label: "Server",
@@ -907,7 +908,6 @@ function Loaded(props: { stats: AdminStats }) {
       caption: `${format(problemsToday())} today`,
       attention: problemsToday() > 0,
     },
-    { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
     {
       id: "providers",
       label: "Providers",
@@ -999,6 +999,13 @@ function Loaded(props: { stats: AdminStats }) {
       <div class="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
         <Nav items={navItems()} />
         <div class="flex min-w-0 flex-col gap-10">
+          <Section id="accounts" title="Accounts" hint="Right now, not per day.">
+            <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              <For each={accounts}>
+                {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
+              </For>
+            </div>
+          </Section>
           <Section id="server" title="Server" hint="The backend, right now.">
             <div class="flex flex-col gap-4">
               <div class="grid gap-4 sm:grid-cols-3">
@@ -1069,13 +1076,6 @@ function Loaded(props: { stats: AdminStats }) {
                 problem: true,
               }))}
             />
-          </Section>
-          <Section id="accounts" title="Accounts" hint="Right now, not per day.">
-            <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              <For each={accounts}>
-                {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
-              </For>
-            </div>
           </Section>
           <Section
             id="providers"
