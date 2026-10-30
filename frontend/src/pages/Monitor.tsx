@@ -702,7 +702,8 @@ function WebPanel(props: { leaf: Leaf; account: Account; actions: LeafActions })
         <iframe
           src={src()}
           title={props.leaf.twitchChat ? t("Twitch chat") : t("Web page")}
-          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-storage-access-by-user-activation"
+          allow="storage-access"
           class="absolute inset-0 size-full border-0"
         />
       )}
