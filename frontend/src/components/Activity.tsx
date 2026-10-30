@@ -32,7 +32,7 @@ function ActivityRow(props: {
     <li class={`flex gap-2.5 px-3 py-2 ${props.fresh ? "arrival-flash" : ""}`}>
       <Icon
         name={kindIcons[item().kind]}
-        class="mt-0.5 size-4 shrink-0 text-leaf"
+        class="mt-0.5 size-4 shrink-0 text-ink"
         aria-label={kindNames()[item().kind]}
       />
       <div class="flex min-w-0 flex-1 flex-col gap-0.5 text-[14px] leading-snug">
