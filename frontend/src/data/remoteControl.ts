@@ -172,13 +172,17 @@ export const providerName = (provider: Provider) => (provider === "paypal" ? "Pa
 export const spinsText = (spins: number) =>
   spins === 1 ? t("1 spin") : t("{count} spins", { count: spins });
 
-export const formatPrice = (price: Price) =>
-  new Intl.NumberFormat(undefined, { style: "currency", currency: price.currency }).format(
-    price.price / 100,
-  );
+export const formatPrice = (price: Price, dropCents = false) =>
+  new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: price.currency,
+    minimumFractionDigits: dropCents && price.price % 100 === 0 ? 0 : 2,
+  }).format(price.price / 100);
 
 export const hundredths = (amount: string) =>
   Math.round(Number.parseFloat(amount.trim().replace(",", ".")) * 100);
+
+export const amountText = (hundredths: number) => (hundredths / 100).toFixed(2);
 
 const call = <T>(path: string, init?: RequestInit, viewer?: string) =>
   callBackend<T>(`/pages${path}`, viewer, init);

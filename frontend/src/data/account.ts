@@ -1,6 +1,7 @@
 import { createSignal, onMount } from "solid-js";
-import { BackendError, backendUrl, call, post } from "./backend";
+import { BackendError, backendUrl, call, isSignedOut, post } from "./backend";
 import { type Identity, type Page, type Platform, type Settings } from "./remoteControl";
+import { readStored, store } from "../storage";
 
 export type Device = {
   id: string;
@@ -254,23 +255,9 @@ export type AdminStats = {
 
 const sessionKey = "songRequestSession";
 
-export function readSession() {
-  try {
-    return localStorage.getItem(sessionKey);
-  } catch {
-    return null;
-  }
-}
+export const readSession = () => readStored(sessionKey);
 
-function saveSession(session: string | null) {
-  try {
-    if (session) {
-      localStorage.setItem(sessionKey, session);
-    } else {
-      localStorage.removeItem(sessionKey);
-    }
-  } catch {}
-}
+const saveSession = (session: string | null) => store(sessionKey, session || null);
 
 function takeSignInResult(): {
   session: string | null;
@@ -332,7 +319,7 @@ export function createAccountSession() {
         }
         setSession({ session: stored, account });
       } catch (error) {
-        if (error instanceof BackendError && error.status === 401) {
+        if (isSignedOut(error)) {
           saveSession(null);
         }
       }
@@ -392,60 +379,49 @@ export const saveMonitorLayout = (session: string, page: string, layout: object)
 export const addAssistant = (session: string, platform: Platform, username: string) =>
   call<Account>(`/account/assistants/${platform}`, session, post({ username }));
 
-export const removeAssistant = (session: string, platform: Platform, assistant: string) =>
+const assistantCall = (
+  session: string,
+  platform: Platform,
+  assistant: string,
+  action: string,
+  body?: object,
+) =>
   call<Account>(
-    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/remove`,
+    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/${action}`,
     session,
-    post(),
+    post(body),
   );
+
+export const removeAssistant = (session: string, platform: Platform, assistant: string) =>
+  assistantCall(session, platform, assistant, "remove");
 
 export const setAssistantPreview = (
   session: string,
   platform: Platform,
   assistant: string,
   on: boolean,
-) =>
-  call<Account>(
-    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/preview`,
-    session,
-    post({ on }),
-  );
+) => assistantCall(session, platform, assistant, "preview", { on });
 
 export const setAssistantGoLive = (
   session: string,
   platform: Platform,
   assistant: string,
   on: boolean,
-) =>
-  call<Account>(
-    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/go-live`,
-    session,
-    post({ on }),
-  );
+) => assistantCall(session, platform, assistant, "go-live", { on });
 
 export const setAssistantEditTips = (
   session: string,
   platform: Platform,
   assistant: string,
   on: boolean,
-) =>
-  call<Account>(
-    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/edit-tips`,
-    session,
-    post({ on }),
-  );
+) => assistantCall(session, platform, assistant, "edit-tips", { on });
 
 export const setAssistantRemoteControl = (
   session: string,
   platform: Platform,
   assistant: string,
   access: Access,
-) =>
-  call<Account>(
-    `/account/assistants/${platform}/${encodeURIComponent(assistant)}/remote-control`,
-    session,
-    post({ access }),
-  );
+) => assistantCall(session, platform, assistant, "remote-control", { access });
 
 const linkAccount = (session: string, token: string) =>
   call<Account>("/account/link", session, post({ token }));

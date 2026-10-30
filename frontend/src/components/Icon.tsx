@@ -1,4 +1,5 @@
 import { Match, Switch, type JSX } from "solid-js";
+import type { RecentKind } from "../data/account";
 
 export type IconName =
   | "chat"
@@ -71,6 +72,12 @@ export type IconName =
   | "video"
   | "layout"
   | "more";
+
+export const kindIcons: Record<RecentKind, IconName> = {
+  tip: "heart",
+  spin: "wheel",
+  effect: "sparkles",
+};
 
 type Props = {
   name: IconName;

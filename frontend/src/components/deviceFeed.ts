@@ -11,7 +11,7 @@ import {
   type Sample,
   type StatusUpdate,
 } from "../data/account";
-import { BackendError } from "../data/backend";
+import { isSignedOut } from "../data/backend";
 import { subscribe } from "../sse";
 
 export type DeviceFeed = {
@@ -146,7 +146,7 @@ function openDeviceFeed(
     try {
       await controlDevice(session, page, device, control);
     } catch (error) {
-      if (error instanceof BackendError && error.status === 401) {
+      if (isSignedOut(error)) {
         onSignOut();
       }
     } finally {

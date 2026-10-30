@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { asset } from "../asset";
 import { cloudSteps } from "../data/cloud";
-import Icon, { type IconName } from "./Icon";
+import Icon, { kindIcons, type IconName } from "./Icon";
 import { Notice, PlatformSignIn } from "./PageParts";
 import { spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
@@ -39,9 +39,9 @@ function Toast(props: { icon: IconName; label: string; text: string; class: stri
 
 function PageMockup() {
   const ways: { icon: IconName; title: string }[] = [
-    { icon: "heart", title: t("Message") },
-    { icon: "wheel", title: t("Spin the wheel") },
-    { icon: "sparkles", title: t("Effect") },
+    { icon: kindIcons.tip, title: t("Message") },
+    { icon: kindIcons.spin, title: t("Spin the wheel") },
+    { icon: kindIcons.effect, title: t("Effect") },
   ];
   return (
     <div inert aria-hidden="true" class="relative mx-auto w-full max-w-[340px] select-none">
@@ -90,13 +90,13 @@ function PageMockup() {
         </div>
       </div>
       <Toast
-        icon="heart"
+        icon={kindIcons.tip}
         label={t("Message")}
         text={t("Great view up there!")}
         class="-top-6 -left-6 -rotate-3 max-sm:hidden lg:-left-20"
       />
       <Toast
-        icon="wheel"
+        icon={kindIcons.spin}
         label={t("Wheel spin")}
         text={spinsText(3)}
         class="-right-6 -bottom-8 rotate-2 max-sm:hidden lg:-right-16"

@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import Icon, { type IconName } from "./Icon";
+import { t } from "../i18n";
 
 export type Section = {
   id: string;
@@ -7,6 +8,11 @@ export type Section = {
   icon: IconName;
   status: () => { on: boolean; text: string } | null;
 };
+
+export const connectedOrNot = (on: boolean) => ({
+  on,
+  text: on ? t("Connected") : t("Not connected"),
+});
 
 export function createSectionChoice(visible: () => Section[], initial = location.hash.slice(1)) {
   const [chosen, setChosen] = createSignal(initial);

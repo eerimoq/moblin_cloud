@@ -2,7 +2,7 @@ import { createSignal, Show } from "solid-js";
 import Icon from "./Icon";
 import { buttonClass, inputClass, Notice } from "./PageParts";
 import { controlDevice } from "../data/account";
-import { BackendError } from "../data/backend";
+import { BackendError, isSignedOut } from "../data/backend";
 import { t } from "../i18n";
 
 const messageErrorText = (error: unknown) =>
@@ -36,7 +36,7 @@ export default function MomMessage(props: {
       });
       setText("");
     } catch (error) {
-      if (error instanceof BackendError && error.status === 401) {
+      if (isSignedOut(error)) {
         props.onSignOut();
         return;
       }

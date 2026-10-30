@@ -21,7 +21,7 @@ import {
   saveMonitorLayout,
   type StatusItem,
 } from "../data/account";
-import { BackendError } from "../data/backend";
+import { isSignedOut } from "../data/backend";
 import { t } from "../i18n";
 
 const defaultLayout = (): Pane => ({
@@ -718,7 +718,7 @@ export default function Monitor(props: {
   onSignOut: () => void;
 }) {
   const failed = (error: unknown) => {
-    if (error instanceof BackendError && error.status === 401) {
+    if (isSignedOut(error)) {
       props.onSignOut();
     }
   };

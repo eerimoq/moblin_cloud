@@ -9,14 +9,12 @@ import {
   unlinkAccount,
   type Account,
 } from "../data/account";
-import { BackendError } from "../data/backend";
+import { BackendError, isSignedOut } from "../data/backend";
 import { channelText, type Platform, platformNames, platforms } from "../data/remoteControl";
 import { t } from "../i18n";
 
 const smallButtonClass =
   "inline-flex h-10 items-center justify-center gap-2 rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold whitespace-nowrap text-ink transition-colors hover:bg-ghost-hover disabled:opacity-60";
-
-const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
 
 const errorText = (error: unknown) =>
   error instanceof BackendError && error.status < 500 && error.message
@@ -43,7 +41,7 @@ function LinkedAccounts(props: {
     try {
       props.onAccount(await unlinkAccount(props.session, platform));
     } catch (error) {
-      if (signedOut(error)) {
+      if (isSignedOut(error)) {
         props.onSignOut();
       }
       setError(errorText(error));
@@ -165,7 +163,7 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
       await deleteAccount(props.session);
       props.onSignOut();
     } catch (error) {
-      if (signedOut(error)) {
+      if (isSignedOut(error)) {
         props.onSignOut();
         return;
       }

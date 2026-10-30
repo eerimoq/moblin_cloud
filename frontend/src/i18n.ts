@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js";
+import { readStored, store } from "./storage";
 
 export const languages = [
   { code: "en", name: "English" },
@@ -41,12 +42,10 @@ function matchLanguage(tag: string) {
 }
 
 function chosenLanguage() {
-  try {
-    const stored = localStorage.getItem("language");
-    if (languages.some((l) => l.code === stored)) {
-      return stored!;
-    }
-  } catch {}
+  const stored = readStored("language");
+  if (languages.some((l) => l.code === stored)) {
+    return stored!;
+  }
   for (const tag of navigator.languages) {
     const code = matchLanguage(tag);
     if (code) {
@@ -57,9 +56,7 @@ function chosenLanguage() {
 }
 
 export function setLanguage(code: string) {
-  try {
-    localStorage.setItem("language", code);
-  } catch {}
+  store("language", code);
   location.reload();
 }
 

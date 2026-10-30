@@ -14,6 +14,12 @@ export class BackendError extends Error {
   }
 }
 
+export const isSignedOut = (error: unknown) =>
+  error instanceof BackendError && error.status === 401;
+
+export const isForbidden = (error: unknown) =>
+  error instanceof BackendError && error.status === 403;
+
 export async function call<T>(path: string, token?: string | null, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (token) {

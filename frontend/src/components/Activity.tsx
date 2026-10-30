@@ -1,16 +1,14 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
-import Icon, { type IconName } from "./Icon";
+import Icon, { kindIcons } from "./Icon";
 import { createRecent, timeAgo } from "./Latest";
 import { Spinner } from "./PageParts";
 import { fetchRecent, resendRecent, type Recent, type RecentKind } from "../data/account";
-import { BackendError } from "../data/backend";
+import { isSignedOut } from "../data/backend";
 import { effectName } from "../data/effects";
 import { formatPrice, providerName, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
 
 const recentKinds: RecentKind[] = ["tip", "spin", "effect"];
-
-const kindIcons: Record<RecentKind, IconName> = { tip: "heart", spin: "wheel", effect: "sparkles" };
 
 const kindNames = (): Record<RecentKind, string> => ({
   tip: t("Message"),
@@ -124,7 +122,7 @@ export default function Activity(props: {
   onSignOut: () => void;
 }) {
   const guard = (error: unknown) => {
-    if (error instanceof BackendError && error.status === 401) {
+    if (isSignedOut(error)) {
       props.onSignOut();
     }
   };

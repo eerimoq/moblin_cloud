@@ -17,10 +17,14 @@ import { asset } from "../asset";
 import { createFlash } from "../flash";
 import { subscribeChanges } from "../sse";
 import { copyText } from "../components/CopyButton";
-import Icon from "../components/Icon";
+import Icon, { kindIcons } from "../components/Icon";
 import Modal, { ask } from "../components/Modal";
 import { createRecent, Latest, timeAgo } from "../components/Latest";
-import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
+import SectionMenu, {
+  connectedOrNot,
+  createSectionChoice,
+  type Section,
+} from "../components/SectionMenu";
 import {
   Avatar,
   channelKey,
@@ -45,6 +49,7 @@ import {
   PlatformSignIn,
   SaveButton,
   Spinner,
+  TermsLink,
   Value,
 } from "../components/PageParts";
 import {
@@ -83,11 +88,12 @@ import {
   type RecentKind,
   type SettingsChanges,
 } from "../data/account";
-import { BackendError } from "../data/backend";
+import { BackendError, isForbidden, isSignedOut } from "../data/backend";
 import { deviceUrl, links, monitorUrl, pages } from "../data/links";
 import {
   accentAttributes,
   accents,
+  amountText,
   currencies,
   fonts,
   hundredths,
@@ -111,6 +117,7 @@ import {
 } from "../data/remoteControl";
 import { effectName, effects } from "../data/effects";
 import { language, t, tRich } from "../i18n";
+import { sameData } from "../same";
 import CloudLanding from "../components/CloudLanding";
 
 const DeviceView = lazy(() => import("./Device"));
@@ -155,8 +162,6 @@ const pageUrls = (account: Account) =>
     const identity = account[platform];
     return identity ? [{ platform, url: pageUrl(platform, identity.login) }] : [];
   });
-
-const signedOut = (error: unknown) => error instanceof BackendError && error.status === 401;
 
 function paymentErrorText(error: unknown, invalid: string) {
   if (error instanceof BackendError) {
@@ -219,8 +224,6 @@ function stripeErrorText(error: unknown) {
   return t("Something went wrong. Try again.");
 }
 
-const forbidden = (error: unknown) => error instanceof BackendError && error.status === 403;
-
 function SignInAgain() {
   return (
     <span class="flex flex-wrap gap-3">
@@ -234,8 +237,6 @@ function SignInAgain() {
     </span>
   );
 }
-
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 function createSave(
   busy: () => boolean,
@@ -281,7 +282,7 @@ function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: 
           </Notice>
         )}
       </Show>
-      <Show when={props.signInAgain && forbidden(props.save.failure()?.error)}>
+      <Show when={props.signInAgain && isForbidden(props.save.failure()?.error)}>
         <SignInAgain />
       </Show>
     </div>
@@ -347,12 +348,12 @@ function createProviderActions(
   };
 
   const failed = (error: unknown) => {
-    if (signedOut(error)) {
+    if (isSignedOut(error)) {
       props.onSignOut();
       return;
     }
     setError(provider.errorText(error));
-    setSignInAgain(forbidden(error));
+    setSignInAgain(isForbidden(error));
   };
 
   const run = async (action: () => Promise<Settings>, report = true) => {
@@ -433,11 +434,7 @@ function PayPalAccount(props: {
                 "account (in some countries PayPal asks for a business account). By connecting PayPal you " +
                 "agree to the {terms}.",
               {
-                terms: (
-                  <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
-                    {t("terms")}
-                  </a>
-                ),
+                terms: <TermsLink leaf />,
               },
             )}
           </p>
@@ -564,11 +561,7 @@ function StripeAccount(props: {
                 "sign up or sign in on Stripe, which asks about you and your bank account so it can send " +
                 "your tips to you. By connecting Stripe you agree to the {terms}.",
               {
-                terms: (
-                  <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
-                    {t("terms")}
-                  </a>
-                ),
+                terms: <TermsLink leaf />,
               },
             )}
           </p>
@@ -892,7 +885,7 @@ function YourPage(props: {
   onMount(() => loadFonts(fonts));
   const save = createSave(
     () => props.busy,
-    () => !same(current(), initial()),
+    () => !sameData(current(), initial()),
     () => props.onSave(current()),
     () => t("Something went wrong. Try again."),
   );
@@ -1077,7 +1070,7 @@ function SubscriberSettings(props: {
   const current = () => tiers({ enabled: enabled(), amounts: amounts() });
   const save = createSave(
     () => props.busy,
-    () => !same(current(), tiers(initial())),
+    () => !sameData(current(), tiers(initial())),
     () => props.onSave(current()),
     (error) =>
       paymentErrorText(
@@ -1318,7 +1311,7 @@ function AssistantList(props: {
       }
       return true;
     } catch (error) {
-      if (signedOut(error)) {
+      if (isSignedOut(error)) {
         props.onSignOut();
       }
       setError(assistantErrorText(error));
@@ -1508,7 +1501,7 @@ function TipSettings(props: {
 }) {
   const initial = () => ({
     enabled: isOn(props.tips),
-    amounts: (props.tips?.amounts ?? [200, 500, 1000]).map((amount) => (amount / 100).toFixed(2)),
+    amounts: (props.tips?.amounts ?? [200, 500, 1000]).map(amountText),
   });
   const [enabled, setEnabled] = createSignal(initial().enabled);
   const [amounts, setAmounts] = createSignal(initial().amounts);
@@ -1519,7 +1512,7 @@ function TipSettings(props: {
   const current = () => tips({ enabled: enabled(), amounts: amounts() });
   const save = createSave(
     () => props.busy,
-    () => !same(current(), tips(initial())),
+    () => !sameData(current(), tips(initial())),
     () => props.onSave({ tips: current() }),
     (error) => paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")),
   );
@@ -1606,7 +1599,7 @@ function EffectSettings(props: {
 }) {
   const initial = () => ({
     enabled: isOn(props.effects),
-    price: ((props.effects?.price ?? 200) / 100).toFixed(2),
+    price: amountText(props.effects?.price ?? 200),
   });
   const [enabled, setEnabled] = createSignal(initial().enabled);
   const [price, setPrice] = createSignal(initial().price);
@@ -1617,7 +1610,7 @@ function EffectSettings(props: {
   const current = () => effectsOf({ enabled: enabled(), price: price() });
   const save = createSave(
     () => props.busy,
-    () => !same(current(), effectsOf(initial())),
+    () => !sameData(current(), effectsOf(initial())),
     () => props.onSave({ effects: current() }),
     (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
   );
@@ -1667,7 +1660,7 @@ function SpinSettings(props: {
         { spins: 2, price: 800 },
         { spins: 5, price: 1500 },
       ]
-    ).map((option) => ({ spins: String(option.spins), price: (option.price / 100).toFixed(2) })),
+    ).map((option) => ({ spins: String(option.spins), price: amountText(option.price) })),
   });
   const [enabled, setEnabled] = createSignal(initial().enabled);
   const [options, setOptions] = createSignal(initial().options);
@@ -1686,7 +1679,7 @@ function SpinSettings(props: {
   const current = () => spin({ enabled: enabled(), options: options() });
   const save = createSave(
     () => props.busy,
-    () => !same(current(), spin(initial())),
+    () => !sameData(current(), spin(initial())),
     () => props.onSave({ spin: current() }),
     (error) => paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")),
   );
@@ -1799,7 +1792,7 @@ function SendForm(props: {
       await props.send(message(), effect());
       flashSent();
     } catch (error) {
-      if (signedOut(error)) {
+      if (isSignedOut(error)) {
         props.onSignOut();
       }
       setError(assistantErrorText(error));
@@ -1918,7 +1911,7 @@ function Admin(props: {
   const { recent, loadRecent, loadMore } = createRecent(
     (kind, limit, before) => fetchRecent(props.session, props.page, kind, limit, before),
     (error) => {
-      if (signedOut(error)) {
+      if (isSignedOut(error)) {
         props.onSignOut();
       }
     },
@@ -1928,7 +1921,7 @@ function Admin(props: {
     try {
       return await promise;
     } catch (error) {
-      if (signedOut(error)) {
+      if (isSignedOut(error)) {
         props.onSignOut();
       }
       throw error;
@@ -1985,21 +1978,21 @@ function Admin(props: {
     {
       id: "tips",
       label: t("Message"),
-      icon: "heart",
+      icon: kindIcons.tip,
       shown: () => assisting() || payments() || isOn(settings().tips),
       status: () => onOff(isOn(settings().tips)),
     },
     {
       id: "wheel",
       label: t("Wheel of luck"),
-      icon: "wheel",
+      icon: kindIcons.spin,
       shown: () => true,
       status: () => onOff(isOn(settings().spin) || isOn(settings().subSpins)),
     },
     {
       id: "effects",
       label: t("Effect"),
-      icon: "sparkles",
+      icon: kindIcons.effect,
       shown: () => true,
       status: () => onOff(isOn(settings().effects) || isOn(settings().subEffects)),
     },
@@ -2348,8 +2341,6 @@ const dashboardUrl = (channel: Assisting | null) =>
 
 const onOff = (on: boolean) => ({ on, text: on ? t("On") : t("Off") });
 
-const connectedOrNot = (on: boolean) => ({ on, text: on ? t("Connected") : t("Not connected") });
-
 function NeedsPayments(props: {
   title: string;
   available: boolean;
@@ -2452,7 +2443,7 @@ function MoblinSettings(props: {
     try {
       await action();
     } catch (error) {
-      if (!signedOut(error)) {
+      if (!isSignedOut(error)) {
         setError(t("Something went wrong. Try again."));
       }
     }
@@ -2813,13 +2804,13 @@ function SignedIn(props: {
         try {
           update(await fetchAccount(props.session, assisted ? id : undefined));
         } catch (error) {
-          if (signedOut(error)) {
+          if (isSignedOut(error)) {
             props.onSignOut();
           } else if (!known.has(id)) {
             setFailure({
               page: id,
               message:
-                assisted && forbidden(error)
+                assisted && isForbidden(error)
                   ? t("{name} has removed you as an assistant.", { name: assisted.name })
                   : t("Something went wrong. Try again."),
             });

@@ -53,6 +53,23 @@ export function Notice(props: {
   );
 }
 
+export function TermsLink(props: { leaf?: boolean }) {
+  return (
+    <Show
+      when={props.leaf}
+      fallback={
+        <a href={asset(pages.terms)} class="underline hover:text-ink">
+          {t("Terms")}
+        </a>
+      }
+    >
+      <a href={asset(pages.terms)} class="text-leaf hover:text-leaf-bright">
+        {t("terms")}
+      </a>
+    </Show>
+  );
+}
+
 const platformButtonClass = (platform: Platform) =>
   platform === "twitch"
     ? "bg-twitch text-white hover:bg-twitch-bright"

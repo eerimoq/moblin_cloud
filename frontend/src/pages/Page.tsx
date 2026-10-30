@@ -15,9 +15,9 @@ import {
   Switch,
 } from "solid-js";
 import { asset } from "../asset";
-import { BackendError, moblinIconUrl } from "../data/backend";
+import { BackendError, isSignedOut, moblinIconUrl } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
-import Icon from "../components/Icon";
+import Icon, { kindIcons } from "../components/Icon";
 import Mascot from "../components/Mascot";
 import { fireConfetti } from "../confetti";
 import { subscribeChanges } from "../sse";
@@ -27,10 +27,12 @@ import {
   ghostButtonClass,
   inputClass,
   Notice,
+  TermsLink,
 } from "../components/PageParts";
 import { pages } from "../data/links";
 import {
   accentAttributes,
+  amountText,
   captureOrder,
   channelText,
   channelUrl,
@@ -77,42 +79,20 @@ import {
 } from "../data/remoteControl";
 import { effectCredit, effectName, playEffect, playingEffect, stopEffect } from "../data/effects";
 import { t, tRich } from "../i18n";
+import { sameData } from "../same";
+import { readStored, store } from "../storage";
 
 const nameKey = "songRequestName";
 
-function readName() {
-  try {
-    return localStorage.getItem(nameKey) ?? "";
-  } catch {
-    return "";
-  }
-}
+const readName = () => readStored(nameKey) ?? "";
 
-function saveName(name: string) {
-  try {
-    localStorage.setItem(nameKey, name);
-  } catch {}
-}
+const saveName = (name: string) => store(nameKey, name);
 
 const viewerKey = (id: string) => `viewerSession:${id}`;
 
-function readViewer(id: string) {
-  try {
-    return localStorage.getItem(viewerKey(id));
-  } catch {
-    return null;
-  }
-}
+const readViewer = (id: string) => readStored(viewerKey(id));
 
-function saveViewer(id: string, viewer: string | null) {
-  try {
-    if (viewer) {
-      localStorage.setItem(viewerKey(id), viewer);
-    } else {
-      localStorage.removeItem(viewerKey(id));
-    }
-  } catch {}
-}
+const saveViewer = (id: string, viewer: string | null) => store(viewerKey(id), viewer || null);
 
 const sectionKey = "viewerSignInSection";
 
@@ -203,8 +183,6 @@ function paymentOf(current: PublicPayment): Payment | null {
   const stripe = current.stripe ?? null;
   return paypal || stripe ? { paypal, stripe } : null;
 }
-
-const sameData = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 type PayOptions = {
   start: () => boolean;
@@ -549,14 +527,6 @@ function PayButtons(props: {
   );
 }
 
-function TermsLink() {
-  return (
-    <a href={asset(pages.terms)} class="underline hover:text-ink">
-      {t("Terms")}
-    </a>
-  );
-}
-
 type Result = { text: string };
 
 function CheerCard(props: {
@@ -804,13 +774,6 @@ function ResultLine(props: { result: Result | null; onClose: () => void }) {
   );
 }
 
-const formatTip = (amount: number, currency: string) =>
-  new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-    minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
-  }).format(amount / 100);
-
 const chipClass =
   "relative inline-flex h-12 min-w-20 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-line bg-well px-5 font-display text-lg font-semibold text-ink transition-colors hover:border-leaf has-[:checked]:border-moss has-[:checked]:bg-moss has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink";
 
@@ -834,7 +797,7 @@ function AmountChips(props: {
               onChange={() => props.onChoice(amount)}
               class="sr-only"
             />
-            {formatTip(amount, props.currency)}
+            {formatPrice({ price: amount, currency: props.currency }, true)}
           </label>
         )}
       </For>
@@ -989,7 +952,7 @@ function TipJar(props: {
               value={other()}
               onInput={(event) => setOther(event.currentTarget.value)}
               placeholder={t("At least {minimum}", {
-                minimum: (Math.min(...props.tips.amounts) / 100).toFixed(2),
+                minimum: amountText(Math.min(...props.tips.amounts)),
               })}
               class={inputClass}
             />
@@ -1683,7 +1646,8 @@ function SpinWheel(props: {
                     onChange={() => setChoice(option)}
                     class="sr-only"
                   />
-                  {spinsText(option.spins)} · {formatTip(option.price, props.spin?.currency ?? "")}
+                  {spinsText(option.spins)} ·{" "}
+                  {formatPrice({ price: option.price, currency: props.spin?.currency ?? "" }, true)}
                 </label>
               )}
             </For>
@@ -1753,7 +1717,6 @@ type Section = "tip" | "spin" | "effect";
 
 type Way = {
   section: Section;
-  icon: "heart" | "wheel" | "sparkles";
   title: string;
   text: string;
   enabled: boolean;
@@ -1818,7 +1781,7 @@ function WaysToTip(props: {
                         : "bg-well text-muted"
                   }`}
                 >
-                  <Icon name={way.icon} class="size-6" />
+                  <Icon name={kindIcons[way.section]} class="size-6" />
                 </span>
                 <span class="flex min-w-0 flex-col gap-0.5">
                   <span class="font-title text-xl font-semibold text-ink">{way.title}</span>
@@ -1892,14 +1855,12 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     return [
       {
         section: "tip",
-        icon: "heart",
         title: t("Message"),
         text: t("Send a tip with a message if you like."),
         enabled: tipJar() !== null,
       },
       {
         section: "spin",
-        icon: "wheel",
         title: t("Spin the wheel"),
         text: wheel() ? t("Your tip spins the wheel live on stream.") : subscribersText(),
         enabled: spinnable(),
@@ -1908,7 +1869,6 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         ? [
             {
               section: "effect" as const,
-              icon: "sparkles" as const,
               title: t("Effect"),
               text: effectJar()
                 ? t("Your tip plays a sound live on stream.")
@@ -1962,7 +1922,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         setEffectAllowance(await fetchAllowance(current, "effect", session));
       }
     } catch (error) {
-      if (error instanceof BackendError && error.status === 401) {
+      if (isSignedOut(error)) {
         signOutViewer();
       }
     }

@@ -3,7 +3,11 @@ import Graphs from "../components/Graphs";
 import Icon from "../components/Icon";
 import MoblinScreen from "../components/MoblinScreen";
 import MomMessage from "../components/MomMessage";
-import SectionMenu, { createSectionChoice, type Section } from "../components/SectionMenu";
+import SectionMenu, {
+  connectedOrNot,
+  createSectionChoice,
+  type Section,
+} from "../components/SectionMenu";
 import { cardClass } from "../components/PageParts";
 import { useDeviceFeed, usePreviewFeed, type DeviceFeed } from "../components/deviceFeed";
 import { formatBits } from "../data/moblin";
@@ -38,7 +42,7 @@ export default function DeviceView(props: {
       id: "phone",
       label: t("Phone"),
       icon: "screen",
-      status: () => ({ on: online(), text: online() ? t("Connected") : t("Not connected") }),
+      status: () => connectedOrNot(online()),
     },
     {
       id: "graphs",
