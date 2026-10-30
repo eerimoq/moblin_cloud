@@ -267,6 +267,71 @@ function createSave(
   return { busy, changed, saving, saved, failure, errorText, submit, dismiss };
 }
 
+function createFeatureSave<Form extends { enabled: boolean }, Value>(options: {
+  initial: () => Form;
+  value: (form: Form) => Value;
+  busy: () => boolean;
+  save: (value: Value) => Promise<void>;
+  errorText: (error: unknown) => string;
+}) {
+  const [form, setForm] = createSignal(options.initial());
+  const change = (changes: Partial<Form>) => setForm(() => ({ ...form(), ...changes }));
+  const current = () => options.value(form());
+  const save = createSave(
+    options.busy,
+    () => !sameData(current(), options.value(options.initial())),
+    () => options.save(current()),
+    options.errorText,
+  );
+  return { form, change, save };
+}
+
+function EnableToggle(props: {
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  children: JSX.Element;
+}) {
+  return (
+    <label class="flex items-center gap-3 text-ink-2">
+      <input
+        type="checkbox"
+        checked={props.checked}
+        onChange={(event) => props.onChange(event.currentTarget.checked)}
+        class="size-5 accent-moss"
+      />
+      {props.children}
+    </label>
+  );
+}
+
+function RemoveRowButton(props: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      class="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ghost hover:text-ink"
+      aria-label={props.label}
+      onClick={() => props.onClick()}
+    >
+      <Icon name="close" class="size-5" />
+    </button>
+  );
+}
+
+function AddRowButton(props: { rows: number; onClick: () => void; children: JSX.Element }) {
+  return (
+    <div class="mt-1">
+      <button
+        type="button"
+        class={ghostButtonClass}
+        disabled={props.rows >= 5}
+        onClick={() => props.onClick()}
+      >
+        {props.children}
+      </button>
+    </div>
+  );
+}
+
 function SaveFooter(props: { save: ReturnType<typeof createSave>; signInAgain?: boolean }) {
   return (
     <div class="flex flex-wrap items-center gap-4">
@@ -1061,25 +1126,24 @@ function SubscriberSettings(props: {
       String(props.tiers ? tierCount(props.tiers, tier) : [1, 5, 10][tier - 1]),
     ),
   });
-  const [enabled, setEnabled] = createSignal(initial().enabled);
-  const [amounts, setAmounts] = createSignal(initial().amounts);
-  const tiers = (form: ReturnType<typeof initial>): Feature<Tiers> => {
-    const [tier1, tier2, tier3] = form.amounts.map((count) => Number.parseInt(count, 10) || 0);
-    return { enabled: form.enabled, tier1, tier2, tier3 };
-  };
-  const current = () => tiers({ enabled: enabled(), amounts: amounts() });
-  const save = createSave(
-    () => props.busy,
-    () => !sameData(current(), tiers(initial())),
-    () => props.onSave(current()),
-    (error) =>
+  const { form, change, save } = createFeatureSave({
+    initial,
+    value: (form): Feature<Tiers> => {
+      const [tier1, tier2, tier3] = form.amounts.map((count) => Number.parseInt(count, 10) || 0);
+      return { enabled: form.enabled, tier1, tier2, tier3 };
+    },
+    busy: () => props.busy,
+    save: (tiers) => props.onSave(tiers),
+    errorText: (error) =>
       paymentErrorText(
         error,
         props.perk === "spin"
           ? t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier.")
           : t("Enter 0 to 100 effects per tier, and more than 0 for at least one tier."),
       ),
-  );
+  });
+  const enabled = () => form().enabled;
+  const amounts = () => form().amounts;
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
@@ -1109,17 +1173,11 @@ function SubscriberSettings(props: {
           {t("Kick subscribers get the tier 1 amount.")}
         </Show>
       </p>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={enabled()}
-          onChange={(event) => setEnabled(event.currentTarget.checked)}
-          class="size-5 accent-moss"
-        />
+      <EnableToggle checked={enabled()} onChange={(enabled) => change({ enabled })}>
         {props.perk === "spin"
           ? t("Subscribers can spin the wheel without a tip")
           : t("Subscribers can play effects without a tip")}
-      </label>
+      </EnableToggle>
       <Show when={enabled()}>
         <div class="flex flex-wrap gap-4">
           <For each={shownTiers()}>
@@ -1137,7 +1195,9 @@ function SubscriberSettings(props: {
                   value={amounts()[tier - 1]}
                   onInput={(event) => {
                     const value = event.currentTarget.value;
-                    setAmounts(amounts().map((old, at) => (at === tier - 1 ? value : old)));
+                    change({
+                      amounts: amounts().map((old, at) => (at === tier - 1 ? value : old)),
+                    });
                   }}
                   class={`${inputClass} max-w-28`}
                 />
@@ -1503,19 +1563,16 @@ function TipSettings(props: {
     enabled: isOn(props.tips),
     amounts: (props.tips?.amounts ?? [200, 500, 1000]).map(amountText),
   });
-  const [enabled, setEnabled] = createSignal(initial().enabled);
-  const [amounts, setAmounts] = createSignal(initial().amounts);
-  const tips = (form: ReturnType<typeof initial>): Feature<Tips> => ({
-    enabled: form.enabled,
-    amounts: amountsOf(form.amounts),
+  const { form, change, save } = createFeatureSave({
+    initial,
+    value: (form): Feature<Tips> => ({ enabled: form.enabled, amounts: amountsOf(form.amounts) }),
+    busy: () => props.busy,
+    save: (tips) => props.onSave({ tips }),
+    errorText: (error) => paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")),
   });
-  const current = () => tips({ enabled: enabled(), amounts: amounts() });
-  const save = createSave(
-    () => props.busy,
-    () => !sameData(current(), tips(initial())),
-    () => props.onSave({ tips: current() }),
-    (error) => paymentErrorText(error, t("Enter amounts from 0.50 to 100000.")),
-  );
+  const enabled = () => form().enabled;
+  const amounts = () => form().amounts;
+  const setAmounts = (amounts: string[]) => change({ amounts });
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
@@ -1534,15 +1591,9 @@ function TipSettings(props: {
           { guide: <GuideLink text={t("setup guide")} /> },
         )}
       </p>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={enabled()}
-          onChange={(event) => setEnabled(event.currentTarget.checked)}
-          class="size-5 accent-moss"
-        />
+      <EnableToggle checked={enabled()} onChange={(enabled) => change({ enabled })}>
         {t("Viewers can send messages")}
-      </label>
+      </EnableToggle>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">
@@ -1561,29 +1612,18 @@ function TipSettings(props: {
                     label={t("Amount {number}", { number: index + 1 })}
                   />
                   <Show when={amounts().length > 1}>
-                    <button
-                      type="button"
-                      class="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ghost hover:text-ink"
-                      aria-label={t("Remove amount {number}", { number: index + 1 })}
+                    <RemoveRowButton
+                      label={t("Remove amount {number}", { number: index + 1 })}
                       onClick={() => setAmounts(amounts().filter((_, at) => at !== index))}
-                    >
-                      <Icon name="close" class="size-5" />
-                    </button>
+                    />
                   </Show>
                 </div>
               )}
             </Index>
           </div>
-          <div class="mt-1">
-            <button
-              type="button"
-              class={ghostButtonClass}
-              disabled={amounts().length >= 5}
-              onClick={() => setAmounts([...amounts(), ""])}
-            >
-              {t("Add amount")}
-            </button>
-          </div>
+          <AddRowButton rows={amounts().length} onClick={() => setAmounts([...amounts(), ""])}>
+            {t("Add amount")}
+          </AddRowButton>
         </fieldset>
       </Show>
       <SaveFooter save={save} signInAgain />
@@ -1601,19 +1641,14 @@ function EffectSettings(props: {
     enabled: isOn(props.effects),
     price: amountText(props.effects?.price ?? 200),
   });
-  const [enabled, setEnabled] = createSignal(initial().enabled);
-  const [price, setPrice] = createSignal(initial().price);
-  const effectsOf = (form: ReturnType<typeof initial>): Feature<Effects> => ({
-    enabled: form.enabled,
-    price: hundredths(form.price),
+  const { form, change, save } = createFeatureSave({
+    initial,
+    value: (form): Feature<Effects> => ({ enabled: form.enabled, price: hundredths(form.price) }),
+    busy: () => props.busy,
+    save: (effects) => props.onSave({ effects }),
+    errorText: (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
   });
-  const current = () => effectsOf({ enabled: enabled(), price: price() });
-  const save = createSave(
-    () => props.busy,
-    () => !sameData(current(), effectsOf(initial())),
-    () => props.onSave({ effects: current() }),
-    (error) => paymentErrorText(error, t("Enter a price from 0.50 to 100000.")),
-  );
+  const enabled = () => form().enabled;
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
@@ -1624,21 +1659,20 @@ function EffectSettings(props: {
             "listen to it first if they like, and add an optional message.",
         )}
       </p>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={enabled()}
-          onChange={(event) => setEnabled(event.currentTarget.checked)}
-          class="size-5 accent-moss"
-        />
+      <EnableToggle checked={enabled()} onChange={(enabled) => change({ enabled })}>
         {t("Viewers tip to play effects")}
-      </label>
+      </EnableToggle>
       <Show when={enabled()}>
         <label class="flex flex-col gap-2">
           <span class="text-[15px] font-semibold text-ink-2">
             {t("Price per effect ({currency})", { currency: props.currency })}
           </span>
-          <MoneyInput value={price()} onValue={setPrice} required label={t("Price per effect")} />
+          <MoneyInput
+            value={form().price}
+            onValue={(price) => change({ price })}
+            required
+            label={t("Price per effect")}
+          />
         </label>
       </Show>
       <SaveFooter save={save} signInAgain />
@@ -1662,27 +1696,27 @@ function SpinSettings(props: {
       ]
     ).map((option) => ({ spins: String(option.spins), price: amountText(option.price) })),
   });
-  const [enabled, setEnabled] = createSignal(initial().enabled);
-  const [options, setOptions] = createSignal(initial().options);
-
-  const changeOption = (index: number, change: Partial<{ spins: string; price: string }>) =>
-    setOptions(options().map((old, at) => (at === index ? { ...old, ...change } : old)));
-  const spin = (form: ReturnType<typeof initial>): Feature<Spin> => ({
-    enabled: form.enabled,
-    options: form.options
-      .filter((option) => option.spins.trim() && option.price.trim())
-      .map((option) => ({
-        spins: Number.parseInt(option.spins),
-        price: hundredths(option.price),
-      })),
+  const { form, change, save } = createFeatureSave({
+    initial,
+    value: (form): Feature<Spin> => ({
+      enabled: form.enabled,
+      options: form.options
+        .filter((option) => option.spins.trim() && option.price.trim())
+        .map((option) => ({
+          spins: Number.parseInt(option.spins),
+          price: hundredths(option.price),
+        })),
+    }),
+    busy: () => props.busy,
+    save: (spin) => props.onSave({ spin }),
+    errorText: (error) =>
+      paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")),
   });
-  const current = () => spin({ enabled: enabled(), options: options() });
-  const save = createSave(
-    () => props.busy,
-    () => !sameData(current(), spin(initial())),
-    () => props.onSave({ spin: current() }),
-    (error) => paymentErrorText(error, t("Enter 1 to 10 spins for 0.50 to 100000 per price.")),
-  );
+  const enabled = () => form().enabled;
+  const options = () => form().options;
+  const setOptions = (options: ReturnType<typeof initial>["options"]) => change({ options });
+  const changeOption = (index: number, changes: Partial<{ spins: string; price: string }>) =>
+    setOptions(options().map((old, at) => (at === index ? { ...old, ...changes } : old)));
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
@@ -1701,15 +1735,9 @@ function SpinSettings(props: {
           { guide: <GuideLink text={t("setup guide")} /> },
         )}
       </p>
-      <label class="flex items-center gap-3 text-ink-2">
-        <input
-          type="checkbox"
-          checked={enabled()}
-          onChange={(event) => setEnabled(event.currentTarget.checked)}
-          class="size-5 accent-moss"
-        />
+      <EnableToggle checked={enabled()} onChange={(enabled) => change({ enabled })}>
         {t("Viewers tip to spin the wheel")}
-      </label>
+      </EnableToggle>
       <Show when={enabled()}>
         <fieldset class="flex flex-col gap-2">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">
@@ -1737,29 +1765,21 @@ function SpinSettings(props: {
                     label={t("Tip {number}", { number: index + 1 })}
                   />
                   <Show when={options().length > 1}>
-                    <button
-                      type="button"
-                      class="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ghost hover:text-ink"
-                      aria-label={t("Remove option {number}", { number: index + 1 })}
+                    <RemoveRowButton
+                      label={t("Remove option {number}", { number: index + 1 })}
                       onClick={() => setOptions(options().filter((_, at) => at !== index))}
-                    >
-                      <Icon name="close" class="size-5" />
-                    </button>
+                    />
                   </Show>
                 </div>
               )}
             </Index>
           </div>
-          <div class="mt-1">
-            <button
-              type="button"
-              class={ghostButtonClass}
-              disabled={options().length >= 5}
-              onClick={() => setOptions([...options(), { spins: "", price: "" }])}
-            >
-              {t("Add option")}
-            </button>
-          </div>
+          <AddRowButton
+            rows={options().length}
+            onClick={() => setOptions([...options(), { spins: "", price: "" }])}
+          >
+            {t("Add option")}
+          </AddRowButton>
         </fieldset>
       </Show>
       <SaveFooter save={save} signInAgain />
