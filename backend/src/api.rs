@@ -247,10 +247,7 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route("/pages/{id}/tips", get(handle_tips))
         .route("/pages/{id}/tips/orders", post(handle_tip_order))
-        .route(
-            "/pages/{id}/tips/orders/{order_id}/capture",
-            post(handle_tip_capture),
-        )
+        .route("/pages/{id}/tips/orders/{order_id}/capture", capture("tip"))
         .route("/pages/{id}/effects", get(handle_effects))
         .route(
             "/pages/{id}/effects/subscriber",
@@ -259,7 +256,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/pages/{id}/effects/orders", post(handle_effect_order))
         .route(
             "/pages/{id}/effects/orders/{order_id}/capture",
-            post(handle_effect_capture),
+            capture("effect"),
         )
         .route("/effects/{id}", get(handle_effect_media))
         .route("/icons/{id}", get(handle_icon))
@@ -267,7 +264,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/pages/{id}/spin/orders", post(handle_spin_order))
         .route(
             "/pages/{id}/spin/orders/{order_id}/capture",
-            post(handle_spin_capture),
+            capture("spin"),
         )
         .layer(cors)
         .layer(middleware::from_fn_with_state(
@@ -386,10 +383,10 @@ pub(super) fn failure(reason: &'static str, status: StatusCode, text: &str) -> F
     }
 }
 
-pub(super) fn user_name(user: Option<String>, anonymous: &str) -> String {
+pub(super) fn user_name(user: Option<String>) -> String {
     user.map(|user| user.trim().chars().take(25).collect::<String>())
         .filter(|user| !user.is_empty())
-        .unwrap_or_else(|| anonymous.to_string())
+        .unwrap_or_else(|| "Someone".to_string())
 }
 
 pub(super) fn not_saved(error: anyhow::Error) -> Failure {

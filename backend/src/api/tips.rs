@@ -5,7 +5,6 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::pages::format_price;
 use crate::payments::{Item, Order};
@@ -15,10 +14,8 @@ use super::*;
 #[derive(Deserialize)]
 pub(super) struct TipRequest {
     amount: u32,
-    user: Option<String>,
-    message: Option<String>,
-    #[serde(default)]
-    provider: Option<String>,
+    #[serde(flatten)]
+    paid: PaidRequest,
 }
 
 pub(super) async fn handle_tip_order(
@@ -26,23 +23,17 @@ pub(super) async fn handle_tip_order(
     Path(id): Path<String>,
     Json(request): Json<TipRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let result = tip_order(&api, id, request).await;
-    counted(&api, "tipOrders", result)
+    place_order(&api, "tip", tip_order(&api, id, request)).await
 }
 
-async fn tip_order(
-    api: &Api,
-    id: String,
-    request: TipRequest,
-) -> Result<Json<OrderResponse>, Failure> {
+fn tip_order(api: &Api, id: String, request: TipRequest) -> Result<Order, Failure> {
     let settings = api.pages.get(&id);
-    let currency = settings.currency().to_string();
     let tips = settings.tips().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
     ))?;
-    let payee = payee(api, &id, request.provider.as_deref())?;
+    let payee = request.paid.payee(api, &id)?;
     let minimum = tips.amounts.iter().copied().min().unwrap_or(50);
     if request.amount < minimum {
         return Err(failure(
@@ -51,25 +42,13 @@ async fn tip_order(
             &format!("Tip at least {}.", format_price(minimum)),
         ));
     }
-    let message = viewer_message(request.message)?;
-    let order = Order {
-        streamer: id.clone(),
-        item: Item::Tip { message },
-        user: user_name(request.user, "Someone"),
+    request.paid.order(
+        id,
+        |message| Item::Tip { message },
         payee,
-        price: request.amount,
-        currency,
-    };
-    Ok(Json(start_order(api, order).await?))
-}
-
-pub(super) async fn handle_tip_capture(
-    State(api): State<Arc<Api>>,
-    Path((id, order_id)): Path<(String, String)>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    tokio::spawn(capture_paid(api, id, order_id, "tip"))
-        .await
-        .unwrap_or_else(|_| Err(capture_crashed()))
+        request.amount,
+        settings.currency(),
+    )
 }
 
 #[cfg(test)]

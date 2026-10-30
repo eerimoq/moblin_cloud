@@ -7,7 +7,6 @@ use axum::http::StatusCode;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::effects;
 use crate::payments::{Item, Order};
@@ -19,10 +18,8 @@ pub(super) struct EffectRequest {
     effect: String,
     #[serde(default)]
     price: Option<u32>,
-    user: Option<String>,
-    message: Option<String>,
-    #[serde(default)]
-    provider: Option<String>,
+    #[serde(flatten)]
+    paid: PaidRequest,
 }
 
 pub(super) async fn handle_effect_order(
@@ -30,23 +27,17 @@ pub(super) async fn handle_effect_order(
     Path(id): Path<String>,
     Json(request): Json<EffectRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let result = effect_order(&api, id, request).await;
-    counted(&api, "effectOrders", result)
+    place_order(&api, "effect", effect_order(&api, id, request)).await
 }
 
-async fn effect_order(
-    api: &Api,
-    id: String,
-    request: EffectRequest,
-) -> Result<Json<OrderResponse>, Failure> {
+fn effect_order(api: &Api, id: String, request: EffectRequest) -> Result<Order, Failure> {
     let settings = api.pages.get(&id);
-    let currency = settings.currency().to_string();
     let effects = settings.effects().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer turned effects off. Reload the page.",
     ))?;
-    let payee = payee(api, &id, request.provider.as_deref())?;
+    let payee = request.paid.payee(api, &id)?;
     if request.price.is_some_and(|price| price != effects.price) {
         return Err(failure(
             "invalid-option",
@@ -55,18 +46,13 @@ async fn effect_order(
         ));
     }
     let effect = viewer_effect(&request.effect)?;
-    let order = Order {
-        streamer: id.clone(),
-        item: Item::Effect {
-            effect,
-            message: viewer_message(request.message)?,
-        },
-        user: user_name(request.user, "Someone"),
+    request.paid.order(
+        id,
+        |message| Item::Effect { effect, message },
         payee,
-        price: effects.price,
-        currency,
-    };
-    Ok(Json(start_order(api, order).await?))
+        effects.price,
+        settings.currency(),
+    )
 }
 
 pub(super) fn viewer_effect(effect: &str) -> Result<String, Failure> {
@@ -77,15 +63,6 @@ pub(super) fn viewer_effect(effect: &str) -> Result<String, Failure> {
             StatusCode::BAD_REQUEST,
             "That effect is no longer available. Reload the page.",
         ))
-}
-
-pub(super) async fn handle_effect_capture(
-    State(api): State<Arc<Api>>,
-    Path((id, order_id)): Path<(String, String)>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    tokio::spawn(capture_paid(api, id, order_id, "effect"))
-        .await
-        .unwrap_or_else(|_| Err(capture_crashed()))
 }
 
 pub(super) async fn handle_effect_media(Path(id): Path<String>) -> Result<Response, StatusCode> {

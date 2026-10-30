@@ -3,9 +3,11 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::Json;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::routing::{MethodRouter, post};
 use log::{info, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::counters;
@@ -149,11 +151,63 @@ async fn create_order(api: &Api, order: Order) -> Result<OrderResponse, Failure>
     Ok(OrderResponse { order_id, stripe })
 }
 
-pub(super) fn capture_crashed() -> Failure {
-    failure(
-        "crashed",
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Something went wrong with the tip.",
+#[derive(Deserialize)]
+pub(super) struct PaidRequest {
+    user: Option<String>,
+    message: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
+}
+
+impl PaidRequest {
+    pub(super) fn payee(&self, api: &Api, id: &str) -> Result<Payee, Failure> {
+        payee(api, id, self.provider.as_deref())
+    }
+
+    pub(super) fn order(
+        self,
+        id: String,
+        item: impl FnOnce(Option<String>) -> Item,
+        payee: Payee,
+        price: u32,
+        currency: &str,
+    ) -> Result<Order, Failure> {
+        Ok(Order {
+            streamer: id,
+            item: item(viewer_message(self.message)?),
+            user: user_name(self.user),
+            payee,
+            price,
+            currency: currency.to_string(),
+        })
+    }
+}
+
+pub(super) async fn place_order(
+    api: &Api,
+    kind: &str,
+    order: Result<Order, Failure>,
+) -> Result<Json<OrderResponse>, Failure> {
+    let result = match order {
+        Ok(order) => start_order(api, order).await.map(Json),
+        Err(failure) => Err(failure),
+    };
+    counted(api, &format!("{kind}Orders"), result)
+}
+
+pub(super) fn capture(kind: &'static str) -> MethodRouter<Arc<Api>> {
+    post(
+        move |State(api): State<Arc<Api>>, Path((id, order_id)): Path<(String, String)>| async move {
+            tokio::spawn(capture_paid(api, id, order_id, kind))
+                .await
+                .unwrap_or_else(|_| {
+                    Err(failure(
+                        "crashed",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Something went wrong with the tip.",
+                    ))
+                })
+        },
     )
 }
 
@@ -165,7 +219,7 @@ fn payment_unavailable() -> Failure {
     )
 }
 
-pub(super) async fn capture_paid(
+async fn capture_paid(
     api: Arc<Api>,
     id: String,
     order_id: String,

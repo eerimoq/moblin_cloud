@@ -5,7 +5,6 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::payments::{Item, Order};
 
@@ -16,10 +15,8 @@ pub(super) struct SpinRequest {
     spins: u32,
     #[serde(default)]
     price: Option<u32>,
-    user: Option<String>,
-    message: Option<String>,
-    #[serde(default)]
-    provider: Option<String>,
+    #[serde(flatten)]
+    paid: PaidRequest,
 }
 
 pub(super) async fn handle_spin_order(
@@ -27,24 +24,18 @@ pub(super) async fn handle_spin_order(
     Path(id): Path<String>,
     Json(request): Json<SpinRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    let result = spin_order(&api, id, request).await;
-    counted(&api, "spinOrders", result)
+    place_order(&api, "spin", spin_order(&api, id, request)).await
 }
 
-async fn spin_order(
-    api: &Api,
-    id: String,
-    request: SpinRequest,
-) -> Result<Json<OrderResponse>, Failure> {
+fn spin_order(api: &Api, id: String, request: SpinRequest) -> Result<Order, Failure> {
     let settings = api.pages.get(&id);
-    let currency = settings.currency().to_string();
     let spin = settings.spin().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
     wheel_available(api, &id)?;
-    let payee = payee(api, &id, request.provider.as_deref())?;
+    let payee = request.paid.payee(api, &id)?;
     let option = spin
         .options
         .iter()
@@ -56,18 +47,16 @@ async fn spin_order(
             StatusCode::BAD_REQUEST,
             "The streamer changed the prices. Reload the page.",
         ))?;
-    let order = Order {
-        streamer: id.clone(),
-        item: Item::Spin {
+    request.paid.order(
+        id,
+        |message| Item::Spin {
             spins: option.spins,
-            message: viewer_message(request.message)?,
+            message,
         },
-        user: user_name(request.user, "Someone"),
         payee,
-        price: option.price,
-        currency,
-    };
-    Ok(Json(start_order(api, order).await?))
+        option.price,
+        settings.currency(),
+    )
 }
 
 pub(super) fn wheel_available(api: &Api, id: &str) -> Result<(), Failure> {
@@ -87,15 +76,6 @@ pub(super) fn wheel_available(api: &Api, id: &str) -> Result<(), Failure> {
         });
     }
     Ok(())
-}
-
-pub(super) async fn handle_spin_capture(
-    State(api): State<Arc<Api>>,
-    Path((id, order_id)): Path<(String, String)>,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    tokio::spawn(capture_paid(api, id, order_id, "spin"))
-        .await
-        .unwrap_or_else(|_| Err(capture_crashed()))
 }
 
 #[cfg(test)]
