@@ -71,7 +71,7 @@ def database(ids: dict[str, str], icon: str) -> dict:
             },
             {"id": ids["W3"], "name": "BRB image", "type": "Image", "enabled": True},
         ],
-        "cameras": [
+        "videoSources": [
             {
                 "id": "com.apple.avfoundation.avcapturedevice.built-in_video:0",
                 "name": "Back Wide",

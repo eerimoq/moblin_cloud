@@ -622,8 +622,8 @@ mod tests {
             } else if data.get("getWidgets").is_some() {
                 json!({"getWidgets": {"widgets": [{"id": "W1", "name": "Clock", "type": "Text"}]}})
             } else {
-                assert_eq!(data, &json!({"getCameras": {}}));
-                json!({"getCameras": {"cameras": [{"id": "N", "name": "None", "position": "None"}]}})
+                assert_eq!(data, &json!({"getVideoSources": {}}));
+                json!({"getVideoSources": {"videoSources": [{"id": "N", "name": "None", "position": "None"}]}})
             };
             answer(&mut socket, &request, answered).await;
         }

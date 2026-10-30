@@ -301,8 +301,8 @@ class FakeMoblin:
             return {"ok": {}}, {"getStatus": self.status()}
         elif kind == "getSettings":
             return {"ok": {}}, {"getSettings": {"data": self.settings()}}
-        elif kind in ("getScenes", "getWidgets", "getCameras"):
-            name = kind[3:].lower()
+        elif kind in ("getScenes", "getWidgets", "getVideoSources"):
+            name = kind[3].lower() + kind[4:]
             return {"ok": {}}, {kind: {name: self.database[name]}}
         elif kind == "startStatus":
             self.send_event({"state": {"data": self.state}})

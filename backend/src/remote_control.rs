@@ -154,7 +154,7 @@ enum Request {
     StopPreview {},
     GetScenes {},
     GetWidgets {},
-    GetCameras {},
+    GetVideoSources {},
     #[serde(untagged)]
     Control(Control),
 }
@@ -1219,10 +1219,10 @@ impl Streamers {
 
     pub async fn scenes(&self, (page, device): (&str, &str)) -> Result<Value, RequestError> {
         let wait = Duration::from_secs(10);
-        let (scenes, widgets, cameras) = tokio::try_join!(
+        let (scenes, widgets, video_sources) = tokio::try_join!(
             self.request((page, device), Request::GetScenes {}, wait),
             self.request((page, device), Request::GetWidgets {}, wait),
-            self.request((page, device), Request::GetCameras {}, wait),
+            self.request((page, device), Request::GetVideoSources {}, wait),
         )?;
         let part = |data: Option<Value>, request: &str, name: &str| {
             data.and_then(|mut data| data.get_mut(request)?.get_mut(name).map(Value::take))
@@ -1232,7 +1232,7 @@ impl Streamers {
         Ok(serde_json::json!({
             "scenes": part(scenes, "getScenes", "scenes")?,
             "widgets": part(widgets, "getWidgets", "widgets")?,
-            "cameras": part(cameras, "getCameras", "cameras")?,
+            "cameras": part(video_sources, "getVideoSources", "videoSources")?,
         }))
     }
 
@@ -1417,8 +1417,8 @@ mod tests {
             r#"{"request":{"id":20,"data":{"getScenes":{}}}}"#
         );
         assert_eq!(
-            request(21, Request::GetCameras {}),
-            r#"{"request":{"id":21,"data":{"getCameras":{}}}}"#
+            request(21, Request::GetVideoSources {}),
+            r#"{"request":{"id":21,"data":{"getVideoSources":{}}}}"#
         );
         let control = |id, control| request(id, Request::Control(control));
         assert_eq!(
