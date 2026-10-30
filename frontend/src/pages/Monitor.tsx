@@ -411,17 +411,8 @@ function PhonePanel(props: {
   const control = () => props.account.remoteControl === "control";
   return (
     <div class="flex h-full min-h-0 flex-col gap-2 p-2">
-      <Show
-        when={
-          !online() || !props.account.preview || !control() || (!props.account.goLive && control())
-        }
-      >
+      <Show when={!props.account.preview || !control() || (!props.account.goLive && control())}>
         <div class="flex flex-wrap gap-x-3 text-[12px] text-muted">
-          <Show when={props.feed.loaded() && !online()}>
-            <span class="font-semibold text-amber">
-              {t("{name} is not connected", { name: props.device.name })}
-            </span>
-          </Show>
           <Show when={!props.account.preview}>
             <span>{t("The streamer has not let you see the stream preview.")}</span>
           </Show>
@@ -433,19 +424,39 @@ function PhonePanel(props: {
           </Show>
         </div>
       </Show>
-      <MoblinScreen
-        fit
-        page={props.page}
-        state={props.feed.state()}
-        status={props.feed.status()}
-        settings={props.feed.settings()}
-        preview={props.feed.connected() ? (previewFeed()?.() ?? null) : null}
-        goLive={props.account.goLive}
-        remoteControl={control()}
-        connected={online()}
-        pending={props.feed.pending()}
-        onControl={(control) => props.feed.control(control)}
-      />
+      <div class="relative flex min-h-0 flex-1 flex-col">
+        <MoblinScreen
+          fit
+          page={props.page}
+          state={props.feed.state()}
+          status={props.feed.status()}
+          settings={props.feed.settings()}
+          preview={props.feed.connected() ? (previewFeed()?.() ?? null) : null}
+          goLive={props.account.goLive}
+          remoteControl={control()}
+          connected={online()}
+          pending={props.feed.pending()}
+          onControl={(control) => props.feed.control(control)}
+        />
+        <Show when={props.feed.loaded() && !online()}>
+          <div class="cheer-fade absolute inset-0 z-10 flex items-center justify-center overflow-hidden rounded-xl bg-page/60 p-3 backdrop-blur-md">
+            <div
+              role="status"
+              class="cheer-pop flex max-w-sm flex-col items-center gap-3 rounded-2xl border-[1.5px] border-line bg-card px-6 py-5 text-center shadow-2xl"
+            >
+              <span class="grid size-12 place-items-center rounded-full bg-ghost text-muted">
+                <Icon name="smartphone" class="size-6" />
+              </span>
+              <span class="font-display text-lg font-semibold text-ink">
+                {t("{name} is not connected", { name: props.device.name })}
+              </span>
+              <span class="text-[13px] text-ink-2">
+                {t("This page updates as soon as it connects again.")}
+              </span>
+            </div>
+          </div>
+        </Show>
+      </div>
     </div>
   );
 }
