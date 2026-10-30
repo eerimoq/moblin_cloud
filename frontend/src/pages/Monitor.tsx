@@ -354,6 +354,7 @@ const connectionDot = (device: Device) =>
 function PaneFrame(props: {
   leaf: Leaf;
   actions: LeafActions;
+  preview: boolean;
   devices: Device[];
   device: Device | undefined;
   onReset: () => void;
@@ -415,6 +416,23 @@ function PaneFrame(props: {
           title={t("Drag to move this pane")}
           class="flex-1 cursor-grab self-stretch active:cursor-grabbing"
         />
+        <Show when={props.leaf.panel === "phone" && props.preview}>
+          <button
+            type="button"
+            aria-pressed={props.leaf.hidePreview === true}
+            title={t("Hiding the stream preview saves bandwidth on the phone.")}
+            onClick={() =>
+              props.actions.change({
+                ...props.leaf,
+                hidePreview: props.leaf.hidePreview ? undefined : true,
+              })
+            }
+            class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink"
+          >
+            <Icon name={props.leaf.hidePreview ? "eye" : "eye-off"} class="size-4" />
+            {props.leaf.hidePreview ? t("Show stream preview") : t("Hide stream preview")}
+          </button>
+        </Show>
         <PaneMenu
           leaf={props.leaf}
           actions={props.actions}
@@ -437,10 +455,13 @@ function PhonePanel(props: {
   page: string;
   device: Device;
   account: Account;
+  hidden: boolean;
   feed: DeviceFeed;
 }) {
   const previewFeed = createMemo(() =>
-    props.account.preview ? usePreviewFeed(props.session, props.page, props.device.id) : null,
+    props.account.preview && !props.hidden
+      ? usePreviewFeed(props.session, props.page, props.device.id)
+      : null,
   );
   const online = () => props.feed.connected() && props.feed.streaming();
   const control = () => props.account.remoteControl === "control";
@@ -664,6 +685,7 @@ function DevicePanel(props: {
                 page={props.page}
                 device={props.device}
                 account={props.account}
+                hidden={props.leaf.hidePreview === true}
                 feed={feed}
               />
             );
@@ -809,6 +831,7 @@ export default function Monitor(props: {
             <PaneFrame
               leaf={leaf()}
               actions={actions}
+              preview={props.account.preview}
               devices={props.account.devices}
               device={deviceOf(leaf())}
               onReset={() => change(defaultLayout())}

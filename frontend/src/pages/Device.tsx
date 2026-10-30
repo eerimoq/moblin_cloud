@@ -1,4 +1,4 @@
-import { createMemo, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import Graphs from "../components/Graphs";
 import MoblinScreen, { NotConnected } from "../components/MoblinScreen";
 import MomMessage from "../components/MomMessage";
@@ -7,10 +7,14 @@ import SectionMenu, {
   createSectionChoice,
   type Section,
 } from "../components/SectionMenu";
+import Icon from "../components/Icon";
 import { cardClass } from "../components/PageParts";
 import { useDeviceFeed, usePreviewFeed, type DeviceFeed } from "../components/deviceFeed";
 import { formatBits } from "../data/moblin";
 import { t } from "../i18n";
+import { readStored, store } from "../storage";
+
+const previewHiddenKey = "previewHidden";
 
 export default function DeviceView(props: {
   session: string;
@@ -57,8 +61,13 @@ export default function DeviceView(props: {
   ];
   const { active, select } = createSectionChoice(() => sections);
 
+  const [previewHidden, setPreviewHidden] = createSignal(readStored(previewHiddenKey) === "1");
+  const togglePreview = () => {
+    setPreviewHidden(!previewHidden());
+    store(previewHiddenKey, previewHidden() ? "1" : null);
+  };
   const previewFeed = createMemo(() =>
-    active() === "phone" && props.preview === true
+    active() === "phone" && props.preview === true && !previewHidden()
       ? usePreviewFeed(props.session, props.page, props.device)
       : null,
   );
@@ -80,7 +89,21 @@ export default function DeviceView(props: {
           <div class="min-w-0">
             <div hidden={active() !== "phone"}>
               <div class={cardClass}>
-                <h2 class="text-[23px] font-semibold">{t("Phone")}</h2>
+                <div class="flex items-center justify-between gap-3">
+                  <h2 class="text-[23px] font-semibold">{t("Phone")}</h2>
+                  <Show when={props.preview === true}>
+                    <button
+                      type="button"
+                      aria-pressed={previewHidden()}
+                      title={t("Hiding the stream preview saves bandwidth on the phone.")}
+                      onClick={togglePreview}
+                      class="inline-flex h-8 items-center gap-1.5 rounded-full border border-line px-3 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-ghost hover:text-ink"
+                    >
+                      <Icon name={previewHidden() ? "eye" : "eye-off"} class="size-4" />
+                      {previewHidden() ? t("Show stream preview") : t("Hide stream preview")}
+                    </button>
+                  </Show>
+                </div>
                 <p class="text-[15px] text-ink-2">
                   {t(
                     "What the Moblin app shows on the device, with the same buttons to control it.",
