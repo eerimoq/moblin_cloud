@@ -57,10 +57,16 @@ dev-fake-moblin *args:
 	fi
 	python3 -m tests.utils.fake_moblin http://localhost:8080 --key "$key" --device-id FAKE-MOBLIN {{args}}
 
+[group('dev')]
+[doc("Runs mobtop, the terminal dashboard, against dev-backend through dev-frontend, like the browser, so run just dev first.")]
+dev-mobtop *args:
+	cd mobtop && cargo run -q -- --backend-url http://localhost:5173/api {{args}}
+
 [group('check')]
 style:
 	cd frontend && oxfmt
 	cd backend && cargo fmt
+	cd mobtop && cargo fmt
 	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}}
 	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}}
 
@@ -68,6 +74,7 @@ style:
 style-check:
 	cd frontend && oxfmt --check
 	cd backend && cargo fmt --check
+	cd mobtop && cargo fmt --check
 	isort --settings-path {{config_dir}}/isort.cfg {{python_dirs}} --check
 	ruff format --config {{config_dir}}/ruff.toml {{python_dirs}} --check
 
@@ -75,6 +82,7 @@ style-check:
 lint:
 	cd frontend && oxlint --deny-warnings
 	cd backend && cargo clippy --all-targets -- -D warnings
+	cd mobtop && cargo clippy --all-targets -- -D warnings
 	pylint --rcfile {{config_dir}}/pylintrc {{python_dirs}}
 	ruff check --config {{config_dir}}/ruff.toml {{python_dirs}}
 	mypy --config-file {{config_dir}}/mypy.ini {{python_dirs}}
@@ -86,6 +94,7 @@ spell-check:
 [group('check')]
 test:
 	cd backend && cargo test
+	cd mobtop && cargo test
 
 [group('check')]
 [doc("Runs the backend system tests, see tests/README.md.")]

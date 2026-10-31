@@ -353,6 +353,7 @@ async fn main() -> Result<()> {
         premium_accounts: cli.premium_accounts,
         started: crate::deliveries::now(),
         tests: Mutex::default(),
+        connect_tries: Mutex::default(),
         requests: Requests::default(),
         stopping: tokio::sync::watch::channel(false).0,
     });

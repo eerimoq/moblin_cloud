@@ -14,6 +14,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::accounts::{Assistant, Identity, Platform};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
+const CODE_LIFETIME: Duration = Duration::from_secs(60);
+const CONNECT_LIFETIME: Duration = Duration::from_secs(600);
 const MAX_PENDING: usize = 10_000;
 const SESSION_LIFETIME: u64 = 30 * 24 * 60 * 60;
 const VIEWER_LIFETIME: u64 = 24 * 60 * 60;
@@ -115,6 +117,74 @@ pub struct SignInState {
     pub page: Option<String>,
     pub link: bool,
     pub verifier: Option<String>,
+    pub terminal: Option<Terminal>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Terminal {
+    pub port: u16,
+    pub challenge: String,
+}
+
+impl Terminal {
+    pub fn new(port: u16, challenge: String) -> Option<Self> {
+        (challenge.len() == 43
+            && challenge
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'))
+        .then_some(Self { port, challenge })
+    }
+}
+
+struct TerminalCode {
+    created: Instant,
+    challenge: String,
+    session: String,
+}
+
+enum Decision {
+    Pending,
+    Approved(String),
+    Denied,
+}
+
+struct ConnectSignIn {
+    created: Instant,
+    user_code: String,
+    decision: Decision,
+}
+
+#[derive(Default)]
+struct ConnectSignIns {
+    by_device: HashMap<String, ConnectSignIn>,
+    by_user: HashMap<String, String>,
+}
+
+impl ConnectSignIns {
+    fn remove(&mut self, device_code: &str) -> Option<ConnectSignIn> {
+        let sign_in = self.by_device.remove(device_code)?;
+        self.by_user.remove(&sign_in.user_code);
+        Some(sign_in)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ConnectPoll {
+    Pending,
+    Session(String),
+    Denied,
+    Gone,
+}
+
+pub fn user_code_of(code: &str) -> String {
+    code.chars()
+        .filter(char::is_ascii_alphabetic)
+        .map(|letter| letter.to_ascii_uppercase())
+        .collect()
+}
+
+pub fn challenge_of(verifier: &str) -> String {
+    BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()))
 }
 
 #[derive(Debug)]
@@ -155,6 +225,8 @@ pub struct Auth {
     key: hmac::Key,
     random: SystemRandom,
     pending: Mutex<HashMap<String, (Instant, SignInState)>>,
+    codes: Mutex<HashMap<String, TerminalCode>>,
+    connects: Mutex<ConnectSignIns>,
 }
 
 impl Auth {
@@ -181,6 +253,8 @@ impl Auth {
             key,
             random,
             pending: Mutex::new(HashMap::new()),
+            codes: Mutex::new(HashMap::new()),
+            connects: Mutex::default(),
         })
     }
 
@@ -201,19 +275,26 @@ impl Auth {
         platform: Platform,
         page: Option<&str>,
         link: bool,
+        terminal: Option<Terminal>,
     ) -> Option<(String, String)> {
         match platform {
-            Platform::Twitch => self.twitch_login_url(page, link),
-            Platform::Kick => self.kick_login_url(page, link),
+            Platform::Twitch => self.twitch_login_url(page, link, terminal),
+            Platform::Kick => self.kick_login_url(page, link, terminal),
         }
     }
 
-    fn twitch_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
+    fn twitch_login_url(
+        &self,
+        page: Option<&str>,
+        link: bool,
+        terminal: Option<Terminal>,
+    ) -> Option<(String, String)> {
         let app = self.twitch.as_ref()?;
         let state = self.new_state(SignInState {
             page: page.map(str::to_string),
             link,
             verifier: None,
+            terminal,
         })?;
         let scope = if page.is_some() {
             "user:read:subscriptions"
@@ -234,14 +315,20 @@ impl Auth {
         .map(|url| (url.into(), state))
     }
 
-    fn kick_login_url(&self, page: Option<&str>, link: bool) -> Option<(String, String)> {
+    fn kick_login_url(
+        &self,
+        page: Option<&str>,
+        link: bool,
+        terminal: Option<Terminal>,
+    ) -> Option<(String, String)> {
         let app = self.kick.as_ref()?;
         let verifier = self.random_token()?;
-        let challenge = BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()));
+        let challenge = challenge_of(&verifier);
         let state = self.new_state(SignInState {
             page: page.map(str::to_string),
             link,
             verifier: Some(verifier),
+            terminal,
         })?;
         Url::parse_with_params(
             &app.authorize_url,
@@ -291,6 +378,123 @@ impl Auth {
             pending.insert(token.clone(), (Instant::now(), state));
         }
         Some(token)
+    }
+
+    pub fn terminal_code(&self, challenge: String, session: String) -> Option<String> {
+        let code = self.random_token()?;
+        let mut codes = self.codes.lock().unwrap();
+        if codes.len() >= MAX_PENDING {
+            codes.retain(|_, code| code.created.elapsed() < CODE_LIFETIME);
+            if codes.len() >= MAX_PENDING {
+                return None;
+            }
+        }
+        codes.insert(
+            code.clone(),
+            TerminalCode {
+                created: Instant::now(),
+                challenge,
+                session,
+            },
+        );
+        Some(code)
+    }
+
+    pub fn session_of_code(&self, code: &str, verifier: &str) -> Option<String> {
+        let code = self.codes.lock().unwrap().remove(code)?;
+        (code.created.elapsed() < CODE_LIFETIME && challenge_of(verifier) == code.challenge)
+            .then_some(code.session)
+    }
+
+    fn user_code(&self) -> Option<String> {
+        let mut code = String::new();
+        while code.len() < 8 {
+            let mut bytes = [0; 16];
+            self.random.fill(&mut bytes).ok()?;
+            for byte in bytes.into_iter().filter(|byte| *byte < 240) {
+                if code.len() < 8 {
+                    code.push(b"BCDFGHJKLMNPQRSTVWXZ"[usize::from(byte % 20)].into());
+                }
+            }
+        }
+        Some(code)
+    }
+
+    pub fn start_connect(&self) -> Option<(String, String)> {
+        let device_code = self.random_token()?;
+        let mut connects = self.connects.lock().unwrap();
+        if connects.by_device.len() >= MAX_PENDING {
+            let expired: Vec<String> = connects
+                .by_device
+                .iter()
+                .filter(|(_, sign_in)| sign_in.created.elapsed() >= CONNECT_LIFETIME)
+                .map(|(device_code, _)| device_code.clone())
+                .collect();
+            for device_code in expired {
+                connects.remove(&device_code);
+            }
+            if connects.by_device.len() >= MAX_PENDING {
+                return None;
+            }
+        }
+        let user_code = loop {
+            let code = self.user_code()?;
+            if !connects.by_user.contains_key(&code) {
+                break code;
+            }
+        };
+        connects
+            .by_user
+            .insert(user_code.clone(), device_code.clone());
+        connects.by_device.insert(
+            device_code.clone(),
+            ConnectSignIn {
+                created: Instant::now(),
+                user_code: user_code.clone(),
+                decision: Decision::Pending,
+            },
+        );
+        Some((device_code, user_code))
+    }
+
+    pub fn decide_connect(&self, user_code: &str, session: Option<String>) -> bool {
+        let mut connects = self.connects.lock().unwrap();
+        let Some(device_code) = connects.by_user.get(&user_code_of(user_code)).cloned() else {
+            return false;
+        };
+        let Some(sign_in) = connects.by_device.get_mut(&device_code) else {
+            return false;
+        };
+        if sign_in.created.elapsed() >= CONNECT_LIFETIME
+            || !matches!(sign_in.decision, Decision::Pending)
+        {
+            return false;
+        }
+        sign_in.decision = match session {
+            Some(session) => Decision::Approved(session),
+            None => Decision::Denied,
+        };
+        true
+    }
+
+    pub fn connect_session(&self, device_code: &str) -> ConnectPoll {
+        let mut connects = self.connects.lock().unwrap();
+        let Some(sign_in) = connects.by_device.get(device_code) else {
+            return ConnectPoll::Gone;
+        };
+        if sign_in.created.elapsed() < CONNECT_LIFETIME
+            && matches!(sign_in.decision, Decision::Pending)
+        {
+            return ConnectPoll::Pending;
+        }
+        let sign_in = connects.remove(device_code).unwrap();
+        if sign_in.created.elapsed() >= CONNECT_LIFETIME {
+            return ConnectPoll::Gone;
+        }
+        match sign_in.decision {
+            Decision::Approved(session) => ConnectPoll::Session(session),
+            _ => ConnectPoll::Denied,
+        }
     }
 
     pub fn consume_state(
@@ -829,9 +1033,82 @@ mod tests {
     }
 
     #[test]
+    fn connect_codes_are_decided_once_and_expire() {
+        let auth = new_auth("secret");
+        let (device_code, user_code) = auth.start_connect().unwrap();
+        assert_eq!(user_code.len(), 8);
+        assert!(
+            user_code
+                .bytes()
+                .all(|byte| b"BCDFGHJKLMNPQRSTVWXZ".contains(&byte))
+        );
+        assert_eq!(auth.connect_session(&device_code), ConnectPoll::Pending);
+        let typed = format!(" {}-{} ", user_code[..4].to_lowercase(), &user_code[4..]);
+        assert_eq!(user_code_of(&typed), user_code);
+        assert!(auth.decide_connect(&typed, Some("session".to_string())));
+        assert!(!auth.decide_connect(&user_code, None));
+        assert_eq!(
+            auth.connect_session(&device_code),
+            ConnectPoll::Session("session".to_string())
+        );
+        assert_eq!(auth.connect_session(&device_code), ConnectPoll::Gone);
+        assert!(!auth.decide_connect(&user_code, Some("session".to_string())));
+        let (device_code, user_code) = auth.start_connect().unwrap();
+        assert!(auth.decide_connect(&user_code, None));
+        assert_eq!(auth.connect_session(&device_code), ConnectPoll::Denied);
+        assert_eq!(auth.connect_session(&device_code), ConnectPoll::Gone);
+        assert!(!auth.decide_connect("BBBBBBBB", None));
+        assert_eq!(auth.connect_session("unknown"), ConnectPoll::Gone);
+        let (device_code, user_code) = auth.start_connect().unwrap();
+        auth.connects
+            .lock()
+            .unwrap()
+            .by_device
+            .get_mut(&device_code)
+            .unwrap()
+            .created = Instant::now() - CONNECT_LIFETIME * 2;
+        assert!(!auth.decide_connect(&user_code, Some("session".to_string())));
+        assert_eq!(auth.connect_session(&device_code), ConnectPoll::Gone);
+        let codes: std::collections::HashSet<_> =
+            (0..100).map(|_| auth.start_connect().unwrap().1).collect();
+        assert_eq!(codes.len(), 100);
+    }
+
+    #[test]
+    fn terminal_codes_are_single_use_and_need_the_verifier() {
+        let auth = new_auth("secret");
+        let challenge = challenge_of("verifier");
+        assert!(Terminal::new(1234, challenge.clone()).is_some());
+        assert!(Terminal::new(1234, "short".to_string()).is_none());
+        assert!(Terminal::new(1234, format!("{}+", &challenge[1..])).is_none());
+        let code = auth
+            .terminal_code(challenge.clone(), "session".to_string())
+            .unwrap();
+        assert_eq!(auth.session_of_code(&code, "other"), None);
+        assert_eq!(auth.session_of_code(&code, "verifier"), None);
+        let code = auth
+            .terminal_code(challenge.clone(), "session".to_string())
+            .unwrap();
+        assert_eq!(
+            auth.session_of_code(&code, "verifier"),
+            Some("session".to_string())
+        );
+        assert_eq!(auth.session_of_code(&code, "verifier"), None);
+        auth.codes.lock().unwrap().insert(
+            "old".to_string(),
+            TerminalCode {
+                created: Instant::now() - CODE_LIFETIME * 2,
+                challenge,
+                session: "session".to_string(),
+            },
+        );
+        assert_eq!(auth.session_of_code("old", "verifier"), None);
+    }
+
+    #[test]
     fn states_are_single_use() {
         let auth = new_auth("secret");
-        let (url, state) = auth.twitch_login_url(None, false).unwrap();
+        let (url, state) = auth.twitch_login_url(None, false, None).unwrap();
         let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(url.host_str(), Some("id.twitch.tv"));
@@ -852,7 +1129,7 @@ mod tests {
             (Instant::now() - STATE_LIFETIME * 2, SignInState::default()),
         );
         assert!(auth.consume_state("old", Some("old")).is_err());
-        let (url, state) = auth.twitch_login_url(Some("page"), false).unwrap();
+        let (url, state) = auth.twitch_login_url(Some("page"), false, None).unwrap();
         let url = Url::parse(&url).unwrap();
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(query["scope"], "user:read:subscriptions");
@@ -863,7 +1140,7 @@ mod tests {
                 .as_deref(),
             Some("page")
         );
-        let (_, state) = auth.twitch_login_url(Some("page"), false).unwrap();
+        let (_, state) = auth.twitch_login_url(Some("page"), false, None).unwrap();
         assert_eq!(
             auth.consume_state(&state, Some(&state))
                 .unwrap()
@@ -871,14 +1148,14 @@ mod tests {
                 .as_deref(),
             Some("page")
         );
-        let (_, state) = auth.twitch_login_url(None, true).unwrap();
+        let (_, state) = auth.twitch_login_url(None, true, None).unwrap();
         assert!(auth.consume_state(&state, Some(&state)).unwrap().link);
     }
 
     #[test]
     fn kick_signs_in_with_pkce() {
         let auth = new_auth("secret");
-        let (url, state) = auth.kick_login_url(None, true).unwrap();
+        let (url, state) = auth.kick_login_url(None, true, None).unwrap();
         let parsed = Url::parse(&url).unwrap();
         assert_eq!(parsed.host_str(), Some("id.kick.com"));
         assert_eq!(parsed.path(), "/oauth/authorize");
@@ -901,9 +1178,9 @@ mod tests {
             query["code_challenge"],
             BASE64_URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()))
         );
-        let (other, _) = auth.kick_login_url(None, false).unwrap();
+        let (other, _) = auth.kick_login_url(None, false, None).unwrap();
         assert_ne!(query_of(&other)["code_challenge"], query["code_challenge"]);
-        let (_, state) = auth.kick_login_url(Some("page"), false).unwrap();
+        let (_, state) = auth.kick_login_url(Some("page"), false, None).unwrap();
         let pending = auth.consume_state(&state, Some(&state)).unwrap();
         assert_eq!(pending.page.as_deref(), Some("page"));
         assert!(!pending.link);
@@ -916,8 +1193,8 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(without.kick_login_url(None, false).is_none());
-        assert!(without.twitch_login_url(None, false).is_none());
+        assert!(without.kick_login_url(None, false, None).is_none());
+        assert!(without.twitch_login_url(None, false, None).is_none());
     }
 
     #[test]

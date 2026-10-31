@@ -55,6 +55,7 @@ export default defineConfig({
         "page/index.html",
         "dashboard/index.html",
         "account/index.html",
+        "connect/index.html",
         "admin/index.html",
         "terms/index.html",
         "404.html",

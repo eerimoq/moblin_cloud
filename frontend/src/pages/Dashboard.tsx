@@ -31,6 +31,7 @@ import {
   assistedChannelKey,
   accountPage,
   adminPage,
+  connectPage,
   monitorPage,
   ownPages,
   PagePicker,
@@ -64,6 +65,7 @@ import {
   type Assisting,
   checkPayPal,
   checkStripe,
+  connectPendingKey,
   connectPayPal,
   connectStripe,
   disconnectPayPal,
@@ -124,6 +126,7 @@ const DeviceView = lazy(() => import("./Device"));
 const Monitor = lazy(() => import("./Monitor"));
 const AdminView = lazy(() => import("./Admin"));
 const AccountView = lazy(() => import("./Account"));
+const ConnectView = lazy(() => import("./Connect"));
 
 export const [fullWindow, setFullWindow] = createSignal(false);
 
@@ -134,7 +137,9 @@ const urlOf = (page: string, device: string) =>
       ? asset(pages.admin)
       : device === accountPage
         ? asset(pages.account)
-        : deviceUrl(page, device);
+        : device === connectPage
+          ? asset(pages.connect)
+          : deviceUrl(page, device);
 
 const accentNames: Record<string, string> = {
   green: t("Green"),
@@ -2301,14 +2306,22 @@ function rememberedChannel() {
   return stored && !stored.includes("/") ? `twitch/${stored}` : stored;
 }
 
+export function pendingConnect() {
+  try {
+    return sessionStorage.getItem(connectPendingKey) !== null;
+  } catch {
+    return false;
+  }
+}
+
 function readTarget(remembered: boolean): Target {
   const path = location.pathname.slice(import.meta.env.BASE_URL.length);
-  const own = path.match(/^(admin|account)\/?$/);
-  if (own) {
+  const own = path.match(/^(admin|account|connect)\/?$/);
+  if (own || (remembered && pendingConnect())) {
     return {
       channel: rememberedChannel(),
       page: null,
-      device: own[1] === "admin" ? adminPage : accountPage,
+      device: own?.[1] === "admin" ? adminPage : own?.[1] === "account" ? accountPage : connectPage,
     };
   }
   const monitor = path.match(/^monitor\/([^/]+)\/?$/);
@@ -2344,8 +2357,8 @@ function resolve(account: Account, target: Target) {
       ? account.admin
         ? adminPage
         : ""
-      : target.device === accountPage
-        ? accountPage
+      : target.device === accountPage || target.device === connectPage
+        ? target.device
         : target.page === page
           ? target.device
           : "";
@@ -2871,7 +2884,8 @@ function SignedIn(props: {
         (location.pathname.startsWith(asset(pages.device)) ||
           location.pathname.startsWith(asset(pages.monitor)) ||
           location.pathname.startsWith(asset(pages.admin)) ||
-          location.pathname.startsWith(asset(pages.account))))
+          location.pathname.startsWith(asset(pages.account)) ||
+          location.pathname.startsWith(asset(pages.connect))))
     ) {
       history.replaceState(
         null,
@@ -2885,7 +2899,7 @@ function SignedIn(props: {
   addEventListener("popstate", onPopState);
   onCleanup(() => removeEventListener("popstate", onPopState));
 
-  const hashes = { dashboard: "", device: "", monitor: "", admin: "", account: "" };
+  const hashes = { dashboard: "", device: "", monitor: "", admin: "", account: "", connect: "" };
   const kindOf = (to: string) =>
     to === monitorPage
       ? "monitor"
@@ -2893,9 +2907,11 @@ function SignedIn(props: {
         ? "admin"
         : to === accountPage
           ? "account"
-          : to
-            ? "device"
-            : ("dashboard" as const);
+          : to === connectPage
+            ? "connect"
+            : to
+              ? "device"
+              : ("dashboard" as const);
   const show = (picked: Assisting | null, to: string) => {
     const id = picked?.id ?? props.account.settings.id;
     hashes[kindOf(device())] = location.hash;
@@ -2948,14 +2964,21 @@ function SignedIn(props: {
         <Show
           when={device() === adminPage}
           fallback={
-            <AccountView
-              session={props.session}
-              account={known.get(props.account.settings.id) ?? props.account}
-              linkResult={props.linkResult}
-              onAccount={update}
-              onSignOut={props.onSignOut}
-              onSignOutEverywhere={props.onSignOutEverywhere}
-            />
+            <Show
+              when={device() === connectPage}
+              fallback={
+                <AccountView
+                  session={props.session}
+                  account={known.get(props.account.settings.id) ?? props.account}
+                  linkResult={props.linkResult}
+                  onAccount={update}
+                  onSignOut={props.onSignOut}
+                  onSignOutEverywhere={props.onSignOutEverywhere}
+                />
+              }
+            >
+              <ConnectView session={props.session} onSignOut={props.onSignOut} />
+            </Show>
           }
         >
           <AdminView session={props.session} onSignOut={props.onSignOut} />
@@ -3115,7 +3138,10 @@ export default function Dashboard() {
             </Show>
           </CloudHeader>
           <main>
-            <Show when={loading()} fallback={<CloudLanding failed={signInFailed()} />}>
+            <Show
+              when={loading()}
+              fallback={<CloudLanding failed={signInFailed()} connecting={pendingConnect()} />}
+            >
               <Band>
                 <Spinner />
               </Band>

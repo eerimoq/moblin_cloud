@@ -21,6 +21,7 @@ export const pages = {
   dashboard: "/",
   assisted: "/dashboard/",
   account: "/account/",
+  connect: "/connect/",
   device: "/device/",
   monitor: "/monitor/",
   admin: "/admin/",

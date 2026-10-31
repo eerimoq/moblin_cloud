@@ -99,6 +99,7 @@ pub(crate) fn build_api(
         premium_accounts: vec!["premium".to_string()],
         started: 0,
         tests: Mutex::default(),
+        connect_tries: Mutex::default(),
         requests: Requests::default(),
         stopping: tokio::sync::watch::channel(false).0,
     }

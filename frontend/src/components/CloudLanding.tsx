@@ -105,7 +105,7 @@ function PageMockup() {
   );
 }
 
-export default function CloudLanding(props: { failed: boolean }) {
+export default function CloudLanding(props: { failed: boolean; connecting: boolean }) {
   const [dismissed, setDismissed] = createSignal(false);
 
   return (
@@ -116,6 +116,9 @@ export default function CloudLanding(props: { failed: boolean }) {
             <Notice status onClose={() => setDismissed(true)}>
               {t("Signing in did not work. Try again.")}
             </Notice>
+          </Show>
+          <Show when={props.connecting}>
+            <Notice status>{t("Sign in to let mobtop use your account.")}</Notice>
           </Show>
           <span class="font-display text-[15px] font-semibold tracking-[0.08em] text-leaf uppercase">
             Moblin Cloud

@@ -7,10 +7,10 @@ use axum::http::header::{COOKIE, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderName, StatusCode};
 use axum::response::Redirect;
 use log::{info, warn};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::accounts::{Page, Platform};
-use crate::auth::{STATE_COOKIE, SignIn, StateError};
+use crate::auth::{ConnectPoll, STATE_COOKIE, SignIn, StateError, Terminal};
 
 use super::*;
 
@@ -18,6 +18,8 @@ use super::*;
 pub(super) struct LoginQuery {
     page: Option<String>,
     link: Option<String>,
+    port: Option<u16>,
+    challenge: Option<String>,
 }
 
 pub(super) async fn handle_twitch_login(
@@ -47,9 +49,24 @@ fn login(
     {
         return Err(StatusCode::NOT_FOUND);
     }
+    let terminal = match (query.port, query.challenge) {
+        (Some(_), _) | (_, Some(_)) if query.page.is_some() || query.link.is_some() => {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        (Some(port), Some(challenge)) => {
+            Some(Terminal::new(port, challenge).ok_or(StatusCode::BAD_REQUEST)?)
+        }
+        (None, None) => None,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
     let (url, state) = api
         .auth
-        .login_url(platform, query.page.as_deref(), query.link.is_some())
+        .login_url(
+            platform,
+            query.page.as_deref(),
+            query.link.is_some(),
+            terminal,
+        )
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     Ok((
         [(SET_COOKIE, api.auth.state_cookie(&state))],
@@ -111,15 +128,15 @@ async fn signed_in_redirect(
 ) -> Redirect {
     let dashboard = format!("{}/dashboard/", api.auth.frontend_url);
     let account = format!("{}/account/", api.auth.frontend_url);
-    let failed = |link: bool| {
-        Redirect::to(&if link {
-            format!("{account}#linkFailed")
-        } else {
-            format!("{dashboard}#signInFailed")
+    let failed = |link: bool, port: Option<u16>| {
+        Redirect::to(&match port {
+            Some(port) => format!("http://127.0.0.1:{port}/?signInFailed"),
+            None if link => format!("{account}#linkFailed"),
+            None => format!("{dashboard}#signInFailed"),
         })
     };
     let Some(state) = query.state else {
-        return failed(false);
+        return failed(false, None);
     };
     let state = match api.auth.consume_state(&state, browser_state) {
         Ok(state) => state,
@@ -129,7 +146,7 @@ async fn signed_in_redirect(
         }) => return viewer_redirect(api, platform, &page, Err(error)).await,
         Err(StateError { error, .. }) => {
             warn!("signing in with {} failed: {error:#}", platform.title());
-            return failed(false);
+            return failed(false, None);
         }
     };
     let sign_in = match query.code {
@@ -150,6 +167,7 @@ async fn signed_in_redirect(
     if let Some(page) = state.page {
         return viewer_redirect(api, platform, &page, sign_in).await;
     }
+    let port = state.terminal.as_ref().map(|terminal| terminal.port);
     let sign_in = match sign_in {
         Ok(sign_in) => sign_in,
         Err(error) => {
@@ -158,7 +176,7 @@ async fn signed_in_redirect(
                 if state.link { "linking" } else { "signing in" },
                 platform.title()
             );
-            return failed(state.link);
+            return failed(state.link, port);
         }
     };
     let identity = &sign_in.identity;
@@ -184,7 +202,7 @@ async fn signed_in_redirect(
             platform.title(),
             identity.user_id
         );
-        return failed(false);
+        return failed(false, port);
     };
     let (id, account) = match api
         .accounts
@@ -197,7 +215,7 @@ async fn signed_in_redirect(
                 platform.title(),
                 identity.user_id
             );
-            return failed(false);
+            return failed(false, port);
         }
     };
     info!(
@@ -206,10 +224,128 @@ async fn signed_in_redirect(
         identity.user_id,
         identity.login
     );
-    Redirect::to(&format!(
-        "{dashboard}#session={}",
-        api.auth.session(&id, account.sessions)
-    ))
+    let session = api.auth.session(&id, account.sessions);
+    let Some(terminal) = state.terminal else {
+        return Redirect::to(&format!("{dashboard}#session={session}"));
+    };
+    match api.auth.terminal_code(terminal.challenge, session) {
+        Some(code) => Redirect::to(&format!("http://127.0.0.1:{}/?code={code}", terminal.port)),
+        None => failed(false, Some(terminal.port)),
+    }
+}
+
+#[derive(Deserialize)]
+pub(super) struct SessionRequest {
+    code: String,
+    verifier: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct SessionResponse {
+    session: String,
+}
+
+pub(super) async fn handle_session(
+    State(api): State<Arc<Api>>,
+    Json(request): Json<SessionRequest>,
+) -> Result<Json<SessionResponse>, (StatusCode, String)> {
+    let session = api
+        .auth
+        .session_of_code(&request.code, &request.verifier)
+        .ok_or((
+            StatusCode::BAD_REQUEST,
+            "Signing in failed. Try again.".to_string(),
+        ))?;
+    Ok(Json(SessionResponse { session }))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ConnectResponse {
+    device_code: String,
+    user_code: String,
+    url: String,
+    interval: u64,
+    expires_in: u64,
+}
+
+pub(super) async fn handle_connect(
+    State(api): State<Arc<Api>>,
+) -> Result<Json<ConnectResponse>, (StatusCode, String)> {
+    let (device_code, user_code) = api.auth.start_connect().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Signing in is busy. Try again in a minute.".to_string(),
+    ))?;
+    let url = format!("{}/connect/", api.auth.frontend_url);
+    Ok(Json(ConnectResponse {
+        device_code,
+        user_code: format!("{}-{}", &user_code[..4], &user_code[4..]),
+        url,
+        interval: 5,
+        expires_in: 600,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ConnectSessionRequest {
+    device_code: String,
+}
+
+pub(super) async fn handle_connect_session(
+    State(api): State<Arc<Api>>,
+    Json(request): Json<ConnectSessionRequest>,
+) -> Result<(StatusCode, Json<Value>), (StatusCode, String)> {
+    match api.auth.connect_session(&request.device_code) {
+        ConnectPoll::Pending => Ok(accepted()),
+        ConnectPoll::Session(session) => Ok((
+            StatusCode::OK,
+            Json(serde_json::json!({ "session": session })),
+        )),
+        ConnectPoll::Denied => Err((StatusCode::FORBIDDEN, "Signing in was denied.".to_string())),
+        ConnectPoll::Gone => Err((
+            StatusCode::GONE,
+            "The code expired. Start signing in again.".to_string(),
+        )),
+    }
+}
+
+#[derive(Deserialize)]
+pub(super) struct DecideConnectRequest {
+    code: String,
+    approve: bool,
+}
+
+pub(super) async fn handle_account_connect(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<DecideConnectRequest>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    if !within_limit(&api.connect_tries, &id, 10) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many tries. Try again in a minute.".to_string(),
+        ));
+    }
+    let session = request
+        .approve
+        .then(|| api.auth.session(&id, account.sessions));
+    if !api.auth.decide_connect(&request.code, session) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "There is no such code. Check it, or start signing in again in mobtop.".to_string(),
+        ));
+    }
+    info!(
+        "{id} {} a sign in on another device",
+        if request.approve {
+            "approved"
+        } else {
+            "denied"
+        }
+    );
+    Ok(Json(serde_json::json!({})))
 }
 
 pub(super) enum ViewerSignInError {
@@ -930,6 +1066,7 @@ mod tests {
             premium_accounts: Vec::new(),
             started: 0,
             tests: Mutex::default(),
+            connect_tries: Mutex::default(),
             requests: Requests::default(),
             stopping: tokio::sync::watch::channel(false).0,
         });
@@ -974,5 +1111,248 @@ mod tests {
         let (_, name) = get_json(&address, "/pages/twitch/erik").await;
         assert_eq!(name["id"], "oldpage");
         crate::database::remove(&path);
+    }
+
+    #[tokio::test]
+    async fn terminals_sign_in_through_a_loopback_redirect() {
+        let twitch = start_twitch().await;
+        let (kick, fake) = start_kick().await;
+        let (address, _) = start_api_with(
+            None,
+            None,
+            Some(twitch_app(&twitch)),
+            Some(kick_app(&kick)),
+            None,
+        )
+        .await;
+        let flow = SignInFlow::new(&address, fake);
+        let challenge = crate::auth::challenge_of("verifier");
+        let exchange = async |code: &str, verifier: &str| {
+            let response = flow
+                .client
+                .post(format!("http://{address}/auth/session"))
+                .json(&json!({"code": code, "verifier": verifier}))
+                .send()
+                .await
+                .unwrap();
+            let status = response.status();
+            (status, response.text().await.unwrap())
+        };
+        let (query, cookie) = flow
+            .start(&format!(
+                "/auth/twitch/login?port=1234&challenge={challenge}"
+            ))
+            .await;
+        let terminal = flow.finish("twitch", "c", &query["state"], &cookie).await;
+        let code = terminal
+            .strip_prefix("http://127.0.0.1:1234/?code=")
+            .unwrap_or_else(|| panic!("{terminal}"));
+        assert_eq!(
+            exchange(code, "other").await,
+            (
+                StatusCode::BAD_REQUEST,
+                "Signing in failed. Try again.".to_string()
+            )
+        );
+        assert_eq!(exchange(code, "verifier").await.0, StatusCode::BAD_REQUEST);
+        let (query, cookie) = flow
+            .start(&format!(
+                "/auth/twitch/login?port=1234&challenge={challenge}"
+            ))
+            .await;
+        let terminal = flow.finish("twitch", "c", &query["state"], &cookie).await;
+        let code = terminal
+            .strip_prefix("http://127.0.0.1:1234/?code=")
+            .unwrap();
+        let (status, body) = exchange(code, "verifier").await;
+        assert_eq!(status, StatusCode::OK);
+        let session = serde_json::from_str::<Value>(&body).unwrap()["session"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let twitch_account = account_of(&address, &session).await;
+        assert!(twitch_account["twitch"].is_object());
+        assert_eq!(exchange(code, "verifier").await.0, StatusCode::BAD_REQUEST);
+        let (query, cookie) = flow
+            .start(&format!("/auth/kick/login?port=4321&challenge={challenge}"))
+            .await;
+        let terminal = flow
+            .finish("kick", "kick-a", &query["state"], &cookie)
+            .await;
+        let code = terminal
+            .strip_prefix("http://127.0.0.1:4321/?code=")
+            .unwrap();
+        let (_, body) = exchange(code, "verifier").await;
+        let session = serde_json::from_str::<Value>(&body).unwrap()["session"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            account_of(&address, &session).await["kick"]["login"],
+            "kickerik"
+        );
+        let (query, cookie) = flow
+            .start(&format!("/auth/kick/login?port=4321&challenge={challenge}"))
+            .await;
+        assert_eq!(
+            flow.finish("kick", "unknown", &query["state"], &cookie)
+                .await,
+            "http://127.0.0.1:4321/?signInFailed"
+        );
+        let (query, _) = flow
+            .start(&format!(
+                "/auth/twitch/login?port=1234&challenge={challenge}"
+            ))
+            .await;
+        assert_eq!(
+            flow.finish("twitch", "c", &query["state"], "moblin_sign_in_state=other")
+                .await,
+            "https://cloud.moblin.app/dashboard/#signInFailed"
+        );
+        let id = twitch_account["settings"]["id"].as_str().unwrap();
+        for path in [
+            format!("/auth/twitch/login?port=1&challenge={challenge}&page={id}"),
+            format!("/auth/twitch/login?port=1&challenge={challenge}&link=1"),
+            format!("/auth/twitch/login?challenge={challenge}&link=1"),
+            "/auth/twitch/login?port=1".to_string(),
+            format!("/auth/twitch/login?challenge={challenge}"),
+            "/auth/twitch/login?port=1&challenge=short".to_string(),
+        ] {
+            let response = flow
+                .client
+                .get(format!("http://{address}{path}"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn terminals_sign_in_with_a_code_approved_on_another_device() {
+        let twitch = start_twitch().await;
+        let (address, _) = start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
+        let flow = SignInFlow::new(&address, FakeKick::default());
+        let session = session_of(&flow.sign_in("twitch", "c").await);
+        let client = reqwest::Client::new();
+        let post = async |path: &str, session: Option<&str>, body: Value| {
+            let mut request = client.post(format!("http://{address}{path}")).json(&body);
+            if let Some(session) = session {
+                request = request.bearer_auth(session);
+            }
+            let response = request.send().await.unwrap();
+            let status = response.status();
+            (status, response.text().await.unwrap())
+        };
+        let start = async || {
+            let (status, body) = post("/auth/connect", None, json!({})).await;
+            assert_eq!(status, StatusCode::OK);
+            serde_json::from_str::<Value>(&body).unwrap()
+        };
+        let connect = start().await;
+        let device_code = connect["deviceCode"].as_str().unwrap();
+        let user_code = connect["userCode"].as_str().unwrap();
+        assert_eq!(user_code.len(), 9);
+        assert_eq!(&user_code[4..5], "-");
+        assert_eq!(connect["url"], "https://cloud.moblin.app/connect/");
+        assert_eq!(connect.get("codeUrl"), None);
+        assert_eq!(connect["interval"], 5);
+        let poll = json!({"deviceCode": device_code});
+        assert_eq!(
+            post("/auth/connect/session", None, poll.clone()).await,
+            (StatusCode::ACCEPTED, "{}".to_string())
+        );
+        assert_eq!(
+            post(
+                "/account/connect",
+                None,
+                json!({"code": user_code, "approve": true})
+            )
+            .await
+            .0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            post(
+                "/account/connect",
+                Some(&session),
+                json!({"code": user_code.to_lowercase(), "approve": true})
+            )
+            .await,
+            (StatusCode::OK, "{}".to_string())
+        );
+        let (status, body) = post("/auth/connect/session", None, poll.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let terminal = serde_json::from_str::<Value>(&body).unwrap()["session"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            account_of(&address, &terminal).await["settings"]["id"],
+            account_of(&address, &session).await["settings"]["id"]
+        );
+        assert_eq!(
+            post("/auth/connect/session", None, poll).await,
+            (
+                StatusCode::GONE,
+                "The code expired. Start signing in again.".to_string()
+            )
+        );
+        let connect = start().await;
+        assert_eq!(
+            post(
+                "/account/connect",
+                Some(&session),
+                json!({"code": connect["userCode"], "approve": false})
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            post(
+                "/auth/connect/session",
+                None,
+                json!({"deviceCode": connect["deviceCode"]})
+            )
+            .await,
+            (StatusCode::FORBIDDEN, "Signing in was denied.".to_string())
+        );
+        assert_eq!(
+            post(
+                "/account/connect",
+                Some(&session),
+                json!({"code": connect["userCode"], "approve": true})
+            )
+            .await,
+            (
+                StatusCode::NOT_FOUND,
+                "There is no such code. Check it, or start signing in again in mobtop.".to_string()
+            )
+        );
+        for _ in 0..7 {
+            assert_eq!(
+                post(
+                    "/account/connect",
+                    Some(&session),
+                    json!({"code": "BBBB-BBBB", "approve": true})
+                )
+                .await
+                .0,
+                StatusCode::NOT_FOUND
+            );
+        }
+        assert_eq!(
+            post(
+                "/account/connect",
+                Some(&session),
+                json!({"code": "BBBB-BBBB", "approve": true})
+            )
+            .await,
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many tries. Try again in a minute.".to_string()
+            )
+        );
     }
 }

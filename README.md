@@ -6,6 +6,8 @@ where streamers manage them and their Moblin devices.
 - `frontend/` is the site (SolidJS, TypeScript and Tailwind), deployed to
   GitHub Pages on every push to `main`.
 - `backend/` is a Rust service deployed at `https://cloud-api.moblin.app`.
+- `mobtop/` is a terminal monitor of your stream (Rust and ratatui): `cargo run` in it, or
+  `just dev-mobtop` against `just dev`.
 - `deploy/` runs your own copy of both on one server, see
   [deploy/README.md](deploy/README.md).
 

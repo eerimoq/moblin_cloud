@@ -90,6 +90,7 @@ pub struct Api {
     pub premium_accounts: Vec<String>,
     pub started: u64,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
+    pub connect_tries: Mutex<HashMap<String, Vec<Instant>>>,
     pub requests: Requests,
     pub stopping: watch::Sender<bool>,
 }
@@ -116,8 +117,12 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/auth/twitch/callback", get(handle_twitch_callback))
         .route("/auth/kick/login", get(handle_kick_login))
         .route("/auth/kick/callback", get(handle_kick_callback))
+        .route("/auth/session", post(handle_session))
+        .route("/auth/connect", post(handle_connect))
+        .route("/auth/connect/session", post(handle_connect_session))
         .route("/account", get(handle_account))
         .route("/account/link", post(handle_account_link))
+        .route("/account/connect", post(handle_account_connect))
         .route("/account/unlink/{platform}", post(handle_account_unlink))
         .route("/account/key", post(handle_account_key))
         .route(

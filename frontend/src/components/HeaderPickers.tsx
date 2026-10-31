@@ -14,7 +14,9 @@ export const adminPage = ":admin";
 
 export const accountPage = ":account";
 
-export const ownPages = [adminPage, accountPage];
+export const connectPage = ":connect";
+
+export const ownPages = [adminPage, accountPage, connectPage];
 
 export const rememberChannel = (key: string) => {
   try {
@@ -222,7 +224,7 @@ export function StreamerPicker(props: {
   );
 }
 
-function PageBadge(props: { icon: "grid" | "layout" | "chart" | "user" }) {
+function PageBadge(props: { icon: "grid" | "layout" | "chart" | "user" | "screen" }) {
   return (
     <span class="flex size-8 items-center justify-center rounded-full bg-ghost-hover text-ink">
       <Icon name={props.icon} class="size-5" />
@@ -262,13 +264,19 @@ export function PagePicker(props: {
             ? admin()
             : props.picked === accountPage
               ? { value: accountPage, label: t("Account"), badge: () => <PageBadge icon="user" /> }
-              : props.picked
+              : props.picked === connectPage
                 ? {
-                    value: props.picked,
-                    label: "Moblin",
-                    badge: () => <DeviceBadge device={undefined} />,
+                    value: connectPage,
+                    label: t("Connect mobtop"),
+                    badge: () => <PageBadge icon="screen" />,
                   }
-                : dashboard()
+                : props.picked
+                  ? {
+                      value: props.picked,
+                      label: "Moblin",
+                      badge: () => <DeviceBadge device={undefined} />,
+                    }
+                  : dashboard()
       }
       options={[
         dashboard(),

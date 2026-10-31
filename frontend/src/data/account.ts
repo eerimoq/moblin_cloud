@@ -433,6 +433,11 @@ const signOutEverywhere = (session: string) => call<void>("/account/sign-out", s
 
 export const deleteAccount = (session: string) => call<void>("/account/delete", session, post());
 
+export const connectPendingKey = "connectPending";
+
+export const decideConnect = (session: string, code: string, approve: boolean) =>
+  call<void>("/account/connect", session, post({ code, approve }));
+
 export const newMoblinKey = (session: string) => call<Account>("/account/key", session, post());
 
 export const renameDevice = (session: string, device: string, name: string) =>
