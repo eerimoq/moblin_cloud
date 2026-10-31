@@ -17,6 +17,7 @@ use clap::Parser;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyEventKind};
 use crossterm::execute;
 use futures_util::StreamExt;
+use ratatui_image::picker::{Picker, ProtocolType};
 use tokio::sync::mpsc;
 
 use crate::app::{App, Message};
@@ -35,6 +36,10 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    let mut terminal = ratatui::init();
+    let picker = Picker::from_query_stdio()
+        .ok()
+        .filter(|picker| picker.protocol_type() != ProtocolType::Halfblocks);
     let (sender, mut receiver) = mpsc::unbounded_channel();
     tokio::spawn({
         let sender = sender.clone();
@@ -64,8 +69,7 @@ async fn main() -> Result<()> {
             }
         }
     });
-    let mut app = App::new(&args.backend_url, sender);
-    let mut terminal = ratatui::init();
+    let mut app = App::new(&args.backend_url, sender, picker);
     execute!(std::io::stdout(), EnableMouseCapture)?;
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -79,6 +83,7 @@ async fn main() -> Result<()> {
                 break;
             }
             terminal.draw(|frame| ui::draw(frame, &app))?;
+            app.encode_previews();
         }
         Ok(())
     }

@@ -3,8 +3,11 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use image::RgbImage;
-use ratatui::layout::Rect;
+use image::{DynamicImage, RgbImage};
+use ratatui::layout::{Rect, Size};
+use ratatui_image::picker::Picker;
+use ratatui_image::protocol::{StatefulProtocol, StatefulProtocolType};
+use ratatui_image::{FontSize, ResizeEncodeRender};
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
@@ -34,6 +37,7 @@ pub enum Message {
     Changed(String, Change),
     Device(String, String, String, Value),
     Frame(String, String, Box<RgbImage>),
+    Encoded(String, String, Box<StatefulProtocol>, Size, u64),
     Controlled(String, Result<(), BackendError>),
     Copied(String, Result<(), BackendError>),
     Farted(Result<(), BackendError>),
@@ -90,6 +94,22 @@ pub enum Modal {
     Input(Input),
 }
 
+pub struct Encoded {
+    pub protocol: StatefulProtocol,
+    pub size: Size,
+    seq: u64,
+}
+
+pub struct Picture {
+    pub latest: DynamicImage,
+    pub font_size: FontSize,
+    pub shown: Option<Encoded>,
+    pub wanted: Option<Size>,
+    seq: u64,
+    spare: Option<StatefulProtocolType>,
+    encoding: bool,
+}
+
 pub struct Moving {
     pub leaf: u64,
     pub target: u64,
@@ -130,6 +150,7 @@ pub struct Monitor {
     pub maximized: Option<u64>,
     pub feeds: HashMap<String, Feed>,
     pub frames: HashMap<String, RgbImage>,
+    pub images: RefCell<HashMap<String, Picture>>,
     pub latest: [Option<Recent>; 3],
     pub arrived: HashMap<String, Instant>,
     pub selected: HashMap<u64, usize>,
@@ -156,6 +177,7 @@ impl Monitor {
             maximized: None,
             feeds: HashMap::new(),
             frames: HashMap::new(),
+            images: RefCell::default(),
             latest: Default::default(),
             arrived: HashMap::new(),
             selected: HashMap::new(),
@@ -407,6 +429,7 @@ pub struct App {
     page_stream: Option<JoinHandle<()>>,
     device_streams: HashMap<String, JoinHandle<()>>,
     preview_streams: HashMap<String, JoinHandle<()>>,
+    picker: Option<Picker>,
 }
 
 fn replace(slot: &mut Option<JoinHandle<()>>, task: Option<JoinHandle<()>>) {
@@ -416,7 +439,11 @@ fn replace(slot: &mut Option<JoinHandle<()>>, task: Option<JoinHandle<()>>) {
 }
 
 impl App {
-    pub fn new(backend_url: &str, sender: UnboundedSender<Message>) -> Self {
+    pub fn new(
+        backend_url: &str,
+        sender: UnboundedSender<Message>,
+        picker: Option<Picker>,
+    ) -> Self {
         let mut backend = Backend::new(backend_url);
         backend.session = session::read(&backend.url);
         let mut app = Self {
@@ -428,6 +455,7 @@ impl App {
             page_stream: None,
             device_streams: HashMap::new(),
             preview_streams: HashMap::new(),
+            picker,
         };
         if app.backend.session.is_some() {
             app.load_account();
@@ -505,10 +533,41 @@ impl App {
             }
             Message::Frame(page, device, frame) => {
                 if self.preview_streams.contains_key(&device)
-                    && let Some(monitor) = self.monitor_mut()
+                    && let Screen::SignedIn(monitor) = &mut self.screen
                     && monitor.page_id() == page
                 {
+                    if let Some(picker) = &self.picker {
+                        let latest = DynamicImage::ImageRgb8((*frame).clone());
+                        let mut images = monitor.images.borrow_mut();
+                        let picture = images.entry(device.clone()).or_insert_with(|| Picture {
+                            latest: latest.clone(),
+                            font_size: picker.font_size(),
+                            shown: None,
+                            wanted: None,
+                            seq: 0,
+                            spare: None,
+                            encoding: false,
+                        });
+                        picture.latest = latest;
+                        picture.seq += 1;
+                    }
                     monitor.frames.insert(device, *frame);
+                }
+            }
+            Message::Encoded(page, device, protocol, size, seq) => {
+                if let Some(monitor) = self.monitor_mut()
+                    && monitor.page_id() == page
+                    && let Some(picture) = monitor.images.borrow_mut().get_mut(&device)
+                {
+                    picture.encoding = false;
+                    let old = picture.shown.replace(Encoded {
+                        protocol: *protocol,
+                        size,
+                        seq,
+                    });
+                    if let Some(old) = old {
+                        picture.spare = Some(old.protocol.protocol_type_owned());
+                    }
                 }
             }
             Message::Controlled(key, result) => {
@@ -758,6 +817,10 @@ impl App {
                 monitor.feeds.entry(device).or_default();
             }
             monitor.frames.retain(|device, _| previews.contains(device));
+            monitor
+                .images
+                .borrow_mut()
+                .retain(|device, _| previews.contains(device));
         }
     }
 
@@ -770,6 +833,44 @@ impl App {
             monitor.ensure_focus();
         }
         self.reconcile();
+    }
+
+    pub fn encode_previews(&mut self) {
+        let sender = self.sender.clone();
+        let (Some(picker), Screen::SignedIn(monitor)) = (&self.picker, &mut self.screen) else {
+            return;
+        };
+        let page = monitor.page_id();
+        for (device, picture) in monitor.images.borrow_mut().iter_mut() {
+            let Some(size) = picture.wanted else {
+                continue;
+            };
+            let current = picture
+                .shown
+                .as_ref()
+                .is_some_and(|shown| shown.size == size && shown.seq == picture.seq);
+            if picture.encoding || current {
+                continue;
+            }
+            picture.encoding = true;
+            let (image, seq, kind) = (picture.latest.clone(), picture.seq, picture.spare.take());
+            let (picker, sender, page, device) =
+                (picker.clone(), sender.clone(), page.clone(), device.clone());
+            tokio::task::spawn_blocking(move || {
+                let mut protocol = match kind {
+                    Some(kind) => StatefulProtocol::new(image, picker.font_size(), None, kind),
+                    None => picker.new_resize_protocol(image),
+                };
+                protocol.resize_encode(&preview::resize(), size);
+                let _ = sender.send(Message::Encoded(
+                    page,
+                    device,
+                    Box::new(protocol),
+                    size,
+                    seq,
+                ));
+            });
+        }
     }
 
     pub fn save(&mut self) -> Option<JoinHandle<()>> {

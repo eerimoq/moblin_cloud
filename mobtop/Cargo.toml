@@ -15,9 +15,13 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 open = "5"
 qrcode = { version = "0.14", default-features = false }
 ratatui = "0.30"
+ratatui-image = { version = "11", default-features = false, features = ["crossterm"] }
 ring = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 url = "2"
+
+[profile.dev.package."*"]
+opt-level = 3

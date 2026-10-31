@@ -155,6 +155,9 @@ pub fn problem(monitor: &Monitor, leaf: &Leaf) -> Option<String> {
 
 pub fn draw(frame: &mut Frame, area: Rect, monitor: &Monitor) {
     monitor.narrow.set(area.width < 80);
+    for picture in monitor.images.borrow_mut().values_mut() {
+        picture.wanted = None;
+    }
     *monitor.hits.borrow_mut() = Hits {
         panes: area,
         ..Hits::default()

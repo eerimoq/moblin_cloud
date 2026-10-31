@@ -5,6 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph, Wrap};
 use serde_json::{Map, Value};
 
+use ratatui_image::ResizeEncodeRender;
+
 use crate::app::Monitor;
 use crate::feed::Feed;
 use crate::layout::Leaf;
@@ -155,6 +157,23 @@ fn state_lines(feed: &Feed) -> Vec<Line<'static>> {
 }
 
 fn picture(frame: &mut Frame, area: Rect, monitor: &Monitor, device: &str) {
+    if let Some(picture) = monitor.images.borrow_mut().get_mut(device) {
+        picture.wanted =
+            Some(preview::resize().size_for(&picture.latest, picture.font_size, area.as_size()));
+        if let Some(shown) = &mut picture.shown
+            && shown.size.width <= area.width
+            && shown.size.height <= area.height
+        {
+            let image = Rect {
+                x: area.x + (area.width - shown.size.width) / 2,
+                y: area.y + (area.height - shown.size.height) / 2,
+                width: shown.size.width,
+                height: shown.size.height,
+            };
+            shown.protocol.render(image, frame.buffer_mut());
+        }
+        return;
+    }
     let Some(cells) = monitor
         .frames
         .get(device)

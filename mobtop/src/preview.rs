@@ -2,6 +2,11 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use image::RgbImage;
 use image::imageops::FilterType;
+use ratatui_image::Resize;
+
+pub fn resize() -> Resize {
+    Resize::Scale(Some(FilterType::Triangle))
+}
 
 pub fn decode(base64: &str) -> Option<RgbImage> {
     let bytes = BASE64_STANDARD.decode(base64.trim()).ok()?;
