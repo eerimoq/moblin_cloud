@@ -1,7 +1,7 @@
 # Deploy
 
 Runs your own copy of Moblin Cloud and its backend on one server with Docker
-Compose, from the images of a [release](https://github.com/eerimoq/moblin_cloud/releases): the backend, the frontend in Caddy,
+Compose, from the published images: the backend, the frontend in Caddy,
 which serves the site on plain HTTP and proxies `/api` to the backend at
 `BACKEND_HOST` (`backend:8080` by default), and
 in front of them the stock Caddy image, which gets the certificate from Let's
@@ -14,16 +14,16 @@ and 443. Then, on the server:
 
 ```
 mkdir moblin-cloud && cd moblin-cloud
-curl -LO https://github.com/eerimoq/moblin_cloud/releases/latest/download/docker-compose.yml
-curl -Lo .env https://github.com/eerimoq/moblin_cloud/releases/latest/download/env.example
+curl -O https://raw.githubusercontent.com/eerimoq/moblin_cloud/main/deploy/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/eerimoq/moblin_cloud/main/deploy/.env.example
 mkdir data
 sudo chown 65532:65532 data
 ```
 
 Fill in `.env`: the domain, and uncomment `SESSION_SECRET` and set it to the
 output of `openssl rand -hex 32`, without which everyone is signed out when
-the backend restarts. Uncomment the integrations you set up below. `VERSION`
-is the release the files came from, whose images are used.
+the backend restarts. Uncomment the integrations you set up below. Without
+`VERSION` the latest images are used.
 
 ## HTTPS
 
@@ -45,8 +45,7 @@ page are server-sent event streams.
 docker compose up -d
 ```
 
-Update by downloading `docker-compose.yml` of the new release as above,
-setting `VERSION` in `.env` to it, and `docker compose pull && docker compose up -d`. The database is
+Update with `docker compose pull && docker compose up -d`. The database is
 `data/database.sqlite`; stop the backend before copying it for a backup.
 
 ## Integrations

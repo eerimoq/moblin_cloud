@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 use crate::app::{App, Message};
 
 #[derive(Parser)]
-#[command(version = option_env!("MOBLIN_CLOUD_VERSION").unwrap_or("dev"), about)]
+#[command(version, about)]
 struct Args {
     #[arg(
         long,
