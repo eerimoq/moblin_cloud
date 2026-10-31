@@ -162,9 +162,14 @@ pub fn draw(frame: &mut Frame, area: Rect, monitor: &Monitor) {
         panes: area,
         ..Hits::default()
     };
-    let Some(layout) = &monitor.layout else {
-        return note(frame, area, "Loading…");
-    };
+    match &monitor.layout {
+        Some(layout) => draw_layout(frame, area, monitor, layout),
+        None => note(frame, area, "Loading…"),
+    }
+    draw_modal(frame, area, monitor);
+}
+
+fn draw_layout(frame: &mut Frame, area: Rect, monitor: &Monitor, layout: &layout::Pane) {
     let single = if monitor.narrow.get() {
         monitor.focus
     } else {
@@ -205,6 +210,9 @@ pub fn draw(frame: &mut Frame, area: Rect, monitor: &Monitor) {
             );
         }
     }
+}
+
+fn draw_modal(frame: &mut Frame, area: Rect, monitor: &Monitor) {
     match &monitor.modal {
         Some(Modal::Menu(menu)) => draw_menu(frame, area, monitor, menu),
         Some(Modal::Confirm(confirm)) => {
@@ -356,14 +364,14 @@ fn draw_menu(frame: &mut Frame, area: Rect, monitor: &Monitor, menu: &menu::Menu
     let label_width = shown
         .items
         .iter()
-        .map(|item| item.label.chars().count())
+        .map(|item| Span::raw(item.label.as_str()).width())
         .max()
         .unwrap_or_default();
     let detail_width = shown
         .items
         .iter()
         .filter_map(|item| item.detail.as_ref())
-        .map(|detail| detail.chars().count())
+        .map(|detail| Span::raw(detail.as_str()).width())
         .max()
         .unwrap_or_default();
     let extra = usize::from(shown.items.is_empty()) + usize::from(shown.footer.is_some()) * 2;
@@ -385,10 +393,16 @@ fn draw_menu(frame: &mut Frame, area: Rect, monitor: &Monitor, menu: &menu::Menu
                 Mark::Running => "▶ ".fg(ACCENT),
                 Mark::None | Mark::Open => "  ".into(),
             };
-            let label = format!("{:<label_width$}", item.label);
+            let padded = |text: &str, width: usize| {
+                format!(
+                    "{text}{}",
+                    " ".repeat(width.saturating_sub(Span::raw(text).width()))
+                )
+            };
+            let label = padded(&item.label, label_width);
             let detail = format!(
-                "  {:>detail_width$}{}",
-                item.detail.clone().unwrap_or_default(),
+                "  {}{}",
+                padded(item.detail.as_deref().unwrap_or_default(), detail_width),
                 if item.mark == Mark::Open {
                     " ▸"
                 } else {

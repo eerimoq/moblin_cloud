@@ -7,6 +7,7 @@ use crate::panes::format_bits;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MenuKind {
+    Channels,
     Pane,
     Panels,
     Devices,
@@ -89,6 +90,7 @@ pub enum Action {
     Remove,
     Reset,
     Copy(String),
+    Channel(Option<String>),
 }
 
 #[derive(Clone, Debug)]
@@ -153,6 +155,7 @@ pub fn shown(monitor: &Monitor, menu: &Menu) -> Shown {
         .and_then(|layout| layout.leaf(menu.leaf))
         .map(|(path, leaf)| (path, leaf.clone()));
     match menu.kind() {
+        MenuKind::Channels => channels_menu(monitor),
         MenuKind::Pane | MenuKind::Panels | MenuKind::Devices | MenuKind::Copy => {
             let Some((path, leaf)) = leaf else {
                 return Shown {
@@ -165,6 +168,35 @@ pub fn shown(monitor: &Monitor, menu: &Menu) -> Shown {
             pane_menu(monitor, menu, &path, &leaf)
         }
         kind => controls_menu(monitor, menu, kind),
+    }
+}
+
+pub fn channels(monitor: &Monitor) -> Vec<(Option<String>, String, Option<String>)> {
+    std::iter::once((None, "You".to_string(), monitor.own.address()))
+        .chain(monitor.own.assisting.iter().map(|channel| {
+            (
+                Some(channel.id.clone()),
+                channel.name.clone(),
+                Some(format!("{}/{}", channel.platform, channel.login)),
+            )
+        }))
+        .collect()
+}
+
+fn channels_menu(monitor: &Monitor) -> Shown {
+    Shown {
+        title: "Channel".to_string(),
+        items: channels(monitor)
+            .into_iter()
+            .map(|(id, name, address)| {
+                let current = id == monitor.channel;
+                Item::new(name, Action::Channel(id))
+                    .detail(address)
+                    .mark(if current { Mark::Check } else { Mark::None })
+            })
+            .collect(),
+        empty: None,
+        footer: None,
     }
 }
 

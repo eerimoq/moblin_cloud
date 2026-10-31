@@ -1127,24 +1127,7 @@ impl App {
         match key.code {
             KeyCode::Char('q') => return true,
             KeyCode::Char('s') => self.sign_out(None),
-            KeyCode::Char('c') => {
-                let channels: Vec<Option<String>> = std::iter::once(None)
-                    .chain(
-                        monitor
-                            .own
-                            .assisting
-                            .iter()
-                            .map(|channel| Some(channel.id.clone())),
-                    )
-                    .collect();
-                if channels.len() > 1 {
-                    let index = channels
-                        .iter()
-                        .position(|channel| *channel == monitor.channel)
-                        .unwrap_or_default();
-                    self.switch_channel(channels[(index + 1) % channels.len()].clone());
-                }
-            }
+            KeyCode::Char('c') => self.pick_channel(),
             KeyCode::Tab | KeyCode::BackTab => {
                 let leaves: Vec<u64> = monitor
                     .layout
@@ -1493,6 +1476,22 @@ impl App {
         }
     }
 
+    fn pick_channel(&mut self) {
+        let Some(monitor) = self.monitor_mut() else {
+            return;
+        };
+        if monitor.own.assisting.is_empty() {
+            return;
+        }
+        let current = menu::channels(monitor)
+            .iter()
+            .position(|(id, _, _)| *id == monitor.channel)
+            .unwrap_or_default();
+        let mut menu = Menu::new(monitor.focus.unwrap_or_default(), None, MenuKind::Channels);
+        menu.select(current);
+        monitor.modal = Some(Modal::Menu(menu));
+    }
+
     fn activate(&mut self, mut menu: Menu, action: Action) {
         let Some(monitor) = self.monitor_mut() else {
             return;
@@ -1584,6 +1583,11 @@ impl App {
                 monitor.layout = Some(layout::default_layout());
                 monitor.focus = None;
                 self.changed(true);
+            }
+            Action::Channel(channel) => {
+                if channel != monitor.channel {
+                    self.switch_channel(channel);
+                }
             }
             Action::Copy(page) => {
                 let layout = monitor
@@ -1686,6 +1690,9 @@ impl App {
                 }
                 if monitor.modal.is_some() {
                     return;
+                }
+                if row < monitor.hits.borrow().panes.y {
+                    return self.pick_channel();
                 }
                 monitor.moving = None;
                 let divider = monitor
@@ -1901,5 +1908,42 @@ mod tests {
         assert_eq!(neighbor(&rects, 2, Zone::Bottom), Some(3));
         assert_eq!(neighbor(&rects, 3, Zone::Left), Some(1));
         assert_eq!(neighbor(&rects, 1, Zone::Left), None);
+    }
+
+    #[test]
+    fn the_channel_picker_lines_up_its_addresses() {
+        let own: Account = serde_json::from_value(serde_json::json!({
+            "name": "Erik", "twitch": {"login": "eerimoq"}, "kick": null, "devices": [],
+            "settings": {"id": "page"}, "remoteControl": "control", "preview": true,
+            "assisting": [
+                {"id": "a", "platform": "twitch", "name": "Streamer with a long name", "login": "streamer"},
+                {"id": "b", "platform": "kick", "name": "Bo", "login": "bo"},
+            ],
+        }))
+        .unwrap();
+        let mut monitor = Monitor::new(own);
+        monitor.modal = Some(Modal::Menu(Menu::new(0, None, MenuKind::Channels)));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
+        terminal
+            .draw(|frame| crate::panes::draw(frame, frame.area(), &monitor))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<String> = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect()
+            })
+            .collect();
+        let columns: Vec<usize> = ["twitch/eerimoq", "twitch/streamer", "kick/bo"]
+            .iter()
+            .map(|address| {
+                let row = rows.iter().find(|row| row.contains(address)).unwrap();
+                row[..row.find(address).unwrap()].chars().count()
+            })
+            .collect();
+        assert_eq!(columns[0], columns[1]);
+        assert_eq!(columns[1], columns[2]);
     }
 }
