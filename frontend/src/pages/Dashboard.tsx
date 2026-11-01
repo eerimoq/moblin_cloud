@@ -1982,7 +1982,6 @@ function Admin(props: {
 
   const resend = async (item: Recent) => {
     await guard(resendRecent(props.session, item.id, props.page));
-    await loadRecent();
   };
 
   const changeImage = (image: File | null) =>
@@ -2859,6 +2858,7 @@ function SignedIn(props: {
   const device = () => shown().device;
 
   const known = new Map([[props.account.settings.id, props.account]]);
+  const fresh = new Set([props.account.settings.id]);
   const [pageAccount, setPageAccount] = createSignal<Account | null>(null);
   const current = createMemo(() => {
     const account = pageAccount();
@@ -2895,7 +2895,9 @@ function SignedIn(props: {
           }
         }
       };
-      void refresh();
+      if (!fresh.delete(id)) {
+        void refresh();
+      }
       onCleanup(
         subscribeChanges(
           pageEventsUrl(id),
@@ -2980,9 +2982,14 @@ function SignedIn(props: {
       return;
     }
     const id = picked?.id ?? props.account.settings.id;
-    const account =
-      known.get(id) ??
-      (await fetchAccount(props.session, picked ? id : undefined).catch(() => null));
+    let account = known.get(id);
+    if (!account) {
+      account = await fetchAccount(props.session, picked ? id : undefined).catch(() => undefined);
+      if (account) {
+        update(account);
+        fresh.add(id);
+      }
+    }
     show(picked, account && account.remoteControl !== "none" ? (account.devices[0]?.id ?? "") : "");
   };
 

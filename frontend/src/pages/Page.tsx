@@ -14,6 +14,7 @@ import {
   Show,
   Switch,
   type JSX,
+  type Setter,
 } from "solid-js";
 import { asset } from "../asset";
 import { BackendError, isSignedOut, moblinIconUrl } from "../data/backend";
@@ -255,20 +256,23 @@ function createPay(props: {
       }
     },
   };
-  const request = async (send: () => Promise<unknown>, done: () => void, after: () => void) => {
+  const request = async <T,>(
+    send: () => Promise<T>,
+    done: (result: T) => void,
+    failed: () => void,
+  ) => {
     if (busy()) {
       return;
     }
     setBusy(true);
     setResult(null);
     try {
-      await send();
-      done();
+      done(await send());
     } catch (error) {
       showError(error);
+      failed();
     } finally {
       setBusy(false);
-      after();
     }
   };
   return { busy, result, closeResult: () => setResult(null), options, request };
@@ -1046,7 +1050,7 @@ function EffectJar(props: {
   onPaid: (text: string, title?: string) => void;
   onSignIn: (platform: Platform) => void;
   onSignOut: () => void;
-  onAllowance: () => void;
+  onAllowance: (left?: number) => void;
   signInFailed: string | null;
 }) {
   const saved = restored(props.id).effect;
@@ -1092,11 +1096,12 @@ function EffectJar(props: {
     }
     void pay.request(
       () => requestSubscriberEffect(props.id, viewer, current, message().trim()),
-      () => {
+      ({ left }) => {
         props.onPaid(t("Your effect is on its way to the streamer."), t("Enjoy the effect!"));
         setMessage("");
+        props.onAllowance(left);
       },
-      props.onAllowance,
+      () => props.onAllowance(),
     );
   };
 
@@ -1546,7 +1551,7 @@ function SpinWheel(props: {
   onPaid: (text: string, title?: string) => void;
   onSignIn: (platform: Platform) => void;
   onSignOut: () => void;
-  onAllowance: () => void;
+  onAllowance: (left?: number) => void;
   signInFailed: string | null;
 }) {
   const saved = restored(props.id).spin;
@@ -1587,11 +1592,12 @@ function SpinWheel(props: {
     }
     void pay.request(
       () => requestSubscriberSpin(props.id, viewer, message().trim()),
-      () => {
+      ({ left }) => {
         props.onPaid(t("Your spin starts on stream in a moment."), t("Enjoy the spin!"));
         setMessage("");
+        props.onAllowance(left);
       },
-      props.onAllowance,
+      () => props.onAllowance(),
     );
   };
 
@@ -1884,17 +1890,19 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     setEffectAllowance(null);
   };
 
-  const refreshAllowances = async () => {
+  const refreshAllowances = async (missingOnly = false) => {
     const current = id();
     const session = viewer();
     if (!current || !session) {
       return;
     }
+    const wanted = (tiers: Tiers | null, allowance: Allowance | null) =>
+      tiers !== null && !(missingOnly && allowance !== null);
     try {
-      if (subSpins()) {
+      if (wanted(subSpins(), spinAllowance())) {
         setSpinAllowance(await fetchAllowance(current, "spin", session));
       }
-      if (subEffects()) {
+      if (wanted(subEffects(), effectAllowance())) {
         setEffectAllowance(await fetchAllowance(current, "effect", session));
       }
     } catch (error) {
@@ -1910,9 +1918,17 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
 
   createEffect(() => {
     if (viewer() && allowancesMissing()) {
-      void refreshAllowances();
+      void refreshAllowances(true);
     }
   });
+
+  const allowanceLeft = (set: Setter<Allowance | null>) => (left?: number) => {
+    if (left === undefined) {
+      void refreshAllowances();
+    } else {
+      set((current) => current && { ...current, left });
+    }
+  };
 
   const refreshTips = async () => {
     const current = id();
@@ -2083,7 +2099,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                     onPaid={celebrate}
                     onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "spin")}
                     onSignOut={signOutViewer}
-                    onAllowance={() => void refreshAllowances()}
+                    onAllowance={allowanceLeft(setSpinAllowance)}
                     signInFailed={spinSignInFailed()}
                   />
                 </div>
@@ -2105,7 +2121,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                   onPaid={celebrate}
                   onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "effect")}
                   onSignOut={signOutViewer}
-                  onAllowance={() => void refreshAllowances()}
+                  onAllowance={allowanceLeft(setEffectAllowance)}
                   signInFailed={effectSignInFailed()}
                 />
               </div>

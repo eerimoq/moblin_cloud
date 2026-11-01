@@ -33,7 +33,12 @@ const filled = <T extends object>(part: T) => (Object.keys(part).length > 0 ? pa
 
 const perItem = ["setSrtConnectionPriority", "startMacro", "stopMacro"];
 
-type Shared<T> = { value: T; users: number; dispose: () => void };
+type Shared<T> = {
+  value: T;
+  users: number;
+  dispose: () => void;
+  linger?: ReturnType<typeof setTimeout>;
+};
 
 const shared = <T>(cache: Map<string, Shared<T>>, key: string, create: () => T): T => {
   let entry = cache.get(key);
@@ -42,12 +47,15 @@ const shared = <T>(cache: Map<string, Shared<T>>, key: string, create: () => T):
     cache.set(key, entry);
   }
   const used = entry;
+  clearTimeout(used.linger);
   used.users += 1;
   onCleanup(() => {
     used.users -= 1;
     if (used.users === 0) {
-      cache.delete(key);
-      used.dispose();
+      used.linger = setTimeout(() => {
+        cache.delete(key);
+        used.dispose();
+      }, 3000);
     }
   });
   return used.value;

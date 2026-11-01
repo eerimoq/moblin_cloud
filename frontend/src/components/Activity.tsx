@@ -180,7 +180,6 @@ export default function Activity(props: {
 
   const { resending, failed, resend } = createResend(async (item) => {
     await resendRecent(props.session, item.id, props.page);
-    await loadRecent();
   }, guard);
 
   const toggle = (kind: RecentKind) => {

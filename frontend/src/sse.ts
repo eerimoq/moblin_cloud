@@ -9,6 +9,7 @@ type StreamHandlers = {
 export function subscribe(url: string, token: string | null, handlers: StreamHandlers): () => void {
   let controller: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   let refused = false;
   let attempts = 0;
@@ -18,7 +19,7 @@ export function subscribe(url: string, token: string | null, handlers: StreamHan
       return;
     }
     clearTimeout(timer);
-    timer = setTimeout(open, Math.min(1000 * 2 ** attempts, 10_000));
+    timer = setTimeout(open, Math.min(1000 * 2 ** attempts, 10_000) * (0.5 + Math.random()));
     attempts += 1;
   };
 
@@ -95,9 +96,10 @@ export function subscribe(url: string, token: string | null, handlers: StreamHan
   };
 
   const onVisibility = () => {
+    clearTimeout(hideTimer);
     if (document.hidden) {
-      close();
-    } else {
+      hideTimer = setTimeout(close, 30_000);
+    } else if (!controller) {
       attempts = 0;
       refused = false;
       void open();
@@ -108,6 +110,7 @@ export function subscribe(url: string, token: string | null, handlers: StreamHan
   void open();
   return () => {
     stopped = true;
+    clearTimeout(hideTimer);
     document.removeEventListener("visibilitychange", onVisibility);
     close();
   };
@@ -120,14 +123,32 @@ export function subscribeChanges(
   onError?: (status: number | null) => void,
 ): () => void {
   let opened = false;
-  return subscribe(url, token, {
+  const timers = new Map<() => void, ReturnType<typeof setTimeout>>();
+  const stop = subscribe(url, token, {
     onOpen: () => {
       if (opened) {
+        timers.forEach(clearTimeout);
+        timers.clear();
         new Set(Object.values(refreshes)).forEach((refresh) => refresh());
       }
       opened = true;
     },
-    onEvent: (name) => refreshes[name]?.(),
+    onEvent: (name) => {
+      const refresh = refreshes[name];
+      if (refresh && !timers.has(refresh)) {
+        timers.set(
+          refresh,
+          setTimeout(() => {
+            timers.delete(refresh);
+            refresh();
+          }, 300),
+        );
+      }
+    },
     onError,
   });
+  return () => {
+    timers.forEach(clearTimeout);
+    stop();
+  };
 }

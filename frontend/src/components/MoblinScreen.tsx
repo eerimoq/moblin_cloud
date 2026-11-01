@@ -25,6 +25,8 @@ const screenWidth = 852;
 const screenHeight = 393;
 const bezel = 12;
 
+const icons = new Map<string, Promise<string | null>>();
+
 export const topLeftIcons: [TopLeftItem, IconName][] = [
   ["stream", "broadcast"],
   ["camera", "camera"],
@@ -371,10 +373,19 @@ export default function MoblinScreen(props: {
   const [page, setPage] = createSignal(1);
   const [icon] = createResource(
     () => props.page,
-    (id) =>
-      streamerProfile(id)
-        .then((profile) => profile.icon)
-        .catch(() => null),
+    (id) => {
+      let found = icons.get(id);
+      if (!found) {
+        found = streamerProfile(id)
+          .then((profile) => profile.icon)
+          .catch(() => {
+            icons.delete(id);
+            return null;
+          });
+        icons.set(id, found);
+      }
+      return found;
+    },
   );
   let container: HTMLDivElement | undefined;
 
