@@ -517,11 +517,13 @@ function PhonePanel(props: {
   hidden: boolean;
   feed: DeviceFeed;
 }) {
-  const previewFeed = createMemo(() =>
-    props.account.preview && !props.hidden
-      ? usePreviewFeed(props.session, props.page, props.device.id)
-      : null,
+  const previewDevice = createMemo(() =>
+    props.account.preview && !props.hidden ? props.device.id : null,
   );
+  const previewFeed = createMemo(() => {
+    const device = previewDevice();
+    return device === null ? null : usePreviewFeed(props.session, props.page, device);
+  });
   const online = () => props.feed.connected() && props.feed.streaming();
   const control = () => props.account.remoteControl === "control";
   return (

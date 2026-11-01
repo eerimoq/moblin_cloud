@@ -66,11 +66,13 @@ export default function DeviceView(props: {
     setPreviewHidden(!previewHidden());
     store(previewHiddenKey, previewHidden() ? "1" : null);
   };
-  const previewFeed = createMemo(() =>
-    active() === "phone" && props.preview === true && !previewHidden()
-      ? usePreviewFeed(props.session, props.page, props.device)
-      : null,
+  const previewDevice = createMemo(() =>
+    active() === "phone" && props.preview === true && !previewHidden() ? props.device : null,
   );
+  const previewFeed = createMemo(() => {
+    const device = previewDevice();
+    return device === null ? null : usePreviewFeed(props.session, props.page, device);
+  });
   const preview = () => (connected() ? (previewFeed()?.() ?? null) : null);
 
   return (
