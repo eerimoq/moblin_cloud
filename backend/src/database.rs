@@ -72,6 +72,14 @@ impl Database {
                      PRIMARY KEY (account, page)
                  );
                  CREATE INDEX IF NOT EXISTS monitor_layouts_page ON monitor_layouts (page);
+                 CREATE TABLE IF NOT EXISTS assistant_activity (
+                     account TEXT NOT NULL,
+                     page TEXT NOT NULL,
+                     at INTEGER NOT NULL,
+                     remote_control_at INTEGER,
+                     PRIMARY KEY (account, page)
+                 );
+                 CREATE INDEX IF NOT EXISTS assistant_activity_page ON assistant_activity (page);
                  CREATE TABLE IF NOT EXISTS orders (
                      id TEXT PRIMARY KEY,
                      streamer TEXT NOT NULL,

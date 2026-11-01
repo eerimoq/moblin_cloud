@@ -209,7 +209,7 @@ pub(super) async fn handle_assistant_account(
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         key: None,
-        devices: devices(&api, &id),
+        devices: devices(&api, &id, false),
         settings: without_payments(settings_response(&api, id.clone(), settings)).0,
         admin: false,
         premium: streamer_is_premium(&api, &id),
@@ -317,7 +317,7 @@ mod tests {
         let account: Value = response.json().await.unwrap();
         assert_eq!(
             account["kickAssistants"],
-            json!([{"id": "9", "login": "bob", "name": "bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
+            json!([{"id": "9", "login": "bob", "name": "bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none", "lastActive": null, "lastRemoteControl": null}])
         );
         let token = fake.tokens.lock().unwrap().last().unwrap().clone();
         assert_eq!(token["grant_type"], "client_credentials");
@@ -356,7 +356,7 @@ mod tests {
         );
         assert_eq!(
             account_of(&address, &session).await["kickAssistants"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": "https://files.kick.com/robert.png", "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": "https://files.kick.com/robert.png", "preview": false, "goLive": false, "editTips": false, "remoteControl": "none", "lastActive": null, "lastRemoteControl": null}])
         );
         let response = dashboard(&assistant).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["twitchAssistants"],
-            json!([{"id": "9", "login": "bob", "name": "Bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
+            json!([{"id": "9", "login": "bob", "name": "Bob", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none", "lastActive": null, "lastRemoteControl": null}])
         );
         assert!(api.accounts.assists(Platform::Twitch, "9", "1"));
         create_account(&api, "9", "Robert", "robert");
@@ -470,7 +470,7 @@ mod tests {
         assert_eq!(account["assisting"][0]["platform"], "twitch");
         assert_eq!(
             account_of(&address, &session).await["twitchAssistants"],
-            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
+            json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none", "lastActive": null, "lastRemoteControl": null}])
         );
         let response = client
             .get(format!("http://{address}/account/pages/{id}"))
@@ -575,7 +575,7 @@ mod tests {
             assert_eq!(
                 response.json::<Value>().await.unwrap()["twitchAssistants"],
                 if enabled {
-                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none"}])
+                    json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none", "lastActive": null, "lastRemoteControl": null}])
                 } else {
                     json!([])
                 }

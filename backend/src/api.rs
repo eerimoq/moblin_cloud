@@ -414,7 +414,7 @@ pub(super) fn new_request_id(api: &Api) -> Result<String, Failure> {
     ))
 }
 
-pub(super) fn assistant(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
     let signed_in = signed_in(api, headers)?;
     let allowed = signed_in.account.page.id == id
         || listed(
@@ -432,6 +432,18 @@ pub(super) fn assistant(api: &Api, headers: &HeaderMap, id: &str) -> Result<Sign
             "Only the streamer and the assistants they turned on can do this.",
         ));
     }
+    Ok(signed_in)
+}
+
+fn active(api: &Api, signed_in: &SignedIn, id: &str, remote_control: bool) {
+    if signed_in.account.page.id != id && api.accounts.active(&signed_in.id, id, remote_control) {
+        api.remote_control.changes.notify(id, Change::Account);
+    }
+}
+
+pub(super) fn assistant(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+    let signed_in = page_user(api, headers, id)?;
+    active(api, &signed_in, id, false);
     Ok(signed_in)
 }
 
@@ -459,14 +471,16 @@ pub(super) fn access(api: &Api, account: &Account, id: &str) -> Access {
 }
 
 pub(super) fn watcher(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
-    let signed_in = assistant(api, headers, id)?;
+    let signed_in = page_user(api, headers, id)?;
     if access(api, &signed_in.account, id) < Access::View {
+        active(api, &signed_in, id, false);
         return Err(failure(
             "no-remote-control",
             StatusCode::FORBIDDEN,
             "The streamer has not let you use the remote control.",
         ));
     }
+    active(api, &signed_in, id, true);
     Ok(signed_in)
 }
 

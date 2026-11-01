@@ -271,11 +271,11 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "a", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
-                {"id": "b", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
-                {"id": "c", "name": "Moblin 3", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
-                {"id": "d", "name": "Moblin 4", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
-                {"id": "e", "name": "Moblin 5", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
+                {"id": "a", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
+                {"id": "b", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
+                {"id": "c", "name": "Moblin 3", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
+                {"id": "d", "name": "Moblin 4", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
+                {"id": "e", "name": "Moblin 5", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
             ])
         );
         assert_eq!(api.remote_control.connected_count(), 5);
@@ -466,8 +466,8 @@ mod tests {
         assert_eq!(
             account["devices"],
             json!([
-                {"id": "main", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null},
-                {"id": "other", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": true, "lastSeen": null},
+                {"id": "main", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
+                {"id": "other", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": true, "lastSeen": null, "watchers": []},
             ])
         );
         let spin_url = format!("http://{address}/pages/{id}/spin");

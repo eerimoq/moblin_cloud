@@ -9,6 +9,7 @@ import { language, t } from "../i18n";
 const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
 
 const [now, setNow] = createSignal(Date.now());
+export { now };
 setInterval(() => setNow(Date.now()), 60_000);
 
 export function timeAgo(at: number) {

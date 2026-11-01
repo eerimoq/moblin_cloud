@@ -10,6 +10,7 @@ export type Device = {
   reconnecting: boolean;
   wheel: boolean;
   lastSeen: number | null;
+  watchers: { name: string; avatar: string | null }[];
 };
 
 export type Account = {
@@ -42,6 +43,8 @@ export type Assistant = {
   goLive: boolean;
   editTips: boolean;
   remoteControl: Access;
+  lastActive: number | null;
+  lastRemoteControl: number | null;
 };
 
 export type Assisting = {

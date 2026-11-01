@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use log::warn;
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -173,6 +174,8 @@ pub struct Assistant {
     pub go_live: bool,
     pub edit_tips: bool,
     pub remote_control: Access,
+    pub last_active: Option<u64>,
+    pub last_remote_control: Option<u64>,
 }
 
 impl Assistant {
@@ -186,6 +189,8 @@ impl Assistant {
             go_live: false,
             edit_tips: false,
             remote_control: Access::None,
+            last_active: None,
+            last_remote_control: None,
         }
     }
 }
@@ -323,11 +328,46 @@ fn not_saved(error: rusqlite::Error) -> AccountError {
 
 pub struct Accounts {
     database: Arc<Database>,
+    active: Mutex<HashMap<(String, String, bool), Instant>>,
 }
 
 impl Accounts {
     pub fn new(database: Arc<Database>) -> Self {
-        Self { database }
+        Self {
+            database,
+            active: Mutex::default(),
+        }
+    }
+
+    pub fn active(&self, account: &str, page: &str, remote_control: bool) -> bool {
+        {
+            let mut active = self.active.lock().unwrap();
+            let key = |remote_control| (account.to_string(), page.to_string(), remote_control);
+            if active
+                .get(&key(remote_control))
+                .is_some_and(|at| at.elapsed() < Duration::from_secs(30))
+            {
+                return false;
+            }
+            active.retain(|_, at| at.elapsed() < Duration::from_secs(30));
+            active.insert(key(remote_control), Instant::now());
+            active.insert(key(false), Instant::now());
+        }
+        let result = self.database.lock().execute(
+            if remote_control {
+                "INSERT INTO assistant_activity (account, page, at, remote_control_at) VALUES (?1, ?2, ?3, ?3)
+                 ON CONFLICT (account, page) DO UPDATE SET at = excluded.at, remote_control_at = excluded.at"
+            } else {
+                "INSERT INTO assistant_activity (account, page, at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (account, page) DO UPDATE SET at = excluded.at"
+            },
+            params![account, page, now()],
+        );
+        if let Err(error) = result {
+            warn!("failed to save the activity of {account} on {page}: {error:#}");
+            return false;
+        }
+        true
     }
 
     pub fn get(&self, id: &str) -> Option<Account> {
@@ -844,9 +884,15 @@ impl Accounts {
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT assistant, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips, remote_control
+                "SELECT assistant, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips, remote_control, assistant_activity.at, assistant_activity.remote_control_at
                  FROM {table}
                  LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = assistant
+                 LEFT JOIN assistant_activity ON assistant_activity.account = identities.account
+                     AND assistant_activity.page = (
+                         SELECT accounts.page_id FROM identities AS streamer
+                         JOIN accounts ON accounts.id = streamer.account
+                         WHERE streamer.platform = ?1 AND streamer.user_id = ?2
+                     )
                  WHERE broadcaster = ?2
                  ORDER BY 3 COLLATE NOCASE"
             ))
@@ -862,6 +908,8 @@ impl Accounts {
                             go_live: row.get(5)?,
                             edit_tips: row.get(6)?,
                             remote_control: Access::of(row.get(7)?),
+                            last_active: row.get(8)?,
+                            last_remote_control: row.get(9)?,
                         })
                     })?
                     .collect::<rusqlite::Result<_>>()
@@ -980,6 +1028,8 @@ impl Accounts {
             ("DELETE FROM devices WHERE account = ?1", id),
             ("DELETE FROM monitor_layouts WHERE account = ?1", id),
             ("DELETE FROM monitor_layouts WHERE page = ?1", page),
+            ("DELETE FROM assistant_activity WHERE account = ?1", id),
+            ("DELETE FROM assistant_activity WHERE page = ?1", page),
             ("DELETE FROM pages WHERE id = ?1", page),
             ("DELETE FROM page_images WHERE id = ?1", page),
             ("DELETE FROM page_icons WHERE id = ?1", page),
@@ -1246,6 +1296,8 @@ mod tests {
             go_live: false,
             edit_tips: false,
             remote_control: Access::None,
+            last_active: None,
+            last_remote_control: None,
         };
         accounts
             .add_assistant(Platform::Twitch, "42", &assistant)
@@ -1289,6 +1341,8 @@ mod tests {
             go_live: false,
             edit_tips: false,
             remote_control: Access::None,
+            last_active: None,
+            last_remote_control: None,
         };
         accounts
             .add_assistant(Platform::Kick, "42", &assistant("1", "erik"))
@@ -1357,6 +1411,8 @@ mod tests {
             go_live: false,
             edit_tips: false,
             remote_control: Access::None,
+            last_active: None,
+            last_remote_control: None,
         };
         accounts
             .add_assistant(Platform::Twitch, "42", &assistant)
@@ -1424,6 +1480,8 @@ mod tests {
             go_live: false,
             edit_tips: false,
             remote_control: Access::None,
+            last_active: None,
+            last_remote_control: None,
         };
         accounts
             .add_assistant(Platform::Twitch, "42", &assistant)
@@ -1481,6 +1539,8 @@ mod tests {
                     go_live: false,
                     edit_tips: false,
                     remote_control: Access::None,
+                    last_active: None,
+                    last_remote_control: None,
                 },
             )
             .unwrap();
@@ -1505,6 +1565,8 @@ mod tests {
                 go_live: false,
                 edit_tips: false,
                 remote_control: Access::None,
+                last_active: None,
+                last_remote_control: None,
             }]
         );
         assert!(accounts.assisted(Platform::Kick, "2").is_empty());
@@ -1533,6 +1595,8 @@ mod tests {
                     go_live: false,
                     edit_tips: false,
                     remote_control: Access::None,
+                    last_active: None,
+                    last_remote_control: None,
                 },
             )
             .unwrap();

@@ -29,7 +29,7 @@ struct SnapshotResponse {
 }
 
 fn known_device(api: &Api, page: &str, device: &str) -> Result<DeviceResponse, Failure> {
-    devices(api, page)
+    devices(api, page, false)
         .into_iter()
         .find(|known| known.id == device)
         .ok_or(failure(
@@ -73,9 +73,9 @@ pub(super) async fn handle_device_events(
     Path((id, device)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    watcher(&api, &headers, &id)?;
+    let signed_in = watcher(&api, &headers, &id)?;
     let known = known_device(&api, &id, &device)?;
-    let watch = api.remote_control.watch((&id, &device));
+    let watch = api.remote_control.watch((&id, &device), &signed_in.id);
     let first = Event::default()
         .event("snapshot")
         .json_data(SnapshotResponse {
@@ -674,8 +674,8 @@ mod tests {
         let response = grant("view").await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchAssistants"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "view"}])
+            response.json::<Value>().await.unwrap()["twitchAssistants"][0]["remoteControl"],
+            "view"
         );
         assert_eq!(granted(&assistant).await, "view");
         let mut watching = Events::open(&client, &events, &assistant).await;
@@ -797,8 +797,8 @@ mod tests {
         let response = allow(true).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchAssistants"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": false, "goLive": true, "editTips": false, "remoteControl": "control"}])
+            response.json::<Value>().await.unwrap()["twitchAssistants"][0]["goLive"],
+            true
         );
         assert_eq!(allowed(&assistant).await, true);
         let call = tokio::spawn(control(&assistant, json!({"setLive": {"on": true}})));
@@ -883,8 +883,8 @@ mod tests {
         let response = allow("21", true).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.json::<Value>().await.unwrap()["twitchAssistants"],
-            json!([{"id": "21", "login": "mod21", "name": "Mod 21", "avatar": null, "preview": true, "goLive": false, "editTips": false, "remoteControl": "view"}])
+            response.json::<Value>().await.unwrap()["twitchAssistants"][0]["preview"],
+            true
         );
         assert_eq!(allowed(&assistant).await, true);
         let mut preview = Events::open(&client, &url, &assistant).await;
@@ -968,5 +968,138 @@ mod tests {
         assert_eq!(name, "snapshot");
         assert_eq!(snapshot["connected"], true);
         assert_eq!(snapshot["settings"], settings());
+    }
+
+    #[tokio::test]
+    async fn the_streamer_sees_which_assistants_watch_their_devices() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&api);
+        create_account(&api, "21", "Mod 21", "mod21");
+        api.accounts
+            .add_assistant(
+                Platform::Twitch,
+                "1",
+                &twitch_assistant("21", "mod21", "Mod 21"),
+            )
+            .unwrap();
+        api.accounts
+            .set_assistant_access(Platform::Twitch, "1", "21", Access::View)
+            .unwrap();
+        let assistant = api.auth.session("21", 0);
+        let mut changes = Events::open(
+            &client,
+            &format!("http://{address}/account/pages/{page}/events"),
+            &session,
+        )
+        .await;
+        let _socket = connect(&address, &key).await;
+        assert_eq!(changes.next().await.0, "account");
+        let watchers = async |path: &str, session: &str| {
+            client
+                .get(format!("http://{address}{path}"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()["devices"][0]["watchers"]
+                .clone()
+        };
+        let url = format!("http://{address}/account/pages/{page}/devices/A/events");
+        let mut own = Events::open(&client, &url, &session).await;
+        assert_eq!(own.next().await.0, "snapshot");
+        assert_eq!(changes.next().await.0, "account");
+        assert_eq!(watchers("/account", &session).await, json!([]));
+        let mut assisting = Events::open(&client, &url, &assistant).await;
+        assert_eq!(assisting.next().await.0, "snapshot");
+        assert_eq!(changes.next().await.0, "account");
+        assert_eq!(
+            watchers("/account", &session).await,
+            json!([{"name": "Mod 21", "avatar": null}])
+        );
+        let mut again = Events::open(&client, &url, &assistant).await;
+        assert_eq!(again.next().await.0, "snapshot");
+        assert_eq!(
+            watchers("/account", &session).await,
+            json!([{"name": "Mod 21", "avatar": null}])
+        );
+        assert_eq!(
+            watchers(&format!("/account/pages/{page}"), &assistant).await,
+            json!([])
+        );
+        drop(again);
+        drop(assisting);
+        while watchers("/account", &session).await != json!([]) {
+            assert_eq!(changes.next().await.0, "account");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_streamer_sees_when_assistants_were_last_active() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&api);
+        create_account(&api, "21", "Mod 21", "mod21");
+        api.accounts
+            .add_assistant(
+                Platform::Twitch,
+                "1",
+                &twitch_assistant("21", "mod21", "Mod 21"),
+            )
+            .unwrap();
+        let assistant = api.auth.session("21", 0);
+        let mut changes = Events::open(
+            &client,
+            &format!("http://{address}/account/pages/{page}/events"),
+            &session,
+        )
+        .await;
+        let last_active = async || {
+            account_of(&address, &session).await["twitchAssistants"][0]["lastActive"].clone()
+        };
+        assert_eq!(last_active().await, Value::Null);
+        let page_of = async |session: &str| {
+            client
+                .get(format!("http://{address}/account/pages/{page}"))
+                .bearer_auth(session)
+                .send()
+                .await
+                .unwrap()
+                .status()
+        };
+        assert_eq!(page_of(&assistant).await, StatusCode::OK);
+        assert_eq!(changes.next().await.0, "account");
+        let at = last_active().await.as_u64().unwrap();
+        assert!(at > 1_700_000_000);
+        assert_eq!(page_of(&assistant).await, StatusCode::OK);
+        assert_eq!(page_of(&session).await, StatusCode::OK);
+        assert!(
+            timeout(Duration::from_millis(300), changes.next())
+                .await
+                .is_err()
+        );
+        assert_eq!(last_active().await, at);
+        let remote_control = async || {
+            account_of(&address, &session).await["twitchAssistants"][0]["lastRemoteControl"].clone()
+        };
+        assert_eq!(remote_control().await, Value::Null);
+        api.accounts
+            .set_assistant_access(Platform::Twitch, "1", "21", Access::View)
+            .unwrap();
+        let _socket = connect(&address, &key).await;
+        assert_eq!(changes.next().await.0, "account");
+        let mut events = Events::open(
+            &client,
+            &format!("http://{address}/account/pages/{page}/devices/A/events"),
+            &assistant,
+        )
+        .await;
+        assert_eq!(events.next().await.0, "snapshot");
+        while remote_control().await == Value::Null {
+            assert_eq!(changes.next().await.0, "account");
+        }
+        assert!(remote_control().await.as_u64().unwrap() >= at);
     }
 }

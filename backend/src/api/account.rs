@@ -101,6 +101,33 @@ pub(super) struct DeviceResponse {
     reconnecting: bool,
     wheel: bool,
     last_seen: Option<u64>,
+    watchers: Vec<WatcherResponse>,
+}
+
+#[derive(Serialize)]
+pub(super) struct WatcherResponse {
+    name: String,
+    avatar: Option<String>,
+}
+
+fn watchers(api: &Api, page: &str) -> HashMap<String, Vec<WatcherResponse>> {
+    api.remote_control
+        .watchers(page)
+        .into_iter()
+        .map(|(device, ids)| {
+            let mut watchers: Vec<WatcherResponse> = ids
+                .iter()
+                .filter_map(|id| api.accounts.get(id))
+                .filter(|account| account.page.id != page)
+                .map(|account| WatcherResponse {
+                    name: account.name().to_string(),
+                    avatar: account.avatar().map(str::to_string),
+                })
+                .collect();
+            watchers.sort_by_key(|watcher| watcher.name.to_lowercase());
+            (device, watchers)
+        })
+        .collect()
 }
 
 pub(super) fn device_name(names: &HashMap<String, String>, device: &str) -> String {
@@ -110,9 +137,14 @@ pub(super) fn device_name(names: &HashMap<String, String>, device: &str) -> Stri
         .unwrap_or_else(|| "Moblin".to_string())
 }
 
-pub(super) fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
+pub(super) fn devices(api: &Api, page: &str, with_watchers: bool) -> Vec<DeviceResponse> {
     let known = api.accounts.known_devices(page);
     let connected = api.remote_control.devices(page);
+    let mut watching = if with_watchers {
+        watchers(api, page)
+    } else {
+        HashMap::new()
+    };
     let mut devices: Vec<DeviceResponse> = connected
         .iter()
         .map(|device| DeviceResponse {
@@ -126,6 +158,7 @@ pub(super) fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
             reconnecting: device.reconnecting,
             wheel: device.wheel,
             last_seen: None,
+            watchers: watching.remove(&device.id).unwrap_or_default(),
         })
         .collect();
     devices.extend(
@@ -133,6 +166,7 @@ pub(super) fn devices(api: &Api, page: &str) -> Vec<DeviceResponse> {
             .into_iter()
             .filter(|known| !connected.iter().any(|device| device.id == known.id))
             .map(|known| DeviceResponse {
+                watchers: watching.remove(&known.id).unwrap_or_default(),
                 id: known.id,
                 name: known.name,
                 connected: false,
@@ -154,7 +188,7 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
         key: Some(page.key.clone()),
-        devices: devices(api, &page.id),
+        devices: devices(api, &page.id, true),
         settings: settings_response(api, page.id.clone(), settings).0,
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),

@@ -19,7 +19,7 @@ import { subscribeChanges } from "../sse";
 import { copyText } from "../components/CopyButton";
 import Icon, { kindIcons } from "../components/Icon";
 import Modal, { ask } from "../components/Modal";
-import { createRecent, Latest, timeAgo } from "../components/Latest";
+import { createRecent, Latest, now, timeAgo } from "../components/Latest";
 import SectionMenu, {
   connectedOrNot,
   createSectionChoice,
@@ -1428,6 +1428,24 @@ function AssistantList(props: {
                     <div class="min-w-0">
                       <div class="truncate font-semibold">{assistant().name}</div>
                       <div class="truncate text-[14px] text-ink-2">{assistant().login}</div>
+                      <Show when={assistant().lastActive}>
+                        {(at) => (
+                          <ActivityLine
+                            at={at()}
+                            now={t("Active now")}
+                            then={(time) => t("Last active {time}", { time })}
+                          />
+                        )}
+                      </Show>
+                      <Show when={assistant().lastRemoteControl}>
+                        {(at) => (
+                          <ActivityLine
+                            at={at()}
+                            now={t("Using the remote control now")}
+                            then={(time) => t("Used the remote control {time}", { time })}
+                          />
+                        )}
+                      </Show>
                     </div>
                   </div>
                   <PermissionRow title={t("Dashboard")}>
@@ -2657,6 +2675,15 @@ const deviceGets = (device: Device) =>
         .join(" · ")
     : t("Last seen {time}", { time: timeAgo(device.lastSeen ?? 0) });
 
+function ActivityLine(props: { at: number; now: string; then: (time: string) => string }) {
+  const recent = () => now() / 1000 - props.at < 180;
+  return (
+    <div class={`truncate text-[14px] ${recent() ? "font-semibold text-leaf" : "text-muted"}`}>
+      {recent() ? props.now : props.then(timeAgo(props.at))}
+    </div>
+  );
+}
+
 function DeviceList(props: { devices: Device[]; children: (device: Device) => JSX.Element }) {
   return (
     <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
@@ -2711,6 +2738,24 @@ function DeviceRow(props: {
         </Show>
         {props.children}
       </span>
+      <Show when={props.device.watchers.length > 0}>
+        <span class="flex basis-full items-center gap-2 pl-[22px] text-[15px] text-ink-2">
+          <span class="flex shrink-0 -space-x-1.5">
+            <For each={props.device.watchers}>
+              {(watcher) => (
+                <span title={watcher.name} class="flex rounded-full ring-2 ring-card">
+                  <Avatar picked={watcher} class="size-6 text-[11px]" />
+                </span>
+              )}
+            </For>
+          </span>
+          <span class="min-w-0">
+            {t("Watching now: {names}", {
+              names: props.device.watchers.map((watcher) => watcher.name).join(", "),
+            })}
+          </span>
+        </span>
+      </Show>
     </>
   );
 }

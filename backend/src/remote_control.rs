@@ -356,7 +356,7 @@ pub struct Snapshot {
 
 struct Monitor {
     poll: Option<AbortHandle>,
-    watchers: usize,
+    watchers: HashMap<String, usize>,
     status: Value,
     state: Value,
     settings: Option<Value>,
@@ -367,7 +367,7 @@ impl Default for Monitor {
     fn default() -> Self {
         Self {
             poll: None,
-            watchers: 0,
+            watchers: HashMap::new(),
             status: empty_status(),
             state: Value::Object(Default::default()),
             settings: None,
@@ -476,8 +476,10 @@ pub struct Watch {
 
 struct WatchGuard {
     sessions: Arc<Mutex<Sessions>>,
+    changes: Arc<Changes>,
     page: String,
     device: String,
+    watcher: String,
 }
 
 impl Drop for WatchGuard {
@@ -486,8 +488,14 @@ impl Drop for WatchGuard {
         let Some(monitor) = sessions.monitor_mut(&self.page, &self.device) else {
             return;
         };
-        monitor.watchers = monitor.watchers.saturating_sub(1);
-        if monitor.watchers > 0 {
+        if let Some(count) = monitor.watchers.get_mut(&self.watcher) {
+            *count -= 1;
+            if *count == 0 {
+                monitor.watchers.remove(&self.watcher);
+                self.changes.notify(&self.page, Change::Account);
+            }
+        }
+        if !monitor.watchers.is_empty() {
             return;
         }
         if let Some(poll) = sessions
@@ -635,7 +643,7 @@ pub struct Streamers {
     sessions: Arc<Mutex<Sessions>>,
     linger: Duration,
     pub traffic: Traffic,
-    pub changes: Changes,
+    pub changes: Arc<Changes>,
 }
 
 async fn send(
@@ -669,7 +677,7 @@ impl Streamers {
             sessions: Arc::new(Mutex::new(Sessions::default())),
             linger,
             traffic: Traffic::default(),
-            changes: Changes::default(),
+            changes: Arc::default(),
         }
     }
 
@@ -746,6 +754,18 @@ impl Streamers {
                 id: session.device.clone(),
                 wheel: wheel == Some(session.number),
                 reconnecting: session.reconnecting,
+            })
+            .collect()
+    }
+
+    pub fn watchers(&self, page: &str) -> HashMap<String, Vec<String>> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions
+            .monitors
+            .iter()
+            .filter(|((monitored, _), _)| monitored == page)
+            .map(|((_, device), monitor)| {
+                (device.clone(), monitor.watchers.keys().cloned().collect())
             })
             .collect()
     }
@@ -1050,7 +1070,7 @@ impl Streamers {
         }
     }
 
-    pub fn watch(&self, (page, device): (&str, &str)) -> Watch {
+    pub fn watch(&self, (page, device): (&str, &str), watcher: &str) -> Watch {
         let mut sessions = self.sessions.lock().unwrap();
         let connected = match sessions.get_mut(page, device, None) {
             Some(session) => {
@@ -1073,14 +1093,20 @@ impl Streamers {
                 ),
                 ..Monitor::default()
             });
-        monitor.watchers += 1;
+        let count = monitor.watchers.entry(watcher.to_string()).or_default();
+        *count += 1;
+        if *count == 1 {
+            self.changes.notify(page, Change::Account);
+        }
         Watch {
             snapshot: monitor.snapshot(connected),
             events: monitor.events.subscribe(),
             _guard: WatchGuard {
                 sessions: self.sessions.clone(),
+                changes: self.changes.clone(),
                 page: page.to_string(),
                 device: device.to_string(),
+                watcher: watcher.to_string(),
             },
         }
     }
@@ -1636,10 +1662,10 @@ mod tests {
     #[tokio::test]
     async fn watches_outlive_sessions() {
         let streamers = Streamers::new(Duration::ZERO);
-        let offline = streamers.watch(("page", "device"));
+        let offline = streamers.watch(("page", "device"), "viewer");
         assert!(!offline.snapshot.connected);
         let old = streamers.connect("page", "device").unwrap();
-        let mut watch = streamers.watch(("page", "device"));
+        let mut watch = streamers.watch(("page", "device"), "viewer");
         assert!(watch.snapshot.connected);
         streamers.remove("page", "device", old.number);
         assert_eq!(
@@ -1654,7 +1680,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .monitor_mut("page", "device")
-                .map(|monitor| monitor.watchers)
+                .map(|monitor| monitor.watchers.values().sum::<usize>())
         };
         assert_eq!(watchers(&streamers), Some(1));
         assert!(new.receiver.try_recv().is_err());
@@ -1667,7 +1693,7 @@ mod tests {
     async fn a_disconnect_forgets_the_status_and_state() {
         let streamers = Streamers::new(Duration::ZERO);
         let old = streamers.connect("page", "device").unwrap();
-        let watch = streamers.watch(("page", "device"));
+        let watch = streamers.watch(("page", "device"), "viewer");
         let on_icon = |_: &'static Icon| {};
         streamers.handle(
             "page",
@@ -1683,11 +1709,11 @@ mod tests {
             r#"{"event":{"data":{"state":{"data":{"streaming":true}}}}}"#,
             &on_icon,
         );
-        let snapshot = streamers.watch(("page", "device")).snapshot;
+        let snapshot = streamers.watch(("page", "device"), "viewer").snapshot;
         assert_eq!(snapshot.status["general"]["batteryLevel"], 50);
         assert_eq!(snapshot.state["streaming"], true);
         streamers.remove("page", "device", old.number);
-        let snapshot = streamers.watch(("page", "device")).snapshot;
+        let snapshot = streamers.watch(("page", "device"), "viewer").snapshot;
         assert_eq!(snapshot.status, empty_status());
         assert_eq!(snapshot.state, serde_json::json!({}));
         drop(watch);
