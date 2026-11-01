@@ -20,7 +20,7 @@ const TOP_LEFT: [(&str, &str); 8] = [
 ];
 
 const TOP_RIGHT: [(&str, &str); 14] = [
-    ("rtmpServer", "RTMP server"),
+    ("rtmpServer", "Ingests"),
     ("moblink", "Moblink"),
     ("remoteControl", "Remote control"),
     ("djiDevices", "DJI"),
