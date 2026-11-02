@@ -73,9 +73,9 @@ pub(super) async fn handle_device_events(
     Path((id, device)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    let signed_in = watcher(&api, &headers, &id)?;
+    let user = watcher(&api, &headers, &id)?;
     let known = known_device(&api, &id, &device)?;
-    let watch = api.remote_control.watch((&id, &device), &signed_in.id);
+    let watch = api.remote_control.watch((&id, &device), &user.signed_in.id);
     let first = Event::default()
         .event("snapshot")
         .json_data(SnapshotResponse {
@@ -186,9 +186,9 @@ pub(super) async fn handle_device_control(
     headers: HeaderMap,
     control: Result<Json<Control>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let signed_in = watcher(&api, &headers, &id)?;
+    let user = watcher(&api, &headers, &id)?;
     if !matches!(control, Ok(Json(Control::SendMessage { .. })))
-        && access(&api, &signed_in.account, &id) < Access::Control
+        && user.rights.remote_control < Access::Control
     {
         return Err(failure(
             "no-control",
@@ -203,8 +203,7 @@ pub(super) async fn handle_device_control(
             "unknown control",
         ));
     };
-    if matches!(control, Control::SetLive { on: true })
-        && !may(&api, &signed_in.account, &id, Permission::GoLive)
+    if matches!(control, Control::SetLive { on: true }) && !user.rights.permits(Permission::GoLive)
     {
         return Err(failure(
             "no-go-live",
@@ -213,7 +212,7 @@ pub(super) async fn handle_device_control(
         ));
     }
     if let Control::SendMessage { name, .. } = &mut control {
-        *name = Some(signed_in.account.name().to_string()).filter(|name| !name.is_empty());
+        *name = Some(user.signed_in.account.name().to_string()).filter(|name| !name.is_empty());
     }
     known_device(&api, &id, &device)?;
     api.remote_control
@@ -222,7 +221,7 @@ pub(super) async fn handle_device_control(
         .map_err(request_failure)?;
     info!(
         "{} sent {} to device {device} of page {id}",
-        signed_in.id,
+        user.signed_in.id,
         serde_json::to_string(&control).unwrap_or_default()
     );
     Ok(accepted())

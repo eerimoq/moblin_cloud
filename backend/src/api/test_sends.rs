@@ -28,7 +28,10 @@ fn test_page(
     page: Option<&str>,
 ) -> Result<(String, Account, String), Failure> {
     let (id, account) = match page {
-        Some(page) => (page.to_string(), assistant(api, headers, page)?.account),
+        Some(page) => (
+            page.to_string(),
+            assistant(api, headers, page)?.signed_in.account,
+        ),
         None => {
             let account = signed_in(api, headers)?.account;
             (account.page.id.clone(), account)

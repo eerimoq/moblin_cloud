@@ -120,22 +120,40 @@ pub(super) async fn handle_page_addresses(
     State(api): State<Arc<Api>>,
     Query(query): Query<AddressesQuery>,
 ) -> Json<HashMap<String, PageAddress>> {
+    let wanted: Vec<(&str, Platform, &str)> = query
+        .logins
+        .split(',')
+        .take(100)
+        .filter_map(|address| {
+            let (platform, login) = address.split_once(':')?;
+            Some((address, Platform::parse(platform)?, login))
+        })
+        .collect();
+    let logins: Vec<(Platform, String)> = wanted
+        .iter()
+        .map(|(_, platform, login)| (*platform, login.trim().to_lowercase()))
+        .collect();
+    let pages: HashMap<(Platform, String), String> = api
+        .accounts
+        .pages_of_logins(&logins)
+        .into_iter()
+        .map(|(platform, login, id)| ((platform, login), id))
+        .collect();
+    let icons = api
+        .pages
+        .icons(&pages.values().cloned().collect::<Vec<_>>());
     Json(
-        query
-            .logins
-            .split(',')
-            .take(100)
-            .filter_map(|address| {
-                let (platform, login) = address.split_once(':')?;
-                let platform = Platform::parse(platform)?;
-                let id = api.accounts.page_of_login(platform, login)?;
+        wanted
+            .into_iter()
+            .zip(logins)
+            .filter_map(|((address, platform, login), key)| {
+                let id = pages.get(&key)?;
                 Some((
                     address.to_string(),
                     PageAddress {
                         url: format!("{}/{}/{login}", api.auth.frontend_url, platform.name()),
-                        icon: api
-                            .pages
-                            .icon(&id)
+                        icon: icons
+                            .get(id)
                             .map(|icon| format!("{}/icons/{icon}", api.auth.backend_url)),
                     },
                 ))

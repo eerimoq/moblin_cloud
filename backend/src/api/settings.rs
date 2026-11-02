@@ -49,11 +49,11 @@ pub(super) struct SettingsResponse {
 
 pub(super) fn settings_response(
     api: &Api,
-    id: String,
+    account: &Account,
     settings: Settings,
 ) -> Json<SettingsResponse> {
-    let account = api.accounts.of_page(&id).unwrap_or_default();
-    let (merchant_id, stripe_account_id) = payment_targets(api, &account);
+    let id = account.page.id.clone();
+    let (merchant_id, stripe_account_id) = payment_targets(api, account);
     let payable = merchant_id.is_some() || stripe_account_id.is_some();
     Json(SettingsResponse {
         connected: api.remote_control.is_connected(&id),
@@ -64,7 +64,7 @@ pub(super) fn settings_response(
         sub_spins: settings.sub_spins,
         sub_effects: settings.sub_effects,
         paypal: api.paypal.is_some(),
-        merchant_id: account.merchant_id,
+        merchant_id: account.merchant_id.clone(),
         paypal_pending: account.paypal_tracking_id.is_some(),
         paypal_sandbox: api
             .paypal
@@ -72,7 +72,10 @@ pub(super) fn settings_response(
             .is_some_and(|paypal| paypal.environment() == "sandbox"),
         stripe: api.stripe.is_some(),
         stripe_pending: account.stripe_account_id.is_some() && !account.stripe_ready,
-        stripe_account_id: account.stripe_account_id.filter(|_| account.stripe_ready),
+        stripe_account_id: account
+            .stripe_account_id
+            .clone()
+            .filter(|_| account.stripe_ready),
         stripe_test: api.stripe.as_ref().is_some_and(Stripe::is_test),
         payable,
         message: settings.message,
@@ -133,11 +136,11 @@ pub(super) fn stripe_of(api: &Api, id: &str) -> Option<String> {
     payment_targets(api, &api.accounts.of_page(id)?).1
 }
 
-fn check_payable(api: &Api, id: &str) -> Result<(), (StatusCode, String)> {
+fn check_payable(api: &Api, account: &Account) -> Result<(), (StatusCode, String)> {
     if api.paypal.is_none() && api.stripe.is_none() {
         return Err(payments_unavailable());
     }
-    if merchant_of(api, id).is_none() && stripe_of(api, id).is_none() {
+    if payment_targets(api, account) == (None, None) {
         return Err((
             StatusCode::CONFLICT,
             "connect PayPal or Stripe first".to_string(),
@@ -155,11 +158,12 @@ pub(super) fn payments_unavailable() -> (StatusCode, String) {
 
 async fn update_settings(
     api: &Api,
-    id: String,
+    account: &Account,
     premium: bool,
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let current = api.pages.get(&id);
+    let id = account.page.id.as_str();
+    let current = api.pages.get(id);
     let accent = request.accent.map(|accent| accent.to_lowercase());
     if !premium && accent.as_deref().is_some_and(is_color) && accent != current.accent {
         return Err((
@@ -185,7 +189,7 @@ async fn update_settings(
         Some(tips) => {
             let tips = tips.normalize(Tips::normalize).ok_or_else(invalid_tips)?;
             if tips.enabled && current.tips.as_ref() != Some(&tips) {
-                check_payable(api, &id)?;
+                check_payable(api, account)?;
             }
             Some(tips)
         }
@@ -195,7 +199,7 @@ async fn update_settings(
         Some(spin) => {
             let spin = spin.normalize(Spin::normalize).ok_or_else(invalid_spin)?;
             if spin.enabled && current.spin.as_ref() != Some(&spin) {
-                check_payable(api, &id)?;
+                check_payable(api, account)?;
             }
             Some(spin)
         }
@@ -207,7 +211,7 @@ async fn update_settings(
                 .normalize(Effects::normalize)
                 .ok_or_else(invalid_effects)?;
             if effects.enabled && current.effects.as_ref() != Some(&effects) {
-                check_payable(api, &id)?;
+                check_payable(api, account)?;
             }
             Some(effects)
         }
@@ -224,7 +228,7 @@ async fn update_settings(
     let settings = api
         .pages
         .set(
-            &id,
+            id,
             Settings {
                 currency: Some(currency),
                 tips,
@@ -272,8 +276,8 @@ async fn update_settings(
         settings.accent,
         settings.font
     );
-    api.remote_control.changes.notify(&id, Change::Page);
-    Ok(settings_response(api, id, settings))
+    api.remote_control.changes.notify(id, Change::Page);
+    Ok(settings_response(api, account, settings))
 }
 
 pub(super) async fn handle_account_settings(
@@ -283,7 +287,7 @@ pub(super) async fn handle_account_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
     let premium = is_premium(&api, &account);
-    update_settings(&api, account.page.id, premium, request).await
+    update_settings(&api, &account, premium, request).await
 }
 
 pub(super) async fn handle_assistant_settings(
@@ -292,13 +296,13 @@ pub(super) async fn handle_assistant_settings(
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    editor(&api, &headers, &id)?;
+    let user = editor(&api, &headers, &id)?;
     let request = SettingsRequest {
         currency: None,
         ..request
     };
-    let premium = streamer_is_premium(&api, &id);
-    update_settings(&api, id, premium, request)
+    let premium = is_premium(&api, &user.streamer);
+    update_settings(&api, &user.streamer, premium, request)
         .await
         .map(without_payments)
         .map_err(Failure::from)

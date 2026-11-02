@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::warn;
@@ -386,6 +387,24 @@ impl Pages {
                 warn!("failed to read the icon of page {id}: {error:#}");
                 None
             })
+    }
+
+    pub fn icons(&self, ids: &[String]) -> HashMap<String, String> {
+        let ids = serde_json::to_string(ids).unwrap_or_default();
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(
+                "SELECT id, icon FROM page_icons WHERE id IN (SELECT value FROM json_each(?1))",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([ids], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect::<rusqlite::Result<_>>()
+            });
+        result.unwrap_or_else(|error| {
+            warn!("failed to read the page icons: {error:#}");
+            HashMap::new()
+        })
     }
 
     pub fn set_icon(&self, id: &str, icon: &str) {

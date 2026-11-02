@@ -182,7 +182,7 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         kick: public_identity(&account, Platform::Kick),
         key: Some(page.key.clone()),
         devices: devices(api, &page.id, true),
-        settings: settings_response(api, page.id.clone(), settings).0,
+        settings: settings_response(api, &account, settings).0,
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),
         preview: true,

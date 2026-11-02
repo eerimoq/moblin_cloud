@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::database::Database;
 use crate::deliveries::now;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     Twitch,
@@ -212,9 +212,10 @@ impl Permission {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Access {
+    #[default]
     None,
     View,
     Control,
@@ -226,6 +227,42 @@ impl Access {
             0 => Self::None,
             1 => Self::View,
             _ => Self::Control,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rights {
+    pub preview: bool,
+    pub go_live: bool,
+    pub edit_tips: bool,
+    pub remote_control: Access,
+}
+
+impl Rights {
+    pub fn all() -> Self {
+        Self {
+            preview: true,
+            go_live: true,
+            edit_tips: true,
+            remote_control: Access::Control,
+        }
+    }
+
+    pub fn permits(&self, permission: Permission) -> bool {
+        match permission {
+            Permission::Preview => self.preview,
+            Permission::GoLive => self.go_live,
+            Permission::EditTips => self.edit_tips,
+        }
+    }
+
+    pub fn or(self, other: Self) -> Self {
+        Self {
+            preview: self.preview || other.preview,
+            go_live: self.go_live || other.go_live,
+            edit_tips: self.edit_tips || other.edit_tips,
+            remote_control: self.remote_control.max(other.remote_control),
         }
     }
 }
@@ -906,10 +943,37 @@ impl Accounts {
         })
     }
 
-    pub fn assists(&self, platform: Platform, assistant: &str, broadcaster: &str) -> bool {
-        self.listed(platform, assistant, broadcaster, "")
+    pub fn rights(&self, platform: Platform, assistant: &str, broadcaster: &str) -> Option<Rights> {
+        let table = assistants_table(platform);
+        self.database
+            .lock()
+            .query_row(
+                &format!(
+                    "SELECT preview, go_live, edit_tips, remote_control FROM {table} WHERE assistant = ?1 AND broadcaster = ?2"
+                ),
+                [assistant, broadcaster],
+                |row| {
+                    Ok(Rights {
+                        preview: row.get(0)?,
+                        go_live: row.get(1)?,
+                        edit_tips: row.get(2)?,
+                        remote_control: Access::of(row.get(3)?),
+                    })
+                },
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read {} assistants: {error:#}", platform.title());
+                None
+            })
     }
 
+    #[cfg(test)]
+    pub fn assists(&self, platform: Platform, assistant: &str, broadcaster: &str) -> bool {
+        self.rights(platform, assistant, broadcaster).is_some()
+    }
+
+    #[cfg(test)]
     pub fn permits(
         &self,
         platform: Platform,
@@ -917,14 +981,11 @@ impl Accounts {
         broadcaster: &str,
         permission: Permission,
     ) -> bool {
-        self.listed(
-            platform,
-            assistant,
-            broadcaster,
-            &format!(" AND {}", permission.column()),
-        )
+        self.rights(platform, assistant, broadcaster)
+            .is_some_and(|rights| rights.permits(permission))
     }
 
+    #[cfg(test)]
     pub fn grants(
         &self,
         platform: Platform,
@@ -932,62 +993,83 @@ impl Accounts {
         broadcaster: &str,
         access: Access,
     ) -> bool {
-        self.listed(
-            platform,
-            assistant,
-            broadcaster,
-            &format!(" AND remote_control >= {}", access as u8),
-        )
-    }
-
-    fn listed(
-        &self,
-        platform: Platform,
-        assistant: &str,
-        broadcaster: &str,
-        condition: &str,
-    ) -> bool {
-        let table = assistants_table(platform);
-        self.database
-            .lock()
-            .query_row(
-                &format!(
-                    "SELECT 1 FROM {table} WHERE assistant = ?1 AND broadcaster = ?2{condition}"
-                ),
-                [assistant, broadcaster],
-                |_| Ok(()),
-            )
-            .optional()
-            .unwrap_or_else(|error| {
-                warn!("failed to read {} assistants: {error:#}", platform.title());
-                None
-            })
-            .is_some()
+        self.rights(platform, assistant, broadcaster)
+            .is_some_and(|rights| rights.remote_control >= access)
     }
 
     pub fn assisted(&self, platform: Platform, assistant: &str) -> Vec<Account> {
         let table = assistants_table(platform);
-        let broadcasters: Vec<String> = {
-            let database = self.database.lock();
-            let result = database
-                .prepare_cached(&format!(
-                    "SELECT identities.account FROM {table}
-                     JOIN identities ON identities.platform = ?1 AND identities.user_id = broadcaster
-                     WHERE assistant = ?2 ORDER BY identities.name COLLATE NOCASE"
-                ))
-                .and_then(|mut statement| {
-                    statement
-                        .query_map([platform.name(), assistant], |row| row.get(0))?
-                        .collect::<rusqlite::Result<_>>()
-                });
-            result.unwrap_or_else(|error| {
-                warn!("failed to read {} assistants: {error:#}", platform.title());
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(&format!(
+                "SELECT {COLUMNS}, {IDENTITIES} FROM accounts
+                 WHERE id IN (SELECT identities.account FROM {table}
+                              JOIN identities ON identities.platform = ?1 AND identities.user_id = broadcaster
+                              WHERE assistant = ?2)
+                 ORDER BY (SELECT name FROM identities WHERE account = accounts.id AND platform = ?1) COLLATE NOCASE"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([platform.name(), assistant], account)?
+                    .collect::<rusqlite::Result<_>>()
+            });
+        result.unwrap_or_else(|error| {
+            warn!("failed to read {} assistants: {error:#}", platform.title());
+            Vec::new()
+        })
+    }
+
+    pub fn page_of_identity(&self, platform: Platform, user_id: &str) -> Option<String> {
+        self.database
+            .lock()
+            .query_row(
+                "SELECT page_id FROM identities JOIN accounts ON accounts.id = identities.account
+                 WHERE platform = ?1 AND user_id = ?2",
+                [platform.name(), user_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap_or_else(|error| {
+                warn!("failed to read identities: {error:#}");
+                None
+            })
+    }
+
+    pub fn pages_of_logins(
+        &self,
+        logins: &[(Platform, String)],
+    ) -> Vec<(Platform, String, String)> {
+        let logins = logins
+            .iter()
+            .map(|(platform, login)| [platform.name(), login.as_str()])
+            .collect::<Vec<_>>();
+        let logins = serde_json::to_string(&logins).unwrap_or_default();
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(
+                "SELECT platform, identities.login, page_id FROM identities
+                 JOIN accounts ON accounts.id = identities.account
+                 WHERE identities.login != '' AND (platform, identities.login) IN
+                     (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?1))",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([logins], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            });
+        result
+            .unwrap_or_else(|error| {
+                warn!("failed to read identities: {error:#}");
                 Vec::new()
             })
-        };
-        broadcasters
-            .iter()
-            .filter_map(|broadcaster| self.get(broadcaster))
+            .into_iter()
+            .filter_map(|(platform, login, page)| Some((Platform::parse(&platform)?, login, page)))
             .collect()
     }
 

@@ -79,23 +79,24 @@ fn disconnect(
     provider: &str,
     forget: impl FnOnce(&Accounts, &str) -> Result<Account, AccountError>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(api, headers)?;
-    let page = account.page.id;
-    forget(&api.accounts, &id).map_err(account_error)?;
+    let SignedIn { id, .. } = signed_in(api, headers)?;
+    let account = forget(&api.accounts, &id).map_err(account_error)?;
+    let page = &account.page.id;
     info!("{id} disconnected {provider}");
-    api.remote_control.changes.notify(&page, Change::Page);
-    let settings = api.pages.get(&page);
-    Ok(settings_response(api, page, settings))
+    api.remote_control.changes.notify(page, Change::Page);
+    let settings = api.pages.get(page);
+    Ok(settings_response(api, &account, settings))
 }
 
 pub(super) async fn handle_account_paypal_check(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.id;
+    let SignedIn {
+        id, mut account, ..
+    } = signed_in(&api, &headers)?;
     let paypal = api.paypal.as_ref().ok_or_else(payments_unavailable)?;
-    if let Some(tracking_id) = account.paypal_tracking_id {
+    if let Some(tracking_id) = account.paypal_tracking_id.clone() {
         let seller = paypal.seller(&tracking_id).await.map_err(|error| {
             warn!("looking up PayPal tracking ID {tracking_id} of {id} failed: {error:#}");
             unreachable("PayPal")
@@ -104,10 +105,10 @@ pub(super) async fn handle_account_paypal_check(
             StatusCode::NOT_FOUND,
             "PayPal has not connected an account yet".to_string(),
         ))?;
-        finish_onboarding(&api, &id, &tracking_id, seller)?;
+        account = finish_onboarding(&api, &id, &tracking_id, seller)?;
     }
-    let settings = api.pages.get(&page);
-    Ok(settings_response(&api, page, settings))
+    let settings = api.pages.get(&account.page.id);
+    Ok(settings_response(&api, &account, settings))
 }
 
 pub(super) async fn handle_account_paypal_disconnect(
@@ -122,7 +123,7 @@ fn finish_onboarding(
     id: &str,
     tracking_id: &str,
     seller: Seller,
-) -> Result<(), (StatusCode, String)> {
+) -> Result<Account, (StatusCode, String)> {
     if !seller.permissions_granted {
         info!(
             "PayPal merchant {} of {id} did not grant the permissions",
@@ -143,12 +144,15 @@ fn finish_onboarding(
             "the PayPal account can't receive payments yet".to_string(),
         ));
     }
-    api.accounts
+    let account = api
+        .accounts
         .connect_paypal(id, tracking_id, seller.merchant_id.clone())
         .map_err(account_error)?;
     info!("{id} connected PayPal merchant {}", seller.merchant_id);
-    account_changed(api, id, Change::Page);
-    Ok(())
+    api.remote_control
+        .changes
+        .notify(&account.page.id, Change::Page);
+    Ok(account)
 }
 
 pub(super) async fn handle_paypal_webhook(
@@ -288,10 +292,11 @@ pub(super) async fn handle_account_stripe_check(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    let page = account.page.id;
+    let SignedIn {
+        id, mut account, ..
+    } = signed_in(&api, &headers)?;
     let stripe = api.stripe.as_ref().ok_or_else(payments_unavailable)?;
-    if let Some(stripe_account_id) = account.stripe_account_id {
+    if let Some(stripe_account_id) = account.stripe_account_id.clone() {
         let ready = stripe
             .takes_payments(&stripe_account_id)
             .await
@@ -299,12 +304,16 @@ pub(super) async fn handle_account_stripe_check(
                 warn!("looking up Stripe account {stripe_account_id} of {id} failed: {error:#}");
                 unreachable("Stripe")
             })?;
-        api.accounts
+        let was_ready = account.stripe_ready;
+        account = api
+            .accounts
             .stripe_ready(&id, &stripe_account_id, ready)
             .map_err(account_error)?;
-        if ready != account.stripe_ready {
+        if ready != was_ready {
             info!("Stripe account {stripe_account_id} of {id} takes payments: {ready}");
-            api.remote_control.changes.notify(&page, Change::Page);
+            api.remote_control
+                .changes
+                .notify(&account.page.id, Change::Page);
         }
         if !ready {
             return Err((
@@ -313,8 +322,8 @@ pub(super) async fn handle_account_stripe_check(
             ));
         }
     }
-    let settings = api.pages.get(&page);
-    Ok(settings_response(&api, page, settings))
+    let settings = api.pages.get(&account.page.id);
+    Ok(settings_response(&api, &account, settings))
 }
 
 pub(super) async fn handle_account_stripe_disconnect(

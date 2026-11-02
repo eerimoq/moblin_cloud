@@ -10,21 +10,11 @@ pub struct Allowances {
     database: Arc<Database>,
 }
 
-fn month(connection: &Connection) -> rusqlite::Result<String> {
-    connection.query_row("SELECT strftime('%Y-%m', 'now')", [], |row| row.get(0))
-}
-
-fn used(
-    connection: &Connection,
-    page: &str,
-    viewer: &str,
-    kind: &str,
-    month: &str,
-) -> rusqlite::Result<u32> {
+fn used(connection: &Connection, page: &str, viewer: &str, kind: &str) -> rusqlite::Result<u32> {
     Ok(connection
         .query_row(
-            "SELECT count FROM subscriber_allowances WHERE page = ?1 AND viewer = ?2 AND kind = ?3 AND month = ?4",
-            [page, viewer, kind, month],
+            "SELECT count FROM subscriber_allowances WHERE page = ?1 AND viewer = ?2 AND kind = ?3 AND month = strftime('%Y-%m', 'now')",
+            [page, viewer, kind],
             |row| row.get(0),
         )
         .optional()?
@@ -38,11 +28,9 @@ impl Allowances {
 
     pub fn left(&self, page: &str, viewer: &str, kind: &str, allowance: u32) -> Result<u32> {
         let database = self.database.lock();
-        let used = month(&database)
-            .and_then(|month| used(&database, page, viewer, kind, &month))
-            .with_context(|| {
-                format!("failed to read the {kind} allowance of {viewer} on page {page}")
-            })?;
+        let used = used(&database, page, viewer, kind).with_context(|| {
+            format!("failed to read the {kind} allowance of {viewer} on page {page}")
+        })?;
         Ok(allowance.saturating_sub(used))
     }
 
@@ -56,21 +44,20 @@ impl Allowances {
     ) -> Result<Option<u32>> {
         let mut database = self.database.lock();
         let transaction = database.transaction()?;
-        let month = month(&transaction)?;
-        let left = allowance.saturating_sub(used(&transaction, page, viewer, kind, &month)?);
-        if left == 0 {
+        let count: u32 = transaction.query_row(
+            "INSERT INTO subscriber_allowances (page, viewer, kind, month, count) VALUES (?1, ?2, ?3, strftime('%Y-%m', 'now'), 1)
+             ON CONFLICT (page, viewer, kind, month) DO UPDATE SET count = count + 1 RETURNING count",
+            params![page, viewer, kind],
+            |row| row.get(0),
+        )?;
+        if count > allowance {
             return Ok(None);
         }
-        transaction.execute(
-            "INSERT INTO subscriber_allowances (page, viewer, kind, month, count) VALUES (?1, ?2, ?3, ?4, 1)
-             ON CONFLICT (page, viewer, kind, month) DO UPDATE SET count = count + 1",
-            params![page, viewer, kind, month],
-        )?;
         then(&transaction)?;
         transaction
             .commit()
             .with_context(|| format!("failed to save the {kind} of {viewer} on page {page}"))?;
-        Ok(Some(left - 1))
+        Ok(Some(allowance - count))
     }
 
     pub fn prune(&self) {

@@ -190,8 +190,8 @@ fn set_assistant(
 
 fn assistants_changed(api: &Api, page: &str, platform: Platform, assistant: &str) {
     api.remote_control.changes.notify(page, Change::Account);
-    if let Some(id) = api.accounts.account_of_identity(platform, assistant) {
-        account_changed(api, &id, Change::Account);
+    if let Some(own) = api.accounts.page_of_identity(platform, assistant) {
+        api.remote_control.changes.notify(&own, Change::Account);
     }
 }
 
@@ -200,8 +200,8 @@ pub(super) async fn handle_assistant_account(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, Failure> {
-    let signed_in = assistant(&api, &headers, &id)?;
-    let account = api.accounts.of_page(&id).ok_or_else(no_such_page)?;
+    let user = assistant(&api, &headers, &id)?;
+    let account = user.streamer;
     let settings = api.pages.get(&id);
     Ok(Json(AccountResponse {
         twitch: public_identity(&account, Platform::Twitch),
@@ -210,13 +210,13 @@ pub(super) async fn handle_assistant_account(
         avatar: account.avatar().map(str::to_string),
         key: None,
         devices: devices(&api, &id, false),
-        settings: without_payments(settings_response(&api, id.clone(), settings)).0,
+        settings: without_payments(settings_response(&api, &account, settings)).0,
         admin: false,
-        premium: streamer_is_premium(&api, &id),
-        preview: may(&api, &signed_in.account, &id, Permission::Preview),
-        go_live: may(&api, &signed_in.account, &id, Permission::GoLive),
-        edit_tips: may(&api, &signed_in.account, &id, Permission::EditTips),
-        remote_control: access(&api, &signed_in.account, &id),
+        premium: is_premium(&api, &account),
+        preview: user.rights.preview,
+        go_live: user.rights.go_live,
+        edit_tips: user.rights.edit_tips,
+        remote_control: user.rights.remote_control,
         twitch_assistants: Vec::new(),
         kick_assistants: Vec::new(),
         assisting: Vec::new(),

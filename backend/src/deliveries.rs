@@ -265,6 +265,7 @@ impl Deliveries {
     pub async fn run(&self, streamers: &Streamers) {
         loop {
             let mut by_device: Vec<((String, String), Vec<Targeted>)> = Vec::new();
+            let mut known: HashMap<String, Vec<String>> = HashMap::new();
             for delivery in self.pending() {
                 let page = &delivery.streamer;
                 let (devices, connected): (Vec<String>, Vec<String>) = match &delivery.item {
@@ -281,10 +282,12 @@ impl Deliveries {
                             .map(|device| device.id)
                             .filter(|device| !delivery.delivered.contains(device))
                             .collect();
-                        let devices = self
-                            .tip_devices(streamers, page)
-                            .into_iter()
+                        let devices = known
+                            .entry(page.clone())
+                            .or_insert_with(|| self.tip_devices(streamers, page))
+                            .iter()
                             .filter(|device| !delivery.delivered.contains(device))
+                            .cloned()
                             .collect();
                         (devices, connected)
                     }

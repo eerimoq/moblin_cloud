@@ -27,7 +27,7 @@ async fn account_image(
 ) -> Result<Json<SettingsResponse>, Failure> {
     let SignedIn { id, account, .. } = signed_in(api, headers)?;
     let premium = is_premium(api, &account);
-    save_image(api, &id, account.page.id, premium, body).await
+    save_image(api, &id, &account, premium, body).await
 }
 
 pub(super) async fn handle_assistant_image(
@@ -46,23 +46,17 @@ async fn assistant_image(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let user = editor(api, headers, page)?.id;
-    let premium = streamer_is_premium(api, page);
-    save_image(api, &user, page.to_string(), premium, body)
+    let user = editor(api, headers, page)?;
+    let premium = is_premium(api, &user.streamer);
+    save_image(api, &user.signed_in.id, &user.streamer, premium, body)
         .await
         .map(without_payments)
-}
-
-pub(super) fn streamer_is_premium(api: &Api, page: &str) -> bool {
-    api.accounts
-        .of_page(page)
-        .is_some_and(|account| is_premium(api, &account))
 }
 
 async fn save_image(
     api: &Api,
     id: &str,
-    page: String,
+    account: &Account,
     premium: bool,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
@@ -83,7 +77,8 @@ async fn save_image(
             text: "That image could not be read. Use a JPEG, PNG or WebP at least 600 pixels wide and at most 4000 pixels on each side."
                 .to_string(),
         })?;
-    let version = api.pages.set_image(&page, &image).map_err(|_| Failure {
+    let page = &account.page.id;
+    let version = api.pages.set_image(page, &image).map_err(|_| Failure {
         reason: "not-saved",
         status: StatusCode::INTERNAL_SERVER_ERROR,
         text: "The image could not be saved. Try again.".to_string(),
@@ -92,9 +87,9 @@ async fn save_image(
         "{id} uploaded banner image {version} of {} bytes for page {page}",
         image.len()
     );
-    api.remote_control.changes.notify(&page, Change::Page);
-    let settings = api.pages.get(&page);
-    Ok(settings_response(api, page, settings))
+    api.remote_control.changes.notify(page, Change::Page);
+    let settings = api.pages.get(page);
+    Ok(settings_response(api, account, settings))
 }
 
 pub(super) async fn handle_account_image_remove(
@@ -102,7 +97,7 @@ pub(super) async fn handle_account_image_remove(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    remove_image(&api, &id, account.page.id)
+    remove_image(&api, &id, &account)
 }
 
 pub(super) async fn handle_assistant_image_remove(
@@ -110,8 +105,8 @@ pub(super) async fn handle_assistant_image_remove(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let user = editor(&api, &headers, &id)?.id;
-    remove_image(&api, &user, id)
+    let user = editor(&api, &headers, &id)?;
+    remove_image(&api, &user.signed_in.id, &user.streamer)
         .map(without_payments)
         .map_err(Failure::from)
 }
@@ -119,18 +114,19 @@ pub(super) async fn handle_assistant_image_remove(
 fn remove_image(
     api: &Api,
     id: &str,
-    page: String,
+    account: &Account,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    api.pages.remove_image(&page).map_err(|_| {
+    let page = &account.page.id;
+    api.pages.remove_image(page).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "the image could not be removed".to_string(),
         )
     })?;
     info!("{id} removed the banner image of page {page}");
-    api.remote_control.changes.notify(&page, Change::Page);
-    let settings = api.pages.get(&page);
-    Ok(settings_response(api, page, settings))
+    api.remote_control.changes.notify(page, Change::Page);
+    let settings = api.pages.get(page);
+    Ok(settings_response(api, account, settings))
 }
 
 #[cfg(test)]

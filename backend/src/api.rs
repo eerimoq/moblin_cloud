@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
-use crate::accounts::{Access, Account, Accounts, Page, Permission, Platform};
+use crate::accounts::{Access, Account, Accounts, Page, Permission, Platform, Rights};
 use crate::app_attest::AppAttest;
 use crate::auth::Auth;
 use crate::changes::Change;
@@ -274,14 +274,6 @@ pub(super) fn page_of(api: &Api, id: &str) -> Option<Page> {
     Some(api.accounts.of_page(id)?.page)
 }
 
-pub(super) fn no_such_page() -> Failure {
-    failure(
-        "not-found",
-        StatusCode::NOT_FOUND,
-        "This page does not exist.",
-    )
-}
-
 pub(super) fn not_signed_in() -> (StatusCode, String) {
     (StatusCode::UNAUTHORIZED, "not signed in".to_string())
 }
@@ -414,119 +406,100 @@ pub(super) fn new_request_id(api: &Api) -> Result<String, Failure> {
     ))
 }
 
-fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
+pub(super) struct PageUser {
+    signed_in: SignedIn,
+    streamer: Account,
+    rights: Rights,
+}
+
+fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failure> {
     let signed_in = signed_in(api, headers)?;
-    let allowed = signed_in.account.page.id == id
-        || listed(
-            api,
-            &signed_in.account,
-            id,
-            |platform, assistant, broadcaster| {
-                api.accounts.assists(platform, assistant, broadcaster)
-            },
-        );
-    if !allowed {
-        return Err(failure(
+    let not_assistant = || {
+        failure(
             "not-assistant",
             StatusCode::FORBIDDEN,
             "Only the streamer and the assistants they turned on can do this.",
-        ));
+        )
+    };
+    if signed_in.account.page.id == id {
+        let streamer = signed_in.account.clone();
+        return Ok(PageUser {
+            signed_in,
+            streamer,
+            rights: Rights::all(),
+        });
     }
-    Ok(signed_in)
-}
-
-fn active(api: &Api, signed_in: &SignedIn, id: &str, remote_control: bool) {
-    if signed_in.account.page.id != id && api.accounts.active(&signed_in.id, id, remote_control) {
-        api.remote_control.changes.notify(id, Change::Account);
-    }
-}
-
-pub(super) fn assistant(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
-    let signed_in = page_user(api, headers, id)?;
-    active(api, &signed_in, id, false);
-    Ok(signed_in)
-}
-
-pub(super) fn may(api: &Api, account: &Account, id: &str, permission: Permission) -> bool {
-    account.page.id == id
-        || listed(api, account, id, |platform, assistant, broadcaster| {
-            api.accounts
-                .permits(platform, assistant, broadcaster, permission)
-        })
-}
-
-pub(super) fn access(api: &Api, account: &Account, id: &str) -> Access {
-    if account.page.id == id {
-        return Access::Control;
-    }
-    [Access::Control, Access::View]
+    let streamer = api.accounts.of_page(id).ok_or_else(not_assistant)?;
+    let rights = [Platform::Twitch, Platform::Kick]
         .into_iter()
-        .find(|&access| {
-            listed(api, account, id, |platform, assistant, broadcaster| {
-                api.accounts
-                    .grants(platform, assistant, broadcaster, access)
-            })
+        .filter_map(|platform| {
+            let assistant = signed_in.account.identity(platform)?;
+            let broadcaster = streamer.identity(platform)?;
+            api.accounts
+                .rights(platform, &assistant.user_id, &broadcaster.user_id)
         })
-        .unwrap_or(Access::None)
+        .reduce(Rights::or)
+        .ok_or_else(not_assistant)?;
+    Ok(PageUser {
+        signed_in,
+        streamer,
+        rights,
+    })
 }
 
-pub(super) fn watcher(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
-    let signed_in = page_user(api, headers, id)?;
-    if access(api, &signed_in.account, id) < Access::View {
-        active(api, &signed_in, id, false);
+fn active(api: &Api, user: &PageUser, remote_control: bool) {
+    let page = &user.streamer.page.id;
+    if user.signed_in.account.page.id != *page
+        && api
+            .accounts
+            .active(&user.signed_in.id, page, remote_control)
+    {
+        api.remote_control.changes.notify(page, Change::Account);
+    }
+}
+
+pub(super) fn assistant(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failure> {
+    let user = page_user(api, headers, id)?;
+    active(api, &user, false);
+    Ok(user)
+}
+
+pub(super) fn watcher(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failure> {
+    let user = page_user(api, headers, id)?;
+    if user.rights.remote_control < Access::View {
+        active(api, &user, false);
         return Err(failure(
             "no-remote-control",
             StatusCode::FORBIDDEN,
             "The streamer has not let you use the remote control.",
         ));
     }
-    active(api, &signed_in, id, true);
-    Ok(signed_in)
+    active(api, &user, true);
+    Ok(user)
 }
 
-pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
-    let signed_in = watcher(api, headers, id)?;
-    if !may(api, &signed_in.account, id, Permission::Preview) {
+pub(super) fn previewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failure> {
+    let user = watcher(api, headers, id)?;
+    if !user.rights.permits(Permission::Preview) {
         return Err(failure(
             "no-preview",
             StatusCode::FORBIDDEN,
             "The streamer has not let you see the stream preview.",
         ));
     }
-    Ok(signed_in)
+    Ok(user)
 }
 
-pub(super) fn editor(api: &Api, headers: &HeaderMap, id: &str) -> Result<SignedIn, Failure> {
-    let signed_in = assistant(api, headers, id)?;
-    if !may(api, &signed_in.account, id, Permission::EditTips) {
+pub(super) fn editor(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failure> {
+    let user = assistant(api, headers, id)?;
+    if !user.rights.permits(Permission::EditTips) {
         return Err(failure(
             "no-edit-tips",
             StatusCode::FORBIDDEN,
             "The streamer has not let you edit tips.",
         ));
     }
-    Ok(signed_in)
-}
-
-fn listed(
-    api: &Api,
-    account: &Account,
-    id: &str,
-    check: impl Fn(Platform, &str, &str) -> bool,
-) -> bool {
-    let streamer = api.accounts.of_page(id);
-    [Platform::Twitch, Platform::Kick]
-        .into_iter()
-        .any(|platform| {
-            account.identity(platform).is_some_and(|assistant| {
-                streamer
-                    .as_ref()
-                    .and_then(|streamer| streamer.identity(platform))
-                    .is_some_and(|broadcaster| {
-                        check(platform, &assistant.user_id, &broadcaster.user_id)
-                    })
-            })
-        })
+    Ok(user)
 }
 
 pub(super) fn counted<T>(api: &Api, name: &str, result: Result<T, Failure>) -> Result<T, Failure> {
