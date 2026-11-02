@@ -658,23 +658,6 @@ impl Accounts {
         })
     }
 
-    pub fn device_names(&self, page: &str) -> HashMap<String, String> {
-        let database = self.database.lock();
-        let result = database
-            .prepare_cached(&format!(
-                "SELECT id, name FROM devices WHERE account = {ACCOUNT_OF_PAGE}"
-            ))
-            .and_then(|mut statement| {
-                statement
-                    .query_map([page], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect::<rusqlite::Result<_>>()
-            });
-        result.unwrap_or_else(|error| {
-            warn!("failed to read the devices of {page}: {error:#}");
-            HashMap::new()
-        })
-    }
-
     pub fn start_paypal(&self, id: &str, tracking_id: String) -> Result<Account, AccountError> {
         self.change(id, |account| {
             account.paypal_tracking_id = Some(tracking_id);
@@ -1652,7 +1635,11 @@ mod tests {
         for device in 0..25 {
             accounts.seen_device("p", &device.to_string()).unwrap();
         }
-        let names = accounts.device_names("p");
+        let names: HashMap<String, String> = accounts
+            .known_devices("p")
+            .into_iter()
+            .map(|device| (device.id, device.name))
+            .collect();
         assert_eq!(names.len(), 20);
         assert!((0..5).all(|device| !names.contains_key(&device.to_string())));
         assert_eq!(names["5"], "Moblin 6");
@@ -1721,7 +1708,11 @@ mod tests {
         accounts.remove_device("p", "x").unwrap();
         assert_eq!(seen("p", "d"), "Moblin 2");
         assert_eq!(
-            accounts.device_names("p"),
+            accounts
+                .known_devices("p")
+                .into_iter()
+                .map(|device| (device.id, device.name))
+                .collect::<HashMap<_, _>>(),
             HashMap::from([
                 ("a".to_string(), "Moblin 3".to_string()),
                 ("b".to_string(), "Backup".to_string()),

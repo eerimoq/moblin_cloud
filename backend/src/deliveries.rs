@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -194,6 +195,7 @@ impl Deliveries {
         devices
     }
 
+    #[cfg(test)]
     pub fn get(&self, request_id: &str) -> Option<Delivery> {
         query(
             &self.database.lock(),
@@ -201,6 +203,18 @@ impl Deliveries {
             [request_id],
         )
         .pop()
+    }
+
+    pub fn get_many(&self, request_ids: &[String]) -> HashMap<String, Delivery> {
+        let ids = serde_json::to_string(request_ids).unwrap_or_default();
+        query(
+            &self.database.lock(),
+            "SELECT * FROM deliveries WHERE request_id IN (SELECT value FROM json_each(?1))",
+            [ids],
+        )
+        .into_iter()
+        .map(|delivery| (delivery.request_id.clone(), delivery))
+        .collect()
     }
 
     fn delivered(&self, request_id: &str, counter: Option<&str>, device: &str, devices: &[String]) {

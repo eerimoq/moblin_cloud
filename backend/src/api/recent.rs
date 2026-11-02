@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -9,7 +8,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::accounts::Page;
+use crate::accounts::{KnownDevice, Page};
 use crate::deliveries;
 use crate::payments::{Item, Payee, Stage};
 
@@ -85,9 +84,9 @@ pub(super) fn recent(
     owner: bool,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
-    let names = api.accounts.device_names(&page.id);
+    let known = api.accounts.known_devices(&page.id);
     let list = |kind: &str, before: Option<&str>| {
-        recent_list(api, &page, &names, kind, before, limit, owner)
+        recent_list(api, &page, &known, kind, before, limit, owner)
     };
     match query.kind.as_deref() {
         Some(kind @ ("tip" | "spin" | "effect")) => Ok(Json(RecentResponse::One(list(
@@ -110,7 +109,7 @@ pub(super) fn recent(
 fn recent_list(
     api: &Api,
     page: &Page,
-    names: &HashMap<String, String>,
+    known: &[KnownDevice],
     kind: &str,
     before: Option<&str>,
     limit: usize,
@@ -119,13 +118,15 @@ fn recent_list(
     let mut orders = api.orders.recent(&page.id, kind, before, limit + 1);
     let more = orders.len() > limit;
     orders.truncate(limit);
+    let ids: Vec<String> = orders.iter().map(|(id, _, _)| id.clone()).collect();
+    let mut deliveries = api.deliveries.get_many(&ids);
     let items = orders
         .into_iter()
         .map(|(id, at, order)| {
-            let delivery = api.deliveries.get(&id);
+            let delivery = deliveries.remove(&id);
             let devices = delivery
                 .as_ref()
-                .map(|delivery| recent_devices(api, page, names, &order.item, delivery));
+                .map(|delivery| recent_devices(api, page, known, &order.item, delivery));
             let tier = match order.payee {
                 Payee::Twitch(tier) => Some(tier),
                 _ => None,
@@ -167,7 +168,7 @@ fn recent_list(
 fn recent_devices(
     api: &Api,
     page: &Page,
-    names: &HashMap<String, String>,
+    known: &[KnownDevice],
     item: &Item,
     delivery: &deliveries::Delivery,
 ) -> Vec<RecentDevice> {
@@ -177,15 +178,19 @@ fn recent_devices(
         .map(|device| (device.clone(), true))
         .collect();
     if !delivery.finished {
-        let waiting = match item {
+        let waiting: Vec<String> = match item {
             Item::Spin { .. } => api
                 .remote_control
                 .wheel_device(&page.id)
                 .into_iter()
                 .collect(),
-            Item::Tip { .. } | Item::Effect { .. } => {
-                api.deliveries.tip_devices(&api.remote_control, &page.id)
-            }
+            Item::Tip { .. } | Item::Effect { .. } => api
+                .remote_control
+                .devices(&page.id)
+                .into_iter()
+                .map(|device| device.id)
+                .chain(known.iter().map(|device| device.id.clone()))
+                .collect(),
         };
         for device in waiting {
             if !devices.iter().any(|(other, _)| *other == device) {
@@ -196,7 +201,11 @@ fn recent_devices(
     devices
         .into_iter()
         .map(|(device, received)| RecentDevice {
-            name: device_name(names, &device),
+            name: known
+                .iter()
+                .find(|other| other.id == device)
+                .map(|other| other.name.clone())
+                .unwrap_or_else(|| "Moblin".to_string()),
             received,
         })
         .collect()

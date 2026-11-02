@@ -130,13 +130,6 @@ fn watchers(api: &Api, page: &str) -> HashMap<String, Vec<WatcherResponse>> {
         .collect()
 }
 
-pub(super) fn device_name(names: &HashMap<String, String>, device: &str) -> String {
-    names
-        .get(device)
-        .cloned()
-        .unwrap_or_else(|| "Moblin".to_string())
-}
-
 pub(super) fn devices(api: &Api, page: &str, with_watchers: bool) -> Vec<DeviceResponse> {
     let known = api.accounts.known_devices(page);
     let connected = api.remote_control.devices(page);
