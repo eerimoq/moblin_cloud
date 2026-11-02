@@ -292,6 +292,42 @@ pub enum Control {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
+    GetScenes {},
+    GetWidgets {},
+    GetVideoSources {},
+    GetAlertsMediaGallery {},
+    GetEditorOptions {},
+    CreateScene {
+        scene: Value,
+    },
+    UpdateScene {
+        scene: Value,
+    },
+    DeleteScene {
+        id: Uuid,
+    },
+    CreateWidget {
+        widget: Value,
+    },
+    UpdateWidget {
+        widget: Value,
+    },
+    DeleteWidget {
+        id: Uuid,
+    },
+    SetScoreboardPlayers {
+        players: Value,
+    },
+    GetVideoSourceSnapshot {
+        id: Uuid,
+    },
+}
+
+fn has_uuid_id(object: &Value) -> bool {
+    object
+        .get("id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| Uuid::parse_str(id).is_ok())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -316,7 +352,7 @@ pub enum Filter {
 }
 
 impl Control {
-    fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Self::SetRecord { .. } => "setRecord",
             Self::SetLive { .. } => "setLive",
@@ -339,6 +375,19 @@ impl Control {
             Self::StopMacro { .. } => "stopMacro",
             Self::SetGimbalTracking { .. } => "setGimbalTracking",
             Self::SendMessage { .. } => "sendMessage",
+            Self::GetScenes {} => "getScenes",
+            Self::GetWidgets {} => "getWidgets",
+            Self::GetVideoSources {} => "getVideoSources",
+            Self::GetAlertsMediaGallery {} => "getAlertsMediaGallery",
+            Self::GetEditorOptions {} => "getEditorOptions",
+            Self::CreateScene { .. } => "createScene",
+            Self::UpdateScene { .. } => "updateScene",
+            Self::DeleteScene { .. } => "deleteScene",
+            Self::CreateWidget { .. } => "createWidget",
+            Self::UpdateWidget { .. } => "updateWidget",
+            Self::DeleteWidget { .. } => "deleteWidget",
+            Self::SetScoreboardPlayers { .. } => "setScoreboardPlayers",
+            Self::GetVideoSourceSnapshot { .. } => "getVideoSourceSnapshot",
         }
     }
 
@@ -347,14 +396,63 @@ impl Control {
             Self::SendMessage { text, .. } => {
                 !text.trim().is_empty() && text.chars().count() <= 300
             }
+            Self::CreateScene { scene: object }
+            | Self::UpdateScene { scene: object }
+            | Self::CreateWidget { widget: object }
+            | Self::UpdateWidget { widget: object } => has_uuid_id(object),
+            Self::SetScoreboardPlayers { players } => players
+                .as_array()
+                .is_some_and(|players| players.iter().all(has_uuid_id)),
             _ => true,
+        }
+    }
+
+    pub(crate) fn answers(&self) -> Option<&'static str> {
+        match self {
+            Self::GetScenes {} => Some("scenes"),
+            Self::GetWidgets {} => Some("widgets"),
+            Self::GetVideoSources {} => Some("videoSources"),
+            Self::GetAlertsMediaGallery {} => Some("gallery"),
+            Self::GetEditorOptions {} => Some("options"),
+            Self::GetVideoSourceSnapshot { .. } => Some("image"),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn editor(&self) -> bool {
+        matches!(
+            self,
+            Self::GetScenes {}
+                | Self::GetWidgets {}
+                | Self::GetVideoSources {}
+                | Self::GetAlertsMediaGallery {}
+                | Self::GetEditorOptions {}
+                | Self::CreateScene { .. }
+                | Self::UpdateScene { .. }
+                | Self::DeleteScene { .. }
+                | Self::CreateWidget { .. }
+                | Self::UpdateWidget { .. }
+                | Self::DeleteWidget { .. }
+                | Self::SetScoreboardPlayers { .. }
+                | Self::GetVideoSourceSnapshot { .. }
+        )
+    }
+
+    fn wait(&self) -> Duration {
+        match self {
+            Self::GetVideoSourceSnapshot { .. } => Duration::from_secs(60),
+            _ => Duration::from_secs(5),
         }
     }
 
     fn changes_settings(&self) -> bool {
         matches!(
             self,
-            Self::SetSrtConnectionPriority { .. } | Self::SetSrtConnectionPrioritiesEnabled { .. }
+            Self::SetSrtConnectionPriority { .. }
+                | Self::SetSrtConnectionPrioritiesEnabled { .. }
+                | Self::CreateScene { .. }
+                | Self::UpdateScene { .. }
+                | Self::DeleteScene { .. }
         )
     }
 }
@@ -1282,14 +1380,12 @@ impl Streamers {
         &self,
         (page, device): (&str, &str),
         control: Control,
-    ) -> Result<(), RequestError> {
+    ) -> Result<Option<Value>, RequestError> {
         let changes_settings = control.changes_settings();
-        self.request(
-            (page, device),
-            Request::Control(control),
-            Duration::from_secs(5),
-        )
-        .await?;
+        let wait = control.wait();
+        let data = self
+            .request((page, device), Request::Control(control), wait)
+            .await?;
         let mut sessions = self.sessions.lock().unwrap();
         if changes_settings
             && sessions.monitor_mut(page, device).is_some()
@@ -1297,7 +1393,7 @@ impl Streamers {
         {
             session.send(Request::GetSettings {});
         }
-        Ok(())
+        Ok(data)
     }
 
     fn remove(&self, page: &str, device: &str, number: u64) {
@@ -1455,6 +1551,70 @@ mod tests {
         assert_eq!(
             request(10, Request::GetSettings {}),
             r#"{"request":{"id":10,"data":{"getSettings":{}}}}"#
+        );
+        let id = Uuid::parse_str("3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B").unwrap();
+        let editor = |control| request(20, Request::Control(control));
+        assert_eq!(
+            editor(Control::GetScenes {}),
+            r#"{"request":{"id":20,"data":{"getScenes":{}}}}"#
+        );
+        assert_eq!(
+            editor(Control::GetWidgets {}),
+            r#"{"request":{"id":20,"data":{"getWidgets":{}}}}"#
+        );
+        assert_eq!(
+            editor(Control::GetVideoSources {}),
+            r#"{"request":{"id":20,"data":{"getVideoSources":{}}}}"#
+        );
+        assert_eq!(
+            editor(Control::GetAlertsMediaGallery {}),
+            r#"{"request":{"id":20,"data":{"getAlertsMediaGallery":{}}}}"#
+        );
+        assert_eq!(
+            editor(Control::GetEditorOptions {}),
+            r#"{"request":{"id":20,"data":{"getEditorOptions":{}}}}"#
+        );
+        assert_eq!(
+            editor(Control::CreateScene {
+                scene: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Remote"})
+            }),
+            r#"{"request":{"id":20,"data":{"createScene":{"scene":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","name":"Remote"}}}}}"#
+        );
+        assert_eq!(
+            editor(Control::UpdateScene {
+                scene: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"})
+            }),
+            r#"{"request":{"id":20,"data":{"updateScene":{"scene":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}}}}"#
+        );
+        assert_eq!(
+            editor(Control::DeleteScene { id }),
+            r#"{"request":{"id":20,"data":{"deleteScene":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
+        );
+        assert_eq!(
+            editor(Control::CreateWidget {
+                widget: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "type": "Text"})
+            }),
+            r#"{"request":{"id":20,"data":{"createWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","type":"Text"}}}}}"#
+        );
+        assert_eq!(
+            editor(Control::UpdateWidget {
+                widget: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"})
+            }),
+            r#"{"request":{"id":20,"data":{"updateWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}}}}"#
+        );
+        assert_eq!(
+            editor(Control::DeleteWidget { id }),
+            r#"{"request":{"id":20,"data":{"deleteWidget":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
+        );
+        assert_eq!(
+            editor(Control::SetScoreboardPlayers {
+                players: serde_json::json!([{"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Erik"}])
+            }),
+            r#"{"request":{"id":20,"data":{"setScoreboardPlayers":{"players":[{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","name":"Erik"}]}}}}"#
+        );
+        assert_eq!(
+            editor(Control::GetVideoSourceSnapshot { id }),
+            r#"{"request":{"id":20,"data":{"getVideoSourceSnapshot":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
         );
         assert_eq!(
             request(
@@ -1729,6 +1889,32 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn editor_controls_are_checked() {
+        let valid = |text: &str| serde_json::from_str::<Control>(text).unwrap().valid();
+        assert!(valid(
+            r#"{"createScene":{"scene":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}}"#
+        ));
+        assert!(!valid(r#"{"createScene":{"scene":{"name":"No id"}}}"#));
+        assert!(!valid(r#"{"updateWidget":{"widget":{"id":"W1"}}}"#));
+        for upload in [
+            r#"{"setWidgetImage":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","image":"iVBORw0KGgo="}}"#,
+            r#"{"setVTuberModel":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","type":"VRM","model":"AAAA"}}"#,
+            r#"{"setPngTuberModel":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","model":"AAAA"}}"#,
+            r#"{"setAlertImage":{"media":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","name":"A"},"image":"AAAA"}}"#,
+            r#"{"setAlertSound":{"media":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","name":"A"},"sound":"AAAA"}}"#,
+            r#"{"setAlertVideo":{"alertId":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","videoName":"clip.mp4","video":"AAAA"}}"#,
+        ] {
+            assert!(serde_json::from_str::<Control>(upload).is_err());
+        }
+        assert!(valid(
+            r#"{"setScoreboardPlayers":{"players":[{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","name":"Erik"}]}}"#
+        ));
+        assert!(!valid(
+            r#"{"setScoreboardPlayers":{"players":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}}"#
+        ));
     }
 
     #[test]

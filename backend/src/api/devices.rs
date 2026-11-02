@@ -11,7 +11,7 @@ use futures_util::stream::{iter, unfold};
 use futures_util::{Stream, StreamExt};
 use log::info;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
@@ -37,6 +37,17 @@ fn known_device(api: &Api, page: &str, device: &str) -> Result<DeviceResponse, F
             StatusCode::NOT_FOUND,
             "This Moblin is not in the list.",
         ))
+}
+
+fn control_failure(control: &Control, error: RequestError) -> Failure {
+    if control.editor() && error == RequestError::Failed {
+        return failure(
+            "refused",
+            StatusCode::CONFLICT,
+            "Moblin refused the change. Reload the scenes and try again.",
+        );
+    }
+    request_failure(error)
 }
 
 fn request_failure(error: RequestError) -> Failure {
@@ -215,16 +226,26 @@ pub(super) async fn handle_device_control(
         *name = Some(user.signed_in.account.name().to_string()).filter(|name| !name.is_empty());
     }
     known_device(&api, &id, &device)?;
-    api.remote_control
+    let name = control.name();
+    let data = api
+        .remote_control
         .control((&id, &device), control.clone())
         .await
-        .map_err(request_failure)?;
+        .map_err(|error| control_failure(&control, error))?;
     info!(
-        "{} sent {} to device {device} of page {id}",
-        user.signed_in.id,
-        serde_json::to_string(&control).unwrap_or_default()
+        "{} sent {name} to device {device} of page {id}",
+        user.signed_in.id
     );
-    Ok(accepted())
+    let Some(key) = control.answers() else {
+        return Ok(accepted());
+    };
+    let Some(answer) = data.as_ref().and_then(|data| data.get(name)) else {
+        return Err(request_failure(RequestError::Failed));
+    };
+    Ok((
+        StatusCode::OK,
+        Json(json!({ key: answer.get(key).cloned().unwrap_or(Value::Null) })),
+    ))
 }
 
 #[cfg(test)]
@@ -578,6 +599,128 @@ mod tests {
         let (name, event) = events.next().await;
         assert_eq!(name, "settings");
         assert_eq!(event["data"]["srt"]["connectionPrioritiesEnabled"], true);
+    }
+
+    #[tokio::test]
+    async fn scene_editor_requests_answer_moblins_data() {
+        let (address, api) = start_api(None).await;
+        let client = reqwest::Client::new();
+        let (session, key, page) = streamer(&api);
+        let url = format!("http://{address}/account/pages/{page}/devices/A/control");
+        let mut socket = connect(&address, &key).await;
+        let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
+        let call = tokio::spawn(control(json!({"getScenes": {}})));
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"getScenes": {}}));
+        let scenes =
+            json!([{"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Main", "widgets": []}]);
+        answer(
+            &mut socket,
+            &request,
+            json!({"getScenes": {"scenes": scenes}}),
+        )
+        .await;
+        let response = call.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap(),
+            json!({"scenes": scenes})
+        );
+        let call = tokio::spawn(control(
+            json!({"getVideoSourceSnapshot": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}),
+        ));
+        let request = receive(&mut socket).await;
+        answer(&mut socket, &request, json!({"getVideoSourceSnapshot": {}})).await;
+        let response = call.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap(),
+            json!({"image": null})
+        );
+        let call = tokio::spawn(control(
+            json!({"deleteWidget": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}),
+        ));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"deleteWidget": {"id": "3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}})
+        );
+        answer(&mut socket, &request, Value::Null).await;
+        let response = call.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let call = tokio::spawn(control(json!({"getWidgets": {}})));
+        let request = receive(&mut socket).await;
+        answer(&mut socket, &request, Value::Null).await;
+        let response = call.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let scene = json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Remote"});
+        let call = tokio::spawn(control(json!({"createScene": {"scene": scene}})));
+        let request = receive(&mut socket).await;
+        assert_eq!(
+            request["request"]["data"],
+            json!({"createScene": {"scene": scene}})
+        );
+        socket
+            .send(Message::text(
+                json!({"response": {"id": request["request"]["id"], "result": {"error": {}}}})
+                    .to_string(),
+            ))
+            .await
+            .unwrap();
+        let response = call.await.unwrap().unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Moblin refused the change. Reload the scenes and try again."
+        );
+        let response = control(json!({"createScene": {"scene": {"name": "No id"}}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let response = control(json!({"setWidgetImage": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "image": "iVBORw0KGgo="}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let response = control(json!({"updateWidget": {"widget": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "text": "a".repeat(3_000_000)}}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let mut events = Events::open(
+            &client,
+            &format!("http://{address}/account/pages/{page}/devices/A/events"),
+            &session,
+        )
+        .await;
+        answer_monitoring(&mut socket, true).await;
+        assert_eq!(events.next().await.0, "snapshot");
+        assert_eq!(events.next().await.0, "settings");
+        let call = tokio::spawn(control(
+            json!({"deleteScene": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}),
+        ));
+        let request = receive(&mut socket).await;
+        answer(&mut socket, &request, Value::Null).await;
+        assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::ACCEPTED);
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], json!({"getSettings": {}}));
+        create_account(&api, "22", "Viewer", "viewer");
+        api.accounts
+            .add_assistant(
+                Platform::Twitch,
+                "1",
+                &twitch_assistant("22", "viewer", "Viewer"),
+            )
+            .unwrap();
+        api.accounts
+            .set_assistant_access(Platform::Twitch, "1", "22", Access::View)
+            .unwrap();
+        let response = client
+            .post(&url)
+            .bearer_auth(api.auth.session("22", 0))
+            .json(&json!({"getScenes": {}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

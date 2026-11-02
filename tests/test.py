@@ -15,6 +15,7 @@ from .suites import persistence
 from .suites import received
 from .suites import remote_control
 from .suites import robustness
+from .suites import scene_editor
 from .suites import settings
 from .suites import stripe
 from .suites import subscribers
@@ -26,6 +27,7 @@ def create_suites(context):
     return [
         account.tests(context),
         remote_control.tests(context),
+        scene_editor.tests(context),
         paypal.tests(context),
         stripe.tests(context),
         payments.tests(context),

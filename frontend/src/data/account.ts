@@ -193,7 +193,23 @@ export type Control =
   | { startMacro: { id: string } }
   | { stopMacro: { id: string } }
   | { setGimbalTracking: { on: boolean } }
-  | { sendMessage: { text: string } };
+  | { sendMessage: { text: string } }
+  | EditorControl;
+
+export type EditorControl =
+  | { getScenes: object }
+  | { getWidgets: object }
+  | { getVideoSources: object }
+  | { getAlertsMediaGallery: object }
+  | { getEditorOptions: object }
+  | { createScene: { scene: object } }
+  | { updateScene: { scene: object } }
+  | { deleteScene: { id: string } }
+  | { createWidget: { widget: object } }
+  | { updateWidget: { widget: object } }
+  | { deleteWidget: { id: string } }
+  | { setScoreboardPlayers: { players: object[] } }
+  | { getVideoSourceSnapshot: { id: string } };
 
 export type MoblinFilter =
   | "pixellate"
@@ -472,6 +488,9 @@ export const devicePreviewUrl = (page: string, device: string) =>
 
 export const controlDevice = (session: string, page: string, device: string, control: Control) =>
   call<object>(`${devicePath(page, device)}/control`, session, post(control));
+
+export const queryDevice = <T>(session: string, page: string, device: string, control: Control) =>
+  call<T>(`${devicePath(page, device)}/control`, session, post(control));
 
 export const connectPayPal = async (session: string) =>
   (await call<{ url: string }>("/account/paypal/connect", session, post())).url;
