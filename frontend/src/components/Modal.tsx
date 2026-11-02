@@ -1,4 +1,4 @@
-import { type JSX } from "solid-js";
+import { For, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { t } from "../i18n";
 import { ghostButtonClass } from "./PageParts";
@@ -60,6 +60,52 @@ export function ask(text: string, action: string): Promise<boolean> {
               >
                 {action}
               </button>
+            </div>
+          </div>
+        </Modal>
+      ),
+      container,
+    );
+    dialog?.showModal();
+  });
+}
+
+export function choose(title: string, actions: string[]): Promise<number | null> {
+  return new Promise((resolve) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    let dialog: HTMLDialogElement | undefined;
+    let chosen: number | null = null;
+    const dispose = render(
+      () => (
+        <Modal
+          ref={(element) => (dialog = element)}
+          onClose={() => {
+            dispose();
+            container.remove();
+            resolve(chosen);
+          }}
+        >
+          <div class="flex flex-col gap-6">
+            <p class="text-[17px] text-ink-2">{title}</p>
+            <div class="flex flex-wrap justify-end gap-3">
+              <button type="button" class={ghostButtonClass} onClick={() => dialog?.close()}>
+                {t("Cancel")}
+              </button>
+              <For each={actions}>
+                {(action, index) => (
+                  <button
+                    type="button"
+                    class={`${ghostButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
+                    onClick={() => {
+                      chosen = index();
+                      dialog?.close();
+                    }}
+                  >
+                    {action}
+                  </button>
+                )}
+              </For>
             </div>
           </div>
         </Modal>

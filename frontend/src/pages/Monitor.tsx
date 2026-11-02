@@ -572,6 +572,8 @@ function PhonePanel(props: {
           connected={online()}
           pending={props.feed.pending()}
           onControl={(control) => props.feed.control(control)}
+          onRequest={props.feed.request}
+          scenesChanged={props.feed.scenesChanged()}
         />
         <Show when={props.feed.loaded() && !online()}>
           <NotConnected name={props.device.name} pane />

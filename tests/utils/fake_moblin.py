@@ -18,8 +18,31 @@ from websockets.sync.client import ClientConnection
 from websockets.sync.client import connect
 
 from .fake_moblin_database import database
+from .fake_moblin_database import editor_options
+from .fake_moblin_database import translation_languages
+from .fake_moblin_database import video_sources
 
 LOGGER = logging.getLogger(__name__)
+
+
+OK: dict = {"ok": {}}
+ERROR: dict = {"error": {}}
+
+
+def same_id(first: str, second: str) -> bool:
+    return first.upper() == second.upper()
+
+
+def find(items: list[dict], item_id: str) -> dict | None:
+    return next((item for item in items if same_id(item["id"], item_id)), None)
+
+
+def index_of(items: list[dict], item_id: str) -> int | None:
+    return next((index for index, item in enumerate(items) if same_id(item["id"], item_id)), None)
+
+
+def optional(key: str, data: bytes | None) -> dict:
+    return {} if data is None else {key: base64.b64encode(data).decode()}
 
 
 def wheel_of(options: list[dict] | None) -> dict | None:
@@ -72,6 +95,27 @@ class FakeMoblin:
                 "A1",
                 "M1",
                 "M2",
+                "W1",
+                "W2",
+                "W3",
+                "W4",
+                "W5",
+                "W6",
+                "SW1",
+                "SW2",
+                "SW3",
+                "SW4",
+                "SW5",
+                "SW6",
+                "SW7",
+                "G1",
+                "G2",
+                "G3",
+                "G4",
+                "G5",
+                "G6",
+                "L1",
+                "H1",
             ]
         }
         self.database = database(self.ids, self.icon)
@@ -97,6 +141,13 @@ class FakeMoblin:
                 {"id": macro["id"], "name": macro["name"], "running": False}
                 for macro in self.database["macros"]["macros"]
             ],
+            "canvasSize": {"width": 1920, "height": 1080},
+            "mirrorFrontCameraOnStream": True,
+        }
+        self.files: dict[str, bytes] = {
+            self.ids["W2"]: png(2, 1, b"\x00\xff\x00\x00\x00\x00\xff"),
+            self.ids["G5"]: b"GIF89a\x01\x00\x01\x00\x00\x00\x00;",
+            self.ids["G6"]: b"ID3\x03\x00\x00\x00\x00\x00\x00",
         }
         self.priorities_enabled = False
         self.priorities = [
@@ -221,14 +272,138 @@ class FakeMoblin:
     def enabled_stream(self) -> dict:
         return next(stream for stream in self.database["streams"] if stream["enabled"])
 
+    def enabled_scenes(self) -> list[dict]:
+        return [scene for scene in self.database["scenes"] if scene.get("enabled", True)]
+
+    def scenes_changed(self):
+        selected = self.state["scene"]
+        enabled = self.enabled_scenes()
+        if enabled and not any(same_id(scene["id"], selected) for scene in enabled):
+            self.change_state(scene=enabled[0]["id"].upper())
+        if self._status_requested.is_set():
+            self.send_event({"scenesChanged": {}})
+
+    def remove_dead_scene_widgets(self):
+        for scene in self.database["scenes"]:
+            scene["widgets"] = [
+                scene_widget
+                for scene_widget in scene.get("widgets", [])
+                if find(self.database["widgets"], scene_widget.get("widgetId", "")) is not None
+            ]
+
+    def scene_request(self, kind: str, body: dict) -> tuple[dict, dict | None] | None:
+        handlers = {
+            "getScenes": lambda: (OK, {"getScenes": {"scenes": self.database["scenes"]}}),
+            "getWidgets": lambda: (OK, {"getWidgets": {"widgets": self.database["widgets"]}}),
+            "getVideoSources": lambda: (OK, {"getVideoSources": {"videoSources": video_sources()}}),
+            "getAlertsMediaGallery": lambda: (OK, {"getAlertsMediaGallery": {"gallery": self.gallery()}}),
+            "getEditorOptions": lambda: (
+                OK,
+                {"getEditorOptions": {"options": editor_options(self.ids, self.database)}},
+            ),
+            "getAlertMedia": lambda: (OK, {"getAlertMedia": optional("data", self.alert_media(body["id"]))}),
+            "createScene": lambda: self.create_item("scenes", body["scene"]),
+            "createWidget": lambda: self.create_item("widgets", body["widget"]),
+            "updateScene": lambda: self.update_item("scenes", body["scene"]),
+            "updateWidget": lambda: self.update_item("widgets", body["widget"]),
+            "deleteScene": lambda: self.delete_item("scenes", body["id"]),
+            "deleteWidget": lambda: self.delete_item("widgets", body["id"]),
+            "reorderScenes": lambda: self.reorder_items("scenes", body["ids"]),
+            "reorderWidgets": lambda: self.reorder_items("widgets", body["ids"]),
+            "deleteAlertMedia": lambda: self.delete_alert_media(body["id"]),
+            "setScoreboardPlayers": lambda: self.set_scoreboard_players(body["players"]),
+            "getVideoSourceSnapshot": lambda: (
+                OK,
+                {"getVideoSourceSnapshot": optional("image", self.video_source_snapshot(body["id"]))},
+            ),
+            "getTranslationLanguages": lambda: (
+                OK,
+                {"getTranslationLanguages": {"languages": translation_languages()}},
+            ),
+            "setNumericInput": lambda: self.set_database_flag("numericInput", body["enabled"]),
+            "setLocationEnabled": lambda: self.set_database_flag("locationEnabled", body["enabled"]),
+        }
+        handler = handlers.get(kind)
+        return handler() if handler is not None else None
+
+    def gallery(self) -> dict:
+        return self.database["alertsMediaGallery"]
+
+    def alert_media(self, media_id: str) -> bytes | None:
+        gallery = self.gallery()
+        if find(gallery["bundledImages"] + gallery["bundledSounds"], media_id) is not None:
+            return b"GIF89a\x01\x00\x01\x00\x00\x00\x00;"
+        if find(gallery["customImages"] + gallery["customSounds"], media_id) is not None:
+            return self.files.get(media_id.upper())
+        return None
+
+    def create_item(self, kind: str, item: dict) -> tuple[dict, dict | None]:
+        items = self.database[kind]
+        if find(items, item["id"]) is not None:
+            return ERROR, None
+        items.append(item)
+        self.remove_dead_scene_widgets()
+        self.scenes_changed()
+        return OK, None
+
+    def update_item(self, kind: str, item: dict) -> tuple[dict, dict | None]:
+        items = self.database[kind]
+        index = index_of(items, item["id"])
+        if index is None:
+            return ERROR, None
+        items[index] = item
+        self.remove_dead_scene_widgets()
+        self.scenes_changed()
+        return OK, None
+
+    def delete_item(self, kind: str, item_id: str) -> tuple[dict, dict | None]:
+        items = self.database[kind]
+        index = index_of(items, item_id)
+        if index is None:
+            return ERROR, None
+        del items[index]
+        self.remove_dead_scene_widgets()
+        self.scenes_changed()
+        return OK, None
+
+    def reorder_items(self, kind: str, ids: list[str]) -> tuple[dict, dict | None]:
+        items = self.database[kind]
+        ids = [item_id.upper() for item_id in ids]
+        if sorted(ids) != sorted(item["id"].upper() for item in items) or len(set(ids)) != len(ids):
+            return ERROR, None
+        items[:] = [item for item_id in ids for item in items if same_id(item["id"], item_id)]
+        self.scenes_changed()
+        return OK, None
+
+    def delete_alert_media(self, media_id: str) -> tuple[dict, dict | None]:
+        gallery = self.gallery()
+        if find(gallery["customImages"] + gallery["customSounds"], media_id) is None:
+            return ERROR, None
+        for kind in ("customImages", "customSounds"):
+            gallery[kind] = [item for item in gallery[kind] if not same_id(item["id"], media_id)]
+        self.files.pop(media_id.upper(), None)
+        return OK, None
+
+    def video_source_snapshot(self, widget_id: str) -> bytes | None:
+        found = find(self.database["widgets"], widget_id)
+        if found is None or found.get("type") != "Video source":
+            return None
+        return self.frame()
+
+    def set_database_flag(self, key: str, enabled: bool) -> tuple[dict, dict | None]:
+        self.database[key] = enabled
+        return OK, None
+
+    def set_scoreboard_players(self, players: list[dict]) -> tuple[dict, dict | None]:
+        if len({player["id"].upper() for player in players}) != len(players):
+            return ERROR, None
+        self.database["scoreboardPlayers"] = players
+        return OK, None
+
     def settings(self) -> dict:
         return {
             "streams": [{"id": stream["id"], "name": stream["name"]} for stream in self.database["streams"]],
-            "scenes": [
-                {"id": scene["id"], "name": scene["name"]}
-                for scene in self.database["scenes"]
-                if scene["enabled"]
-            ],
+            "scenes": [{"id": scene["id"], "name": scene["name"]} for scene in self.enabled_scenes()],
             "autoSceneSwitchers": [
                 {"id": switcher["id"], "name": switcher["name"]}
                 for switcher in self.database["autoSceneSwitchers"]["switchers"]
@@ -267,6 +442,8 @@ class FakeMoblin:
                 + b"\xff\xff\xff" * min(bar_width, width - line)
                 + pixel * max(0, width - line - bar_width)
             )
+        for scene_widget in self.shown_scene_widgets():
+            self.draw_widget(canvas, width, height, scene_widget)
         rows = bytearray()
         for y in range(height):
             row = canvas[3 * width * y : 3 * width * (y + 1)]
@@ -281,6 +458,53 @@ class FakeMoblin:
                 row = bytearray(3 * width)
             rows += b"\x00" + row
         return png(width, height, bytes(rows))
+
+    def shown_scene_widgets(self) -> list[dict]:
+        scene = find(self.database["scenes"], self.state["scene"])
+        if scene is None:
+            return []
+        return [
+            scene_widget
+            for scene_widget in scene.get("widgets", [])
+            if (widget := find(self.database["widgets"], scene_widget.get("widgetId", ""))) is not None
+            and widget.get("enabled", True)
+            and widget["type"] != "Scene"
+        ]
+
+    def draw_widget(self, canvas: bytearray, width: int, height: int, scene_widget: dict):
+        widget = find(self.database["widgets"], scene_widget["widgetId"])
+        assert widget is not None
+        size = float(scene_widget.get("size", 100)) / 100
+        sized = widget["type"] in ("Image", "Browser", "Video source", "Map", "QR code", "Snapshot")
+        box_width = int(width * size) if sized else 48
+        box_height = int(height * size) if sized else 14
+        alignment = scene_widget.get("alignment", "TopLeft")
+        x_offset = int(width * float(scene_widget.get("x", 0)) / 100)
+        y_offset = int(height * float(scene_widget.get("y", 0)) / 100)
+        if alignment in ("TopCenter", "BottomCenter", "Center"):
+            left = (width - box_width) // 2
+        elif "Right" in alignment:
+            left = width - x_offset - box_width
+        else:
+            left = x_offset
+        if alignment in ("LeftCenter", "RightCenter", "Center"):
+            top = (height - box_height) // 2
+        elif "Bottom" in alignment:
+            top = height - y_offset - box_height
+        else:
+            top = y_offset
+        colors = {
+            "Text": (250, 250, 250),
+            "Image": (240, 200, 60),
+            "Browser": (90, 200, 120),
+            "Video source": (230, 120, 90),
+        }
+        color = bytes(colors.get(widget["type"], (200, 120, 220)))
+        for y in range(max(0, top), min(height, top + box_height)):
+            for x in range(max(0, left), min(width, left + box_width)):
+                edge = y in (top, top + box_height - 1) or x in (left, left + box_width - 1)
+                if edge or not sized:
+                    canvas[3 * (y * width + x) : 3 * (y * width + x) + 3] = color
 
     def run_preview(self):
         while self._preview_requested.is_set() and not self._stopped.is_set():
@@ -310,6 +534,9 @@ class FakeMoblin:
                 self._preview_thread.start()
         elif kind == "stopPreview":
             self._preview_requested.clear()
+        elif (answer := self.scene_request(kind, body)) is not None:
+            LOGGER.debug("Scene request %s", kind)
+            return answer
         elif kind == "tip" and "message" in body["kind"] and self.refuse_tips:
             LOGGER.debug("Refusing tip %s", body)
             return {"error": {}}, None

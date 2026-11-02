@@ -152,6 +152,8 @@ export default function DeviceView(props: {
                     connected={online()}
                     pending={feed().pending()}
                     onControl={(control) => feed().control(control)}
+                    onRequest={feed().request}
+                    scenesChanged={feed().scenesChanged()}
                   />
                 </div>
                 <MomMessage

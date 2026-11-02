@@ -1,8 +1,18 @@
-import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import Icon, { type IconName } from "./Icon";
 import { ask } from "./Modal";
 import { PanelButtons, panelWidth, type Remote } from "./MoblinParts";
 import Panels, { type Panel } from "./MoblinPanels";
+import SceneEditor from "./sceneEditor/SceneEditor";
+import { createEditor, type Editor } from "./sceneEditor/store";
 import {
   type AudioLevel,
   type Control,
@@ -66,6 +76,7 @@ const quickButtons = (): QuickButton[] => [
   { type: "Bitrate", name: t("Bitrate"), page: 1 },
   { type: "Connection priorities", name: t("Connection priorities"), page: 1 },
   { type: "Reload browser widgets", name: t("Reload browser widgets"), page: 1 },
+  { type: "Scene editor", name: t("Scene editor"), page: 1 },
   { type: "Poll", name: t("Poll"), page: 2 },
   { type: "Pinch", name: t("Pinch"), page: 2 },
   { type: "Whirlpool", name: t("Whirlpool"), page: 2 },
@@ -98,6 +109,7 @@ const buttonIcons: Record<string, IconName> = {
   Bitrate: "speedometer",
   "Connection priorities": "connection",
   "Reload browser widgets": "reload",
+  "Scene editor": "rectangle-group",
   "Instant replay": "play",
   Movie: "film",
   "Gray scale": "moon",
@@ -365,8 +377,37 @@ export default function MoblinScreen(props: {
   fit?: boolean;
   window?: boolean;
   onControl: (control: Control) => Promise<void>;
+  onRequest?: <T>(control: Control) => Promise<T>;
+  scenesChanged?: number;
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
+  const [sceneEditor, setSceneEditor] = createSignal<Editor | null>(null);
+  const openSceneEditor = () => {
+    if (!props.onRequest || sceneEditor()) {
+      return;
+    }
+    setSceneEditor(createEditor(props.onRequest, props.onControl, () => props.state.scene));
+  };
+  const closeSceneEditor = async () => {
+    const editor = sceneEditor();
+    if (!editor) {
+      return;
+    }
+    setSceneEditor(null);
+    try {
+      await editor.flush();
+    } finally {
+      editor.dispose();
+    }
+  };
+  createEffect((previous: number | undefined) => {
+    const changed = props.scenesChanged;
+    if (previous !== undefined && changed !== previous) {
+      void sceneEditor()?.reload();
+    }
+    return changed;
+  });
+  onCleanup(() => sceneEditor()?.dispose());
   const [height, setHeight] = createSignal(screenHeight + 2 * bezel);
   const [verbose, setVerbose] = createSignal(readStored("statusCollapsed") !== "1");
   const [panel, setPanel] = createSignal<Panel | null>(null);
@@ -502,6 +543,8 @@ export default function MoblinScreen(props: {
         return send("instantReplay", { instantReplay: {} });
       case "Reload browser widgets":
         return send("reloadBrowserWidgets", { reloadBrowserWidgets: {} });
+      case "Scene editor":
+        return { key: "", run: openSceneEditor };
       case "Record":
         return {
           key: "setRecord",
@@ -535,7 +578,11 @@ export default function MoblinScreen(props: {
         button={button}
         on={isOn(button)}
         selected={panel() !== null && panel() === panels[button.type]}
-        disabled={!props.connected || (action()?.key ? disabled(action()!.key) : false)}
+        disabled={
+          !props.connected ||
+          (action()?.key ? disabled(action()!.key) : false) ||
+          (button.type === "Scene editor" && (!props.onRequest || !props.remoteControl))
+        }
         nameWidth={nameWidth}
         onPress={() => action()?.run()}
       />
@@ -615,160 +662,179 @@ export default function MoblinScreen(props: {
               props.window ? "" : "rounded-[50px]"
             }`}
           >
-            <div class="relative min-w-0 flex-1 overflow-hidden bg-radial-[at_40%_40%] from-phone-preview to-phone-preview-dark">
-              <Show when={previewSource()}>
-                {(source) => (
-                  <img
-                    src={source()}
-                    alt={t("Stream preview")}
-                    class="absolute inset-0 size-full bg-phone-screen object-contain object-right"
-                  />
-                )}
-              </Show>
-              <Statuses
-                status={props.status}
-                verbose={verbose()}
-                onToggle={() => {
-                  setVerbose((current) => !current);
-                  store("statusCollapsed", verbose() ? null : "1");
-                }}
-              />
-              <Show when={props.state.muted}>
-                <div class="pointer-events-none absolute inset-0 grid place-items-center">
-                  <span class="rounded-[10px] bg-black/75 p-[10px] text-phone-live">
-                    <Icon name="mic-off" class="size-[80px]" />
-                  </span>
-                </div>
-              </Show>
-              <div class="absolute right-[16px] bottom-[18px] flex flex-col items-end gap-[6px]">
-                {zoomPicker()}
-                {scenePicker()}
-              </div>
-              <Show when={!props.window}>
-                <span class="absolute top-1/2 left-[12px] h-[118px] w-[34px] -translate-y-1/2 rounded-full bg-phone-screen" />
-              </Show>
-              <Show when={panel() && panelHidden()}>{panelButtons()}</Show>
-            </div>
-            <Show when={panel()}>
-              {(shown) => (
-                <div
-                  class="relative h-full shrink-0 overflow-hidden bg-phone-screen"
-                  style={{ width: `${shownPanelWidth()}px` }}
-                >
-                  <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
-                    <Panels panel={shown()} remote={remote} />
-                  </div>
-                  <Show when={!panelHidden()}>{panelButtons()}</Show>
-                </div>
+            <Show when={sceneEditor()}>
+              {(editor) => (
+                <SceneEditor
+                  editor={editor()}
+                  preview={props.preview}
+                  state={props.state}
+                  settings={props.settings}
+                  width={shownWidth()}
+                  height={shownHeight()}
+                  onClose={() => void closeSceneEditor()}
+                />
               )}
             </Show>
-            <div
-              class="flex h-full shrink-0 bg-phone-screen"
-              style={{ width: `${controlBarWidth()}px` }}
-            >
-              <div class="ml-[6px] flex h-full w-[100px] flex-col pt-[6px] pb-[14px]">
-                <div class="flex h-[16px] items-center justify-between pr-[18px] pl-[4px]">
-                  <Battery
-                    level={props.status.general.batteryLevel}
-                    charging={props.status.general.batteryCharging}
-                  />
-                  <Show when={props.status.general.flame}>
-                    {(flame) => (
-                      <Icon
-                        name="flame"
-                        class={`size-[14px] ${
-                          flame() === "Red"
-                            ? "text-phone-live"
-                            : flame() === "Yellow"
-                              ? "text-phone-warn"
-                              : "text-white"
-                        }`}
-                      />
-                    )}
-                  </Show>
-                  <span class="w-[10px]" />
-                </div>
-                <Show when={shownPage() === 1}>
-                  <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
+            <Show when={!sceneEditor()}>
+              <div class="relative min-w-0 flex-1 overflow-hidden bg-radial-[at_40%_40%] from-phone-preview to-phone-preview-dark">
+                <Show when={previewSource()}>
+                  {(source) => (
                     <img
-                      src={moblinIconUrl(icon() ?? "plain")}
-                      alt=""
-                      class="size-[40px] object-contain"
+                      src={source()}
+                      alt={t("Stream preview")}
+                      class="absolute inset-0 size-full bg-phone-screen object-contain object-right"
                     />
-                    <button
-                      type="button"
-                      aria-label={t("Settings")}
-                      class={`grid size-[40px] place-items-center rounded-full border ${
-                        panel() === "settings" ? "border-white" : "border-phone-border"
-                      }`}
-                      onClick={() => toggle("settings")}
-                    >
-                      <Icon name="gear" class="size-[20px]" />
-                    </button>
+                  )}
+                </Show>
+                <Statuses
+                  status={props.status}
+                  verbose={verbose()}
+                  onToggle={() => {
+                    setVerbose((current) => !current);
+                    store("statusCollapsed", verbose() ? null : "1");
+                  }}
+                />
+                <Show when={props.state.muted}>
+                  <div class="pointer-events-none absolute inset-0 grid place-items-center">
+                    <span class="rounded-[10px] bg-black/75 p-[10px] text-phone-live">
+                      <Icon name="mic-off" class="size-[80px]" />
+                    </span>
                   </div>
                 </Show>
-                <div class="flex min-h-0 flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]">
-                  <For each={rows()}>
-                    {(row) => (
-                      <div class="flex items-start justify-end gap-[8px]">
-                        <For each={row}>
-                          {(button) =>
-                            button ? quickButton(button, 40) : <span style={{ width: `${40}px` }} />
-                          }
-                        </For>
-                      </div>
-                    )}
-                  </For>
+                <div class="absolute right-[16px] bottom-[18px] flex flex-col items-end gap-[6px]">
+                  {zoomPicker()}
+                  {scenePicker()}
                 </div>
-                <Show when={shownPage() === 1}>
-                  <div class="flex justify-center pt-[5px] pr-[10px]">
-                    <button
-                      type="button"
-                      disabled={
-                        (!props.goLive && !props.state.streaming) ||
-                        disabled("setLive") ||
-                        props.state.streaming === undefined
-                      }
-                      title={
-                        props.goLive || props.state.streaming || !props.remoteControl
-                          ? undefined
-                          : t("The streamer has not let you go live.")
-                      }
-                      class={`min-w-[60px] rounded-[10px] bg-phone-live p-[5px] text-[17px] leading-tight whitespace-nowrap disabled:opacity-50 ${
-                        props.state.streaming ? "border border-white" : ""
-                      }`}
-                      onClick={() =>
-                        void (props.state.streaming
-                          ? confirmed(t("End the stream on this device?"), t("End stream"), {
-                              setLive: { on: false },
-                            })
-                          : confirmed(t("Go live on this device?"), t("Go live"), {
-                              setLive: { on: true },
-                            }))
-                      }
-                    >
-                      {props.state.streaming ? t("End") : t("Go Live")}
-                    </button>
-                  </div>
+                <Show when={!props.window}>
+                  <span class="absolute top-1/2 left-[12px] h-[118px] w-[34px] -translate-y-1/2 rounded-full bg-phone-screen" />
                 </Show>
-                <Show when={pages().length > 1}>
-                  <div class="flex justify-center gap-[3px] pt-[6px] pr-[10px]">
-                    <For each={pages()}>
-                      {(number) => (
-                        <button
-                          type="button"
-                          aria-label={t("Page {page}", { page: number })}
-                          class={`size-[6px] rounded-full border border-white ${
-                            number === shownPage() ? "bg-white" : ""
+                <Show when={panel() && panelHidden()}>{panelButtons()}</Show>
+              </div>
+              <Show when={panel()}>
+                {(shown) => (
+                  <div
+                    class="relative h-full shrink-0 overflow-hidden bg-phone-screen"
+                    style={{ width: `${shownPanelWidth()}px` }}
+                  >
+                    <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
+                      <Panels panel={shown()} remote={remote} />
+                    </div>
+                    <Show when={!panelHidden()}>{panelButtons()}</Show>
+                  </div>
+                )}
+              </Show>
+              <div
+                class="flex h-full shrink-0 bg-phone-screen"
+                style={{ width: `${controlBarWidth()}px` }}
+              >
+                <div class="ml-[6px] flex h-full w-[100px] flex-col pt-[6px] pb-[14px]">
+                  <div class="flex h-[16px] items-center justify-between pr-[18px] pl-[4px]">
+                    <Battery
+                      level={props.status.general.batteryLevel}
+                      charging={props.status.general.batteryCharging}
+                    />
+                    <Show when={props.status.general.flame}>
+                      {(flame) => (
+                        <Icon
+                          name="flame"
+                          class={`size-[14px] ${
+                            flame() === "Red"
+                              ? "text-phone-live"
+                              : flame() === "Yellow"
+                                ? "text-phone-warn"
+                                : "text-white"
                           }`}
-                          onClick={() => setPage(number)}
                         />
+                      )}
+                    </Show>
+                    <span class="w-[10px]" />
+                  </div>
+                  <Show when={shownPage() === 1}>
+                    <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
+                      <img
+                        src={moblinIconUrl(icon() ?? "plain")}
+                        alt=""
+                        class="size-[40px] object-contain"
+                      />
+                      <button
+                        type="button"
+                        aria-label={t("Settings")}
+                        class={`grid size-[40px] place-items-center rounded-full border ${
+                          panel() === "settings" ? "border-white" : "border-phone-border"
+                        }`}
+                        onClick={() => toggle("settings")}
+                      >
+                        <Icon name="gear" class="size-[20px]" />
+                      </button>
+                    </div>
+                  </Show>
+                  <div class="flex min-h-0 flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]">
+                    <For each={rows()}>
+                      {(row) => (
+                        <div class="flex items-start justify-end gap-[8px]">
+                          <For each={row}>
+                            {(button) =>
+                              button ? (
+                                quickButton(button, 40)
+                              ) : (
+                                <span style={{ width: `${40}px` }} />
+                              )
+                            }
+                          </For>
+                        </div>
                       )}
                     </For>
                   </div>
-                </Show>
+                  <Show when={shownPage() === 1}>
+                    <div class="flex justify-center pt-[5px] pr-[10px]">
+                      <button
+                        type="button"
+                        disabled={
+                          (!props.goLive && !props.state.streaming) ||
+                          disabled("setLive") ||
+                          props.state.streaming === undefined
+                        }
+                        title={
+                          props.goLive || props.state.streaming || !props.remoteControl
+                            ? undefined
+                            : t("The streamer has not let you go live.")
+                        }
+                        class={`min-w-[60px] rounded-[10px] bg-phone-live p-[5px] text-[17px] leading-tight whitespace-nowrap disabled:opacity-50 ${
+                          props.state.streaming ? "border border-white" : ""
+                        }`}
+                        onClick={() =>
+                          void (props.state.streaming
+                            ? confirmed(t("End the stream on this device?"), t("End stream"), {
+                                setLive: { on: false },
+                              })
+                            : confirmed(t("Go live on this device?"), t("Go live"), {
+                                setLive: { on: true },
+                              }))
+                        }
+                      >
+                        {props.state.streaming ? t("End") : t("Go Live")}
+                      </button>
+                    </div>
+                  </Show>
+                  <Show when={pages().length > 1}>
+                    <div class="flex justify-center gap-[3px] pt-[6px] pr-[10px]">
+                      <For each={pages()}>
+                        {(number) => (
+                          <button
+                            type="button"
+                            aria-label={t("Page {page}", { page: number })}
+                            class={`size-[6px] rounded-full border border-white ${
+                              number === shownPage() ? "bg-white" : ""
+                            }`}
+                            onClick={() => setPage(number)}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
               </div>
-            </div>
+            </Show>
           </div>
         </div>
       </div>

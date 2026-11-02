@@ -3,6 +3,7 @@ import {
   controlDevice,
   deviceEventsUrl,
   devicePreviewUrl,
+  queryDevice,
   type Control,
   type DeviceSettings,
   type DeviceSnapshot,
@@ -27,6 +28,8 @@ export type DeviceFeed = {
   history: Accessor<Sample[]>;
   pending: Accessor<string[]>;
   control: (control: Control) => Promise<void>;
+  request: <T>(control: Control) => Promise<T>;
+  scenesChanged: Accessor<number>;
 };
 
 const emptyStatus = (): DeviceStatus => ({ general: {}, topLeft: {}, topRight: {} });
@@ -83,6 +86,7 @@ function openDeviceFeed(
   const [traffic, setTraffic] = createSignal<DeviceTraffic | null>(null);
   const [history, setHistory] = createSignal<Sample[]>([]);
   const [pending, setPending] = createSignal<string[]>([]);
+  const [scenesChanged, setScenesChanged] = createSignal(0);
 
   const stop = subscribe(deviceEventsUrl(page, device), session, {
     onOpen: () => setStreaming(true),
@@ -129,6 +133,9 @@ function openDeviceFeed(
         case "settings":
           setSettings((data as { data: DeviceSettings }).data);
           break;
+        case "scenesChanged":
+          setScenesChanged((count) => count + 1);
+          break;
         case "connection": {
           const connected = (data as { connected: boolean }).connected;
           setConnected(connected);
@@ -168,6 +175,17 @@ function openDeviceFeed(
     }
   };
 
+  const request = async <T>(control: Control) => {
+    try {
+      return await queryDevice<T>(session, page, device, control);
+    } catch (error) {
+      if (isSignedOut(error)) {
+        onSignOut();
+      }
+      throw error;
+    }
+  };
+
   return {
     loaded,
     name,
@@ -180,6 +198,8 @@ function openDeviceFeed(
     history,
     pending,
     control,
+    request,
+    scenesChanged,
   };
 }
 

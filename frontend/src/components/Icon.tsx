@@ -40,6 +40,8 @@ export type IconName =
   | "chart"
   | "screen"
   | "broadcast"
+  | "cloud"
+  | "refresh"
   | "camera"
   | "mic"
   | "mic-off"
@@ -73,7 +75,59 @@ export type IconName =
   | "layout"
   | "maximize"
   | "minimize"
-  | "more";
+  | "more"
+  | "rectangle-group"
+  | "plus"
+  | "photo-on-rectangle"
+  | "sliders"
+  | "layers-up"
+  | "layers-down"
+  | "align-TopLeft"
+  | "align-TopCenter"
+  | "align-TopRight"
+  | "align-LeftCenter"
+  | "align-Center"
+  | "align-RightCenter"
+  | "align-BottomLeft"
+  | "align-BottomCenter"
+  | "align-BottomRight"
+  | "square-fill"
+  | "lock"
+  | "lock-open"
+  | "square-split-diagonal"
+  | "arrow-left"
+  | "arrow-right"
+  | "arrow-down"
+  | "arrow-up"
+  | "minus-circle"
+  | "plus-circle"
+  | "zoom-out"
+  | "zoom-in"
+  | "arrow-left-circle"
+  | "arrow-right-circle"
+  | "arrow-up-circle"
+  | "arrow-down-circle"
+  | "plus-square-dashed"
+  | "textformat"
+  | "map"
+  | "camera-aperture"
+  | "hands-clap"
+  | "play-rectangle"
+  | "person-circle-dashed"
+  | "qrcode"
+  | "rectangle-split"
+  | "crop"
+  | "timer"
+  | "resize-up"
+  | "resize-down"
+  | "person-circle"
+  | "cable-slash"
+  | "trash-slash"
+  | "info-circle"
+  | "arrow-up"
+  | "arrow-down"
+  | "stopwatch"
+  | "flag";
 
 export const kindIcons: Record<RecentKind, IconName> = {
   tip: "heart",
@@ -259,6 +313,12 @@ export default function Icon(props: Props) {
           <rect x="2" y="6" width="20" height="12" rx="3" />
           <path d="M5.5 10v4" />
         </Match>
+        <Match when={props.name === "refresh"}>
+          <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" />
+        </Match>
+        <Match when={props.name === "cloud"}>
+          <path d="M7 18a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9H7z" />
+        </Match>
         <Match when={props.name === "broadcast"}>
           <circle cx="12" cy="12" r="1.5" />
           <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" />
@@ -388,6 +448,271 @@ export default function Icon(props: Props) {
         <Match when={props.name === "video"}>
           <rect x="3" y="6" width="13" height="12" rx="2" />
           <path d="m16 10.5 5-3v9l-5-3" />
+        </Match>
+        <Match when={props.name === "rectangle-group"}>
+          <rect x="3" y="4" width="8" height="7" rx="1.5" />
+          <rect x="13" y="4" width="8" height="11" rx="1.5" />
+          <rect x="3" y="13" width="8" height="7" rx="1.5" />
+        </Match>
+        <Match when={props.name === "plus"}>
+          <path d="M12 5v14M5 12h14" />
+        </Match>
+        <Match when={props.name === "photo-on-rectangle"}>
+          <rect x="3" y="7" width="14" height="12" rx="2" />
+          <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h10A1.5 1.5 0 0 1 21 5.5v10a1.5 1.5 0 0 1-1.5 1.5H19M3 16l4-4 3 3 2-2 5 5" />
+        </Match>
+        <Match when={props.name === "sliders"}>
+          <path d="M4 7h16M4 12h16M4 17h16" />
+          <circle cx="9" cy="7" r="2" fill="currentColor" />
+          <circle cx="15" cy="12" r="2" fill="currentColor" />
+          <circle cx="7" cy="17" r="2" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "layers-up"}>
+          <path d="M12 3.5 20.5 8 12 12.5 3.5 8Z" fill="currentColor" />
+          <path d="M3.5 13 12 17.5 20.5 13" />
+        </Match>
+        <Match when={props.name === "layers-down"}>
+          <path d="M12 3.5 20.5 8 12 12.5 3.5 8Z" />
+          <path d="M3.5 13.5 12 18l8.5-4.5L12 9.3Z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "square-fill"}>
+          <rect x="5" y="5" width="14" height="14" rx="1.5" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "lock"}>
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </Match>
+        <Match when={props.name === "lock-open"}>
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 7.6-1.8" />
+        </Match>
+        <Match when={props.name === "square-split-diagonal"}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <path d="M20 4 4 20M12 4v16M4 12h16" />
+        </Match>
+        <Match when={props.name === "arrow-left"}>
+          <path d="M19 12H5m6-6-6 6 6 6" />
+        </Match>
+        <Match when={props.name === "arrow-right"}>
+          <path d="M5 12h14m-6-6 6 6-6 6" />
+        </Match>
+        <Match when={props.name === "arrow-down"}>
+          <path d="M12 5v14m-6-6 6 6 6-6" />
+        </Match>
+        <Match when={props.name === "arrow-up"}>
+          <path d="M12 19V5m-6 6 6-6 6 6" />
+        </Match>
+        <Match when={props.name === "minus-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M8 12h8" />
+        </Match>
+        <Match when={props.name === "plus-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v8M8 12h8" />
+        </Match>
+        <Match when={props.name === "zoom-out"}>
+          <circle cx="11" cy="11" r="6" />
+          <path d="m20 20-4.5-4.5M8 11h6" />
+        </Match>
+        <Match when={props.name === "zoom-in"}>
+          <circle cx="11" cy="11" r="6" />
+          <path d="m20 20-4.5-4.5M8 11h6m-3-3v6" />
+        </Match>
+        <Match when={props.name === "arrow-left-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M16 12H8m3.5-3.5L8 12l3.5 3.5" />
+        </Match>
+        <Match when={props.name === "arrow-right-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M8 12h8m-3.5-3.5L16 12l-3.5 3.5" />
+        </Match>
+        <Match when={props.name === "arrow-up-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 16V8m-3.5 3.5L12 8l3.5 3.5" />
+        </Match>
+        <Match when={props.name === "arrow-down-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v8m-3.5-3.5L12 16l3.5-3.5" />
+        </Match>
+        <Match when={props.name === "plus-square-dashed"}>
+          <rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5" />
+          <path d="M12 8.5v7M8.5 12h7" />
+        </Match>
+        <Match when={props.name === "textformat"}>
+          <path d="M3 17l4.5-11L12 17M4.7 13h5.6" />
+          <circle cx="17.5" cy="14" r="3" />
+          <path d="M20.5 11v6" />
+        </Match>
+        <Match when={props.name === "map"}>
+          <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2ZM9 4v14M15 6v14" />
+        </Match>
+        <Match when={props.name === "camera-aperture"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 3v9l7.8 4.5M12 12l-7.8 4.5M4.2 7.5 12 12M19.8 7.5 12 12" />
+        </Match>
+        <Match when={props.name === "hands-clap"}>
+          <path d="M8 11 4.5 7.5 6 6l3.5 3.5M12 9 9 5l1.5-1.5L14 7M16 11l3.5-3.5L18 6l-3.5 3.5M7 13.5 12 20l5-6.5" />
+        </Match>
+        <Match when={props.name === "play-rectangle"}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M10 9v6l5-3-5-3Z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "person-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="10" r="3" />
+          <path d="M6.5 18.5a6 6 0 0 1 11 0" />
+        </Match>
+        <Match when={props.name === "person-circle-dashed"}>
+          <circle cx="12" cy="12" r="9" stroke-dasharray="3 2.5" />
+          <circle cx="12" cy="10" r="3" />
+          <path d="M6.5 18.5a6 6 0 0 1 11 0" />
+        </Match>
+        <Match when={props.name === "qrcode"}>
+          <rect x="4" y="4" width="6" height="6" rx="1" />
+          <rect x="14" y="4" width="6" height="6" rx="1" />
+          <rect x="4" y="14" width="6" height="6" rx="1" />
+          <path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "rectangle-split"}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M12 5v14" />
+        </Match>
+        <Match when={props.name === "crop"}>
+          <path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" />
+        </Match>
+        <Match when={props.name === "timer"}>
+          <circle cx="12" cy="13" r="8" />
+          <path d="M12 9v4l2.5 2.5M9.5 2h5" />
+        </Match>
+        <Match when={props.name === "resize-up"}>
+          <rect x="4" y="4" width="16" height="16" rx="1.5" />
+          <path d="M9 15l6-6M10.5 9H15v4.5" />
+        </Match>
+        <Match when={props.name === "resize-down"}>
+          <rect x="4" y="4" width="16" height="16" rx="1.5" />
+          <path d="M15 9l-6 6M13.5 15H9v-4.5" />
+        </Match>
+        <Match when={props.name === "cable-slash"}>
+          <path d="M4 20 20 4M9 10V5h6v5M9 10h6a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2ZM12 12v8" />
+        </Match>
+        <Match when={props.name === "trash-slash"}>
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3M4 20 20 4" />
+        </Match>
+        <Match when={props.name === "info-circle"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5M12 8h.01" />
+        </Match>
+        <Match when={props.name === "arrow-up"}>
+          <path d="M12 19V5m-6 6 6-6 6 6" />
+        </Match>
+        <Match when={props.name === "arrow-down"}>
+          <path d="M12 5v14m-6-6 6 6 6-6" />
+        </Match>
+        <Match when={props.name === "stopwatch"}>
+          <circle cx="12" cy="13" r="8" />
+          <path d="M12 13V9M10 2h4M12 2v3" />
+        </Match>
+        <Match when={props.name === "flag"}>
+          <path d="M5 21V4h11l-1.5 3.5L16 11H5" />
+        </Match>
+        <Match when={props.name === "align-TopLeft"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-TopCenter"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-TopRight"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-LeftCenter"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-Center"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-RightCenter"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-BottomLeft"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-BottomCenter"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" fill="currentColor" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" />
+        </Match>
+        <Match when={props.name === "align-BottomRight"}>
+          <rect x="4" y="4" width="4" height="4" rx="0.5" />
+          <rect x="10" y="4" width="4" height="4" rx="0.5" />
+          <rect x="16" y="4" width="4" height="4" rx="0.5" />
+          <rect x="4" y="10" width="4" height="4" rx="0.5" />
+          <rect x="10" y="10" width="4" height="4" rx="0.5" />
+          <rect x="16" y="10" width="4" height="4" rx="0.5" />
+          <rect x="4" y="16" width="4" height="4" rx="0.5" />
+          <rect x="10" y="16" width="4" height="4" rx="0.5" />
+          <rect x="16" y="16" width="4" height="4" rx="0.5" fill="currentColor" />
         </Match>
       </Switch>
     </svg>
