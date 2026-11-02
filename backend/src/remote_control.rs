@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::app_attest::Attestation;
 use crate::changes::{Change, Changes};
 use crate::icons::{self, Icon};
-use crate::traffic::Traffic;
+use crate::traffic::{self, Traffic};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +30,30 @@ enum Outcome {
     NotIdentified {},
     AlreadyIdentified {},
     Error {},
+}
+
+impl Outcome {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Ok {} => "ok",
+            Self::WrongPassword {} => "wrongPassword",
+            Self::UnknownRequest {} => "unknownRequest",
+            Self::NotIdentified {} => "notIdentified",
+            Self::AlreadyIdentified {} => "alreadyIdentified",
+            Self::Error {} => "error",
+        }
+    }
+}
+
+impl MessageToStreamer {
+    fn kind(&self) -> String {
+        match self {
+            Self::Hello { .. } => "hello".to_string(),
+            Self::Identified { .. } => "identified".to_string(),
+            Self::Request { data, .. } => data.name().to_string(),
+            Self::Pong {} => "pong".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -79,6 +103,18 @@ enum MessageToAssistant {
     Ping {},
 }
 
+impl MessageToAssistant {
+    fn kind(&self) -> String {
+        match self {
+            Self::Identify { .. } => "identify".to_string(),
+            Self::Response { result, .. } => format!("response:{}", result.name()),
+            Self::Event { data } => data.name().to_string(),
+            Self::Preview { .. } => "preview".to_string(),
+            Self::Ping {} => "ping".to_string(),
+        }
+    }
+}
+
 fn lenient_attestation<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Attestation>, D::Error> {
@@ -104,6 +140,17 @@ enum Event {
     State {
         data: Value,
     },
+}
+
+impl Event {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::WheelOfLuck { .. } => "wheelOfLuck",
+            Self::Icon { .. } => "icon",
+            Self::Status { .. } => "status",
+            Self::State { .. } => "state",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -154,6 +201,21 @@ enum Request {
     StopPreview {},
     #[serde(untagged)]
     Control(Control),
+}
+
+impl Request {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Tip { .. } => "tip",
+            Self::GetSettings {} => "getSettings",
+            Self::GetStatus {} => "getStatus",
+            Self::StartStatus { .. } => "startStatus",
+            Self::StopStatus {} => "stopStatus",
+            Self::StartPreview {} => "startPreview",
+            Self::StopPreview {} => "stopPreview",
+            Self::Control(control) => control.name(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -254,6 +316,32 @@ pub enum Filter {
 }
 
 impl Control {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::SetRecord { .. } => "setRecord",
+            Self::SetLive { .. } => "setLive",
+            Self::SetMute { .. } => "setMute",
+            Self::SetStealthMode { .. } => "setStealthMode",
+            Self::SetTorch { .. } => "setTorch",
+            Self::SetZoom { .. } => "setZoom",
+            Self::SetZoomPreset { .. } => "setZoomPreset",
+            Self::SetScene { .. } => "setScene",
+            Self::SetBitratePreset { .. } => "setBitratePreset",
+            Self::SetMic { .. } => "setMic",
+            Self::SetSrtConnectionPriority { .. } => "setSrtConnectionPriority",
+            Self::SetSrtConnectionPrioritiesEnabled { .. } => "setSrtConnectionPrioritiesEnabled",
+            Self::ReloadBrowserWidgets {} => "reloadBrowserWidgets",
+            Self::InstantReplay {} => "instantReplay",
+            Self::SetAutoSceneSwitcher { .. } => "setAutoSceneSwitcher",
+            Self::SetPreviewStream { .. } => "setPreviewStream",
+            Self::SetFilter { .. } => "setFilter",
+            Self::StartMacro { .. } => "startMacro",
+            Self::StopMacro { .. } => "stopMacro",
+            Self::SetGimbalTracking { .. } => "setGimbalTracking",
+            Self::SendMessage { .. } => "sendMessage",
+        }
+    }
+
     pub fn valid(&self) -> bool {
         match self {
             Self::SendMessage { text, .. } => {
@@ -651,9 +739,8 @@ async fn send(
     message: &MessageToStreamer,
     traffic: &Traffic,
 ) -> Result<()> {
-    let message = serde_json::to_value(message)?;
-    let text = message.to_string();
-    traffic.sent(&message, text.len());
+    let text = serde_json::to_string(message)?;
+    traffic.sent(&message.kind(), text.len());
     socket.send(Message::Text(text.into())).await?;
     Ok(())
 }
@@ -792,14 +879,11 @@ impl Streamers {
                 .await
                 .context("no identify")?
                 .context("closed")??;
-            if let Message::Text(text) = &message {
-                self.traffic.received(text.as_str());
-            }
             if let Message::Text(text) = message
-                && let Ok(MessageToAssistant::Identify {
+                && let Some(MessageToAssistant::Identify {
                     streamer_id,
                     app_attest,
-                }) = serde_json::from_str(text.as_str())
+                }) = self.receive(text.as_str())
             {
                 return Ok(Identity {
                     device: streamer_id.filter(|id| (1..=100).contains(&id.len())),
@@ -891,9 +975,9 @@ impl Streamers {
                 {
                     match message {
                         Message::Text(text) => {
-                            self.traffic.received(text.as_str());
-                            if let Some(reply) =
-                                self.handle(&page, &device, number, text.as_str(), &on_icon)
+                            if let Some(message) = self.receive(text.as_str())
+                                && let Some(reply) =
+                                    self.handle(&page, &device, number, message, &on_icon)
                                 && let Some(replies) = replies.upgrade()
                             {
                                 let _ = replies.send(reply);
@@ -924,21 +1008,30 @@ impl Streamers {
         info!("remote control streamer {page} device {device} disconnected");
     }
 
+    fn receive(&self, text: &str) -> Option<MessageToAssistant> {
+        let message = serde_json::from_str::<MessageToAssistant>(text).ok();
+        let kind = message
+            .as_ref()
+            .map_or_else(|| traffic::unread(text), MessageToAssistant::kind);
+        self.traffic.received(&kind, text.len());
+        message
+    }
+
     fn handle(
         &self,
         page: &str,
         device: &str,
         number: u64,
-        text: &str,
+        message: MessageToAssistant,
         on_icon: &impl Fn(&'static Icon),
     ) -> Option<MessageToStreamer> {
-        match serde_json::from_str(text) {
-            Ok(MessageToAssistant::Ping {}) => return Some(MessageToStreamer::Pong {}),
-            Ok(MessageToAssistant::Response {
+        match message {
+            MessageToAssistant::Ping {} => return Some(MessageToStreamer::Pong {}),
+            MessageToAssistant::Response {
                 id: request_id,
                 result,
                 data,
-            }) => {
+            } => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(monitor) = sessions.monitor_of(page, device, number) {
                     if let Some(settings) = data
@@ -971,22 +1064,22 @@ impl Streamers {
                     let _ = pending.send((result, data));
                 }
             }
-            Ok(MessageToAssistant::Event {
+            MessageToAssistant::Event {
                 data:
                     Event::Status {
                         general,
                         top_left,
                         top_right,
                     },
-            }) => {
+            } => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(monitor) = sessions.monitor_of(page, device, number) {
                     monitor.merge_status(general, top_left, top_right, true);
                 }
             }
-            Ok(MessageToAssistant::Event {
+            MessageToAssistant::Event {
                 data: Event::State { data },
-            }) => {
+            } => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(monitor) = sessions.monitor_of(page, device, number)
                     && let Some(changes) = data.as_object()
@@ -999,7 +1092,7 @@ impl Streamers {
                     monitor.publish(Update::State { data });
                 }
             }
-            Ok(MessageToAssistant::Preview { preview }) => {
+            MessageToAssistant::Preview { preview } => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if preview.len() <= 2_000_000
                     && sessions.get_mut(page, device, Some(number)).is_some()
@@ -1012,24 +1105,24 @@ impl Streamers {
                     let _ = watched.frames.send(frame);
                 }
             }
-            Ok(MessageToAssistant::Event {
+            MessageToAssistant::Event {
                 data: Event::WheelOfLuck { wheel },
-            }) => {
+            } => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some(session) = sessions.get_mut(page, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
                     self.changes.notify(page, Change::Page);
                 }
             }
-            Ok(MessageToAssistant::Event {
+            MessageToAssistant::Event {
                 data: Event::Icon { id },
-            }) => {
+            } => {
                 if let Some(icon) = icons::of_moblin(&id) {
                     on_icon(icon);
                     self.changes.notify(page, Change::Page);
                 }
             }
-            _ => {}
+            MessageToAssistant::Identify { .. } => {}
         }
         None
     }
@@ -1590,6 +1683,113 @@ mod tests {
     }
 
     #[test]
+    fn sent_messages_are_counted_like_unread_ones() {
+        let id = Uuid::nil();
+        let requests = [
+            Request::Tip {
+                name: "Erik".to_string(),
+                message: "Hi".to_string(),
+                kind: TipKind::WheelOfLuck { count: 1 },
+                request_id: "ORDER1".to_string(),
+            },
+            Request::GetSettings {},
+            Request::GetStatus {},
+            Request::StartStatus {
+                interval: 1,
+                filter: StatusFilter { top_right: true },
+            },
+            Request::StopStatus {},
+            Request::StartPreview {},
+            Request::StopPreview {},
+        ];
+        let controls = [
+            Control::SetRecord { on: true },
+            Control::SetLive { on: true },
+            Control::SetMute { on: true },
+            Control::SetStealthMode { on: true },
+            Control::SetTorch { on: true },
+            Control::SetZoom { x: 1.0 },
+            Control::SetZoomPreset { id },
+            Control::SetScene { id },
+            Control::SetBitratePreset { id },
+            Control::SetMic {
+                id: "mic".to_string(),
+            },
+            Control::SetSrtConnectionPriority {
+                id,
+                priority: 1,
+                enabled: true,
+            },
+            Control::SetSrtConnectionPrioritiesEnabled { enabled: true },
+            Control::ReloadBrowserWidgets {},
+            Control::InstantReplay {},
+            Control::SetAutoSceneSwitcher { id: None },
+            Control::SetPreviewStream { on: true },
+            Control::SetFilter {
+                filter: Filter::Crt {},
+                on: true,
+            },
+            Control::StartMacro { id },
+            Control::StopMacro { id },
+            Control::SetGimbalTracking { on: true },
+            Control::SendMessage {
+                text: "Hi".to_string(),
+                name: None,
+            },
+        ];
+        let messages = [
+            MessageToStreamer::Hello {
+                api_version: "0.1".to_string(),
+                authentication: Authentication {
+                    challenge: "c".to_string(),
+                    salt: "s".to_string(),
+                },
+            },
+            MessageToStreamer::Identified {
+                result: Outcome::Ok {},
+            },
+            MessageToStreamer::Pong {},
+        ];
+        for message in messages.into_iter().chain(
+            requests
+                .into_iter()
+                .chain(controls.into_iter().map(Request::Control))
+                .map(|data| MessageToStreamer::Request { id: 1, data }),
+        ) {
+            let text = encode(&message);
+            assert_eq!(message.kind(), traffic::unread(&text), "{text}");
+        }
+    }
+
+    #[test]
+    fn received_messages_are_counted_like_unread_ones() {
+        for text in [
+            r#"{"ping":{}}"#,
+            r#"{"preview":{"preview":"/9j/"}}"#,
+            r#"{"identify":{"streamerId":"ABC"}}"#,
+            r#"{"response":{"id":1,"result":{"ok":{}}}}"#,
+            r#"{"response":{"id":2,"result":{"wrongPassword":{}}}}"#,
+            r#"{"response":{"id":3,"result":{"unknownRequest":{}}}}"#,
+            r#"{"response":{"id":4,"result":{"notIdentified":{}}}}"#,
+            r#"{"response":{"id":5,"result":{"alreadyIdentified":{}}}}"#,
+            r#"{"response":{"id":6,"result":{"error":{}}}}"#,
+            r#"{"event":{"data":{"wheelOfLuck":{}}}}"#,
+            r#"{"event":{"data":{"icon":{"id":"AppIcon"}}}}"#,
+            r#"{"event":{"data":{"status":{"topRight":{}}}}}"#,
+            r#"{"event":{"data":{"state":{"data":{}}}}}"#,
+        ] {
+            assert_eq!(decode(text).kind(), traffic::unread(text), "{text}");
+        }
+        let streamers = Streamers::new(Duration::ZERO);
+        assert_eq!(streamers.receive(r#"{"event":{"data":{"chat":{}}}}"#), None);
+        assert_eq!(streamers.receive("not json"), None);
+        let received = streamers.traffic.stats().received;
+        assert_eq!(received.len(), 2);
+        assert_eq!(received[0].kind, "chat");
+        assert_eq!(received[1].kind, "invalid");
+    }
+
+    #[test]
     fn samples_are_taken_from_the_top_right_status() {
         let sample = Sample::of(&serde_json::json!({
             "bitrateInfo": {"bitsPerSecond": 5200000, "totalBytes": 1200000000u64},
@@ -1699,14 +1899,16 @@ mod tests {
             "page",
             "device",
             old.number,
-            r#"{"event":{"data":{"status":{"general":{"batteryLevel":50},"topRight":{}}}}}"#,
+            decode(
+                r#"{"event":{"data":{"status":{"general":{"batteryLevel":50},"topRight":{}}}}}"#,
+            ),
             &on_icon,
         );
         streamers.handle(
             "page",
             "device",
             old.number,
-            r#"{"event":{"data":{"state":{"data":{"streaming":true}}}}}"#,
+            decode(r#"{"event":{"data":{"state":{"data":{"streaming":true}}}}}"#),
             &on_icon,
         );
         let snapshot = streamers.watch(("page", "device"), "viewer").snapshot;

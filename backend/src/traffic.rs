@@ -72,6 +72,12 @@ fn name(value: &Value) -> Option<&str> {
         .filter(|name| name.len() <= 40 && name.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
+pub fn unread(text: &str) -> String {
+    serde_json::from_str(text)
+        .map(|message| kind(&message))
+        .unwrap_or_else(|_| "invalid".to_string())
+}
+
 fn kind(message: &Value) -> String {
     let Some(top) = name(message) else {
         return "invalid".to_string();
@@ -85,15 +91,12 @@ fn kind(message: &Value) -> String {
 }
 
 impl Traffic {
-    pub fn sent(&self, message: &Value, bytes: usize) {
-        self.sent.record(&kind(message), bytes);
+    pub fn sent(&self, kind: &str, bytes: usize) {
+        self.sent.record(kind, bytes);
     }
 
-    pub fn received(&self, text: &str) {
-        let kind = serde_json::from_str(text)
-            .map(|message| kind(&message))
-            .unwrap_or_else(|_| "invalid".to_string());
-        self.received.record(&kind, text.len());
+    pub fn received(&self, kind: &str, bytes: usize) {
+        self.received.record(kind, bytes);
     }
 
     pub fn stats(&self) -> TrafficStats {
@@ -106,24 +109,23 @@ impl Traffic {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
     use super::*;
 
     #[test]
     fn messages_are_counted_per_kind() {
         let traffic = Traffic::default();
-        traffic.received(r#"{"ping":{}}"#);
-        traffic.received(r#"{"ping":{}}"#);
-        traffic.received(r#"{"event":{"data":{"status":{"topRight":{}}}}}"#);
-        traffic.received(r#"{"response":{"id":1,"result":{"ok":{}}}}"#);
-        traffic.received(r#"{"response":{"id":2,"result":{"error":{}}}}"#);
-        traffic.received("not json");
-        traffic.sent(
-            &json!({"request": {"id": 1, "data": {"getStatus": {}}}}),
-            10,
-        );
-        traffic.sent(&json!({"pong": {}}), 11);
+        for text in [
+            r#"{"ping":{}}"#,
+            r#"{"ping":{}}"#,
+            r#"{"event":{"data":{"status":{"topRight":{}}}}}"#,
+            r#"{"response":{"id":1,"result":{"ok":{}}}}"#,
+            r#"{"response":{"id":2,"result":{"error":{}}}}"#,
+            "not json",
+        ] {
+            traffic.received(&unread(text), text.len());
+        }
+        traffic.sent("getStatus", 10);
+        traffic.sent("pong", 11);
         assert_eq!(
             traffic.stats(),
             TrafficStats {
@@ -174,10 +176,10 @@ mod tests {
     fn kinds_are_capped() {
         let traffic = Traffic::default();
         for index in 0..120 {
-            traffic.received(&format!(r#"{{"event":{{"data":{{"kind{index}":{{}}}}}}}}"#));
+            traffic.received(&format!("kind{index}"), 1);
         }
-        traffic.received(r#"{"event":{"data":{"kind5":{}}}}"#);
-        traffic.received(r#"{"event":{"data":{"a-b":{}}}}"#);
+        traffic.received("kind5", 1);
+        traffic.received(&unread(r#"{"event":{"data":{"a-b":{}}}}"#), 1);
         let received = traffic.stats().received;
         assert_eq!(received.len(), 101);
         assert_eq!(received[0].kind, "other");
