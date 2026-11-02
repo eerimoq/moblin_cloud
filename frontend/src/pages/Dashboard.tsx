@@ -72,6 +72,7 @@ import {
   disconnectStripe,
   fetchAccount,
   pageEventsUrl,
+  fetchMoreRecent,
   fetchRecent,
   newMoblinKey,
   removeDevice,
@@ -1952,7 +1953,8 @@ function Admin(props: {
   const [busy, setBusy] = createSignal(false);
   const assisting = () => props.page !== undefined;
   const { recent, loadRecent, loadMore } = createRecent(
-    (kind, limit, before) => fetchRecent(props.session, props.page, kind, limit, before),
+    (limit) => fetchRecent(props.session, props.page, limit),
+    (kind, limit, before) => fetchMoreRecent(props.session, props.page, kind, limit, before),
     (error) => {
       if (isSignedOut(error)) {
         props.onSignOut();

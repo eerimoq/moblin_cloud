@@ -80,6 +80,23 @@ pub struct Recent {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct AllRecent {
+    pub tip: Recent,
+    pub spin: Recent,
+    pub effect: Recent,
+}
+
+impl AllRecent {
+    pub fn into_kinds(self) -> [(Kind, Recent); 3] {
+        [
+            (Kind::Tip, self.tip),
+            (Kind::Spin, self.spin),
+            (Kind::Effect, self.effect),
+        ]
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub id: String,

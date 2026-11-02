@@ -602,10 +602,10 @@ mod tests {
         assert_eq!(dashboard(&viewer1).await, StatusCode::FORBIDDEN);
         assert_eq!(dashboard("garbage").await, StatusCode::UNAUTHORIZED);
         assert_eq!(dashboard(&mod1).await, StatusCode::OK);
-        let recent = async |session: &str, kind: &str| {
+        let recent = async |session: &str, query: &str| {
             client
                 .get(format!(
-                    "http://{address}/account/pages/{id}/recent?kind={kind}"
+                    "http://{address}/account/pages/{id}/recent?{query}"
                 ))
                 .bearer_auth(session)
                 .send()
@@ -613,16 +613,22 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(
-            recent(&viewer1, "tip").await.status(),
+            recent(&viewer1, "kind=tip").await.status(),
             StatusCode::FORBIDDEN
         );
-        for kind in ["tip", "spin"] {
+        for kind in ["kind=tip", "kind=spin"] {
             let response = recent(&mod1, kind).await;
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.json::<Value>().await.unwrap()["items"], json!([]));
         }
+        let response = recent(&mod1, "").await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            recent(&mod1, "other").await.status(),
+            response.json::<Value>().await.unwrap()["effect"],
+            json!({"items": [], "more": false})
+        );
+        assert_eq!(
+            recent(&mod1, "kind=other").await.status(),
             StatusCode::BAD_REQUEST
         );
         settings(false).await;

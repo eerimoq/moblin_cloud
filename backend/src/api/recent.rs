@@ -17,13 +17,24 @@ use super::*;
 
 #[derive(Deserialize)]
 pub(super) struct RecentQuery {
-    kind: String,
+    kind: Option<String>,
     before: Option<String>,
     limit: Option<usize>,
 }
 
 #[derive(Serialize)]
-pub(super) struct RecentResponse {
+#[serde(untagged)]
+pub(super) enum RecentResponse {
+    One(RecentList),
+    All {
+        tip: RecentList,
+        spin: RecentList,
+        effect: RecentList,
+    },
+}
+
+#[derive(Serialize)]
+pub(super) struct RecentList {
     items: Vec<Recent>,
     more: bool,
 }
@@ -73,23 +84,48 @@ pub(super) fn recent(
     query: RecentQuery,
     owner: bool,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
-    if !["tip", "spin", "effect"].contains(&query.kind.as_str()) {
-        return Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string()));
-    }
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
-    let mut orders = api
-        .orders
-        .recent(&page.id, &query.kind, query.before.as_deref(), limit + 1);
+    let names = api.accounts.device_names(&page.id);
+    let list = |kind: &str, before: Option<&str>| {
+        recent_list(api, &page, &names, kind, before, limit, owner)
+    };
+    match query.kind.as_deref() {
+        Some(kind @ ("tip" | "spin" | "effect")) => Ok(Json(RecentResponse::One(list(
+            kind,
+            query.before.as_deref(),
+        )))),
+        Some(_) => Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string())),
+        None if query.before.is_some() => Err((
+            StatusCode::BAD_REQUEST,
+            "Give a kind to page through.".to_string(),
+        )),
+        None => Ok(Json(RecentResponse::All {
+            tip: list("tip", None),
+            spin: list("spin", None),
+            effect: list("effect", None),
+        })),
+    }
+}
+
+fn recent_list(
+    api: &Api,
+    page: &Page,
+    names: &HashMap<String, String>,
+    kind: &str,
+    before: Option<&str>,
+    limit: usize,
+    owner: bool,
+) -> RecentList {
+    let mut orders = api.orders.recent(&page.id, kind, before, limit + 1);
     let more = orders.len() > limit;
     orders.truncate(limit);
-    let names = api.accounts.device_names(&page.id);
     let items = orders
         .into_iter()
         .map(|(id, at, order)| {
             let delivery = api.deliveries.get(&id);
             let devices = delivery
                 .as_ref()
-                .map(|delivery| recent_devices(api, &page, &names, &order.item, delivery));
+                .map(|delivery| recent_devices(api, page, names, &order.item, delivery));
             let tier = match order.payee {
                 Payee::Twitch(tier) => Some(tier),
                 _ => None,
@@ -125,7 +161,7 @@ pub(super) fn recent(
             }
         })
         .collect();
-    Ok(Json(RecentResponse { items, more }))
+    RecentList { items, more }
 }
 
 fn recent_devices(
@@ -446,6 +482,17 @@ mod tests {
             let response = recent(format!("kind={kind}")).await;
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         }
+        let response = recent("before=TIP1".to_string()).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let all: Value = recent("limit=5".to_string()).await.json().await.unwrap();
+        assert_eq!(all["tip"]["items"].as_array().unwrap().len(), 5);
+        assert_eq!(all["tip"]["more"], true);
+        assert_eq!(all["tip"]["items"][0]["id"], "TIP44");
+        assert_eq!(all["spin"]["items"].as_array().unwrap().len(), 1);
+        assert_eq!(all["spin"]["more"], false);
+        assert_eq!(all["effect"], json!({"items": [], "more": false}));
+        let all: Value = recent(String::new()).await.json().await.unwrap();
+        assert_eq!(all["tip"]["items"].as_array().unwrap().len(), 20);
         let mut ids = Vec::new();
         let mut before = String::new();
         for (expected, more) in [(20, true), (20, true), (5, false)] {

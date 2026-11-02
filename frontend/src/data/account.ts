@@ -358,7 +358,13 @@ export const adminStatsEventsUrl = `${backendUrl}/admin/stats/events`;
 
 export const pageEventsUrl = (page: string) => `${backendUrl}${accountPath(page)}/events`;
 
-export const fetchRecent = (
+export const fetchRecent = (session: string, page: string | undefined, limit: number) =>
+  call<Record<RecentKind, RecentList>>(
+    `${accountPath(page)}/recent?${new URLSearchParams({ limit: String(limit) })}`,
+    session,
+  );
+
+export const fetchMoreRecent = (
   session: string,
   page: string | undefined,
   kind: RecentKind,

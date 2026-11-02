@@ -194,6 +194,7 @@ export function Latest(props: {
 }
 
 export function createRecent(
+  fetchAll: (limit: number) => Promise<Record<RecentKind, RecentList>>,
   fetchList: (kind: RecentKind, limit: number, before?: string) => Promise<RecentList>,
   onError: (error: unknown) => void,
 ) {
@@ -202,9 +203,13 @@ export function createRecent(
   const loadRecent = async () => {
     const shown = recent();
     try {
-      const [tip, spin, effect] = await Promise.all(
-        (["tip", "spin", "effect"] as const).map((kind) =>
-          fetchList(kind, Math.min(Math.max(shown?.[kind].items.length ?? 0, 5), 50)),
+      const { tip, spin, effect } = await fetchAll(
+        Math.min(
+          Math.max(
+            ...(["tip", "spin", "effect"] as const).map((kind) => shown?.[kind].items.length ?? 0),
+            5,
+          ),
+          50,
         ),
       );
       const merge = (page: RecentList, old: RecentList | undefined) => {

@@ -2,7 +2,13 @@ import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "
 import Icon, { kindIcons } from "./Icon";
 import { amountLabel, createRecent, createResend, ReceivedDevices, timeAgo } from "./Latest";
 import { Spinner } from "./PageParts";
-import { fetchRecent, resendRecent, type Recent, type RecentKind } from "../data/account";
+import {
+  fetchMoreRecent,
+  fetchRecent,
+  resendRecent,
+  type Recent,
+  type RecentKind,
+} from "../data/account";
 import { isSignedOut } from "../data/backend";
 import { effectName } from "../data/effects";
 import { providerName, spinsText } from "../data/remoteControl";
@@ -105,7 +111,8 @@ export default function Activity(props: {
     }
   };
   const { recent, loadRecent, loadMore } = createRecent(
-    (kind, limit, before) => fetchRecent(props.session, props.page, kind, limit, before),
+    (limit) => fetchRecent(props.session, props.page, limit),
+    (kind, limit, before) => fetchMoreRecent(props.session, props.page, kind, limit, before),
     guard,
   );
   const [loading, setLoading] = createSignal(false);

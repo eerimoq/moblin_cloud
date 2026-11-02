@@ -12,7 +12,7 @@ use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
-use crate::account::{self, Account, Assisting, Connect, Device, Item, Kind, Recent};
+use crate::account::{self, Account, AllRecent, Assisting, Connect, Device, Item, Kind, Recent};
 use crate::backend::{Backend, BackendError};
 use crate::controls::{self, Control};
 use crate::feed::Feed;
@@ -33,7 +33,8 @@ pub enum Message {
     SignedIn(Result<String, String>),
     Account(String, Result<Box<Account>, BackendError>),
     Layout(String, Result<Value, BackendError>),
-    Recent(String, Kind, Load, Result<Recent, BackendError>),
+    Recent(String, Result<AllRecent, BackendError>),
+    MoreRecent(String, Kind, Result<Recent, BackendError>),
     Changed(String, Change),
     Device(String, String, String, Value),
     Frame(String, String, Box<RgbImage>),
@@ -508,8 +509,16 @@ impl App {
                 }
             }
             Message::Layout(page, result) => self.layout_loaded(&page, result),
-            Message::Recent(page, kind, load, result) => match result {
-                Ok(recent) => self.recent(&page, kind, load, recent),
+            Message::Recent(page, result) => match result {
+                Ok(all) => {
+                    for (kind, recent) in all.into_kinds() {
+                        self.recent(&page, kind, Load::Refresh, recent);
+                    }
+                }
+                Err(error) => self.failed(error),
+            },
+            Message::MoreRecent(page, kind, result) => match result {
+                Ok(recent) => self.recent(&page, kind, Load::More, recent),
                 Err(error) => self.failed(error),
             },
             Message::Changed(page, change) => {
@@ -916,17 +925,19 @@ impl App {
         let Some(monitor) = self.monitor() else {
             return;
         };
-        for kind in Kind::ALL {
-            let shown = monitor.latest[kind as usize]
-                .as_ref()
-                .map_or(0, |recent| recent.items.len());
-            let (page, base) = (monitor.page_id(), monitor.base());
-            let backend = self.backend.clone();
-            self.spawn(async move {
-                let recent = backend.recent(&base, kind, shown.clamp(5, 50), None).await;
-                Message::Recent(page, kind, Load::Refresh, recent)
-            });
-        }
+        let shown = monitor
+            .latest
+            .iter()
+            .flatten()
+            .map(|recent| recent.items.len())
+            .max()
+            .unwrap_or(0);
+        let (page, base) = (monitor.page_id(), monitor.base());
+        let backend = self.backend.clone();
+        self.spawn(async move {
+            let recent = backend.recent(&base, shown.clamp(5, 50)).await;
+            Message::Recent(page, recent)
+        });
     }
 
     fn recent(&mut self, page: &str, kind: Kind, load: Load, recent: Recent) {
@@ -1284,8 +1295,10 @@ impl App {
                     let (page, base) = (page.clone(), base.clone());
                     let backend = self.backend.clone();
                     self.spawn(async move {
-                        let recent = backend.recent(&base, kind, 20, before.as_deref()).await;
-                        Message::Recent(page, kind, Load::More, recent)
+                        let recent = backend
+                            .more_recent(&base, kind, 20, before.as_deref())
+                            .await;
+                        Message::MoreRecent(page, kind, recent)
                     });
                 }
             }

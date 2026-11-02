@@ -48,6 +48,15 @@ class ReceivedPages(ReceivedTestCase):
         self.assert_equal([item["id"] for item in rest["items"]], newest_first[20:])
         self.assert_false(rest["more"])
         self.assert_equal([item["id"] for item in self.recent("&limit=50")["items"]], newest_first)
+        every_kind = self.dashboard.get("/account/recent?limit=5")
+        self.assert_equal([item["id"] for item in every_kind["tip"]["items"]], newest_first[:5])
+        self.assert_true(every_kind["tip"]["more"])
+        self.assert_equal(every_kind["spin"], {"items": [], "more": False})
+        self.assert_equal(every_kind["effect"], {"items": [], "more": False})
+        try:
+            self.dashboard.get(f"/account/recent?before={order_ids[0]}")
+        except BackendError as error:
+            self.assert_equal(error.status, 400)
         self.assert_false(self.recent("&limit=23")["more"])
         self.assert_true(self.recent("&limit=22")["more"])
         self.assert_equal(len(self.recent("&limit=1000")["items"]), 23)

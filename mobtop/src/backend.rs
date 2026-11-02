@@ -4,7 +4,7 @@ use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::account::{Account, Connect, Kind, Recent};
+use crate::account::{Account, AllRecent, Connect, Kind, Recent};
 
 #[derive(serde::Deserialize)]
 struct Session {
@@ -125,7 +125,11 @@ impl Backend {
         self.get(base).await
     }
 
-    pub async fn recent(
+    pub async fn recent(&self, base: &str, limit: usize) -> Result<AllRecent, BackendError> {
+        self.get(&format!("{base}/recent?limit={limit}")).await
+    }
+
+    pub async fn more_recent(
         &self,
         base: &str,
         kind: Kind,
