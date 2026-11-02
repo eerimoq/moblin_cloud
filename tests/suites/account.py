@@ -240,6 +240,7 @@ class AccountDevices(AccountTestCase):
                         "reconnecting": False,
                         "wheel": False,
                         "lastSeen": None,
+                        "watchers": [],
                     }
                     for number in range(1, 6)
                 ],
