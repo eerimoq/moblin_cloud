@@ -84,8 +84,7 @@ fn disconnect(
     let page = &account.page.id;
     info!("{id} disconnected {provider}");
     api.remote_control.changes.notify(page, Change::Page);
-    let settings = api.pages.get(page);
-    Ok(settings_response(api, &account, settings))
+    Ok(settings_response(api, &account, api.pages.look(page)))
 }
 
 pub(super) async fn handle_account_paypal_check(
@@ -107,8 +106,8 @@ pub(super) async fn handle_account_paypal_check(
         ))?;
         account = finish_onboarding(&api, &id, &tracking_id, seller)?;
     }
-    let settings = api.pages.get(&account.page.id);
-    Ok(settings_response(&api, &account, settings))
+    let look = api.pages.look(&account.page.id);
+    Ok(settings_response(&api, &account, look))
 }
 
 pub(super) async fn handle_account_paypal_disconnect(
@@ -322,8 +321,8 @@ pub(super) async fn handle_account_stripe_check(
             ));
         }
     }
-    let settings = api.pages.get(&account.page.id);
-    Ok(settings_response(&api, &account, settings))
+    let look = api.pages.look(&account.page.id);
+    Ok(settings_response(&api, &account, look))
 }
 
 pub(super) async fn handle_account_stripe_disconnect(

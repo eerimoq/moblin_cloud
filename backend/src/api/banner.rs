@@ -88,8 +88,7 @@ async fn save_image(
         image.len()
     );
     api.remote_control.changes.notify(page, Change::Page);
-    let settings = api.pages.get(page);
-    Ok(settings_response(api, account, settings))
+    Ok(settings_response(api, account, api.pages.look(page)))
 }
 
 pub(super) async fn handle_account_image_remove(
@@ -125,8 +124,7 @@ fn remove_image(
     })?;
     info!("{id} removed the banner image of page {page}");
     api.remote_control.changes.notify(page, Change::Page);
-    let settings = api.pages.get(page);
-    Ok(settings_response(api, account, settings))
+    Ok(settings_response(api, account, api.pages.look(page)))
 }
 
 #[cfg(test)]

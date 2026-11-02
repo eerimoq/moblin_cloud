@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use log::warn;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Params, params};
 use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
@@ -307,7 +308,8 @@ impl Orders {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*) FROM orders WHERE state != 'captured'",
+                "SELECT (SELECT count(*) FROM orders WHERE state = 'created')
+                      + (SELECT count(*) FROM orders WHERE state = 'capturing')",
                 [],
                 |row| row.get(0),
             )
@@ -369,18 +371,45 @@ impl Orders {
         before: Option<&str>,
         limit: usize,
     ) -> Vec<(String, u64, Order)> {
+        self.read_orders(
+            "SELECT id, updated_at, details FROM orders
+             WHERE streamer = ?1 AND kind = ?2 AND state = 'captured'
+               AND (?3 IS NULL OR (updated_at, rowid) < (SELECT updated_at, rowid FROM orders WHERE id = ?3 AND streamer = ?1))
+             ORDER BY updated_at DESC, rowid DESC LIMIT ?4",
+            params![streamer, kind, before, limit],
+        )
+    }
+
+    pub fn recent_of_every_kind(
+        &self,
+        streamer: &str,
+        limit: usize,
+    ) -> HashMap<String, Vec<(String, u64, Order)>> {
+        let mut by_kind: HashMap<String, Vec<(String, u64, Order)>> = HashMap::new();
+        for (id, at, order) in self.read_orders(
+            "SELECT id, updated_at, details FROM (
+                 SELECT id, updated_at, details, rowid AS position,
+                        row_number() OVER (PARTITION BY kind ORDER BY updated_at DESC, rowid DESC) AS number
+                 FROM orders WHERE streamer = ?1 AND state = 'captured' AND kind IN ('tip', 'spin', 'effect'))
+             WHERE number <= ?2 ORDER BY updated_at DESC, position DESC",
+            params![streamer, limit],
+        ) {
+            by_kind
+                .entry(order.item.kind().to_string())
+                .or_default()
+                .push((id, at, order));
+        }
+        by_kind
+    }
+
+    fn read_orders(&self, sql: &str, params: impl Params) -> Vec<(String, u64, Order)> {
         let rows = self
             .database
             .lock()
-            .prepare_cached(
-                "SELECT id, updated_at, details FROM orders
-                 WHERE streamer = ?1 AND kind = ?2 AND state = 'captured'
-                   AND (?3 IS NULL OR (updated_at, rowid) < (SELECT updated_at, rowid FROM orders WHERE id = ?3 AND streamer = ?1))
-                 ORDER BY updated_at DESC, rowid DESC LIMIT ?4",
-            )
+            .prepare_cached(sql)
             .and_then(|mut statement| {
                 statement
-                    .query_map(params![streamer, kind, before, limit], |row| {
+                    .query_map(params, |row| {
                         Ok((
                             row.get::<_, String>(0)?,
                             row.get::<_, u64>(1)?,

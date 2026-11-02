@@ -281,6 +281,36 @@ fn not_saved(error: rusqlite::Error) -> SettingsError {
     SettingsError::NotSaved
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub struct Look {
+    pub settings: Settings,
+    pub image: Option<String>,
+    pub icon: Option<String>,
+}
+
+impl Look {
+    pub fn new(
+        id: &str,
+        settings: Option<String>,
+        image: Option<String>,
+        icon: Option<String>,
+    ) -> Self {
+        let settings = settings
+            .map(|settings| {
+                serde_json::from_str(&settings).unwrap_or_else(|error| {
+                    warn!("failed to parse the settings of page {id}: {error}");
+                    Settings::default()
+                })
+            })
+            .unwrap_or_default();
+        Self {
+            settings,
+            image,
+            icon,
+        }
+    }
+}
+
 pub struct Pages {
     database: Arc<Database>,
 }
@@ -291,20 +321,26 @@ impl Pages {
     }
 
     pub fn get(&self, id: &str) -> Settings {
-        let settings: rusqlite::Result<Option<String>> = self
+        self.look(id).settings
+    }
+
+    pub fn look(&self, id: &str) -> Look {
+        let row = self
             .database
             .lock()
-            .prepare_cached("SELECT settings FROM pages WHERE id = ?1")
-            .and_then(|mut statement| statement.query_row([id], |row| row.get(0)).optional());
-        match settings {
-            Ok(Some(settings)) => serde_json::from_str(&settings).unwrap_or_else(|error| {
-                warn!("failed to parse the settings of page {id}: {error}");
-                Settings::default()
-            }),
-            Ok(None) => Settings::default(),
+            .prepare_cached(
+                "SELECT (SELECT settings FROM pages WHERE id = ?1),
+                        (SELECT version FROM page_images WHERE id = ?1),
+                        (SELECT icon FROM page_icons WHERE id = ?1)",
+            )
+            .and_then(|mut statement| {
+                statement.query_row([id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            });
+        match row {
+            Ok((settings, image, icon)) => Look::new(id, settings, image, icon),
             Err(error) => {
-                warn!("failed to read page settings: {error:#}");
-                Settings::default()
+                warn!("failed to read page {id}: {error:#}");
+                Look::default()
             }
         }
     }
@@ -337,17 +373,6 @@ impl Pages {
         Ok(new)
     }
 
-    pub fn image_version(&self, id: &str) -> Option<String> {
-        self.database
-            .lock()
-            .prepare_cached("SELECT version FROM page_images WHERE id = ?1")
-            .and_then(|mut statement| statement.query_row([id], |row| row.get(0)).optional())
-            .unwrap_or_else(|error| {
-                warn!("failed to read the image version of page {id}: {error:#}");
-                None
-            })
-    }
-
     pub fn image(&self, id: &str) -> Option<(String, Vec<u8>)> {
         self.database
             .lock()
@@ -376,17 +401,6 @@ impl Pages {
             )
             .map_err(not_saved)?;
         Ok(version)
-    }
-
-    pub fn icon(&self, id: &str) -> Option<String> {
-        self.database
-            .lock()
-            .prepare_cached("SELECT icon FROM page_icons WHERE id = ?1")
-            .and_then(|mut statement| statement.query_row([id], |row| row.get(0)).optional())
-            .unwrap_or_else(|error| {
-                warn!("failed to read the icon of page {id}: {error:#}");
-                None
-            })
     }
 
     pub fn icons(&self, ids: &[String]) -> HashMap<String, String> {
@@ -505,7 +519,7 @@ mod tests {
     fn images_are_saved() {
         let path = database::temporary_path("page-images");
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
-        assert_eq!(pages.image_version("a"), None);
+        assert_eq!(pages.look("a").image, None);
         let first = pages.set_image("a", b"first").unwrap();
         assert_eq!(first.len(), 16);
         let second = pages.set_image("a", b"second").unwrap();
@@ -514,7 +528,7 @@ mod tests {
         pages.remove_image("b").unwrap();
         pages.set("a", Settings::default()).unwrap();
         let pages = Pages::new(Database::open(Some(&path)).unwrap());
-        assert_eq!(pages.image_version("a"), Some(second.clone()));
+        assert_eq!(pages.look("a").image, Some(second.clone()));
         assert_eq!(pages.image("a"), Some((second, b"second".to_vec())));
         assert_eq!(pages.image("b"), None);
         database::remove(&path);

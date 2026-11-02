@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -59,20 +59,13 @@ pub(super) struct AssistingResponse {
     kick: Option<PublicIdentity>,
 }
 
+pub(super) fn user_ids(account: &Account) -> [Option<&str>; 2] {
+    [account.twitch_id(), account.kick_id()]
+}
+
 pub(super) fn assisting(api: &Api, account: &Account) -> Vec<AssistingResponse> {
     let mut assisting: Vec<AssistingResponse> = Vec::new();
-    for (platform, streamer) in
-        [Platform::Twitch, Platform::Kick]
-            .into_iter()
-            .flat_map(|platform| {
-                account
-                    .identity(platform)
-                    .map(|identity| api.accounts.assisted(platform, &identity.user_id))
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(move |streamer| (platform, streamer))
-            })
-    {
+    for (platform, streamer) in api.accounts.assisted_by(user_ids(account)) {
         if assisting.iter().any(|known| known.id == streamer.page.id) {
             continue;
         }
@@ -111,13 +104,25 @@ pub(super) struct WatcherResponse {
 }
 
 fn watchers(api: &Api, page: &str) -> HashMap<String, Vec<WatcherResponse>> {
-    api.remote_control
-        .watchers(page)
+    let watching = api.remote_control.watchers(page);
+    let ids: Vec<&str> = watching
+        .values()
+        .flatten()
+        .map(String::as_str)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let accounts = if ids.is_empty() {
+        HashMap::new()
+    } else {
+        api.accounts.get_many(&ids)
+    };
+    watching
         .into_iter()
         .map(|(device, ids)| {
             let mut watchers: Vec<WatcherResponse> = ids
                 .iter()
-                .filter_map(|id| api.accounts.get(id))
+                .filter_map(|id| accounts.get(id))
                 .filter(|account| account.page.id != page)
                 .map(|account| WatcherResponse {
                     name: account.name().to_string(),
@@ -173,8 +178,8 @@ pub(super) fn devices(api: &Api, page: &str, with_watchers: bool) -> Vec<DeviceR
 
 pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
     let page = &account.page;
-    let settings = api.pages.get(&page.id);
-    let twitch = account.twitch_id().map(str::to_string);
+    let look = api.pages.look(&page.id);
+    let (twitch_assistants, kick_assistants) = api.accounts.assistants_of(user_ids(&account));
     Json(AccountResponse {
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
@@ -182,21 +187,15 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         kick: public_identity(&account, Platform::Kick),
         key: Some(page.key.clone()),
         devices: devices(api, &page.id, true),
-        settings: settings_response(api, &account, settings).0,
+        settings: settings_response(api, &account, look).0,
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),
         preview: true,
         go_live: true,
         edit_tips: true,
         remote_control: Access::Control,
-        twitch_assistants: twitch
-            .as_deref()
-            .map(|twitch| api.accounts.assistants(Platform::Twitch, twitch))
-            .unwrap_or_default(),
-        kick_assistants: account
-            .kick_id()
-            .map(|kick| api.accounts.assistants(Platform::Kick, kick))
-            .unwrap_or_default(),
+        twitch_assistants,
+        kick_assistants,
         assisting: assisting(api, &account),
     })
 }

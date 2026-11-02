@@ -8,7 +8,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::pages::{
-    CURRENCIES, Effects, FONTS, Feature, Settings, SettingsError, Spin, Tiers, Tips, is_color,
+    CURRENCIES, Effects, FONTS, Feature, Look, Settings, SettingsError, Spin, Tiers, Tips, is_color,
 };
 use crate::stripe::Stripe;
 
@@ -50,9 +50,10 @@ pub(super) struct SettingsResponse {
 pub(super) fn settings_response(
     api: &Api,
     account: &Account,
-    settings: Settings,
+    look: Look,
 ) -> Json<SettingsResponse> {
     let id = account.page.id.clone();
+    let settings = look.settings;
     let (merchant_id, stripe_account_id) = payment_targets(api, account);
     let payable = merchant_id.is_some() || stripe_account_id.is_some();
     Json(SettingsResponse {
@@ -81,7 +82,7 @@ pub(super) fn settings_response(
         message: settings.message,
         accent: settings.accent,
         font: settings.font,
-        image: api.pages.image_version(&id),
+        image: look.image,
         id,
     })
 }
@@ -128,14 +129,6 @@ pub(super) fn payment_targets(api: &Api, account: &Account) -> (Option<String>, 
     )
 }
 
-pub(super) fn merchant_of(api: &Api, id: &str) -> Option<String> {
-    payment_targets(api, &api.accounts.of_page(id)?).0
-}
-
-pub(super) fn stripe_of(api: &Api, id: &str) -> Option<String> {
-    payment_targets(api, &api.accounts.of_page(id)?).1
-}
-
 fn check_payable(api: &Api, account: &Account) -> Result<(), (StatusCode, String)> {
     if api.paypal.is_none() && api.stripe.is_none() {
         return Err(payments_unavailable());
@@ -163,7 +156,8 @@ async fn update_settings(
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let id = account.page.id.as_str();
-    let current = api.pages.get(id);
+    let look = api.pages.look(id);
+    let current = &look.settings;
     let accent = request.accent.map(|accent| accent.to_lowercase());
     if !premium && accent.as_deref().is_some_and(is_color) && accent != current.accent {
         return Err((
@@ -277,7 +271,7 @@ async fn update_settings(
         settings.font
     );
     api.remote_control.changes.notify(id, Change::Page);
-    Ok(settings_response(api, account, settings))
+    Ok(settings_response(api, account, Look { settings, ..look }))
 }
 
 pub(super) async fn handle_account_settings(

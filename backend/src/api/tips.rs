@@ -27,13 +27,13 @@ pub(super) async fn handle_tip_order(
 }
 
 fn tip_order(api: &Api, id: String, request: TipRequest) -> Result<Order, Failure> {
-    let settings = api.pages.get(&id);
+    let (account, settings) = page_settings(api, &id);
     let tips = settings.tips().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer no longer takes tips. Reload the page.",
     ))?;
-    let payee = request.paid.payee(api, &id)?;
+    let payee = request.paid.payee(api, account.as_ref())?;
     let minimum = tips.amounts.iter().copied().min().unwrap_or(50);
     if request.amount < minimum {
         return Err(failure(

@@ -10,20 +10,21 @@ use serde::{Deserialize, Serialize};
 use crate::accounts::Platform;
 use crate::auth::Viewer;
 use crate::deliveries;
-use crate::pages::Tiers;
+use crate::pages::{Settings, Tiers};
 use crate::payments::{Item, Order, Payee, insert_captured};
 
 use super::*;
 
-pub(super) fn viewer(api: &Api, headers: &HeaderMap, id: &str) -> Result<Viewer, Failure> {
+pub(super) fn viewer(
+    api: &Api,
+    headers: &HeaderMap,
+    id: &str,
+    account: Option<&Account>,
+) -> Result<Viewer, Failure> {
     bearer(headers)
         .and_then(|session| api.auth.viewer_of(session))
         .filter(|viewer| viewer.page == id)
-        .filter(|viewer| {
-            api.accounts
-                .of_page(id)
-                .is_some_and(|account| account.identity(viewer.platform).is_some())
-        })
+        .filter(|viewer| account.is_some_and(|account| account.identity(viewer.platform).is_some()))
         .ok_or(failure(
             "not-signed-in",
             StatusCode::UNAUTHORIZED,
@@ -82,9 +83,11 @@ fn allowance_response(
     headers: &HeaderMap,
     id: &str,
     perk: Perk,
-    tiers: Option<Tiers>,
+    tiers: impl FnOnce(&Settings) -> Option<&Tiers>,
 ) -> Result<Json<AllowanceResponse>, Failure> {
-    let viewer = viewer(api, headers, id)?;
+    let (account, settings) = page_settings(api, id);
+    let tiers = linked_tiers(account.as_ref(), tiers(&settings));
+    let viewer = viewer(api, headers, id, account.as_ref())?;
     let allowance = tiers.map_or(0, |tiers| tiers.allowance(viewer.tier));
     Ok(Json(AllowanceResponse {
         left: api
@@ -103,13 +106,7 @@ pub(super) async fn handle_subscriber_spin_allowance(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AllowanceResponse>, Failure> {
-    allowance_response(
-        &api,
-        &headers,
-        &id,
-        Perk::Spin,
-        sub_tiers(&api, &id, api.pages.get(&id).sub_spins()),
-    )
+    allowance_response(&api, &headers, &id, Perk::Spin, Settings::sub_spins)
 }
 
 pub(super) async fn handle_subscriber_effect_allowance(
@@ -117,13 +114,7 @@ pub(super) async fn handle_subscriber_effect_allowance(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AllowanceResponse>, Failure> {
-    allowance_response(
-        &api,
-        &headers,
-        &id,
-        Perk::Effect,
-        sub_tiers(&api, &id, api.pages.get(&id).sub_effects()),
-    )
+    allowance_response(&api, &headers, &id, Perk::Effect, Settings::sub_effects)
 }
 
 #[derive(Deserialize)]
@@ -185,15 +176,16 @@ pub(super) fn subscriber(
     headers: &HeaderMap,
     id: &str,
     perk: Perk,
+    account: Option<&Account>,
     tiers: Option<&Tiers>,
 ) -> Result<Subscriber, Failure> {
     let doing = perk.doing();
-    let tiers = tiers.ok_or(failure(
+    let tiers = linked_tiers(account, tiers).ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         &format!("The streamer no longer lets subscribers {doing}. Reload the page."),
     ))?;
-    let viewer = viewer(api, headers, id)?;
+    let viewer = viewer(api, headers, id, account)?;
     let tier = viewer.tier.ok_or(failure(
         "not-subscribed",
         StatusCode::FORBIDDEN,
@@ -212,13 +204,6 @@ pub(super) fn subscriber(
                 Platform::Kick => format!("Kick subscribers can't {doing} here."),
             },
         ));
-    }
-    let left = api
-        .allowances
-        .left(id, &viewer.key(), perk.kind(), allowance)
-        .map_err(not_saved)?;
-    if left == 0 {
-        return Err(perk.used_up());
     }
     Ok(Subscriber {
         viewer,
@@ -266,9 +251,15 @@ fn subscriber_spin(
     headers: &HeaderMap,
     request: SubscriberSpinRequest,
 ) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
-    let settings = api.pages.get(&id);
-    let sub_spins = sub_tiers(api, &id, settings.sub_spins());
-    let subscriber = subscriber(api, headers, &id, Perk::Spin, sub_spins.as_ref())?;
+    let (account, settings) = page_settings(api, &id);
+    let subscriber = subscriber(
+        api,
+        headers,
+        &id,
+        Perk::Spin,
+        account.as_ref(),
+        settings.sub_spins(),
+    )?;
     wheel_available(api, &id)?;
     let order = Order {
         streamer: id,
@@ -291,9 +282,15 @@ fn subscriber_effect(
     headers: &HeaderMap,
     request: SubscriberEffectRequest,
 ) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
-    let settings = api.pages.get(&id);
-    let sub_effects = sub_tiers(api, &id, settings.sub_effects());
-    let subscriber = subscriber(api, headers, &id, Perk::Effect, sub_effects.as_ref())?;
+    let (account, settings) = page_settings(api, &id);
+    let subscriber = subscriber(
+        api,
+        headers,
+        &id,
+        Perk::Effect,
+        account.as_ref(),
+        settings.sub_effects(),
+    )?;
     let order = Order {
         streamer: id,
         item: Item::Effect {

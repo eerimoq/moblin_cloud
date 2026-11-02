@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::accounts::{KnownDevice, Page};
 use crate::deliveries;
-use crate::payments::{Item, Payee, Stage};
+use crate::payments::{Item, Order, Payee, Stage};
 
 use super::*;
 
@@ -85,41 +85,72 @@ pub(super) fn recent(
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
     let known = api.accounts.known_devices(&page.id);
-    let list = |kind: &str, before: Option<&str>| {
-        recent_list(api, &page, &known, kind, before, limit, owner)
-    };
     match query.kind.as_deref() {
-        Some(kind @ ("tip" | "spin" | "effect")) => Ok(Json(RecentResponse::One(list(
-            kind,
-            query.before.as_deref(),
-        )))),
+        Some(kind @ ("tip" | "spin" | "effect")) => {
+            let orders = api
+                .orders
+                .recent(&page.id, kind, query.before.as_deref(), limit + 1);
+            let mut deliveries = deliveries_of(api, &orders);
+            Ok(Json(RecentResponse::One(recent_list(
+                api,
+                &page,
+                &known,
+                orders,
+                &mut deliveries,
+                limit,
+                owner,
+            ))))
+        }
         Some(_) => Err((StatusCode::BAD_REQUEST, "Unknown kind.".to_string())),
         None if query.before.is_some() => Err((
             StatusCode::BAD_REQUEST,
             "Give a kind to page through.".to_string(),
         )),
-        None => Ok(Json(RecentResponse::All {
-            tip: list("tip", None),
-            spin: list("spin", None),
-            effect: list("effect", None),
-        })),
+        None => {
+            let mut by_kind = api.orders.recent_of_every_kind(&page.id, limit + 1);
+            let mut deliveries = deliveries_of(
+                api,
+                &by_kind.values().flatten().cloned().collect::<Vec<_>>(),
+            );
+            let mut list = |kind: &str| {
+                recent_list(
+                    api,
+                    &page,
+                    &known,
+                    by_kind.remove(kind).unwrap_or_default(),
+                    &mut deliveries,
+                    limit,
+                    owner,
+                )
+            };
+            Ok(Json(RecentResponse::All {
+                tip: list("tip"),
+                spin: list("spin"),
+                effect: list("effect"),
+            }))
+        }
     }
+}
+
+fn deliveries_of(
+    api: &Api,
+    orders: &[(String, u64, Order)],
+) -> HashMap<String, deliveries::Delivery> {
+    let ids: Vec<String> = orders.iter().map(|(id, _, _)| id.clone()).collect();
+    api.deliveries.get_many(&ids)
 }
 
 fn recent_list(
     api: &Api,
     page: &Page,
     known: &[KnownDevice],
-    kind: &str,
-    before: Option<&str>,
+    mut orders: Vec<(String, u64, Order)>,
+    deliveries: &mut HashMap<String, deliveries::Delivery>,
     limit: usize,
     owner: bool,
 ) -> RecentList {
-    let mut orders = api.orders.recent(&page.id, kind, before, limit + 1);
     let more = orders.len() > limit;
     orders.truncate(limit);
-    let ids: Vec<String> = orders.iter().map(|(id, _, _)| id.clone()).collect();
-    let mut deliveries = api.deliveries.get_many(&ids);
     let items = orders
         .into_iter()
         .map(|(id, at, order)| {

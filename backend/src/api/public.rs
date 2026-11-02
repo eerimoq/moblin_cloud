@@ -37,16 +37,15 @@ pub(super) async fn handle_page(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Result<Json<ProfileResponse>, StatusCode> {
-    let account = api.accounts.of_page(&id).ok_or(StatusCode::NOT_FOUND)?;
-    let settings = api.pages.get(&id);
+    let (account, look) = api.accounts.page(&id).ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(ProfileResponse {
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
-        message: settings.message,
-        accent: settings.accent,
-        font: settings.font,
-        image: api.pages.image_version(&id),
-        icon: api.pages.icon(&id),
+        message: look.settings.message,
+        accent: look.settings.accent,
+        font: look.settings.font,
+        image: look.image,
+        icon: look.icon,
     }))
 }
 
@@ -162,11 +161,14 @@ pub(super) async fn handle_page_addresses(
     )
 }
 
-pub(super) fn sub_tiers(api: &Api, id: &str, tiers: Option<&Tiers>) -> Option<Tiers> {
-    linked_tiers(api.accounts.of_page(id).as_ref(), tiers)
+pub(super) fn page_settings(api: &Api, id: &str) -> (Option<Account>, Settings) {
+    match api.accounts.page(id) {
+        Some((account, look)) => (Some(account), look.settings),
+        None => (None, Settings::default()),
+    }
 }
 
-fn linked_tiers(account: Option<&Account>, tiers: Option<&Tiers>) -> Option<Tiers> {
+pub(super) fn linked_tiers(account: Option<&Account>, tiers: Option<&Tiers>) -> Option<Tiers> {
     tiers
         .filter(|_| {
             account.is_some_and(|account| account.twitch().is_some() || account.kick().is_some())
@@ -235,8 +237,8 @@ pub(super) async fn handle_tips(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<TipsResponse> {
-    let settings = api.pages.get(&id);
-    let payment = public_payment(&api, api.accounts.of_page(&id).as_ref(), &settings);
+    let (account, settings) = page_settings(&api, &id);
+    let payment = public_payment(&api, account.as_ref(), &settings);
     Json(TipsResponse {
         tips: settings
             .tips()
@@ -273,8 +275,7 @@ pub(super) async fn handle_effects(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<EffectsResponse> {
-    let account = api.accounts.of_page(&id);
-    let settings = api.pages.get(&id);
+    let (account, settings) = page_settings(&api, &id);
     let payment = public_payment(&api, account.as_ref(), &settings);
     Json(EffectsResponse {
         effects: settings
@@ -315,8 +316,7 @@ pub(super) async fn handle_spin(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Json<SpinResponse> {
-    let account = api.accounts.of_page(&id);
-    let settings = api.pages.get(&id);
+    let (account, settings) = page_settings(&api, &id);
     let payment = public_payment(&api, account.as_ref(), &settings);
     Json(SpinResponse {
         spin: settings

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
 use crate::deliveries::now;
+use crate::pages::Look;
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -522,6 +523,51 @@ impl Accounts {
         self.find("page_id = ?1", page)
     }
 
+    pub fn page(&self, page: &str) -> Option<(Account, Look)> {
+        self.database
+            .lock()
+            .prepare_cached(&format!(
+                "SELECT {COLUMNS}, {IDENTITIES},
+                        (SELECT settings FROM pages WHERE id = accounts.page_id),
+                        (SELECT version FROM page_images WHERE id = accounts.page_id),
+                        (SELECT icon FROM page_icons WHERE id = accounts.page_id)
+                 FROM accounts WHERE page_id = ?1 LIMIT 1"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_row([page], |row| {
+                        Ok((
+                            account(row)?,
+                            Look::new(page, row.get(8)?, row.get(9)?, row.get(10)?),
+                        ))
+                    })
+                    .optional()
+            })
+            .unwrap_or_else(|error| {
+                warn!("failed to read accounts: {error:#}");
+                None
+            })
+    }
+
+    pub fn get_many(&self, ids: &[&str]) -> HashMap<String, Account> {
+        let ids = serde_json::to_string(ids).unwrap_or_default();
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(&format!(
+                "SELECT {COLUMNS}, {IDENTITIES}, id FROM accounts
+                 WHERE id IN (SELECT value FROM json_each(?1))"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([ids], |row| Ok((row.get(8)?, account(row)?)))?
+                    .collect::<rusqlite::Result<_>>()
+            });
+        result.unwrap_or_else(|error| {
+            warn!("failed to read accounts: {error:#}");
+            HashMap::new()
+        })
+    }
+
     pub fn page_of_key(&self, key: &str) -> Option<String> {
         self.database
             .lock()
@@ -899,48 +945,79 @@ impl Accounts {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn assistants(&self, platform: Platform, broadcaster: &str) -> Vec<Assistant> {
-        let table = assistants_table(platform);
-        let database = self.database.lock();
-        let result = database
-            .prepare_cached(&format!(
-                "SELECT assistant, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name), identities.avatar, preview, go_live, edit_tips, remote_control, assistant_activity.at, assistant_activity.remote_control_at
+        let (twitch, kick) = self.assistants_of(match platform {
+            Platform::Twitch => [Some(broadcaster), None],
+            Platform::Kick => [None, Some(broadcaster)],
+        });
+        match platform {
+            Platform::Twitch => twitch,
+            Platform::Kick => kick,
+        }
+    }
+
+    pub fn assistants_of(
+        &self,
+        broadcasters: [Option<&str>; 2],
+    ) -> (Vec<Assistant>, Vec<Assistant>) {
+        let arm = |platform: Platform, broadcaster: &str| {
+            let table = assistants_table(platform);
+            let name = platform.name();
+            format!(
+                "SELECT '{name}' AS platform, assistant, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name) AS name, identities.avatar, preview, go_live, edit_tips, remote_control, assistant_activity.at, assistant_activity.remote_control_at
                  FROM {table}
-                 LEFT JOIN identities ON identities.platform = ?1 AND identities.user_id = assistant
+                 LEFT JOIN identities ON identities.platform = '{name}' AND identities.user_id = assistant
                  LEFT JOIN assistant_activity ON assistant_activity.account = identities.account
                      AND assistant_activity.page = (
                          SELECT accounts.page_id FROM identities AS streamer
                          JOIN accounts ON accounts.id = streamer.account
-                         WHERE streamer.platform = ?1 AND streamer.user_id = ?2
+                         WHERE streamer.platform = '{name}' AND streamer.user_id = {broadcaster}
                      )
-                 WHERE broadcaster = ?2
-                 ORDER BY 3 COLLATE NOCASE"
+                 WHERE broadcaster = {broadcaster}"
+            )
+        };
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(&format!(
+                "{} UNION ALL {} ORDER BY platform DESC, name COLLATE NOCASE",
+                arm(Platform::Twitch, "?1"),
+                arm(Platform::Kick, "?2")
             ))
             .and_then(|mut statement| {
                 statement
-                    .query_map([platform.name(), broadcaster], |row| {
-                        Ok(Assistant {
-                            id: row.get(0)?,
-                            login: row.get(1)?,
-                            name: row.get(2)?,
-                            avatar: row.get(3)?,
-                            preview: row.get(4)?,
-                            go_live: row.get(5)?,
-                            edit_tips: row.get(6)?,
-                            remote_control: Access::of(row.get(7)?),
-                            last_active: row.get(8)?,
-                            last_remote_control: row.get(9)?,
-                        })
+                    .query_map(broadcasters, |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            Assistant {
+                                id: row.get(1)?,
+                                login: row.get(2)?,
+                                name: row.get(3)?,
+                                avatar: row.get(4)?,
+                                preview: row.get(5)?,
+                                go_live: row.get(6)?,
+                                edit_tips: row.get(7)?,
+                                remote_control: Access::of(row.get(8)?),
+                                last_active: row.get(9)?,
+                                last_remote_control: row.get(10)?,
+                            },
+                        ))
                     })?
-                    .collect::<rusqlite::Result<_>>()
+                    .collect::<rusqlite::Result<Vec<_>>>()
             });
-        result.unwrap_or_else(|error| {
-            warn!(
-                "failed to read the {} assistants of {broadcaster}: {error:#}",
-                platform.title()
-            );
+        let mut twitch = Vec::new();
+        let mut kick = Vec::new();
+        for (platform, assistant) in result.unwrap_or_else(|error| {
+            warn!("failed to read assistants: {error:#}");
             Vec::new()
-        })
+        }) {
+            match Platform::parse(&platform) {
+                Some(Platform::Twitch) => twitch.push(assistant),
+                Some(Platform::Kick) => kick.push(assistant),
+                None => {}
+            }
+        }
+        (twitch, kick)
     }
 
     pub fn rights(&self, platform: Platform, assistant: &str, broadcaster: &str) -> Option<Rights> {
@@ -997,26 +1074,52 @@ impl Accounts {
             .is_some_and(|rights| rights.remote_control >= access)
     }
 
+    #[cfg(test)]
     pub fn assisted(&self, platform: Platform, assistant: &str) -> Vec<Account> {
-        let table = assistants_table(platform);
+        self.assisted_by(match platform {
+            Platform::Twitch => [Some(assistant), None],
+            Platform::Kick => [None, Some(assistant)],
+        })
+        .into_iter()
+        .map(|(_, account)| account)
+        .collect()
+    }
+
+    pub fn assisted_by(&self, assistants: [Option<&str>; 2]) -> Vec<(Platform, Account)> {
+        let arm = |platform: Platform, assistant: &str| {
+            let table = assistants_table(platform);
+            let name = platform.name();
+            format!(
+                "SELECT {COLUMNS}, {IDENTITIES}, '{name}' AS platform,
+                        (SELECT name FROM identities WHERE account = accounts.id AND platform = '{name}') AS channel
+                 FROM accounts
+                 WHERE id IN (SELECT identities.account FROM {table}
+                              JOIN identities ON identities.platform = '{name}' AND identities.user_id = broadcaster
+                              WHERE assistant = {assistant})"
+            )
+        };
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT {COLUMNS}, {IDENTITIES} FROM accounts
-                 WHERE id IN (SELECT identities.account FROM {table}
-                              JOIN identities ON identities.platform = ?1 AND identities.user_id = broadcaster
-                              WHERE assistant = ?2)
-                 ORDER BY (SELECT name FROM identities WHERE account = accounts.id AND platform = ?1) COLLATE NOCASE"
+                "{} UNION ALL {} ORDER BY platform DESC, channel COLLATE NOCASE",
+                arm(Platform::Twitch, "?1"),
+                arm(Platform::Kick, "?2")
             ))
             .and_then(|mut statement| {
                 statement
-                    .query_map([platform.name(), assistant], account)?
-                    .collect::<rusqlite::Result<_>>()
+                    .query_map(assistants, |row| {
+                        Ok((row.get::<_, String>(8)?, account(row)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
             });
-        result.unwrap_or_else(|error| {
-            warn!("failed to read {} assistants: {error:#}", platform.title());
-            Vec::new()
-        })
+        result
+            .unwrap_or_else(|error| {
+                warn!("failed to read assistants: {error:#}");
+                Vec::new()
+            })
+            .into_iter()
+            .filter_map(|(platform, account)| Some((Platform::parse(&platform)?, account)))
+            .collect()
     }
 
     pub fn page_of_identity(&self, platform: Platform, user_id: &str) -> Option<String> {

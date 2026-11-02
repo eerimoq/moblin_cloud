@@ -28,14 +28,14 @@ pub(super) async fn handle_spin_order(
 }
 
 fn spin_order(api: &Api, id: String, request: SpinRequest) -> Result<Order, Failure> {
-    let settings = api.pages.get(&id);
+    let (account, settings) = page_settings(api, &id);
     let spin = settings.spin().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer turned the wheel off. Reload the page.",
     ))?;
     wheel_available(api, &id)?;
-    let payee = request.paid.payee(api, &id)?;
+    let payee = request.paid.payee(api, account.as_ref())?;
     let option = spin
         .options
         .iter()

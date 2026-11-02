@@ -202,7 +202,7 @@ pub(super) async fn handle_assistant_account(
 ) -> Result<Json<AccountResponse>, Failure> {
     let user = assistant(&api, &headers, &id)?;
     let account = user.streamer;
-    let settings = api.pages.get(&id);
+    let look = api.pages.look(&id);
     Ok(Json(AccountResponse {
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
@@ -210,7 +210,7 @@ pub(super) async fn handle_assistant_account(
         avatar: account.avatar().map(str::to_string),
         key: None,
         devices: devices(&api, &id, false),
-        settings: without_payments(settings_response(&api, &account, settings)).0,
+        settings: without_payments(settings_response(&api, &account, look)).0,
         admin: false,
         premium: is_premium(&api, &account),
         preview: user.rights.preview,

@@ -35,10 +35,16 @@ pub(super) struct StripePayment {
     currency: String,
 }
 
-pub(super) fn payee(api: &Api, id: &str, provider: Option<&str>) -> Result<Payee, Failure> {
+pub(super) fn payee(
+    api: &Api,
+    account: Option<&Account>,
+    provider: Option<&str>,
+) -> Result<Payee, Failure> {
+    let (merchant_id, stripe_account_id) =
+        account.map_or((None, None), |account| payment_targets(api, account));
     match provider.unwrap_or("paypal") {
-        "paypal" => merchant_of(api, id).map(Payee::PayPal),
-        "stripe" => stripe_of(api, id).map(Payee::Stripe),
+        "paypal" => merchant_id.map(Payee::PayPal),
+        "stripe" => stripe_account_id.map(Payee::Stripe),
         _ => None,
     }
     .ok_or_else(payment_unavailable)
@@ -160,8 +166,8 @@ pub(super) struct PaidRequest {
 }
 
 impl PaidRequest {
-    pub(super) fn payee(&self, api: &Api, id: &str) -> Result<Payee, Failure> {
-        payee(api, id, self.provider.as_deref())
+    pub(super) fn payee(&self, api: &Api, account: Option<&Account>) -> Result<Payee, Failure> {
+        payee(api, account, self.provider.as_deref())
     }
 
     pub(super) fn order(

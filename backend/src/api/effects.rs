@@ -31,13 +31,13 @@ pub(super) async fn handle_effect_order(
 }
 
 fn effect_order(api: &Api, id: String, request: EffectRequest) -> Result<Order, Failure> {
-    let settings = api.pages.get(&id);
+    let (account, settings) = page_settings(api, &id);
     let effects = settings.effects().cloned().ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         "The streamer turned effects off. Reload the page.",
     ))?;
-    let payee = request.paid.payee(api, &id)?;
+    let payee = request.paid.payee(api, account.as_ref())?;
     if request.price.is_some_and(|price| price != effects.price) {
         return Err(failure(
             "invalid-option",
