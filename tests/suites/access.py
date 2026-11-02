@@ -11,6 +11,7 @@ from ..utils.config import FRONTEND_URL
 from ..utils.context import Context
 from ..utils.devices import RecordingMoblin
 from ..utils.events import EventStream
+from ..utils.fake_kick import user_id_of as kick_user_id_of
 from ..utils.fake_twitch import user_id_of
 from ..utils.frontend import Dashboard
 from ..utils.frontend import Subscriber
@@ -21,6 +22,7 @@ NO_PREVIEW = "The streamer has not let you see the stream preview."
 NO_GO_LIVE = "The streamer has not let you go live."
 NO_REMOTE_CONTROL = "The streamer has not let you use the remote control."
 NO_CONTROL = "The streamer has not let you control Moblin."
+NO_EDIT_TIPS = "The streamer has not let you edit tips."
 
 
 def unpadded(data: bytes) -> str:
@@ -188,6 +190,65 @@ class AccessAssistantGoLive(AccessTestCase):
         streamer.remove_assistant("twitch", assistant_id)
 
 
+class AccessRightsOnBothPlatforms(AccessTestCase):
+    """Give an assistant listed under the same streamer on Twitch and on Kick what either list grants, the higher
+    remote control access of the two, and only what the remaining list grants once one is removed."""
+
+    def run(self):
+        streamer = self.sign_in("bothstreamer")
+        streamer.link(self.frontend.link_token("kick", "bothstreamerkick"))
+        page_id = streamer.page_id()
+        assistant = self.sign_in("bothmod")
+        assistant.link(self.frontend.link_token("kick", "bothmodkick"))
+        twitch_id = user_id_of("bothmod")
+        kick_id = kick_user_id_of("bothmodkick")
+        streamer.add_assistant("twitch", "bothmod")
+        streamer.add_assistant("kick", "bothmodkick")
+
+        def rights() -> dict:
+            account = assistant.assisted_account(page_id)
+            return {key: account[key] for key in ["preview", "goLive", "editTips", "remoteControl"]}
+
+        self.assert_equal(
+            rights(), {"preview": False, "goLive": False, "editTips": False, "remoteControl": "none"}
+        )
+        streamer.set_assistant_preview("twitch", twitch_id, True)
+        streamer.set_assistant_remote_control("twitch", twitch_id, "view")
+        streamer.set_assistant_edit_tips("kick", kick_id, True)
+        streamer.set_assistant_remote_control("kick", kick_id, "control")
+        self.assert_equal(
+            rights(), {"preview": True, "goLive": False, "editTips": True, "remoteControl": "control"}
+        )
+        with RecordingMoblin(self.backend.url, streamer.moblin_cloud_key(), "BP1") as device:
+            device.start()
+            self.wait_until(lambda: streamer.account()["devices"] != [], "the device")
+            assistant.control_device(page_id, "BP1", {"setTorch": {"on": True}})
+            self.assert_backend_error(
+                403, lambda: assistant.control_device(page_id, "BP1", {"setLive": {"on": True}}), NO_GO_LIVE
+            )
+            with EventStream(assistant, f"/account/pages/{page_id}/devices/BP1/preview") as frames:
+                frames.wait_for("frame", 10)
+            self.assert_equal(assistant.assisted_settings(page_id, message="Both")["message"], "Both")
+            streamer.remove_assistant("kick", kick_id)
+            self.assert_equal(
+                rights(), {"preview": True, "goLive": False, "editTips": False, "remoteControl": "view"}
+            )
+            self.assert_backend_error(
+                403, lambda: assistant.control_device(page_id, "BP1", {"setTorch": {"on": False}}), NO_CONTROL
+            )
+            self.assert_backend_error(
+                403, lambda: assistant.assisted_settings(page_id, message="Mine"), NO_EDIT_TIPS
+            )
+            with EventStream(assistant, f"/account/pages/{page_id}/devices/BP1/events") as events:
+                self.assert_equal(events.next()[0], "snapshot")
+            self.assert_equal(
+                [control for control in device.controls if "setTorch" in control],
+                [{"setTorch": {"on": True}}],
+            )
+        streamer.remove_assistant("twitch", twitch_id)
+        self.assert_backend_error(403, lambda: assistant.assisted_account(page_id), NOT_ASSISTANT)
+
+
 class AccessAssistantsLimit(AccessTestCase):
     """Keep at most 50 assistants per platform, but let one listed already be added again."""
 
@@ -328,6 +389,7 @@ def tests(context: Context):
         AccessAssistantPreview(context),
         AccessAssistantRemoteControl(context),
         AccessAssistantGoLive(context),
+        AccessRightsOnBothPlatforms(context),
         AccessAssistantsLimit(context),
         AccessDeletedAssistants(context),
         AccessAssistantLimits(context),
