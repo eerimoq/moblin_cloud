@@ -583,6 +583,9 @@ const trafficAmount = (direction: TrafficDirection) =>
     size: formatBytes(direction.bytes),
   });
 
+const compactTraffic = (direction: TrafficDirection) =>
+  `${formatBytes(direction.bytes)} (${direction.messages.toLocaleString()})`;
+
 function StatusPanel(props: { device: Device; feed: DeviceFeed }) {
   const status = () => props.feed.status();
   const state = () => props.feed.state();
@@ -655,24 +658,20 @@ function StatusPanel(props: { device: Device; feed: DeviceFeed }) {
         </For>
         <Show when={props.feed.traffic()}>
           {(traffic) => (
-            <>
-              <StatusRow
-                icon="server"
-                item={{
-                  message: t("Sent to Moblin: {amount}", {
-                    amount: trafficAmount(traffic().sent),
-                  }),
-                }}
-              />
-              <StatusRow
-                icon="server"
-                item={{
-                  message: t("Received from Moblin: {amount}", {
-                    amount: trafficAmount(traffic().received),
-                  }),
-                }}
-              />
-            </>
+            <li
+              class="flex min-w-0 items-center gap-2 text-ink"
+              title={[
+                t("Received from Moblin: {amount}", {
+                  amount: trafficAmount(traffic().received),
+                }),
+                t("Sent to Moblin: {amount}", { amount: trafficAmount(traffic().sent) }),
+              ].join("\n")}
+            >
+              <Icon name="server" class="size-3.5 shrink-0 text-muted" />
+              <span class="truncate tabular-nums">
+                ↑ {compactTraffic(traffic().received)} ↓ {compactTraffic(traffic().sent)}
+              </span>
+            </li>
           )}
         </Show>
       </ul>

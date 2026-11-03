@@ -57,11 +57,7 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 fn traffic_amount(direction: Direction) -> String {
-    format!(
-        "{} messages, {}",
-        direction.messages,
-        format_bytes(direction.bytes)
-    )
+    format!("{} ({})", format_bytes(direction.bytes), direction.messages)
 }
 
 pub fn status_rows(feed: &Feed) -> Vec<StatusRow> {
@@ -121,8 +117,15 @@ pub fn status_rows(feed: &Feed) -> Vec<StatusRow> {
         }
     }
     if let Some(traffic) = feed.traffic {
-        push("Sent", traffic_amount(traffic.sent), true);
-        push("Received", traffic_amount(traffic.received), true);
+        push(
+            "Traffic",
+            format!(
+                "↑ {} ↓ {}",
+                traffic_amount(traffic.received),
+                traffic_amount(traffic.sent)
+            ),
+            true,
+        );
     }
     rows
 }
@@ -189,8 +192,7 @@ mod tests {
                 ("Viewers", "42", true),
                 ("Bitrate", "5 Mbps", false),
                 ("Uptime", "1 h", true),
-                ("Sent", "12 messages, 2 kB", true),
-                ("Received", "3 messages, 2.5 MB", true),
+                ("Traffic", "↑ 2.5 MB (3) ↓ 2 kB (12)", true),
             ]
         );
     }
