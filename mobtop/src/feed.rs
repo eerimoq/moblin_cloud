@@ -20,6 +20,18 @@ pub struct Bond {
     pub rtt: Option<i64>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub struct Direction {
+    pub messages: u64,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub struct Traffic {
+    pub sent: Direction,
+    pub received: Direction,
+}
+
 #[derive(Default)]
 pub struct Feed {
     pub connected: bool,
@@ -29,6 +41,7 @@ pub struct Feed {
     pub state: Map<String, Value>,
     pub settings: Option<Value>,
     pub samples: VecDeque<Sample>,
+    pub traffic: Option<Traffic>,
 }
 
 fn object(value: Option<&Value>) -> Option<&Map<String, Value>> {
@@ -61,6 +74,7 @@ impl Feed {
         match event {
             "snapshot" => {
                 self.connected = data["connected"].as_bool().unwrap_or_default();
+                self.traffic = Traffic::deserialize(&data["traffic"]).ok();
                 if self.connected {
                     self.set_parts(&data["status"], true);
                     if let Some(state) = object(data.get("state")) {
@@ -75,6 +89,7 @@ impl Feed {
             }
             "status" => {
                 self.set_parts(data, false);
+                self.traffic = Traffic::deserialize(&data["traffic"]).ok();
                 if let Ok(sample) = Sample::deserialize(&data["sample"]) {
                     if self.samples.len() == 60 {
                         self.samples.pop_front();
@@ -90,6 +105,7 @@ impl Feed {
             "settings" => self.settings = Some(data["data"].clone()),
             "connection" => {
                 self.connected = data["connected"].as_bool().unwrap_or_default();
+                self.traffic = None;
                 if !self.connected {
                     self.clear();
                 }

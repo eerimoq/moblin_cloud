@@ -151,12 +151,17 @@ export type Sample = {
   bonding: { name: string; bytesPerSecond: number; rtt: number | null }[];
 };
 
+export type TrafficDirection = { messages: number; bytes: number };
+
+export type DeviceTraffic = { sent: TrafficDirection; received: TrafficDirection };
+
 export type DeviceSnapshot = {
   name: string;
   connected: boolean;
   status: DeviceStatus;
   state: DeviceState;
   settings: DeviceSettings | null;
+  traffic: DeviceTraffic | null;
 };
 
 export type StatusUpdate = {
@@ -164,6 +169,7 @@ export type StatusUpdate = {
   topLeft: DeviceStatus["topLeft"] | null;
   topRight: StatusTopRight | null;
   sample: Sample | null;
+  traffic: DeviceTraffic;
 };
 
 export type Control =

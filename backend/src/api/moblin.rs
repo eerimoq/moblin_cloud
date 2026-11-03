@@ -7,6 +7,7 @@ use axum::response::Response;
 use log::info;
 
 use super::*;
+use crate::remote_control::Socket;
 
 pub(super) async fn handle_remote_control_streamer(
     State(api): State<Arc<Api>>,
@@ -16,7 +17,8 @@ pub(super) async fn handle_remote_control_streamer(
     let Some(page) = api.accounts.page_of_key(&key) else {
         return Err(StatusCode::NOT_FOUND);
     };
-    Ok(upgrade.on_upgrade(move |mut socket| async move {
+    Ok(upgrade.on_upgrade(move |socket| async move {
+        let mut socket = Socket::new(socket);
         let identity = match api.remote_control.identify(&mut socket).await {
             Ok(identity) => identity,
             Err(error) => {
@@ -43,7 +45,7 @@ pub(super) async fn handle_remote_control_streamer(
                 }
             }
         }
-        let Some(connection) = api.remote_control.connect(&page, &device) else {
+        let Some(connection) = api.remote_control.connect(&page, &device, socket.traffic()) else {
             info!("remote control streamer {page} device {device} rejected, too many devices");
             api.remote_control.refuse(socket).await;
             return;

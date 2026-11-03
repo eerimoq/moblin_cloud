@@ -293,6 +293,10 @@ mod tests {
                 "status": {"general": {}, "topLeft": {}, "topRight": {}},
                 "state": {},
                 "settings": null,
+                "traffic": {
+                    "sent": {"messages": 2, "bytes": 285},
+                    "received": {"messages": 1, "bytes": 52},
+                },
             })
         );
         assert_eq!(
@@ -326,6 +330,9 @@ mod tests {
             json!([{"name": "Cellular", "bytesPerSecond": 400000, "rtt": 45}])
         );
         assert!(status["sample"]["at"].as_u64().unwrap() > 1_700_000_000_000);
+        assert!(status["traffic"]["sent"]["messages"].as_u64().unwrap() >= 5);
+        assert!(status["traffic"]["received"]["messages"].as_u64().unwrap() >= 2);
+        assert!(status["traffic"]["received"]["bytes"].as_u64().unwrap() > 200);
         send_event(
             &mut socket,
             json!({"state": {"data": {"muted": true, "scene": "C2"}}}),
@@ -381,6 +388,12 @@ mod tests {
         assert_eq!(snapshot2["status"]["topLeft"]["camera"]["message"], "Front");
         assert_eq!(snapshot2["state"], json!({"muted": false, "scene": "C2"}));
         assert_eq!(snapshot2["settings"], settings());
+        assert!(
+            snapshot2["traffic"]["received"]["messages"]
+                .as_u64()
+                .unwrap()
+                >= 2
+        );
         let _ = snapshot;
         assert_eq!(second.next().await.0, "settings");
         drop(events);
@@ -425,6 +438,7 @@ mod tests {
         assert_eq!(name, "snapshot");
         assert_eq!(snapshot["connected"], false);
         assert_eq!(snapshot["settings"], Value::Null);
+        assert_eq!(snapshot["traffic"], Value::Null);
         let mut socket = connect_as(&address, &key, "B").await;
         answer_monitoring(&mut socket, true).await;
         assert_eq!(

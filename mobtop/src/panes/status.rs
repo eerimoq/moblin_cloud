@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph};
 use serde_json::Value;
 
-use crate::feed::Feed;
+use crate::feed::{Direction, Feed};
 use crate::ui::MUTED;
 
 const TOP_LEFT: [(&str, &str); 8] = [
@@ -41,6 +41,27 @@ pub struct StatusRow {
     pub label: &'static str,
     pub text: String,
     pub ok: bool,
+}
+
+fn format_bytes(bytes: u64) -> String {
+    let bytes = bytes as f64;
+    if bytes >= 1e9 {
+        format!("{:.2} GB", bytes / 1e9)
+    } else if bytes >= 1e6 {
+        format!("{:.1} MB", bytes / 1e6)
+    } else if bytes >= 1e3 {
+        format!("{:.0} kB", bytes / 1e3)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn traffic_amount(direction: Direction) -> String {
+    format!(
+        "{} messages, {}",
+        direction.messages,
+        format_bytes(direction.bytes)
+    )
 }
 
 pub fn status_rows(feed: &Feed) -> Vec<StatusRow> {
@@ -99,6 +120,10 @@ pub fn status_rows(feed: &Feed) -> Vec<StatusRow> {
             );
         }
     }
+    if let Some(traffic) = feed.traffic {
+        push("Sent", traffic_amount(traffic.sent), true);
+        push("Received", traffic_amount(traffic.received), true);
+    }
     rows
 }
 
@@ -143,6 +168,10 @@ mod tests {
                 },
                 "state": {"streaming": true, "muted": true},
                 "settings": null,
+                "traffic": {
+                    "sent": {"messages": 12, "bytes": 1500},
+                    "received": {"messages": 3, "bytes": 2_500_000},
+                },
             }),
         );
         let rows = status_rows(&feed);
@@ -160,6 +189,8 @@ mod tests {
                 ("Viewers", "42", true),
                 ("Bitrate", "5 Mbps", false),
                 ("Uptime", "1 h", true),
+                ("Sent", "12 messages, 2 kB", true),
+                ("Received", "3 messages, 2.5 MB", true),
             ]
         );
     }

@@ -25,8 +25,10 @@ import {
   saveMonitorLayout,
   sendTest,
   type StatusItem,
+  type TrafficDirection,
 } from "../data/account";
 import { BackendError, isSignedOut } from "../data/backend";
+import { formatBytes } from "../format";
 import { createFlash } from "../flash";
 import { t } from "../i18n";
 
@@ -575,6 +577,12 @@ function StatusRow(props: { icon: IconName; item: StatusItem }) {
   );
 }
 
+const trafficAmount = (direction: TrafficDirection) =>
+  t("{messages} messages, {size}", {
+    messages: direction.messages.toLocaleString(),
+    size: formatBytes(direction.bytes),
+  });
+
 function StatusPanel(props: { device: Device; feed: DeviceFeed }) {
   const status = () => props.feed.status();
   const state = () => props.feed.state();
@@ -645,6 +653,28 @@ function StatusPanel(props: { device: Device; feed: DeviceFeed }) {
         <For each={right()}>
           {([key, icon]) => <StatusRow icon={icon} item={status().topRight[key]!} />}
         </For>
+        <Show when={props.feed.traffic()}>
+          {(traffic) => (
+            <>
+              <StatusRow
+                icon="server"
+                item={{
+                  message: t("Sent to Moblin: {amount}", {
+                    amount: trafficAmount(traffic().sent),
+                  }),
+                }}
+              />
+              <StatusRow
+                icon="server"
+                item={{
+                  message: t("Received from Moblin: {amount}", {
+                    amount: trafficAmount(traffic().received),
+                  }),
+                }}
+              />
+            </>
+          )}
+        </Show>
       </ul>
     </Show>
   );

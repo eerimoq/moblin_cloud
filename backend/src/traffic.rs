@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -90,6 +91,61 @@ fn kind(message: &Value) -> String {
     }
 }
 
+#[derive(Default)]
+struct Counter {
+    messages: AtomicU64,
+    bytes: AtomicU64,
+}
+
+impl Counter {
+    fn record(&self, bytes: usize) {
+        self.messages.fetch_add(1, Ordering::Relaxed);
+        self.bytes.fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
+    fn totals(&self) -> Direction {
+        Direction {
+            messages: self.messages.load(Ordering::Relaxed),
+            bytes: self.bytes.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct SocketTraffic {
+    sent: Counter,
+    received: Counter,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
+pub struct Direction {
+    pub messages: u64,
+    pub bytes: u64,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
+pub struct Totals {
+    pub sent: Direction,
+    pub received: Direction,
+}
+
+impl SocketTraffic {
+    pub fn sent(&self, bytes: usize) {
+        self.sent.record(bytes);
+    }
+
+    pub fn received(&self, bytes: usize) {
+        self.received.record(bytes);
+    }
+
+    pub fn totals(&self) -> Totals {
+        Totals {
+            sent: self.sent.totals(),
+            received: self.received.totals(),
+        }
+    }
+}
+
 impl Traffic {
     pub fn sent(&self, kind: &str, bytes: usize) {
         self.sent.record(kind, bytes);
@@ -168,6 +224,27 @@ mod tests {
                         bytes: 45,
                     },
                 ],
+            }
+        );
+    }
+
+    #[test]
+    fn socket_traffic_is_totalled_per_direction() {
+        let socket_traffic = SocketTraffic::default();
+        socket_traffic.sent(10);
+        socket_traffic.sent(5);
+        socket_traffic.received(7);
+        assert_eq!(
+            socket_traffic.totals(),
+            Totals {
+                sent: Direction {
+                    messages: 2,
+                    bytes: 15,
+                },
+                received: Direction {
+                    messages: 1,
+                    bytes: 7,
+                },
             }
         );
     }

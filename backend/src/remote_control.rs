@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::app_attest::Attestation;
 use crate::changes::{Change, Changes};
 use crate::icons::{self, Icon};
-use crate::traffic::{self, Traffic};
+use crate::traffic::{self, SocketTraffic, Totals, Traffic};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -410,6 +410,7 @@ pub enum Update {
         top_left: Option<Value>,
         top_right: Option<Value>,
         sample: Option<Sample>,
+        traffic: Totals,
     },
     State {
         data: Value,
@@ -440,6 +441,7 @@ pub struct Snapshot {
     pub status: Value,
     pub state: Value,
     pub settings: Option<Value>,
+    pub traffic: Option<Totals>,
 }
 
 struct Monitor {
@@ -485,6 +487,7 @@ impl Monitor {
         top_left: Option<Value>,
         top_right: Option<Value>,
         sampled: bool,
+        traffic: Totals,
     ) {
         for (name, part) in [
             ("general", &general),
@@ -504,15 +507,17 @@ impl Monitor {
             top_left,
             top_right,
             sample,
+            traffic,
         });
     }
 
-    fn snapshot(&self, connected: bool) -> Snapshot {
+    fn snapshot(&self, traffic: Option<Totals>) -> Snapshot {
         Snapshot {
-            connected,
+            connected: traffic.is_some(),
             status: self.status.clone(),
             state: self.state.clone(),
             settings: self.settings.clone(),
+            traffic,
         }
     }
 }
@@ -627,6 +632,7 @@ struct Session {
     reconnecting: bool,
     status_requested: bool,
     preview_requested: bool,
+    socket_traffic: Arc<SocketTraffic>,
 }
 
 impl Session {
@@ -683,9 +689,17 @@ impl Sessions {
             .get_mut(&(page.to_string(), device.to_string()))
     }
 
-    fn monitor_of(&mut self, page: &str, device: &str, number: u64) -> Option<&mut Monitor> {
-        self.get_mut(page, device, Some(number))?;
-        self.monitor_mut(page, device)
+    fn monitor_of(
+        &mut self,
+        page: &str,
+        device: &str,
+        number: u64,
+    ) -> Option<(Totals, &mut Monitor)> {
+        let traffic = self
+            .get_mut(page, device, Some(number))?
+            .socket_traffic
+            .totals();
+        Some((traffic, self.monitor_mut(page, device)?))
     }
 
     fn ended(&mut self, page: &str, session: &Session) {
@@ -734,13 +748,33 @@ pub struct Streamers {
     pub changes: Arc<Changes>,
 }
 
+pub struct Socket {
+    inner: WebSocket,
+    traffic: Arc<SocketTraffic>,
+}
+
+impl Socket {
+    pub fn new(inner: WebSocket) -> Self {
+        Self {
+            inner,
+            traffic: Arc::default(),
+        }
+    }
+
+    pub fn traffic(&self) -> Arc<SocketTraffic> {
+        self.traffic.clone()
+    }
+}
+
 async fn send(
     socket: &mut (impl Sink<Message, Error = axum::Error> + Unpin),
     message: &MessageToStreamer,
     traffic: &Traffic,
+    socket_traffic: &SocketTraffic,
 ) -> Result<()> {
     let text = serde_json::to_string(message)?;
     traffic.sent(&message.kind(), text.len());
+    socket_traffic.sent(text.len());
     socket.send(Message::Text(text.into())).await?;
     Ok(())
 }
@@ -795,12 +829,15 @@ impl Streamers {
         )
     }
 
-    pub async fn refuse(&self, mut socket: WebSocket) {
+    pub async fn refuse(&self, mut socket: Socket) {
         let refused = MessageToStreamer::Identified {
             result: Outcome::Error {},
         };
-        if send(&mut socket, &refused, &self.traffic).await.is_ok() {
-            let _ = socket.send(Message::Close(None)).await;
+        if send(&mut socket.inner, &refused, &self.traffic, &socket.traffic)
+            .await
+            .is_ok()
+        {
+            let _ = socket.inner.send(Message::Close(None)).await;
         }
     }
 
@@ -862,7 +899,7 @@ impl Streamers {
         sessions.wheel(page).map(|session| session.device.clone())
     }
 
-    pub async fn identify(&self, socket: &mut WebSocket) -> Result<Identity> {
+    pub async fn identify(&self, socket: &mut Socket) -> Result<Identity> {
         let challenge = self.random_bytes::<64>().context("no randomness")?;
         let salt = self.random_bytes::<64>().context("no randomness")?;
         let hello = MessageToStreamer::Hello {
@@ -872,10 +909,10 @@ impl Streamers {
                 salt: BASE64_STANDARD.encode(salt),
             },
         };
-        send(socket, &hello, &self.traffic).await?;
+        send(&mut socket.inner, &hello, &self.traffic, &socket.traffic).await?;
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let message = timeout_at(deadline, socket.recv())
+            let message = timeout_at(deadline, socket.inner.recv())
                 .await
                 .context("no identify")?
                 .context("closed")??;
@@ -883,7 +920,7 @@ impl Streamers {
                 && let Some(MessageToAssistant::Identify {
                     streamer_id,
                     app_attest,
-                }) = self.receive(text.as_str())
+                }) = self.receive(text.as_str(), &socket.traffic)
             {
                 return Ok(Identity {
                     device: streamer_id.filter(|id| (1..=100).contains(&id.len())),
@@ -894,7 +931,12 @@ impl Streamers {
         }
     }
 
-    pub fn connect(&self, page: &str, device: &str) -> Option<Connection> {
+    pub fn connect(
+        &self,
+        page: &str,
+        device: &str,
+        socket_traffic: Arc<SocketTraffic>,
+    ) -> Option<Connection> {
         let mut sessions = self.sessions.lock().unwrap();
         let total: usize = sessions.by_page.values().map(Vec::len).sum();
         let others = sessions
@@ -921,6 +963,7 @@ impl Streamers {
             reconnecting: false,
             status_requested: false,
             preview_requested: false,
+            socket_traffic,
         };
         let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
         match page_sessions.iter_mut().find(|old| old.device == device) {
@@ -942,7 +985,7 @@ impl Streamers {
     pub async fn serve(
         &self,
         connection: Connection,
-        socket: WebSocket,
+        socket: Socket,
         on_icon: impl Fn(&'static Icon),
     ) {
         let Connection {
@@ -952,18 +995,22 @@ impl Streamers {
             mut receiver,
             replies,
         } = connection;
-        let (mut sink, mut stream) = socket.split();
+        let socket_traffic = &*socket.traffic;
+        let (mut sink, mut stream) = socket.inner.split();
         let identified = MessageToStreamer::Identified {
             result: Outcome::Ok {},
         };
         let mut stopped = false;
-        if send(&mut sink, &identified, &self.traffic).await.is_ok() {
+        if send(&mut sink, &identified, &self.traffic, socket_traffic)
+            .await
+            .is_ok()
+        {
             info!("remote control streamer {page} device {device} connected");
             self.changes.notify(&page, Change::Page);
             self.resume_watching(&page, &device, number);
             let writer = async {
                 while let Some(message) = receiver.recv().await {
-                    let sent = send(&mut sink, &message, &self.traffic);
+                    let sent = send(&mut sink, &message, &self.traffic, socket_traffic);
                     if !matches!(timeout(Duration::from_secs(10), sent).await, Ok(Ok(()))) {
                         break;
                     }
@@ -975,7 +1022,7 @@ impl Streamers {
                 {
                     match message {
                         Message::Text(text) => {
-                            if let Some(message) = self.receive(text.as_str())
+                            if let Some(message) = self.receive(text.as_str(), socket_traffic)
                                 && let Some(reply) =
                                     self.handle(&page, &device, number, message, &on_icon)
                                 && let Some(replies) = replies.upgrade()
@@ -1008,7 +1055,8 @@ impl Streamers {
         info!("remote control streamer {page} device {device} disconnected");
     }
 
-    fn receive(&self, text: &str) -> Option<MessageToAssistant> {
+    fn receive(&self, text: &str, socket_traffic: &SocketTraffic) -> Option<MessageToAssistant> {
+        socket_traffic.received(text.len());
         let message = serde_json::from_str::<MessageToAssistant>(text).ok();
         let kind = message
             .as_ref()
@@ -1033,7 +1081,7 @@ impl Streamers {
                 data,
             } => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(monitor) = sessions.monitor_of(page, device, number) {
+                if let Some((traffic, monitor)) = sessions.monitor_of(page, device, number) {
                     if let Some(settings) = data
                         .as_ref()
                         .and_then(|data| data.get("getSettings"))
@@ -1055,6 +1103,7 @@ impl Streamers {
                             status.get("topLeft").cloned(),
                             status.get("topRight").cloned(),
                             false,
+                            traffic,
                         );
                     }
                 }
@@ -1073,15 +1122,15 @@ impl Streamers {
                     },
             } => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(monitor) = sessions.monitor_of(page, device, number) {
-                    monitor.merge_status(general, top_left, top_right, true);
+                if let Some((traffic, monitor)) = sessions.monitor_of(page, device, number) {
+                    monitor.merge_status(general, top_left, top_right, true, traffic);
                 }
             }
             MessageToAssistant::Event {
                 data: Event::State { data },
             } => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(monitor) = sessions.monitor_of(page, device, number)
+                if let Some((_, monitor)) = sessions.monitor_of(page, device, number)
                     && let Some(changes) = data.as_object()
                 {
                     if let Some(state) = monitor.state.as_object_mut() {
@@ -1165,12 +1214,12 @@ impl Streamers {
 
     pub fn watch(&self, (page, device): (&str, &str), watcher: &str) -> Watch {
         let mut sessions = self.sessions.lock().unwrap();
-        let connected = match sessions.get_mut(page, device, None) {
+        let traffic = match sessions.get_mut(page, device, None) {
             Some(session) => {
                 session.start_status();
-                !session.reconnecting
+                (!session.reconnecting).then(|| session.socket_traffic.totals())
             }
-            None => false,
+            None => None,
         };
         let monitor = sessions
             .monitors
@@ -1192,7 +1241,7 @@ impl Streamers {
             self.changes.notify(page, Change::Account);
         }
         Watch {
-            snapshot: monitor.snapshot(connected),
+            snapshot: monitor.snapshot(traffic),
             events: monitor.events.subscribe(),
             _guard: WatchGuard {
                 sessions: self.sessions.clone(),
@@ -1781,8 +1830,17 @@ mod tests {
             assert_eq!(decode(text).kind(), traffic::unread(text), "{text}");
         }
         let streamers = Streamers::new(Duration::ZERO);
-        assert_eq!(streamers.receive(r#"{"event":{"data":{"chat":{}}}}"#), None);
-        assert_eq!(streamers.receive("not json"), None);
+        assert_eq!(
+            streamers.receive(
+                r#"{"event":{"data":{"chat":{}}}}"#,
+                &SocketTraffic::default()
+            ),
+            None
+        );
+        assert_eq!(
+            streamers.receive("not json", &SocketTraffic::default()),
+            None
+        );
         let received = streamers.traffic.stats().received;
         assert_eq!(received.len(), 2);
         assert_eq!(received[0].kind, "chat");
@@ -1864,7 +1922,7 @@ mod tests {
         let streamers = Streamers::new(Duration::ZERO);
         let offline = streamers.watch(("page", "device"), "viewer");
         assert!(!offline.snapshot.connected);
-        let old = streamers.connect("page", "device").unwrap();
+        let old = streamers.connect("page", "device", Arc::default()).unwrap();
         let mut watch = streamers.watch(("page", "device"), "viewer");
         assert!(watch.snapshot.connected);
         streamers.remove("page", "device", old.number);
@@ -1873,7 +1931,7 @@ mod tests {
             Update::Connection { connected: false }
         );
         drop(offline);
-        let mut new = streamers.connect("page", "device").unwrap();
+        let mut new = streamers.connect("page", "device", Arc::default()).unwrap();
         let watchers = |streamers: &Streamers| {
             streamers
                 .sessions
@@ -1892,7 +1950,7 @@ mod tests {
     #[tokio::test]
     async fn a_disconnect_forgets_the_status_and_state() {
         let streamers = Streamers::new(Duration::ZERO);
-        let old = streamers.connect("page", "device").unwrap();
+        let old = streamers.connect("page", "device", Arc::default()).unwrap();
         let watch = streamers.watch(("page", "device"), "viewer");
         let on_icon = |_: &'static Icon| {};
         streamers.handle(

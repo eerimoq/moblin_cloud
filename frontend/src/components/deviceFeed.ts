@@ -8,6 +8,7 @@ import {
   type DeviceSnapshot,
   type DeviceState,
   type DeviceStatus,
+  type DeviceTraffic,
   type Sample,
   type StatusUpdate,
 } from "../data/account";
@@ -22,6 +23,7 @@ export type DeviceFeed = {
   status: Accessor<DeviceStatus>;
   state: Accessor<DeviceState>;
   settings: Accessor<DeviceSettings | null>;
+  traffic: Accessor<DeviceTraffic | null>;
   history: Accessor<Sample[]>;
   pending: Accessor<string[]>;
   control: (control: Control) => Promise<void>;
@@ -78,6 +80,7 @@ function openDeviceFeed(
   const [status, setStatus] = createSignal<DeviceStatus>(emptyStatus());
   const [state, setState] = createSignal<DeviceState>({});
   const [settings, setSettings] = createSignal<DeviceSettings | null>(null);
+  const [traffic, setTraffic] = createSignal<DeviceTraffic | null>(null);
   const [history, setHistory] = createSignal<Sample[]>([]);
   const [pending, setPending] = createSignal<string[]>([]);
 
@@ -90,6 +93,7 @@ function openDeviceFeed(
           setLoaded(true);
           setName(snapshot.name);
           setConnected(snapshot.connected);
+          setTraffic(snapshot.traffic);
           if (snapshot.connected) {
             setStatus((current) => ({
               general: filled(snapshot.status.general) ?? current.general,
@@ -112,6 +116,7 @@ function openDeviceFeed(
             topLeft: update.topLeft ?? current.topLeft,
             topRight: update.topRight ?? current.topRight,
           }));
+          setTraffic(update.traffic);
           if (update.sample) {
             const sample = update.sample;
             setHistory((current) => [...current.slice(-59), sample]);
@@ -127,6 +132,7 @@ function openDeviceFeed(
         case "connection": {
           const connected = (data as { connected: boolean }).connected;
           setConnected(connected);
+          setTraffic(null);
           if (!connected) {
             setStatus(emptyStatus());
             setState({});
@@ -170,6 +176,7 @@ function openDeviceFeed(
     status,
     state,
     settings,
+    traffic,
     history,
     pending,
     control,

@@ -3,6 +3,7 @@ import Icon, { type IconName } from "../components/Icon";
 import { subscribe } from "../sse";
 import { cardClass, Notice, Spinner } from "../components/PageParts";
 import { adminStatsEventsUrl, type AdminStats } from "../data/account";
+import { formatBytes } from "../format";
 
 type Counts = { today: number; week: number; total: number };
 
@@ -216,13 +217,6 @@ type Step = {
 };
 
 const format = (value: number) => value.toLocaleString("en");
-
-const formatBytes = (bytes: number) =>
-  bytes >= 1_000_000_000
-    ? `${(bytes / 1_000_000_000).toFixed(2)} GB`
-    : bytes >= 1_000_000
-      ? `${(bytes / 1_000_000).toFixed(1)} MB`
-      : `${(bytes / 1_000).toFixed(0)} kB`;
 
 const formatDuration = (seconds: number) => {
   const days = Math.floor(seconds / 86_400);
