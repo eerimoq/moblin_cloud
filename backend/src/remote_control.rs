@@ -299,9 +299,6 @@ pub enum Control {
     GetVideoSources {},
     GetAlertsMediaGallery {},
     GetEditorOptions {},
-    GetAlertMedia {
-        id: Uuid,
-    },
     CreateScene {
         scene: Value,
     },
@@ -326,21 +323,11 @@ pub enum Control {
     ReorderWidgets {
         ids: Vec<Uuid>,
     },
-    DeleteAlertMedia {
-        id: Uuid,
-    },
     SetScoreboardPlayers {
         players: Value,
     },
     GetVideoSourceSnapshot {
         id: Uuid,
-    },
-    GetTranslationLanguages {},
-    SetNumericInput {
-        enabled: bool,
-    },
-    SetLocationEnabled {
-        enabled: bool,
     },
 }
 
@@ -401,7 +388,6 @@ impl Control {
             Self::GetVideoSources {} => "getVideoSources",
             Self::GetAlertsMediaGallery {} => "getAlertsMediaGallery",
             Self::GetEditorOptions {} => "getEditorOptions",
-            Self::GetAlertMedia { .. } => "getAlertMedia",
             Self::CreateScene { .. } => "createScene",
             Self::UpdateScene { .. } => "updateScene",
             Self::DeleteScene { .. } => "deleteScene",
@@ -410,12 +396,8 @@ impl Control {
             Self::UpdateWidget { .. } => "updateWidget",
             Self::DeleteWidget { .. } => "deleteWidget",
             Self::ReorderWidgets { .. } => "reorderWidgets",
-            Self::DeleteAlertMedia { .. } => "deleteAlertMedia",
             Self::SetScoreboardPlayers { .. } => "setScoreboardPlayers",
             Self::GetVideoSourceSnapshot { .. } => "getVideoSourceSnapshot",
-            Self::GetTranslationLanguages {} => "getTranslationLanguages",
-            Self::SetNumericInput { .. } => "setNumericInput",
-            Self::SetLocationEnabled { .. } => "setLocationEnabled",
         }
     }
 
@@ -442,9 +424,7 @@ impl Control {
             Self::GetVideoSources {} => Some("videoSources"),
             Self::GetAlertsMediaGallery {} => Some("gallery"),
             Self::GetEditorOptions {} => Some("options"),
-            Self::GetAlertMedia { .. } => Some("data"),
             Self::GetVideoSourceSnapshot { .. } => Some("image"),
-            Self::GetTranslationLanguages {} => Some("languages"),
             _ => None,
         }
     }
@@ -457,7 +437,6 @@ impl Control {
                 | Self::GetVideoSources {}
                 | Self::GetAlertsMediaGallery {}
                 | Self::GetEditorOptions {}
-                | Self::GetAlertMedia { .. }
                 | Self::CreateScene { .. }
                 | Self::UpdateScene { .. }
                 | Self::DeleteScene { .. }
@@ -466,20 +445,14 @@ impl Control {
                 | Self::UpdateWidget { .. }
                 | Self::DeleteWidget { .. }
                 | Self::ReorderWidgets { .. }
-                | Self::DeleteAlertMedia { .. }
                 | Self::SetScoreboardPlayers { .. }
                 | Self::GetVideoSourceSnapshot { .. }
-                | Self::GetTranslationLanguages {}
-                | Self::SetNumericInput { .. }
-                | Self::SetLocationEnabled { .. }
         )
     }
 
     fn wait(&self) -> Duration {
         match self {
-            Self::GetAlertMedia { .. }
-            | Self::GetVideoSourceSnapshot { .. }
-            | Self::GetTranslationLanguages {} => Duration::from_secs(60),
+            Self::GetVideoSourceSnapshot { .. } => Duration::from_secs(60),
             _ => Duration::from_secs(5),
         }
     }
@@ -1625,10 +1598,6 @@ mod tests {
             r#"{"request":{"id":20,"data":{"getEditorOptions":{}}}}"#
         );
         assert_eq!(
-            editor(Control::GetAlertMedia { id }),
-            r#"{"request":{"id":20,"data":{"getAlertMedia":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
-        );
-        assert_eq!(
             editor(Control::CreateScene {
                 scene: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Remote"})
             }),
@@ -1669,10 +1638,6 @@ mod tests {
             r#"{"request":{"id":20,"data":{"reorderWidgets":{"ids":["3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"]}}}}"#
         );
         assert_eq!(
-            editor(Control::DeleteAlertMedia { id }),
-            r#"{"request":{"id":20,"data":{"deleteAlertMedia":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
-        );
-        assert_eq!(
             editor(Control::SetScoreboardPlayers {
                 players: serde_json::json!([{"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Erik"}])
             }),
@@ -1681,18 +1646,6 @@ mod tests {
         assert_eq!(
             editor(Control::GetVideoSourceSnapshot { id }),
             r#"{"request":{"id":20,"data":{"getVideoSourceSnapshot":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
-        );
-        assert_eq!(
-            editor(Control::GetTranslationLanguages {}),
-            r#"{"request":{"id":20,"data":{"getTranslationLanguages":{}}}}"#
-        );
-        assert_eq!(
-            editor(Control::SetNumericInput { enabled: true }),
-            r#"{"request":{"id":20,"data":{"setNumericInput":{"enabled":true}}}}"#
-        );
-        assert_eq!(
-            editor(Control::SetLocationEnabled { enabled: false }),
-            r#"{"request":{"id":20,"data":{"setLocationEnabled":{"enabled":false}}}}"#
         );
         assert_eq!(
             request(

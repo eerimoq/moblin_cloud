@@ -32,7 +32,6 @@ export type EditorState = {
   sceneId: string | null;
   selection: string | null;
   showingSettings: boolean;
-  media: Record<string, string | null>;
   snapshots: Record<string, string | null>;
   syncing: boolean;
   dirty: boolean;
@@ -42,7 +41,6 @@ export type Editor = {
   state: EditorState;
   set: SetStoreFunction<EditorState>;
   reload: () => Promise<void>;
-  loadMedia: (mediaId: string) => void;
   loadSnapshot: (widgetId: string, again?: boolean) => void;
   request: <T>(control: Control) => Promise<T>;
   send: (control: Control) => Promise<void>;
@@ -57,7 +55,6 @@ export type Editor = {
   removeWidget: (id: string) => void;
   reorderWidgets: (ids: string[]) => void;
   setScoreboardPlayers: (players: ScoreboardPlayer[]) => void;
-  deleteAlertMedia: (id: string) => void;
   flush: () => Promise<void>;
   dispose: () => void;
 };
@@ -66,26 +63,7 @@ const clone = <T>(value: T): T => structuredClone(unwrap(value));
 
 const same = (first: unknown, second: unknown) => JSON.stringify(first) === JSON.stringify(second);
 
-const mediaType = (data: string) => {
-  if (data.startsWith("iVBOR")) {
-    return "image/png";
-  }
-  if (data.startsWith("R0lGOD")) {
-    return "image/gif";
-  }
-  if (data.startsWith("/9j/")) {
-    return "image/jpeg";
-  }
-  if (data.startsWith("UklGR")) {
-    return "image/webp";
-  }
-  if (data.startsWith("SUQz") || data.startsWith("//u") || data.startsWith("//s")) {
-    return "audio/mpeg";
-  }
-  return "application/octet-stream";
-};
-
-export const dataUrl = (data: string) => `data:${mediaType(data)};base64,${data}`;
+export const dataUrl = (data: string) => `data:image/jpeg;base64,${data}`;
 
 export const errorText = (error: unknown) =>
   error instanceof BackendError && [403, 409, 422, 502, 504].includes(error.status)
@@ -115,7 +93,6 @@ export function createEditor(
       sceneId: null,
       selection: null,
       showingSettings: false,
-      media: {},
       snapshots: {},
       syncing: false,
       dirty: false,
@@ -125,7 +102,6 @@ export function createEditor(
       widgets: [] as SettingsWidget[],
       players: [] as ScoreboardPlayer[],
     };
-    let pendingDeletes: string[] = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
     let syncing: Promise<void> | null = null;
     let pendingSwitch: string | null = null;
@@ -212,21 +188,6 @@ export function createEditor(
       }
     };
 
-    const loadMedia = (mediaId: string) => {
-      const key = mediaId.toUpperCase();
-      if (key in state.media) {
-        return;
-      }
-      set("media", key, null);
-      void request<{ data: string | null }>({ getAlertMedia: { id: mediaId } })
-        .then((answer) => {
-          if (!disposed && answer.data) {
-            set("media", key, dataUrl(answer.data));
-          }
-        })
-        .catch(() => {});
-    };
-
     const loadSnapshot = (widgetId: string, again = false) => {
       const key = widgetId.toUpperCase();
       if (!again && key in state.snapshots) {
@@ -285,8 +246,6 @@ export function createEditor(
           const scenes = clone(state.scenes);
           const widgets = clone(state.widgets);
           const players = clone(state.scoreboardPlayers);
-          const deletes = pendingDeletes;
-          pendingDeletes = [];
           for (const widget of widgets) {
             const old = synced.widgets.find((candidate) => sameId(candidate.id, widget.id));
             if (!old) {
@@ -297,14 +256,6 @@ export function createEditor(
                   sameId(candidate.id, widget.id) ? widget : candidate,
                 );
               });
-            }
-          }
-          for (const [index, id] of deletes.entries()) {
-            try {
-              await request({ deleteAlertMedia: { id } });
-            } catch (error) {
-              pendingDeletes.push(...deletes.slice(index));
-              throw error;
             }
           }
           for (const scene of scenes) {
@@ -407,7 +358,7 @@ export function createEditor(
         clearTimeout(timer);
         timer = undefined;
       }
-      if (state.dirty || pendingDeletes.length > 0) {
+      if (state.dirty) {
         await sync();
       } else if (syncing) {
         await syncing;
@@ -418,7 +369,6 @@ export function createEditor(
       state,
       set,
       reload,
-      loadMedia,
       loadSnapshot,
       request,
       send: control,
@@ -502,10 +452,6 @@ export function createEditor(
       },
       setScoreboardPlayers: (players) => {
         set("scoreboardPlayers", players);
-        markDirty();
-      },
-      deleteAlertMedia: (id) => {
-        pendingDeletes.push(id);
         markDirty();
       },
       flush,

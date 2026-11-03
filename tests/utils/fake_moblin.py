@@ -19,7 +19,6 @@ from websockets.sync.client import connect
 
 from .fake_moblin_database import database
 from .fake_moblin_database import editor_options
-from .fake_moblin_database import translation_languages
 from .fake_moblin_database import video_sources
 
 LOGGER = logging.getLogger(__name__)
@@ -143,11 +142,6 @@ class FakeMoblin:
             ],
             "canvasSize": {"width": 1920, "height": 1080},
             "mirrorFrontCameraOnStream": True,
-        }
-        self.files: dict[str, bytes] = {
-            self.ids["W2"]: png(2, 1, b"\x00\xff\x00\x00\x00\x00\xff"),
-            self.ids["G5"]: b"GIF89a\x01\x00\x01\x00\x00\x00\x00;",
-            self.ids["G6"]: b"ID3\x03\x00\x00\x00\x00\x00\x00",
         }
         self.priorities_enabled = False
         self.priorities = [
@@ -301,7 +295,6 @@ class FakeMoblin:
                 OK,
                 {"getEditorOptions": {"options": editor_options(self.ids, self.database)}},
             ),
-            "getAlertMedia": lambda: (OK, {"getAlertMedia": optional("data", self.alert_media(body["id"]))}),
             "createScene": lambda: self.create_item("scenes", body["scene"]),
             "createWidget": lambda: self.create_item("widgets", body["widget"]),
             "updateScene": lambda: self.update_item("scenes", body["scene"]),
@@ -310,32 +303,17 @@ class FakeMoblin:
             "deleteWidget": lambda: self.delete_item("widgets", body["id"]),
             "reorderScenes": lambda: self.reorder_items("scenes", body["ids"]),
             "reorderWidgets": lambda: self.reorder_items("widgets", body["ids"]),
-            "deleteAlertMedia": lambda: self.delete_alert_media(body["id"]),
             "setScoreboardPlayers": lambda: self.set_scoreboard_players(body["players"]),
             "getVideoSourceSnapshot": lambda: (
                 OK,
                 {"getVideoSourceSnapshot": optional("image", self.video_source_snapshot(body["id"]))},
             ),
-            "getTranslationLanguages": lambda: (
-                OK,
-                {"getTranslationLanguages": {"languages": translation_languages()}},
-            ),
-            "setNumericInput": lambda: self.set_database_flag("numericInput", body["enabled"]),
-            "setLocationEnabled": lambda: self.set_database_flag("locationEnabled", body["enabled"]),
         }
         handler = handlers.get(kind)
         return handler() if handler is not None else None
 
     def gallery(self) -> dict:
         return self.database["alertsMediaGallery"]
-
-    def alert_media(self, media_id: str) -> bytes | None:
-        gallery = self.gallery()
-        if find(gallery["bundledImages"] + gallery["bundledSounds"], media_id) is not None:
-            return b"GIF89a\x01\x00\x01\x00\x00\x00\x00;"
-        if find(gallery["customImages"] + gallery["customSounds"], media_id) is not None:
-            return self.files.get(media_id.upper())
-        return None
 
     def create_item(self, kind: str, item: dict) -> tuple[dict, dict | None]:
         items = self.database[kind]
@@ -375,24 +353,11 @@ class FakeMoblin:
         self.scenes_changed()
         return OK, None
 
-    def delete_alert_media(self, media_id: str) -> tuple[dict, dict | None]:
-        gallery = self.gallery()
-        if find(gallery["customImages"] + gallery["customSounds"], media_id) is None:
-            return ERROR, None
-        for kind in ("customImages", "customSounds"):
-            gallery[kind] = [item for item in gallery[kind] if not same_id(item["id"], media_id)]
-        self.files.pop(media_id.upper(), None)
-        return OK, None
-
     def video_source_snapshot(self, widget_id: str) -> bytes | None:
         found = find(self.database["widgets"], widget_id)
         if found is None or found.get("type") != "Video source":
             return None
         return self.frame()
-
-    def set_database_flag(self, key: str, enabled: bool) -> tuple[dict, dict | None]:
-        self.database[key] = enabled
-        return OK, None
 
     def set_scoreboard_players(self, players: list[dict]) -> tuple[dict, dict | None]:
         if len({player["id"].upper() for player in players}) != len(players):

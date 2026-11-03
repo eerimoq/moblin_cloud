@@ -1,4 +1,4 @@
-import { createSignal, For, onMount, Show, type JSX } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 import { ask } from "../../../Modal";
 import {
   ColorRow,
@@ -9,7 +9,6 @@ import {
   Section,
   SliderRow,
   ToggleRow,
-  ValueRow,
 } from "../../Form";
 import { FontRows, fontDesignItems, fontWeightItems, type WidgetFormProps } from "./shared";
 import type { Stack } from "../../Stack";
@@ -20,7 +19,6 @@ import {
   type FontWeight,
   type HorizontalAlignment,
   type SettingsWidgetText,
-  type TranslationLanguage,
 } from "../../../../data/moblinSettings";
 import { t, tRich } from "../../../../i18n";
 
@@ -79,49 +77,7 @@ type Variable = {
   description: string;
   units?: [string, string][];
   variable?: string;
-  languages?: boolean;
 };
-
-function SubtitlesLanguagePage(props: { editor: Editor; onPick: (identifier: string) => void }) {
-  const [languages, setLanguages] = createSignal<TranslationLanguage[] | null>(null);
-  onMount(() => {
-    void props.editor
-      .request<{ languages: TranslationLanguage[] }>({ getTranslationLanguages: {} })
-      .then((answer) => setLanguages(answer.languages))
-      .catch(() => setLanguages([]));
-  });
-  return (
-    <>
-      <Section>
-        <PlainRow>
-          {t("Download languages in iOS Settings → Apps → Translate → Languages.")}
-        </PlainRow>
-      </Section>
-      <Section>
-        <Show when={languages()} fallback={<PlainRow>{t("Loading…")}</PlainRow>}>
-          {(list) => (
-            <For each={list()}>
-              {(language) => (
-                <Show
-                  when={language.installed}
-                  fallback={<ValueRow label={language.name} value={t("Not downloaded")} />}
-                >
-                  <button
-                    type="button"
-                    class="flex min-h-[44px] w-full items-center px-4 py-2 text-left text-[17px] text-phone-tint"
-                    onClick={() => props.onPick(language.identifier)}
-                  >
-                    {language.name}
-                  </button>
-                </Show>
-              )}
-            </For>
-          )}
-        </Show>
-      </Section>
-    </>
-  );
-}
 
 function VariableRow(props: {
   editor: Editor;
@@ -135,20 +91,7 @@ function VariableRow(props: {
         type="button"
         class="text-left text-[20px] text-phone-tint"
         onClick={() => {
-          if (props.variable.languages) {
-            props.stack.push({
-              title: t("Subtitles language"),
-              render: () => (
-                <SubtitlesLanguagePage
-                  editor={props.editor}
-                  onPick={(identifier) => {
-                    props.onAppend(`{subtitles:${identifier}}`);
-                    props.stack.pop();
-                  }}
-                />
-              ),
-            });
-          } else if (props.variable.units) {
+          if (props.variable.units) {
             const units = props.variable.units;
             const name = props.variable.variable!;
             props.stack.push({
@@ -379,7 +322,6 @@ const variablePages = (editor: Editor): { title: string; sections: VariableSecti
           {
             title: "{subtitles:<language-identifier>}",
             description: t("Show subtitles in given language"),
-            languages: true,
           },
         ],
       },
@@ -481,46 +423,22 @@ const normalizedFormat = (formatString: string) =>
 const isWorkoutVariable = (format: string) =>
   /\{(heartrate|activeenergyburned|power|stepcount|workoutdistance)(:[^}]*)?\}/.test(format);
 
-const isLocationVariable = (format: string) =>
-  /\{(speed|averagespeed|altitude|distance|splitdistance|altitudeascent|altitudedescent|splitaltitudeascent|splitaltitudedescent|slope|country|countryflag|state|area|city|neighborhood)(:[^}]*)?\}/.test(
-    format,
-  );
-
-const isWeatherVariable = (format: string) =>
-  /\{(conditions|temperature|feelsliketemperature|wind)(:[^}]*)?\}/.test(format);
-
 function TextFormatWarnings(props: { editor: Editor; value: string }) {
-  const format = () => normalizedFormat(props.value);
-  const options = () => props.editor.state.options;
-  const locationEnabled = () => options()?.locationEnabled ?? true;
-  const setLocationEnabled = (enabled: boolean) => {
-    props.editor.set("options", "locationEnabled", enabled);
-    void props.editor.send({ setLocationEnabled: { enabled } });
-  };
   return (
-    <>
-      <Show when={isWorkoutVariable(format()) && !(options()?.workoutActive ?? true)}>
-        <Section>
-          <PlainRow>
-            {t(
-              "⚠️ Start a workout using the Workout quick button or the Start workout button on your Apple Watch to update Apple workout variables.",
-            )}
-          </PlainRow>
-        </Section>
-      </Show>
-      <Show when={isLocationVariable(format()) && !locationEnabled()}>
-        <Section>
-          <PlainRow>{t("⚠️ Enable Location to update location variables.")}</PlainRow>
-          <ToggleRow label={t("Location")} on={locationEnabled()} onToggle={setLocationEnabled} />
-        </Section>
-      </Show>
-      <Show when={isWeatherVariable(format()) && !locationEnabled()}>
-        <Section>
-          <PlainRow>{t("⚠️ Enable Location to update weather variables.")}</PlainRow>
-          <ToggleRow label={t("Location")} on={locationEnabled()} onToggle={setLocationEnabled} />
-        </Section>
-      </Show>
-    </>
+    <Show
+      when={
+        isWorkoutVariable(normalizedFormat(props.value)) &&
+        !(props.editor.state.options?.workoutActive ?? true)
+      }
+    >
+      <Section>
+        <PlainRow>
+          {t(
+            "⚠️ Start a workout using the Workout quick button or the Start workout button on your Apple Watch to update Apple workout variables.",
+          )}
+        </PlainRow>
+      </Section>
+    </Show>
   );
 }
 

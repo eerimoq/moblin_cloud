@@ -637,30 +637,13 @@ mod tests {
             response.json::<Value>().await.unwrap(),
             json!({"image": null})
         );
-        let call = tokio::spawn(control(json!({"getTranslationLanguages": {}})));
+        let call = tokio::spawn(control(
+            json!({"deleteWidget": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}),
+        ));
         let request = receive(&mut socket).await;
         assert_eq!(
             request["request"]["data"],
-            json!({"getTranslationLanguages": {}})
-        );
-        let languages = json!([{"identifier": "sv", "name": "Swedish", "installed": true}]);
-        answer(
-            &mut socket,
-            &request,
-            json!({"getTranslationLanguages": {"languages": languages}}),
-        )
-        .await;
-        let response = call.await.unwrap().unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response.json::<Value>().await.unwrap(),
-            json!({"languages": languages})
-        );
-        let call = tokio::spawn(control(json!({"setNumericInput": {"enabled": true}})));
-        let request = receive(&mut socket).await;
-        assert_eq!(
-            request["request"]["data"],
-            json!({"setNumericInput": {"enabled": true}})
+            json!({"deleteWidget": {"id": "3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}})
         );
         answer(&mut socket, &request, Value::Null).await;
         let response = call.await.unwrap().unwrap();

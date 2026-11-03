@@ -1,4 +1,4 @@
-import { For, onCleanup, Show, type JSX } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 import Icon from "../../../Icon";
 import {
   ButtonRow,
@@ -87,76 +87,24 @@ const fixAlertMedias = (editor: Editor) => {
   }
 };
 
-let player: HTMLAudioElement | null = null;
-
-const stopPlayer = () => {
-  player?.pause();
-  player = null;
-};
-
-function MediaThumbnail(props: { editor: Editor; id: string; sound?: boolean }) {
-  props.editor.loadMedia(props.id);
-  const source = () => props.editor.state.media[props.id.toUpperCase()];
-  return (
-    <Show
-      when={props.sound}
-      fallback={
-        <Show
-          when={source()}
-          fallback={<Icon name="image" class="size-[20px] text-phone-border" />}
-        >
-          {(url) => <img src={url()} alt="" class="h-[50px] w-[90px] object-contain" />}
-        </Show>
-      }
-    >
-      <button
-        type="button"
-        aria-label={t("Play")}
-        class="text-phone-tint"
-        onClick={() => {
-          const url = source();
-          if (url) {
-            stopPlayer();
-            player = new Audio(url);
-            void player.play();
-          }
-        }}
-      >
-        <Icon name="play" class="size-[20px]" />
-      </button>
-    </Show>
-  );
-}
-
 function MediaGalleryPage(props: AlertProps & { kind: "images" | "sounds" }) {
-  const key = (): "customImages" | "customSounds" =>
-    props.kind === "images" ? "customImages" : "customSounds";
-  const items = () => gallery(props.editor)?.[key()] ?? [];
-  onCleanup(stopPlayer);
+  const items = () =>
+    gallery(props.editor)?.[props.kind === "images" ? "customImages" : "customSounds"] ?? [];
   return (
     <Section
       footer={
         props.kind === "images"
-          ? t("Delete an image with its trash button. Add new images on the phone.")
-          : t("Delete a sound with its trash button. Add new sounds on the phone.")
+          ? t("Add and delete images on the phone.")
+          : t("Add and delete sounds on the phone.")
       }
     >
-      <ReorderableList
-        items={items()}
-        render={(item) => (
-          <div class="flex min-h-[44px] w-full items-center gap-2 pr-2 pl-3 text-[17px]">
+      <For each={items()}>
+        {(item) => (
+          <div class="flex min-h-[44px] items-center px-4 text-[17px]">
             <span class="min-w-0 flex-1 truncate">{item.name}</span>
-            <MediaThumbnail editor={props.editor} id={item.id} sound={props.kind === "sounds"} />
           </div>
         )}
-        onDelete={(item) => {
-          props.editor.set("gallery", key(), (list) =>
-            list.filter((candidate) => !sameId(candidate.id, item.id)),
-          );
-          props.editor.deleteAlertMedia(item.id);
-          fixAlertMedias(props.editor);
-        }}
-      />
+      </For>
     </Section>
   );
 }
@@ -182,7 +130,6 @@ function ImageSelectorPage(props: AlertProps) {
               }
             >
               <span class="min-w-0 flex-1 truncate">{image.name}</span>
-              <MediaThumbnail editor={props.editor} id={image.id} />
               <Show when={sameId(alert().imageId, image.id)}>
                 <Icon name="check" class="size-[18px] text-phone-tint" />
               </Show>
@@ -222,7 +169,6 @@ function ImageSelectorPage(props: AlertProps) {
 
 function SoundSelectorPage(props: AlertProps) {
   const alert = () => props.alert(props.widget)!;
-  onCleanup(stopPlayer);
   const sounds = () => {
     const current = gallery(props.editor);
     return current ? [...current.bundledSounds, ...current.customSounds] : [];
@@ -247,7 +193,6 @@ function SoundSelectorPage(props: AlertProps) {
                   <Icon name="check" class="size-[18px] text-phone-tint" />
                 </Show>
               </button>
-              <MediaThumbnail editor={props.editor} id={sound.id} sound />
             </div>
           )}
         </For>
@@ -328,8 +273,6 @@ function AlertMedia(props: AlertProps) {
 
 function AlertPosition(props: AlertProps) {
   const alert = () => props.alert(props.widget)!;
-  props.editor.loadMedia(alert().imageId);
-  const image = () => props.editor.state.media[alert().imageId.toUpperCase()];
   return (
     <>
       <Section header={t("Position")}>
@@ -349,33 +292,16 @@ function AlertPosition(props: AlertProps) {
       </Section>
       <Show when={alert().positionType === "Face"}>
         <Section>
-          <div class="relative">
-            <PositioningRectangle
-              image={asset("alert-face.png")}
-              aspect="515 / 635"
-              rect={alert().facePosition}
-              onChange={(rect) =>
-                editAlert(props, (draft) => {
-                  draft.facePosition = rect;
-                })
-              }
-            />
-            <Show when={image()}>
-              {(url) => (
-                <img
-                  src={url()}
-                  alt=""
-                  class="pointer-events-none absolute object-contain"
-                  style={{
-                    left: `${alert().facePosition.x * 100}%`,
-                    top: `${alert().facePosition.y * 100}%`,
-                    width: `${alert().facePosition.width * 100}%`,
-                    height: `${alert().facePosition.height * 100}%`,
-                  }}
-                />
-              )}
-            </Show>
-          </div>
+          <PositioningRectangle
+            image={asset("alert-face.png")}
+            aspect="515 / 635"
+            rect={alert().facePosition}
+            onChange={(rect) =>
+              editAlert(props, (draft) => {
+                draft.facePosition = rect;
+              })
+            }
+          />
         </Section>
       </Show>
     </>

@@ -674,13 +674,9 @@ export type EditorOptions = {
   showAllSettings: boolean;
   isPhone: boolean;
   forceSceneSwitchTransition: boolean;
-  locationEnabled: boolean;
   workoutActive: boolean;
-  numericInput: boolean;
   inactiveVideoSourceSceneIds: string[];
 };
-
-export type TranslationLanguage = { identifier: string; name: string; installed: boolean };
 
 export const sameId = (first: string | null | undefined, second: string | null | undefined) =>
   first !== null &&

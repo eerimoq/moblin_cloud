@@ -93,8 +93,6 @@ def database(ids: dict[str, str], icon: str) -> dict:
             "customSounds": [{"id": ids["G6"], "name": "My sound"}],
         },
         "scoreboardPlayers": [],
-        "numericInput": False,
-        "locationEnabled": False,
         "zoom": {"back": [{"id": ids["Z1"], "name": "1x", "x": 1}, {"id": ids["Z2"], "name": "2x", "x": 2}]},
         "iconImage": icon,
         "macros": {
@@ -147,15 +145,6 @@ def editor_options(ids: dict[str, str], settings: dict) -> dict:
         "showAllSettings": True,
         "isPhone": True,
         "forceSceneSwitchTransition": False,
-        "locationEnabled": settings["locationEnabled"],
         "workoutActive": False,
-        "numericInput": settings["numericInput"],
         "inactiveVideoSourceSceneIds": [],
     }
-
-
-def translation_languages() -> list[dict]:
-    return [
-        {"identifier": "de", "name": "German", "installed": False},
-        {"identifier": "sv", "name": "Swedish", "installed": True},
-    ]

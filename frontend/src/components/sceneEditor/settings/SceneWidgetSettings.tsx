@@ -23,6 +23,14 @@ import {
 } from "../../../data/moblinSettings";
 import type { Size } from "../../../data/widgetOutlines";
 import { t } from "../../../i18n";
+import { readStored, store } from "../../../storage";
+
+const [numericInput, setNumericInputSignal] = createSignal(readStored("sceneNumericInput") === "1");
+
+const setNumericInput = (enabled: boolean) => {
+  setNumericInputSignal(enabled);
+  store("sceneNumericInput", enabled ? "1" : null);
+};
 
 const [savedLayout, setSavedLayout] = createSignal<Omit<
   SettingsSceneWidget,
@@ -46,11 +54,6 @@ export function SceneWidgetSettings(props: {
   onCreateWidget: () => void;
 }) {
   const editor = props.editor;
-  const numericInput = () => editor.state.options?.numericInput ?? false;
-  const setNumericInput = (enabled: boolean) => {
-    editor.set("options", "numericInput", enabled);
-    void editor.send({ setNumericInput: { enabled } });
-  };
   const scene = createMemo(() =>
     editor.state.scenes.find((candidate) => sameId(candidate.id, props.scene.id)),
   );

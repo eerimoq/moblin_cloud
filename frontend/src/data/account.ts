@@ -204,7 +204,6 @@ export type EditorControl =
   | { getVideoSources: object }
   | { getAlertsMediaGallery: object }
   | { getEditorOptions: object }
-  | { getAlertMedia: { id: string } }
   | { createScene: { scene: object } }
   | { updateScene: { scene: object } }
   | { deleteScene: { id: string } }
@@ -213,12 +212,8 @@ export type EditorControl =
   | { updateWidget: { widget: object } }
   | { deleteWidget: { id: string } }
   | { reorderWidgets: { ids: string[] } }
-  | { deleteAlertMedia: { id: string } }
   | { setScoreboardPlayers: { players: object[] } }
-  | { getVideoSourceSnapshot: { id: string } }
-  | { getTranslationLanguages: object }
-  | { setNumericInput: { enabled: boolean } }
-  | { setLocationEnabled: { enabled: boolean } };
+  | { getVideoSourceSnapshot: { id: string } };
 
 export type MoblinFilter =
   | "pixellate"

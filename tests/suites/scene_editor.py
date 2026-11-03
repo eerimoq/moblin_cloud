@@ -49,18 +49,12 @@ class SceneEditorReads(SceneEditorTestCase):
         )
         gallery = self.control({"getAlertsMediaGallery": {}})["gallery"]
         self.assert_equal(len(gallery["bundledSounds"]), 2)
-        self.assert_true(self.control({"getAlertMedia": {"id": gallery["bundledImages"][0]["id"]}})["data"])
-        self.assert_equal(self.control({"getAlertMedia": {"id": new_id()}})["data"], None)
         options = self.control({"getEditorOptions": {}})["options"]
         self.assert_equal(options["showAllSettings"], True)
         self.assert_in("fonts", options)
         video_source = next(widget for widget in widgets if widget["type"] == "Video source")
         self.assert_true(self.control({"getVideoSourceSnapshot": {"id": video_source["id"]}})["image"])
         self.assert_equal(self.control({"getVideoSourceSnapshot": {"id": widgets[0]["id"]}})["image"], None)
-        languages = self.control({"getTranslationLanguages": {}})["languages"]
-        self.assert_equal([language["identifier"] for language in languages], ["de", "sv"])
-        self.control({"setNumericInput": {"enabled": True}})
-        self.assert_equal(self.control({"getEditorOptions": {}})["options"]["numericInput"], True)
         events = self.dashboard.device_events(self.page_id, self.device)
         try:
             events.wait_for("snapshot")
@@ -129,13 +123,6 @@ class SceneEditorChanges(SceneEditorTestCase):
                 422,
                 lambda: self.control({"setWidgetImage": {"id": image_widget["id"], "image": "iVBORw0KGgo="}}),
             )
-            gallery = self.control({"getAlertsMediaGallery": {}})["gallery"]
-            sound = gallery["customSounds"][0]
-            self.assert_true(self.control({"getAlertMedia": {"id": sound["id"]}})["data"])
-            self.control({"deleteAlertMedia": {"id": sound["id"]}})
-            gallery = self.control({"getAlertsMediaGallery": {}})["gallery"]
-            self.assert_not_in(sound["id"], [item["id"] for item in gallery["customSounds"]])
-            self.assert_backend_error(409, lambda: self.control({"deleteAlertMedia": {"id": sound["id"]}}))
             player = {"id": new_id(), "name": "Remote player"}
             self.control({"setScoreboardPlayers": {"players": [player]}})
             self.assert_equal(
