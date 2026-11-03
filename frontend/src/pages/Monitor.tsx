@@ -480,6 +480,20 @@ function PaneFrame(props: {
             {props.leaf.hidePreview ? t("Show stream preview") : t("Hide stream preview")}
           </button>
         </Show>
+        <Show when={props.leaf.panel === "phone"}>
+          <button
+            type="button"
+            aria-pressed={props.leaf.window === true}
+            aria-label={props.leaf.window ? t("Show as a phone") : t("Show as a window")}
+            title={props.leaf.window ? t("Show as a phone") : t("Show as a window")}
+            onClick={() =>
+              props.actions.change({ ...props.leaf, window: props.leaf.window ? undefined : true })
+            }
+            class="grid size-7 shrink-0 place-items-center rounded-full text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink"
+          >
+            <Icon name={props.leaf.window ? "smartphone" : "screen"} class="size-4" />
+          </button>
+        </Show>
         <Show when={props.actions.maximize}>
           {(maximize) => (
             <button
@@ -517,6 +531,7 @@ function PhonePanel(props: {
   device: Device;
   account: Account;
   hidden: boolean;
+  window: boolean;
   feed: DeviceFeed;
 }) {
   const previewDevice = createMemo(() =>
@@ -546,6 +561,7 @@ function PhonePanel(props: {
       <div class="relative flex min-h-0 flex-1 flex-col">
         <MoblinScreen
           fit
+          window={props.window}
           page={props.page}
           state={props.feed.state()}
           status={props.feed.status()}
@@ -902,6 +918,7 @@ function DevicePanel(props: {
                 device={props.device}
                 account={props.account}
                 hidden={props.leaf.hidePreview === true}
+                window={props.leaf.window === true}
                 feed={feed}
               />
             );

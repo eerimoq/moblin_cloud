@@ -91,6 +91,8 @@ pub struct Leaf {
     pub twitch_chat: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub hide_preview: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub window: bool,
 }
 
 impl Leaf {
@@ -103,6 +105,7 @@ impl Leaf {
             url: None,
             twitch_chat: false,
             hide_preview: false,
+            window: false,
         }
     }
 
@@ -195,6 +198,7 @@ fn sanitize_at(value: &Value, depth: usize) -> Option<Pane> {
         .map(str::to_string);
     leaf.twitch_chat = pane.get("twitchChat") == Some(&Value::Bool(true));
     leaf.hide_preview = pane.get("hidePreview") == Some(&Value::Bool(true));
+    leaf.window = pane.get("window") == Some(&Value::Bool(true));
     Some(Pane::Leaf(leaf))
 }
 
@@ -579,7 +583,7 @@ mod tests {
             "sizes": [3, 0.01, "x"],
             "children": [
                 {"panel": "web", "url": "http://example.com", "twitchChat": true, "extra": 1},
-                {"panel": "activity", "kinds": ["tip", "bogus"], "device": "d", "hidePreview": true},
+                {"panel": "activity", "kinds": ["tip", "bogus"], "device": "d", "hidePreview": true, "window": true},
                 {"split": "column", "children": [{"panel": "nope"}, {"panel": "toybox"}]},
                 {"panel": "unknown"},
             ],
@@ -590,7 +594,7 @@ mod tests {
             value["children"],
             json!([
                 {"panel": "web", "twitchChat": true},
-                {"panel": "activity", "device": "d", "kinds": ["tip"], "hidePreview": true},
+                {"panel": "activity", "device": "d", "kinds": ["tip"], "hidePreview": true, "window": true},
                 {"panel": "toybox"},
             ])
         );

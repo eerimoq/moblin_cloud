@@ -34,6 +34,7 @@ export type Leaf = {
   url?: string;
   twitchChat?: boolean;
   hidePreview?: boolean;
+  window?: boolean;
 };
 
 export type Split = { split: "row" | "column"; sizes: number[]; children: Pane[] };
@@ -112,6 +113,9 @@ export function sanitize(value: unknown, depth = 0): Pane | null {
   }
   if (pane.hidePreview === true) {
     leaf.hidePreview = true;
+  }
+  if (pane.window === true) {
+    leaf.window = true;
   }
   return leaf;
 }

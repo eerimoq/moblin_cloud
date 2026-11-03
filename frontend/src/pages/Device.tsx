@@ -15,6 +15,7 @@ import { t } from "../i18n";
 import { readStored, store } from "../storage";
 
 const previewHiddenKey = "previewHidden";
+const phoneWindowKey = "phoneWindow";
 
 export default function DeviceView(props: {
   session: string;
@@ -66,6 +67,11 @@ export default function DeviceView(props: {
     setPreviewHidden(!previewHidden());
     store(previewHiddenKey, previewHidden() ? "1" : null);
   };
+  const [windowed, setWindowed] = createSignal(readStored(phoneWindowKey) === "1");
+  const toggleWindow = () => {
+    setWindowed(!windowed());
+    store(phoneWindowKey, windowed() ? "1" : null);
+  };
   const previewDevice = createMemo(() =>
     active() === "phone" && props.preview === true && !previewHidden() ? props.device : null,
   );
@@ -93,18 +99,29 @@ export default function DeviceView(props: {
               <div class={cardClass}>
                 <div class="flex items-center justify-between gap-3">
                   <h2 class="text-[23px] font-semibold">{t("Phone")}</h2>
-                  <Show when={props.preview === true}>
+                  <div class="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      aria-pressed={previewHidden()}
-                      title={t("Hiding the stream preview saves bandwidth on the phone.")}
-                      onClick={togglePreview}
+                      aria-pressed={windowed()}
+                      onClick={toggleWindow}
                       class="inline-flex h-8 items-center gap-1.5 rounded-full border border-line px-3 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-ghost hover:text-ink"
                     >
-                      <Icon name={previewHidden() ? "eye" : "eye-off"} class="size-4" />
-                      {previewHidden() ? t("Show stream preview") : t("Hide stream preview")}
+                      <Icon name={windowed() ? "smartphone" : "screen"} class="size-4" />
+                      {windowed() ? t("Show as a phone") : t("Show as a window")}
                     </button>
-                  </Show>
+                    <Show when={props.preview === true}>
+                      <button
+                        type="button"
+                        aria-pressed={previewHidden()}
+                        title={t("Hiding the stream preview saves bandwidth on the phone.")}
+                        onClick={togglePreview}
+                        class="inline-flex h-8 items-center gap-1.5 rounded-full border border-line px-3 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-ghost hover:text-ink"
+                      >
+                        <Icon name={previewHidden() ? "eye" : "eye-off"} class="size-4" />
+                        {previewHidden() ? t("Show stream preview") : t("Hide stream preview")}
+                      </button>
+                    </Show>
+                  </div>
                 </div>
                 <p class="text-[15px] text-ink-2">
                   {t(
@@ -121,18 +138,22 @@ export default function DeviceView(props: {
                     {t("The streamer has not let you control Moblin.")}
                   </p>
                 </Show>
-                <MoblinScreen
-                  page={props.page}
-                  state={feed().state()}
-                  status={feed().status()}
-                  settings={feed().settings()}
-                  preview={preview()}
-                  goLive={props.goLive}
-                  remoteControl={props.remoteControl}
-                  connected={online()}
-                  pending={feed().pending()}
-                  onControl={(control) => feed().control(control)}
-                />
+                <div class={windowed() ? "flex h-[max(420px,calc(100dvh-20rem))] flex-col" : ""}>
+                  <MoblinScreen
+                    fit={windowed()}
+                    window={windowed()}
+                    page={props.page}
+                    state={feed().state()}
+                    status={feed().status()}
+                    settings={feed().settings()}
+                    preview={preview()}
+                    goLive={props.goLive}
+                    remoteControl={props.remoteControl}
+                    connected={online()}
+                    pending={feed().pending()}
+                    onControl={(control) => feed().control(control)}
+                  />
+                </div>
                 <MomMessage
                   session={props.session}
                   page={props.page}

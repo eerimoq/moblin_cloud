@@ -363,6 +363,7 @@ export default function MoblinScreen(props: {
   connected: boolean;
   pending: string[];
   fit?: boolean;
+  window?: boolean;
   onControl: (control: Control) => Promise<void>;
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
@@ -406,9 +407,18 @@ export default function MoblinScreen(props: {
     onCleanup(() => observer.disconnect());
   });
 
-  const outerWidth = screenWidth + 2 * bezel;
-  const outerHeight = screenHeight + 2 * bezel;
-  const scale = () => Math.min(width() / outerWidth, props.fit ? height() / outerHeight : 1.2);
+  const frame = () => (props.window ? 0 : bezel);
+  const scale = () =>
+    props.window
+      ? Math.min(width() / 640, height() / screenHeight, 1)
+      : Math.min(
+          width() / (screenWidth + 2 * bezel),
+          props.fit ? height() / (screenHeight + 2 * bezel) : 1.2,
+        );
+  const shownWidth = () => (props.window ? width() / scale() : screenWidth);
+  const shownHeight = () => (props.window ? height() / scale() : screenHeight);
+  const outerWidth = () => shownWidth() + 2 * frame();
+  const outerHeight = () => shownHeight() + 2 * frame();
   const disabled = (key: string) =>
     !props.connected || !props.remoteControl || props.pending.includes(key);
   const confirmed = async (question: string, action: string, control: Control) => {
@@ -431,7 +441,7 @@ export default function MoblinScreen(props: {
     control: (control: Control) => props.onControl(control),
   };
 
-  const controlBarWidth = 150;
+  const controlBarWidth = () => (props.window ? 106 : 150);
   const filterOn = () => filtersOf(props.state.filters);
   const pages = () =>
     [1, 2, 3].filter((number) => quickButtons().some((button) => button.page === number));
@@ -533,7 +543,7 @@ export default function MoblinScreen(props: {
   };
 
   const shownPanelWidth = () => (panel() ? (panelHidden() ? 1 : panelWidth) : 0);
-  const areaWidth = () => screenWidth - controlBarWidth - shownPanelWidth();
+  const areaWidth = () => shownWidth() - controlBarWidth() - shownPanelWidth();
   const panelButtons = () => (
     <PanelButtons
       hidden={panelHidden()}
@@ -581,22 +591,30 @@ export default function MoblinScreen(props: {
       <div
         class={props.fit ? "mx-auto" : ""}
         style={{
-          height: `${outerHeight * scale()}px`,
-          width: props.fit ? `${outerWidth * scale()}px` : undefined,
+          height: `${outerHeight() * scale()}px`,
+          width: props.fit ? `${outerWidth() * scale()}px` : undefined,
         }}
       >
         <div
-          class="rounded-[62px] bg-phone-bezel shadow-2xl ring-2 ring-phone-frame"
+          class={
+            props.window
+              ? "overflow-hidden rounded-[10px] ring-1 ring-phone-frame"
+              : "rounded-[62px] bg-phone-bezel shadow-2xl ring-2 ring-phone-frame"
+          }
           style={{
-            width: `${outerWidth}px`,
-            height: `${outerHeight}px`,
-            padding: `${bezel}px`,
+            width: `${outerWidth()}px`,
+            height: `${outerHeight()}px`,
+            padding: `${frame()}px`,
             transform: `scale(${scale()})`,
             "transform-origin": "top left",
             "font-family": "system-ui, -apple-system, sans-serif",
           }}
         >
-          <div class="relative flex h-full overflow-hidden rounded-[50px] bg-phone-screen text-white select-none">
+          <div
+            class={`relative flex h-full overflow-hidden bg-phone-screen text-white select-none ${
+              props.window ? "" : "rounded-[50px]"
+            }`}
+          >
             <div class="relative min-w-0 flex-1 overflow-hidden bg-radial-[at_40%_40%] from-phone-preview to-phone-preview-dark">
               <Show when={previewSource()}>
                 {(source) => (
@@ -626,7 +644,9 @@ export default function MoblinScreen(props: {
                 {zoomPicker()}
                 {scenePicker()}
               </div>
-              <span class="absolute top-1/2 left-[12px] h-[118px] w-[34px] -translate-y-1/2 rounded-full bg-phone-screen" />
+              <Show when={!props.window}>
+                <span class="absolute top-1/2 left-[12px] h-[118px] w-[34px] -translate-y-1/2 rounded-full bg-phone-screen" />
+              </Show>
               <Show when={panel() && panelHidden()}>{panelButtons()}</Show>
             </div>
             <Show when={panel()}>
@@ -644,7 +664,7 @@ export default function MoblinScreen(props: {
             </Show>
             <div
               class="flex h-full shrink-0 bg-phone-screen"
-              style={{ width: `${controlBarWidth}px` }}
+              style={{ width: `${controlBarWidth()}px` }}
             >
               <div class="ml-[6px] flex h-full w-[100px] flex-col pt-[6px] pb-[14px]">
                 <div class="flex h-[16px] items-center justify-between pr-[18px] pl-[4px]">
