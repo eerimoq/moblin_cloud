@@ -2,6 +2,8 @@ import { batch, createMemo, createRoot, createSignal, onCleanup, type Accessor }
 import { createStore, produce, reconcile, unwrap, type SetStoreFunction } from "solid-js/store";
 import { BackendError } from "../../data/backend";
 import {
+  encodeScene,
+  encodeWidget,
   normalizeScene,
   normalizeWidget,
   sameId,
@@ -299,12 +301,14 @@ export function createEditor(
                     scene.widgets.some((sceneWidget) => sameId(sceneWidget.widgetId, widget.id)),
                 )
                 .map((scene) => scene.id);
-              await step({ createWidget: { widget, sceneIds } }, () => synced.widgets.push(widget));
+              await step({ createWidget: { widget: encodeWidget(widget), sceneIds } }, () =>
+                synced.widgets.push(widget),
+              );
               if (sceneIds.length > 0) {
                 await adoptSceneWidgets(widget.id, sceneIds, scenes);
               }
             } else if (!same(old, widget)) {
-              await step({ updateWidget: { widget } }, () => {
+              await step({ updateWidget: { widget: encodeWidget(widget) } }, () => {
                 synced.widgets = synced.widgets.map((candidate) =>
                   sameId(candidate.id, widget.id) ? widget : candidate,
                 );
@@ -314,9 +318,11 @@ export function createEditor(
           for (const scene of scenes) {
             const old = synced.scenes.find((candidate) => sameId(candidate.id, scene.id));
             if (!old) {
-              await step({ createScene: { scene } }, () => synced.scenes.push(scene));
+              await step({ createScene: { scene: encodeScene(scene) } }, () =>
+                synced.scenes.push(scene),
+              );
             } else if (!same(old, scene)) {
-              await step({ updateScene: { scene } }, () => {
+              await step({ updateScene: { scene: encodeScene(scene) } }, () => {
                 synced.scenes = synced.scenes.map((candidate) =>
                   sameId(candidate.id, scene.id) ? scene : candidate,
                 );

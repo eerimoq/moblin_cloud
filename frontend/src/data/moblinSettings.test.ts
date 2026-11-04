@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
+  defaultEffect,
   defaultScene,
   defaultWidget,
+  encodeEffect,
+  encodeScene,
+  encodeWidget,
   makeUniqueName,
   normalizeScene,
   normalizeWidget,
@@ -89,4 +93,82 @@ test("makeUniqueName", () => {
   expect(makeUniqueName("Text", [])).toBe("Text");
   expect(makeUniqueName("Text", ["Text"])).toBe("Text 1");
   expect(makeUniqueName("Text", ["Text", "Text 1"])).toBe("Text 2");
+});
+
+describe("encodeWidget", () => {
+  test.each(widgetTypes)("sends only the settings of a %s widget, like Moblin", (type) => {
+    const widget = defaultWidget(widgetId, type);
+    const encoded = encodeWidget(widget);
+    const subObjects = Object.keys(encoded).filter(
+      (key) => !["name", "id", "type", "enabled", "effects"].includes(key),
+    );
+    expect(subObjects.length).toBeLessThanOrEqual(1);
+    if (type === "Image") {
+      expect(subObjects).toEqual([]);
+    } else {
+      expect(subObjects).toHaveLength(1);
+      expect(encoded[subObjects[0]!]).toBeDefined();
+    }
+    expect(normalizeWidget(roundTrip(encoded))).toEqual(widget);
+  });
+
+  test("keeps the settings of the widget's type and drops the others", () => {
+    const widget = defaultWidget(widgetId, "Browser");
+    widget.browser.url = "https://example.com";
+    widget.text.formatString = "{time}";
+    const encoded = encodeWidget(widget);
+    expect(encoded.browser).toEqual(widget.browser);
+    expect(encoded.text).toBeUndefined();
+    expect(normalizeWidget(roundTrip(encoded)).text.formatString).toBe("{shortTime}");
+  });
+
+  test("keeps fields it does not know", () => {
+    const widget = normalizeWidget({ id: widgetId, type: "Text", fromNewerMoblin: 1 });
+    expect(encodeWidget(widget).fromNewerMoblin).toBe(1);
+  });
+
+  test("sends only the camera id of the video source's position", () => {
+    const widget = defaultWidget(widgetId, "Video source");
+    widget.videoSource.cameraPosition = "RTMP";
+    widget.videoSource.rtmpCameraId = "rtmp";
+    widget.videoSource.backCameraId = "back";
+    const encoded = encodeWidget(widget).videoSource as Record<string, unknown>;
+    expect(encoded.cameraPosition).toBe("RTMP");
+    expect(encoded.rtmpCameraId).toBe("rtmp");
+    expect(encoded.backCameraId).toBeUndefined();
+    expect(encoded.externalCameraName).toBeUndefined();
+    expect(encoded.rotation).toBe(widget.videoSource.rotation);
+    const vTuber = defaultWidget(widgetId, "VTuber");
+    vTuber.vTuber.cameraPosition = "External";
+    expect(Object.keys(encodeWidget(vTuber).vTuber as object)).toEqual(
+      expect.arrayContaining(["externalCameraId", "externalCameraName", "modelName"]),
+    );
+    expect(encodeWidget(vTuber).vTuber).not.toHaveProperty("frontCameraId");
+    const pngTuber = defaultWidget(widgetId, "PNGTuber");
+    pngTuber.pngTuber.cameraPosition = "None";
+    expect(encodeWidget(pngTuber).pngTuber).not.toHaveProperty("backCameraId");
+  });
+
+  test("sends only the settings of each effect's type", () => {
+    const widget = defaultWidget(widgetId, "Text");
+    widget.effects = [defaultEffect("E1"), { ...defaultEffect("E2"), type: "grayScale" }];
+    widget.effects[0]!.type = "opacity";
+    const [opacity, grayScale] = encodeWidget(widget).effects as Record<string, unknown>[];
+    expect(Object.keys(opacity!).sort()).toEqual(["enabled", "id", "opacity", "type"]);
+    expect(Object.keys(grayScale!).sort()).toEqual(["enabled", "id", "type"]);
+    expect(encodeEffect(widget.effects[0]!)).toEqual(opacity);
+  });
+});
+
+describe("encodeScene", () => {
+  test("sends only the camera id of the scene's position", () => {
+    const scene = defaultScene(sceneId);
+    scene.cameraPosition = "Front";
+    scene.frontCameraId = "front";
+    const encoded = encodeScene(scene);
+    expect(encoded.frontCameraId).toBe("front");
+    expect(encoded.backCameraId).toBeUndefined();
+    expect(encoded.widgets).toEqual(scene.widgets);
+    expect(normalizeScene(roundTrip(encoded))).toEqual(scene);
+  });
 });

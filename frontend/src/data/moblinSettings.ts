@@ -1249,6 +1249,83 @@ export const normalizeWidget = (raw: Record<string, unknown>): SettingsWidget =>
   return widget;
 };
 
+const cameraIdKeys: Partial<Record<CameraPosition, (keyof VideoSourceFields)[]>> = {
+  Back: ["backCameraId"],
+  Front: ["frontCameraId"],
+  RTMP: ["rtmpCameraId"],
+  "SRT(LA)": ["srtlaCameraId"],
+  "SRT client": ["srtClientCameraId"],
+  RIST: ["ristCameraId"],
+  RTSP: ["rtspCameraId"],
+  WHIP: ["whipCameraId"],
+  WHEP: ["whepCameraId"],
+  "Media player": ["mediaPlayerCameraId"],
+  External: ["externalCameraId", "externalCameraName"],
+};
+
+const allCameraIdKeys = new Set(Object.values(cameraIdKeys).flat());
+
+const without = (object: object, dropped: Set<string>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(object).filter(([key]) => !dropped.has(key)));
+
+const encodeVideoSource = (fields: VideoSourceFields): Record<string, unknown> => {
+  const kept = cameraIdKeys[fields.cameraPosition] ?? [];
+  return without(fields, new Set([...allCameraIdKeys].filter((key) => !kept.includes(key))));
+};
+
+const effectSubObjects: Partial<Record<VideoEffectType, keyof SettingsVideoEffect>> = {
+  removeBackground: "removeBackground",
+  shape: "shape",
+  dewarp360: "dewarp360",
+  anamorphicLens: "anamorphicLens",
+  lut: "lut",
+  opacity: "opacity",
+  mask: "mask",
+};
+
+const allEffectSubObjects = new Set<string>(Object.values(effectSubObjects));
+
+export const encodeEffect = (effect: SettingsVideoEffect): Record<string, unknown> => {
+  const kept = effectSubObjects[effect.type];
+  return without(effect, new Set([...allEffectSubObjects].filter((key) => key !== kept)));
+};
+
+const widgetSubObjects: Partial<Record<SettingsWidgetType, keyof SettingsWidget>> = {
+  Text: "text",
+  Browser: "browser",
+  "Video source": "videoSource",
+  Alerts: "alerts",
+  Map: "map",
+  Snapshot: "snapshot",
+  Chat: "chat",
+  "Chat emote combo": "chatEmoteCombo",
+  Scene: "scene",
+  Slideshow: "slideshow",
+  VTuber: "vTuber",
+  PNGTuber: "pngTuber",
+  "QR code": "qrCode",
+  Scoreboard: "scoreboard",
+  "Wheel of luck": "wheelOfLuck",
+  "Bingo card": "bingoCard",
+  Crop: "crop",
+  "Pomodoro timer": "pomodoroTimer",
+};
+
+const allWidgetSubObjects = new Set<string>(Object.values(widgetSubObjects));
+
+export const encodeWidget = (widget: SettingsWidget): Record<string, unknown> => {
+  const kept = widgetSubObjects[widget.type];
+  const encoded = without(widget, new Set([...allWidgetSubObjects].filter((key) => key !== kept)));
+  if (kept === "videoSource" || kept === "vTuber" || kept === "pngTuber") {
+    encoded[kept] = encodeVideoSource(widget[kept]);
+  }
+  encoded.effects = widget.effects.map(encodeEffect);
+  return encoded;
+};
+
+export const encodeScene = (scene: SettingsScene): Record<string, unknown> =>
+  encodeVideoSource(scene);
+
 export const makeUniqueName = (base: string, names: string[]) => {
   if (!names.includes(base)) {
     return base;
