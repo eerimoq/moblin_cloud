@@ -28,3 +28,11 @@ export const toggleFullscreen = () => {
     }
   }
 };
+
+const shortQuery = matchMedia("(max-height: 500px)");
+const [short, setShort] = createSignal(shortQuery.matches);
+shortQuery.addEventListener("change", () => setShort(shortQuery.matches));
+
+export { short };
+
+export const fullscreenOffered = () => !short() || document.fullscreenEnabled;

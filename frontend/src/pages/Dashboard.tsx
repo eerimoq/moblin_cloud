@@ -15,7 +15,7 @@ import {
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
-import { fullscreen, toggleFullscreen } from "../fullscreen";
+import { fullscreen, fullscreenOffered, short, toggleFullscreen } from "../fullscreen";
 import { subscribeChanges } from "../sse";
 import { copyText } from "../components/CopyButton";
 import Icon, { kindIcons } from "../components/Icon";
@@ -3122,68 +3122,75 @@ function SignedIn(props: {
     </Show>
   );
 
+  const headerHidden = () => monitor() && (fullscreen() || short());
+
   return (
-    <div class={monitor() ? "flex h-dvh flex-col" : "contents"}>
-      <Show when={!(monitor() && fullscreen())}>
-        <CloudHeader premium={props.account.premium} wide={monitor()}>
-          <div class="ml-auto flex min-w-0 items-center gap-3">
-            <Show when={!props.account.premium}>
-              <GoPremium ref={(element) => (premiumDialog = element)} />
-            </Show>
-            <Show when={monitor()}>
-              <button
-                type="button"
-                aria-label={t("Full screen")}
-                title={t("Full screen")}
-                onClick={toggleFullscreen}
-                class="grid size-9 shrink-0 place-items-center rounded-full text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink"
-              >
-                <Icon name="maximize" class="size-5" />
-              </button>
-            </Show>
-            <PagePicker
-              devices={current()?.devices ?? []}
-              admin={props.account.admin}
-              picked={device()}
-              onPick={(to) => show(channel(), to)}
-            />
-            <Show when={props.account.assisting.length > 0}>
-              <StreamerPicker
-                account={props.account}
-                picked={channel()}
-                onPick={(key) => void pickStreamer(key)}
+    <>
+      <div class={monitor() ? `flex h-dvh flex-col ${short() ? "sticky top-0" : ""}` : "contents"}>
+        <Show when={!headerHidden()}>
+          <CloudHeader premium={props.account.premium} wide={monitor()}>
+            <div class="ml-auto flex min-w-0 items-center gap-3">
+              <Show when={!props.account.premium}>
+                <GoPremium ref={(element) => (premiumDialog = element)} />
+              </Show>
+              <Show when={monitor() && fullscreenOffered()}>
+                <button
+                  type="button"
+                  aria-label={t("Full screen")}
+                  title={t("Full screen")}
+                  onClick={toggleFullscreen}
+                  class="grid size-9 shrink-0 place-items-center rounded-full text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink"
+                >
+                  <Icon name="maximize" class="size-5" />
+                </button>
+              </Show>
+              <PagePicker
+                devices={current()?.devices ?? []}
+                admin={props.account.admin}
+                picked={device()}
+                onPick={(to) => show(channel(), to)}
               />
-            </Show>
-            <AccountMenu
-              name={props.account.name}
-              avatar={props.account.avatar}
-              items={[
-                ...(props.account.premium
-                  ? []
-                  : [
-                      {
-                        label: t("Go premium"),
-                        icon: "star" as const,
-                        onClick: () => premiumDialog?.showModal(),
-                      },
-                    ]),
-                {
-                  label: t("Account"),
-                  icon: "user",
-                  onClick: () => show(channel(), accountPage),
-                },
-              ]}
-              onSignOut={props.onSignOut}
-            />
-          </div>
-        </CloudHeader>
-      </Show>
-      <main class={monitor() ? "min-h-0 flex-1 bg-band" : undefined}>
-        <Show when={monitor()} fallback={<Band tight>{content()}</Band>}>
-          {content()}
+              <Show when={props.account.assisting.length > 0}>
+                <StreamerPicker
+                  account={props.account}
+                  picked={channel()}
+                  onPick={(key) => void pickStreamer(key)}
+                />
+              </Show>
+              <AccountMenu
+                name={props.account.name}
+                avatar={props.account.avatar}
+                items={[
+                  ...(props.account.premium
+                    ? []
+                    : [
+                        {
+                          label: t("Go premium"),
+                          icon: "star" as const,
+                          onClick: () => premiumDialog?.showModal(),
+                        },
+                      ]),
+                  {
+                    label: t("Account"),
+                    icon: "user",
+                    onClick: () => show(channel(), accountPage),
+                  },
+                ]}
+                onSignOut={props.onSignOut}
+              />
+            </div>
+          </CloudHeader>
         </Show>
-      </main>
-    </div>
+        <main class={monitor() ? "min-h-0 flex-1 bg-band" : undefined}>
+          <Show when={monitor()} fallback={<Band tight>{content()}</Band>}>
+            {content()}
+          </Show>
+        </main>
+      </div>
+      <Show when={monitor() && short()}>
+        <div class="h-[50dvh]" />
+      </Show>
+    </>
   );
 }
 
