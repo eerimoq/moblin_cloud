@@ -31,7 +31,7 @@ import { BackendError, isSignedOut } from "../data/backend";
 import { effectName, effects } from "../data/effects";
 import { formatBytes } from "../format";
 import { createFlash } from "../flash";
-import { fullscreen, fullscreenAvailable, toggleFullscreen } from "../fullscreen";
+import { fullscreen, toggleFullscreen } from "../fullscreen";
 import { t } from "../i18n";
 
 const defaultLayout = (): Pane => ({
@@ -181,17 +181,15 @@ function PaneMenu(props: {
           style={{ "max-height": `${placement().room}px` }}
           class={`absolute z-30 flex w-max ${popupSide(placement())} min-w-48 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
         >
-          <Show when={fullscreenAvailable}>
-            <button
-              type="button"
-              role="menuitem"
-              class={menuItemClass}
-              onClick={() => run(() => void toggleFullscreen())}
-            >
-              {fullscreen() ? t("Leave full screen") : t("Full screen")}
-            </button>
-            <div class="my-1 border-t border-line" />
-          </Show>
+          <button
+            type="button"
+            role="menuitem"
+            class={menuItemClass}
+            onClick={() => run(toggleFullscreen)}
+          >
+            {fullscreen() ? t("Leave full screen") : t("Full screen")}
+          </button>
+          <div class="my-1 border-t border-line" />
           <button
             type="button"
             role="menuitem"

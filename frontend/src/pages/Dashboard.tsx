@@ -15,7 +15,7 @@ import {
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
-import { fullscreen, fullscreenAvailable, toggleFullscreen } from "../fullscreen";
+import { fullscreen, toggleFullscreen } from "../fullscreen";
 import { subscribeChanges } from "../sse";
 import { copyText } from "../components/CopyButton";
 import Icon, { kindIcons } from "../components/Icon";
@@ -3011,6 +3011,11 @@ function SignedIn(props: {
       })),
   ];
   createEffect(() => setFullWindow(monitor()));
+  createEffect(() => {
+    if (!monitor() && fullscreen()) {
+      toggleFullscreen();
+    }
+  });
   onCleanup(() => setFullWindow(false));
 
   const content = () => (
@@ -3118,19 +3123,19 @@ function SignedIn(props: {
   );
 
   return (
-    <div class={monitor() ? "flex h-dvh flex-col" : "contents"}>
+    <div class={monitor() ? "flex h-lvh flex-col" : "contents"}>
       <Show when={!(monitor() && fullscreen())}>
         <CloudHeader premium={props.account.premium} wide={monitor()}>
           <div class="ml-auto flex min-w-0 items-center gap-3">
             <Show when={!props.account.premium}>
               <GoPremium ref={(element) => (premiumDialog = element)} />
             </Show>
-            <Show when={monitor() && fullscreenAvailable}>
+            <Show when={monitor()}>
               <button
                 type="button"
                 aria-label={t("Full screen")}
                 title={t("Full screen")}
-                onClick={() => void toggleFullscreen()}
+                onClick={toggleFullscreen}
                 class="grid size-9 shrink-0 place-items-center rounded-full text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink"
               >
                 <Icon name="maximize" class="size-5" />
