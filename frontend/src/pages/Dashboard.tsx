@@ -15,7 +15,14 @@ import {
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
-import { fullscreen, fullscreenOffered, short, toggleFullscreen } from "../fullscreen";
+import {
+  fullscreen,
+  fullscreenOffered,
+  scrolledDown,
+  small,
+  toggleFullscreen,
+  wide,
+} from "../viewport";
 import { subscribeChanges } from "../sse";
 import { copyText } from "../components/CopyButton";
 import Icon, { kindIcons } from "../components/Icon";
@@ -3122,13 +3129,14 @@ function SignedIn(props: {
     </Show>
   );
 
-  const headerHidden = () => monitor() && (fullscreen() || short());
+  const headerHidden = () => monitor() && (fullscreen() || (small() && scrolledDown()));
+  const tiled = () => monitor() && wide();
 
   return (
     <>
-      <div class={monitor() ? `flex h-dvh flex-col ${short() ? "sticky top-0" : ""}` : "contents"}>
-        <Show when={!headerHidden()}>
-          <CloudHeader premium={props.account.premium} wide={monitor()}>
+      <div class={tiled() ? `flex h-dvh flex-col ${small() ? "sticky top-0" : ""}` : "contents"}>
+        <Show when={!(headerHidden() && (fullscreen() || tiled()))}>
+          <CloudHeader premium={props.account.premium} wide={monitor()} hidden={headerHidden()}>
             <div class="ml-auto flex min-w-0 items-center gap-3">
               <Show when={!props.account.premium}>
                 <GoPremium ref={(element) => (premiumDialog = element)} />
@@ -3187,7 +3195,7 @@ function SignedIn(props: {
           </Show>
         </main>
       </div>
-      <Show when={monitor() && short()}>
+      <Show when={tiled() && small()}>
         <div class="h-[50dvh]" />
       </Show>
     </>

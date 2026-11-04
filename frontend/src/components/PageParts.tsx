@@ -119,9 +119,18 @@ export function SaveButton(props: { saving: boolean; saved: boolean; disabled: b
   );
 }
 
-export function CloudHeader(props: { premium?: boolean; wide?: boolean; children?: JSX.Element }) {
+export function CloudHeader(props: {
+  premium?: boolean;
+  wide?: boolean;
+  hidden?: boolean;
+  children?: JSX.Element;
+}) {
   return (
-    <header class="sticky top-0 z-20 bg-page/92 backdrop-blur border-b border-line/40">
+    <header
+      class={`sticky top-0 z-20 border-b border-line/40 bg-page/92 backdrop-blur transition-transform duration-200 ${
+        props.hidden ? "-translate-y-full" : ""
+      }`}
+    >
       <div
         class={`mx-auto flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1.5 ${
           props.wide ? "px-3" : "max-w-[1120px] px-5 sm:px-8"

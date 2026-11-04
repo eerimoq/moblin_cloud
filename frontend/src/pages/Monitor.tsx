@@ -31,7 +31,7 @@ import { BackendError, isSignedOut } from "../data/backend";
 import { effectName, effects } from "../data/effects";
 import { formatBytes } from "../format";
 import { createFlash } from "../flash";
-import { fullscreen, fullscreenOffered, toggleFullscreen } from "../fullscreen";
+import { fullscreen, fullscreenOffered, toggleFullscreen } from "../viewport";
 import { t } from "../i18n";
 
 const defaultLayout = (): Pane => ({

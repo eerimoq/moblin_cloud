@@ -7,12 +7,12 @@ import {
   type JSX,
   Match,
   on,
-  onCleanup,
   Show,
   Switch,
   useContext,
 } from "solid-js";
 import type { RecentKind } from "../data/account";
+import { wide } from "../viewport";
 import { t } from "../i18n";
 
 export const panelKinds = [
@@ -638,12 +638,6 @@ export default function Tiles(props: {
   onChange: (layout: Pane) => void;
   leaf: (leaf: () => Leaf, actions: LeafActions) => JSX.Element;
 }) {
-  const query = matchMedia("(min-width: 768px)");
-  const [wide, setWide] = createSignal(query.matches);
-  const onQuery = () => setWide(query.matches);
-  query.addEventListener("change", onQuery);
-  onCleanup(() => query.removeEventListener("change", onQuery));
-
   const added = (): Leaf => {
     const shown = new Set(leavesOf(props.layout).map(({ leaf }) => leaf.panel));
     return { panel: panelKinds.find((kind) => !shown.has(kind)) ?? "web" };
@@ -700,7 +694,7 @@ export default function Tiles(props: {
         <Show
           when={wide()}
           fallback={
-            <div class="flex h-full flex-col overflow-y-auto p-[3px]">
+            <div class="flex flex-col p-[3px]">
               <For each={leavesOf(props.layout)}>
                 {(entry) => (
                   <LeafSlot path={entry.path} class="h-[30rem] w-full shrink-0">
