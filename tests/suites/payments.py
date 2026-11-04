@@ -44,7 +44,6 @@ class PaymentTestCase(TestCase):
 
     @property
     def moblin(self) -> Moblin:
-        assert self.context.moblin is not None
         return self.context.moblin
 
     def connect_moblin(self, wheel: list[dict] | None = None):
@@ -152,8 +151,7 @@ class PaymentsTipPaid(PaymentTestCase):
     """Tip, which pays the streamer's PayPal or Stripe account and shows the tip in Moblin."""
 
     def run(self):
-        if self.context.moblin is not None:
-            self.connect_moblin()
+        self.connect_moblin()
         self.dashboard.save_settings(currency="EUR", tips=TIPS)
         tips = self.viewer.tips()
         assert tips is not None
@@ -163,8 +161,6 @@ class PaymentsTipPaid(PaymentTestCase):
         self.assert_equal(self.capture(self.viewer.capture_tip, order_id), {})
         self.assert_paid(order_id, "7.00", "EUR")
         self.assert_equal(self.capture(self.viewer.capture_tip, order_id), {})
-        if self.context.moblin is None:
-            return
         tip = self.moblin.wait_for_backend_request("message", order_id)
         self.assert_equal(
             tip.body,
@@ -182,7 +178,6 @@ class PaymentsAnonymousTipPaid(PaymentTestCase):
     """Tip without a name or message."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.connect_moblin()
         self.dashboard.save_settings(tips=TIPS)
         order_id = self.order_tip(100)
@@ -196,7 +191,6 @@ class PaymentsTipDeliveredWhenMoblinConnects(PaymentTestCase):
     """Take a tip while Moblin is offline and show it in Moblin when it connects."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.moblin.disconnect_from_backend()
         self.dashboard.save_settings(tips=TIPS)
         self.assert_false(self.dashboard.account()["settings"]["connected"])
@@ -213,7 +207,6 @@ class PaymentsTipDeliveredAfterBackendRestart(PaymentTestCase):
     """Keep a tip that Moblin has not got yet when the backend restarts, and deliver it afterwards."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.moblin.disconnect_from_backend()
         self.dashboard.save_settings(tips=TIPS)
         order_id = self.order_tip(700, "Patient")
@@ -228,7 +221,6 @@ class PaymentsTipToEveryDevice(PaymentTestCase):
     """Keep sending a tip to a connected device that has not got it, after another device got it."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.connect_moblin()
         self.dashboard.save_settings(tips=TIPS)
         self.second = FakeMoblin(
@@ -271,7 +263,6 @@ class PaymentsTipSentAgain(PaymentTestCase):
     """Send a delivered tip to Moblin again from the dashboard, under a new request id so Moblin shows it again."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.connect_moblin()
         self.dashboard.save_settings(tips=TIPS)
         order_id = self.order_tip(700, "Again", "Once more")
@@ -301,7 +292,6 @@ class PaymentsSpinNeedsWheel(PaymentTestCase):
     """Refuse wheel spins when the wheel is off in the dashboard or Moblin has no wheel."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.connect_moblin()
         self.assert_backend_error(
             400, lambda: self.order_spin(1), "The streamer turned the wheel off. Reload the page."
@@ -324,7 +314,6 @@ class PaymentsSpinPaid(PaymentTestCase):
     """Buy wheel spins, which spins the wheel in Moblin."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.connect_moblin(WHEEL)
         self.dashboard.save_settings(spin=SPIN)
         self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be on the page")
@@ -352,7 +341,6 @@ class PaymentsSpinWhenWheelIsGone(PaymentTestCase):
     """Do not take the money for spins when Moblin's wheel is gone before the capture."""
 
     def run(self):
-        self.skip_if_no_moblin()
         self.connect_moblin(WHEEL)
         self.dashboard.save_settings(spin=SPIN)
         self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be on the page")

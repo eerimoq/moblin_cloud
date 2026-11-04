@@ -14,6 +14,3 @@ def manual_validation(logger: Logger, message: str):
 def manual_requirement(logger: Logger, message: str):
     logger.info("👷‍♂️: %s", message)
 
-
-def manual_confirmation(message: str):
-    input(f"🧑‍🔧: {message} Press ENTER to continue.")

@@ -21,11 +21,8 @@ from websockets.sync.server import ServerConnection
 from websockets.sync.server import serve
 
 from .backend import Backend
-from .config import REMOTE_CONTROL_PASSWORD
-from .config import WEB_REMOTE_CONTROL_PORT
 from .config import Config
 from .fake_moblin import FakeMoblin
-from .utils import manual_confirmation
 
 LOGGER = logging.getLogger(__name__)
 LOGGER_TRAFFIC = logging.getLogger(__name__ + ".traffic")
@@ -214,21 +211,19 @@ class StreamerConnection:
 
 
 class Moblin:
-    """A Moblin device, or the fake one in tests/utils/fake_moblin.py, connected to the tester twice.
+    """The fake Moblin in tests/utils/fake_moblin.py, connected to the tester twice.
 
     Its remote control streamer connects to the tester, which acts as Moblin's assistant and
     sends its own requests to Moblin, like moblin_assistant does, to set it up and look at it.
     Its Moblin Cloud connection, made when it has a Moblin Cloud key from the dashboard, is relayed
-    to the backend, so the backend talks to the real Moblin while the tester watches.
+    to the backend, so the backend talks to Moblin while the tester watches.
     """
 
-    def __init__(self, config: Config, backend: Backend, device_name: str | None):
+    def __init__(self, config: Config, backend: Backend):
         self.config = config
         self.backend = backend
-        self.device_name = device_name if device_name is not None else "fake Moblin"
         self._fake: FakeMoblin | None = None
         self._port = config.remote_control_port()
-        self._tester_ip_address = config.tester_ip_address()
         self._lock = threading.Lock()
         self._connected = threading.Condition(self._lock)
         self._control: StreamerConnection | None = None
@@ -242,21 +237,12 @@ class Moblin:
         self._thread: threading.Thread | None = None
 
     def __enter__(self):
-        self._server = serve(self._handle_connection, "0.0.0.0", self._port, max_size=None)
+        self._server = serve(self._handle_connection, "127.0.0.1", self._port, max_size=None)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
-        if self.is_fake():
-            self._fake = FakeMoblin(self.remote_control_url(), self.api_url())
-            self._fake.start()
-        if not self.is_fake():
-            LOGGER.info(
-                "Waiting for %s's remote control streamer to connect to %s...",
-                self.device_name,
-                self.remote_control_url(),
-            )
-        self.wait_for_control_connection(timeout=300)
-        if not self.is_fake():
-            LOGGER.info("Remote control streamer connected")
+        self._fake = FakeMoblin(self.remote_control_url(), self.api_url())
+        self._fake.start()
+        self.wait_for_control_connection()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -328,9 +314,6 @@ class Moblin:
             elif "wheelOfLuck" in data:
                 self._wheel = data["wheelOfLuck"].get("wheel")
 
-    def is_fake(self) -> bool:
-        return self.device_name == "fake Moblin"
-
     def connected_key(self) -> str | None:
         """The key of Moblin's Moblin Cloud connection to the backend, if any."""
         with self._lock:
@@ -391,11 +374,11 @@ class Moblin:
         return response
 
     def remote_control_url(self) -> str:
-        return f"ws://{self._tester_ip_address}:{self._port}"
+        return f"ws://127.0.0.1:{self._port}"
 
     def api_url(self) -> str:
-        """Where Moblin Cloud connects, the MOBLIN_CLOUD_API_URL of a Moblin debug build."""
-        return f"http://{self._tester_ip_address}:{self._port}"
+        """Where Moblin Cloud connects, like Moblin's MOBLIN_CLOUD_API_URL."""
+        return f"http://127.0.0.1:{self._port}"
 
     def import_settings(self, key: str | None, wheel: list[dict] | None = None):
         """Imports test settings, which also set where the remote control streamer connects and
@@ -437,24 +420,17 @@ class Moblin:
         self.wait_for_backend_connection(key, other_than=cloud)
 
     def change_icon(self):
-        """Picks another icon in the top right of Moblin's UI, King on the fake Moblin."""
-        if self._fake is not None:
-            self._fake.change_icon("AppIconKing")
-        else:
-            manual_confirmation("In Moblin's Store settings, pick another icon.")
+        """Picks the King icon in the top right of Moblin's UI."""
+        assert self._fake is not None
+        self._fake.change_icon("AppIconKing")
 
     def change_wheel(self, wheel: list[dict] | None):
         """Changes the wheel without reconnecting, like a streamer in Moblin's settings, as Moblin
-        reconnects when settings are imported. A person does it on a real device, where the wheel
-        can only be removed or set back to the one of the last imported settings."""
+        reconnects when settings are imported."""
+        assert self._fake is not None
         with self._lock:
             connection = self._cloud
-        if self._fake is not None:
-            self._fake.change_wheel(wheel)
-        elif wheel is None:
-            manual_confirmation("In Moblin's Moblin Cloud settings, pick no wheel of luck.")
-        else:
-            manual_confirmation("In Moblin's Moblin Cloud settings, pick the wheel of luck Wheel.")
+        self._fake.change_wheel(wheel)
         with self._lock:
             if self._cloud is not connection:
                 raise MoblinError("Moblin reconnected when its wheel changed.")
@@ -540,25 +516,12 @@ def wheel_option(text: str, weight: int = 1) -> dict:
 
 
 def settings_for(remote_control_url: str, key: str | None, wheel: list[dict] | None) -> dict:
-    remote_control: dict = {
-        "server": {
-            "enabled": True,
-            "url": remote_control_url,
-            "reliableChatAndEvents": True,
-        },
-        "web": {"enabled": True, "port": WEB_REMOTE_CONTROL_PORT},
-        "password": REMOTE_CONTROL_PASSWORD,
-        "hasMigratedAssistant": True,
-    }
     scene = {"name": "Front", "cameraPosition": "Front", "enabled": True}
     moblin_cloud: dict = {"enabled": key is not None, "key": key or ""}
     settings: dict = {
         "moblinCloud": moblin_cloud,
         "scenes": [scene],
-        "remoteControl": remote_control,
-        "verboseStatuses": True,
-        "showAllSettings": True,
-        "debug": {"logLevel": "Debug"},
+        "remoteControl": {"server": {"enabled": True, "url": remote_control_url}},
     }
     if wheel is not None:
         widget_id = str(uuid.uuid4()).upper()

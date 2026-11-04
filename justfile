@@ -101,11 +101,6 @@ test:
 system-test *args:
 	python3 -m tests.test {{args}}
 
-[group('check')]
-[doc("Copies Moblin settings that connect it to the system tests to the clipboard. Pass --force-stdout to print them.")]
-system-test-device-settings *args:
-	python3 -m tests.generate_device_settings {{args}}
-
 npm-latest-args := "python -c \"import json,sys; print(' '.join(f'{d}@latest' for d in json.load(open('package.json'))[sys.argv[1]]))\""
 
 [group('maintenance')]

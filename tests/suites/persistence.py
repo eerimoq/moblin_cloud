@@ -9,8 +9,7 @@ class PersistenceBackendRestart(TestCase):
         dashboard = self.sign_in()
         dashboard.save_settings(message="Still here", accent="blue")
         account = dashboard.account()
-        if self.context.moblin is not None:
-            self.context.moblin.connect_to_backend(account["key"])
+        self.context.moblin.connect_to_backend(account["key"])
         self.backend.restart()
         restarted = dashboard.account()
         self.assert_equal(restarted["key"], account["key"])
@@ -21,8 +20,7 @@ class PersistenceBackendRestart(TestCase):
         self.assert_equal(
             self.frontend.id_of_twitch_login(account["twitch"]["login"]), account["settings"]["id"]
         )
-        if self.context.moblin is not None:
-            self.wait_until(lambda: dashboard.account()["settings"]["connected"], "Moblin to reconnect")
+        self.wait_until(lambda: dashboard.account()["settings"]["connected"], "Moblin to reconnect")
         dashboard.save_settings()
 
 

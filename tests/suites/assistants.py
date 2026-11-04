@@ -36,7 +36,6 @@ class AssistantsTestCase(TestCase):
 
     @property
     def moblin(self) -> Moblin:
-        assert self.context.moblin is not None
         return self.context.moblin
 
     def listed_assistants(self) -> list[dict]:

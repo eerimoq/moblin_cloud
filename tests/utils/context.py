@@ -20,7 +20,7 @@ LOGGER = logging.getLogger(__name__)
 class Context:
     """Everything the tests share: the backend, the frontend talking to it, a browser and Moblin."""
 
-    def __init__(self, config: Config, backend: Backend, moblin: Moblin | None, interactive: bool):
+    def __init__(self, config: Config, backend: Backend, moblin: Moblin, interactive: bool):
         self.config = config
         self.backend = backend
         self.frontend = Frontend(backend.url)

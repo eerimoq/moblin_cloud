@@ -4,7 +4,6 @@ requests
 pillow
 playwright
 xdg-base-dirs
-pyperclip
 ruff
 pylint
 isort

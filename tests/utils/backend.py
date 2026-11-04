@@ -142,13 +142,8 @@ class Backend:
             twitch_user_id_of("admin"),
             "--premium-accounts",
             twitch_user_id_of("pagelook"),
+            "--allow-unattested",
         ]
-        if self.config.allow_unattested():
-            arguments.append("--allow-unattested")
-        else:
-            arguments += ["--app-attest-environment", self.config.app_attest_environment()]
-            if (app_id := self.config.app_id()) is not None:
-                arguments += ["--app-id", app_id]
         if self.fake_twitch is not None:
             arguments += ["--twitch-sign-in-url", self.fake_twitch.url]
         if self.fake_kick is not None:

@@ -2,8 +2,6 @@
 
 import uuid
 
-import systest
-
 from ..utils.context import Context
 from ..utils.fake_twitch import user_id_of
 from .remote_control import RemoteControlTestCase
@@ -18,8 +16,6 @@ class SceneEditorTestCase(RemoteControlTestCase):
 
     def setup(self):
         super().setup()
-        if not self.moblin.is_fake():
-            raise systest.TestCaseSkippedError("Only the fake Moblin has the scene editor's requests yet.")
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key())
         self.wait_until(self.connected, "Moblin to connect")
         self.page_id = self.dashboard.page_id()

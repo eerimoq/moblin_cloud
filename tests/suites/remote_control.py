@@ -1,5 +1,3 @@
-import systest
-
 from ..utils.context import Context
 from ..utils.fake_moblin import FakeMoblin
 from ..utils.moblin import Moblin
@@ -15,13 +13,11 @@ class RemoteControlTestCase(TestCase):
     login = "streamer"
 
     def setup(self):
-        self.skip_if_no_moblin()
         self.dashboard = self.sign_in(self.login)
         self.viewer = self.frontend.viewer(self.dashboard.page_id())
 
     @property
     def moblin(self) -> Moblin:
-        assert self.context.moblin is not None
         return self.context.moblin
 
     def connected(self) -> bool:
@@ -68,8 +64,6 @@ class RemoteControlWheelChanges(RemoteControlTestCase):
     """Follow changes to Moblin's wheel while it stays connected."""
 
     def run(self):
-        if not self.moblin.is_fake():
-            self.skip_if_not_interactive()
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
         expected = {"options": [{"text": option["text"], "weight": option["weight"]} for option in WHEEL]}
         self.wait_until(lambda: self.viewer.spin()["wheel"] == expected, "the wheel to be on the page")
@@ -85,15 +79,9 @@ class RemoteControlIcon(RemoteControlTestCase):
     def run(self):
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key())
         self.wait_until(lambda: self.viewer.profile()["icon"] is not None, "the icon to be on the page")
-        icon = self.viewer.profile()["icon"]
-        if self.moblin.is_fake():
-            self.assert_equal(icon, "plain")
-        elif not self.context.interactive:
-            return
+        self.assert_equal(self.viewer.profile()["icon"], "plain")
         self.moblin.change_icon()
-        self.wait_until(lambda: self.viewer.profile()["icon"] != icon, "the new icon to be on the page")
-        if self.moblin.is_fake():
-            self.assert_equal(self.viewer.profile()["icon"], "king")
+        self.wait_until(lambda: self.viewer.profile()["icon"] == "king", "the new icon to be on the page")
 
 
 class RemoteControlNewMoblinCloudKeyDisconnects(RemoteControlTestCase):
@@ -208,10 +196,7 @@ class RemoteControlDeviceStatus(RemoteControlTestCase):
             self.assert_true(len(settings["data"]["scenes"]) > 0)
             status = events.wait_for("status")
             self.assert_in("audioInfo", status["topRight"])
-            if self.moblin.is_fake():
-                self.assert_equal(status["sample"]["bonding"][0]["name"], "Cellular")
-            elif not self.context.interactive:
-                return
+            self.assert_equal(status["sample"]["bonding"][0]["name"], "Cellular")
             self.dashboard.control_device(page_id, device, {"setMute": {"on": True}})
             self.wait_until(
                 lambda: events.wait_for("state")["data"].get("muted") is True, "the mute to be reported"
@@ -234,8 +219,6 @@ class RemoteControlDeviceScreen(RemoteControlTestCase):
     login = "screen"
 
     def run(self):
-        if not self.moblin.is_fake():
-            raise systest.TestCaseSkippedError("Only the fake Moblin has the device screen's protocol yet.")
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
         self.wait_until(self.connected, "Moblin to connect")
         page_id = self.dashboard.page_id()

@@ -1,24 +1,11 @@
 [general]
-# The address of this machine, where a real Moblin device reaches the tester and the backend.
-tester-ip-address = "macpro.home"
 # The port the backend under test listens on, on all interfaces.
 backend-port = 8090
-# The port Moblin's remote control streamer connects to, where the tester acts as Moblin's
-# assistant. Moblin Cloud connects here too, with a Moblin debug build whose
-# MOBLIN_CLOUD_API_URL is http://<tester-ip-address>:<remote-control-port>, and the tester
-# relays it to the backend.
+# The port the fake Moblin's remote control streamer and Moblin Cloud connect to, where the
+# tester acts as Moblin's assistant and relays Moblin Cloud to the backend.
 remote-control-port = 2345
 # Show the browser used for Twitch. It is always shown with --interactive.
 headless-browser = true
-# Accept Moblin Cloud connections without App Attest. Set to false to test that only Moblin can
-# connect, with --device.
-allow-unattested = true
-# app-attest-environment = "development"
-# app-id = "L82N7LD4N5.com.eerimoq.Mobs"
-
-# A real Moblin device, used with --device iphone16pro instead of the fake Moblin.
-[device.iphone16pro]
-moblin-ip-address = "iphone16pro.home"
 
 # Optional. A Twitch application, for real sign in. Its
 # OAuth redirect URL must be http://localhost:<backend-port>/auth/twitch/callback.

@@ -29,10 +29,6 @@ class HelpFormatter(argparse.HelpFormatter):
 def create_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description, formatter_class=HelpFormatter)
     parser.add_argument(
-        "--device",
-        help="A real Moblin device in the configuration to test with, instead of the fake one in tests/utils/fake_moblin.py.",
-    )
-    parser.add_argument(
         "--interactive",
         action="store_true",
         help="Run all tests that requires user interaction, and show the browser.",
@@ -57,7 +53,7 @@ def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests):
     config = Config()
     build_backend()
     with Backend(config) as backend:
-        with Moblin(config, backend, args.device) as moblin:
+        with Moblin(config, backend) as moblin:
             moblin.disconnect_from_backend()
             context = Context(config, backend, moblin, args.interactive)
             run_tests(sequencer, context, make_tests)

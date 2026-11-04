@@ -32,7 +32,6 @@ class SubscribersTestCase(TestCase):
 
     @property
     def moblin(self) -> Moblin:
-        assert self.context.moblin is not None
         return self.context.moblin
 
     def subscriber(self, login: str) -> Subscriber:
