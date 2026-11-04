@@ -2469,7 +2469,8 @@ function MoblinSettings(props: {
   const [copied, flashCopied] = createFlash(1500);
   const key = () => props.account.key ?? "";
   const deepLink = () => {
-    const settings = { moblinCloud: { enabled: true, key: key() } };
+    const url = new URL(links.api, location.href).href.replace(/\/$/, "");
+    const settings = { moblinCloud: { enabled: true, key: key(), url } };
     return `moblin://?${encodeURIComponent(JSON.stringify(settings))}`;
   };
   const copyDeepLink = async () => {
