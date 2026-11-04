@@ -308,6 +308,8 @@ pub enum Control {
     },
     CreateWidget {
         widget: Value,
+        #[serde(rename = "sceneIds")]
+        scene_ids: Vec<Uuid>,
     },
     UpdateWidget {
         widget: Value,
@@ -398,7 +400,7 @@ impl Control {
             }
             Self::CreateScene { scene: object }
             | Self::UpdateScene { scene: object }
-            | Self::CreateWidget { widget: object }
+            | Self::CreateWidget { widget: object, .. }
             | Self::UpdateWidget { widget: object } => has_uuid_id(object),
             Self::SetScoreboardPlayers { players } => players
                 .as_array()
@@ -1592,9 +1594,10 @@ mod tests {
         );
         assert_eq!(
             editor(Control::CreateWidget {
-                widget: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "type": "Text"})
+                widget: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "type": "Text"}),
+                scene_ids: vec![id],
             }),
-            r#"{"request":{"id":20,"data":{"createWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","type":"Text"}}}}}"#
+            r#"{"request":{"id":20,"data":{"createWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","type":"Text"},"sceneIds":["3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"]}}}}"#
         );
         assert_eq!(
             editor(Control::UpdateWidget {

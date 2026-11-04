@@ -231,6 +231,49 @@ export function createEditor(
       after();
     };
 
+    const adoptSceneWidgets = async (
+      widgetId: string,
+      sceneIds: string[],
+      scenes: SettingsScene[],
+    ) => {
+      const fresh = await request<{ scenes: Record<string, unknown>[] }>({ getScenes: {} });
+      for (const freshScene of fresh.scenes.map(normalizeScene)) {
+        const added = freshScene.widgets.find((sceneWidget) =>
+          sameId(sceneWidget.widgetId, widgetId),
+        );
+        if (!added || !sceneIds.some((id) => sameId(id, freshScene.id))) {
+          continue;
+        }
+        synced.scenes = synced.scenes.map((scene) =>
+          sameId(scene.id, freshScene.id) ? freshScene : scene,
+        );
+        const adopt = (scene: SettingsScene) => {
+          scene.widgets = scene.widgets.map((sceneWidget) =>
+            sameId(sceneWidget.widgetId, widgetId)
+              ? { ...added, ...sceneWidget, id: added.id }
+              : sceneWidget,
+          );
+        };
+        const local = scenes.find((scene) => sameId(scene.id, freshScene.id));
+        if (local) {
+          adopt(local);
+        }
+        const index = state.scenes.findIndex((scene) => sameId(scene.id, freshScene.id));
+        if (index < 0) {
+          continue;
+        }
+        const placeholder = state.scenes[index].widgets.find((sceneWidget) =>
+          sameId(sceneWidget.widgetId, widgetId),
+        );
+        batch(() => {
+          set("scenes", index, produce(adopt));
+          if (placeholder && sameId(state.selection, placeholder.id)) {
+            set("selection", added.id);
+          }
+        });
+      }
+    };
+
     const sync = async () => {
       if (syncing) {
         await syncing;
@@ -249,7 +292,17 @@ export function createEditor(
           for (const widget of widgets) {
             const old = synced.widgets.find((candidate) => sameId(candidate.id, widget.id));
             if (!old) {
-              await step({ createWidget: { widget } }, () => synced.widgets.push(widget));
+              const sceneIds = scenes
+                .filter(
+                  (scene) =>
+                    synced.scenes.some((candidate) => sameId(candidate.id, scene.id)) &&
+                    scene.widgets.some((sceneWidget) => sameId(sceneWidget.widgetId, widget.id)),
+                )
+                .map((scene) => scene.id);
+              await step({ createWidget: { widget, sceneIds } }, () => synced.widgets.push(widget));
+              if (sceneIds.length > 0) {
+                await adoptSceneWidgets(widget.id, sceneIds, scenes);
+              }
             } else if (!same(old, widget)) {
               await step({ updateWidget: { widget } }, () => {
                 synced.widgets = synced.widgets.map((candidate) =>

@@ -73,8 +73,10 @@ class SceneEditorChanges(SceneEditorTestCase):
                 "enabled": True,
                 "text": {"formatString": "{time}"},
             }
-            self.control({"createWidget": {"widget": widget}})
-            self.assert_backend_error(409, lambda: self.control({"createWidget": {"widget": widget}}))
+            self.control({"createWidget": {"widget": widget, "sceneIds": []}})
+            self.assert_backend_error(
+                409, lambda: self.control({"createWidget": {"widget": widget, "sceneIds": []}})
+            )
             scene_id = new_id()
             scene = {
                 "id": scene_id,
@@ -96,6 +98,21 @@ class SceneEditorChanges(SceneEditorTestCase):
             self.assert_in("Remote", [scene["name"] for scene in self.scenes()])
             while scene_id not in [scene["id"] for scene in events.wait_for("settings")["data"]["scenes"]]:
                 pass
+            added = {**widget, "id": new_id(), "name": "Remote added text"}
+            self.assert_backend_error(
+                409, lambda: self.control({"createWidget": {"widget": added, "sceneIds": [new_id()]}})
+            )
+            self.control({"createWidget": {"widget": added, "sceneIds": [scene_id]}})
+            self.assert_equal(
+                [
+                    scene_widget["widgetId"]
+                    for scene_widget in next(scene for scene in self.scenes() if scene["id"] == scene_id)[
+                        "widgets"
+                    ]
+                ],
+                [widget_id, added["id"]],
+            )
+            self.control({"deleteWidget": {"id": added["id"]}})
             self.control({"updateScene": {"scene": {**scene, "name": "Renamed"}}})
             self.assert_equal(
                 next(scene for scene in self.scenes() if scene["id"] == scene_id)["name"], "Renamed"

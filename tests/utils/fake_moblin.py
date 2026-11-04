@@ -292,7 +292,7 @@ class FakeMoblin:
                 {"getEditorOptions": {"options": editor_options(self.ids, self.database)}},
             ),
             "createScene": lambda: self.create_item("scenes", body["scene"]),
-            "createWidget": lambda: self.create_item("widgets", body["widget"]),
+            "createWidget": lambda: self.create_widget(body["widget"], body["sceneIds"]),
             "updateScene": lambda: self.update_item("scenes", body["scene"]),
             "updateWidget": lambda: self.update_item("widgets", body["widget"]),
             "deleteScene": lambda: self.delete_item("scenes", body["id"]),
@@ -308,6 +308,21 @@ class FakeMoblin:
 
     def gallery(self) -> dict:
         return self.database["alertsMediaGallery"]
+
+    def create_widget(self, widget: dict, scene_ids: list[str]) -> tuple[dict, dict | None]:
+        scenes = [find(self.database["scenes"], scene_id) for scene_id in scene_ids]
+        if len({scene_id.upper() for scene_id in scene_ids}) != len(scene_ids) or None in scenes:
+            return ERROR, None
+        result = self.create_item("widgets", widget)
+        if result[0] != OK:
+            return result
+        for scene in scenes:
+            assert scene is not None
+            scene.setdefault("widgets", []).append(
+                {"id": str(uuid.uuid4()).upper(), "widgetId": widget["id"], "x": 0.0, "y": 0.0, "size": 100.0}
+            )
+        self.scenes_changed()
+        return OK, None
 
     def create_item(self, kind: str, item: dict) -> tuple[dict, dict | None]:
         items = self.database[kind]

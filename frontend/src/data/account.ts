@@ -205,7 +205,7 @@ export type EditorControl =
   | { createScene: { scene: object } }
   | { updateScene: { scene: object } }
   | { deleteScene: { id: string } }
-  | { createWidget: { widget: object } }
+  | { createWidget: { widget: object; sceneIds: string[] } }
   | { updateWidget: { widget: object } }
   | { deleteWidget: { id: string } }
   | { setScoreboardPlayers: { players: object[] } }
