@@ -18,7 +18,7 @@ const symbols: Record<string, IconName> = {
   "person.crop.circle.dashed": "person-circle-dashed",
   qrcode: "qrcode",
   "rectangle.split.2x1": "rectangle-split",
-  burn: "flame",
+  burn: "wheel",
   "square.grid.3x3.square": "grid",
   crop: "crop",
   timer: "timer",
