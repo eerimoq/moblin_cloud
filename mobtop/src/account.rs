@@ -134,6 +134,8 @@ pub fn price(amount: u32, currency: &str) -> String {
     format!("{}.{:02} {currency}", amount / 100, amount % 100)
 }
 
+pub const EFFECTS: [&str; 4] = ["fart", "fart-2", "bad-chili-fart", "perfect-fart"];
+
 pub fn effect_name(id: &str) -> &str {
     match id {
         "fart" => "Fart",

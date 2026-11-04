@@ -151,10 +151,10 @@ impl Backend {
         .await
     }
 
-    pub async fn fart(&self, base: &str) -> Result<(), BackendError> {
+    pub async fn fart(&self, base: &str, effect: &str) -> Result<(), BackendError> {
         self.post(
             &format!("{base}/test/effect"),
-            serde_json::json!({ "effect": "fart" }),
+            serde_json::json!({ "effect": effect }),
         )
         .await
     }

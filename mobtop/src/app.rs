@@ -12,7 +12,9 @@ use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
-use crate::account::{self, Account, AllRecent, Assisting, Connect, Device, Item, Kind, Recent};
+use crate::account::{
+    self, Account, AllRecent, Assisting, Connect, Device, EFFECTS, Item, Kind, Recent,
+};
 use crate::backend::{Backend, BackendError};
 use crate::controls::{self, Control};
 use crate::feed::Feed;
@@ -1017,14 +1019,16 @@ impl App {
         });
     }
 
-    fn fart(&mut self) {
+    fn fart(&mut self, leaf: u64, index: usize) {
         let Some(monitor) = self.monitor_mut() else {
             return;
         };
+        let index = index.min(EFFECTS.len() - 1);
+        monitor.selected.insert(leaf, index);
         monitor.fart = Some(Instant::now());
         let base = monitor.base();
         let backend = self.backend.clone();
-        self.spawn(async move { Message::Farted(backend.fart(&base).await) });
+        self.spawn(async move { Message::Farted(backend.fart(&base, EFFECTS[index]).await) });
     }
 
     fn start_sign_in(&mut self, platform: Platform) {
@@ -1302,7 +1306,21 @@ impl App {
                     });
                 }
             }
-            (Panel::Toybox, KeyCode::Enter | KeyCode::Char('f')) => self.fart(),
+            (Panel::Toybox, KeyCode::Up | KeyCode::Char('k')) => {
+                let selected = monitor.selected_of(leaf.id).min(EFFECTS.len() - 1);
+                monitor.selected.insert(leaf.id, selected.saturating_sub(1));
+            }
+            (Panel::Toybox, KeyCode::Down | KeyCode::Char('j')) => {
+                let selected = (monitor.selected_of(leaf.id) + 1).min(EFFECTS.len() - 1);
+                monitor.selected.insert(leaf.id, selected);
+            }
+            (Panel::Toybox, KeyCode::Char(digit @ '1'..='4')) => {
+                self.fart(leaf.id, digit as usize - '1' as usize)
+            }
+            (Panel::Toybox, KeyCode::Enter | KeyCode::Char('f')) => {
+                let selected = monitor.selected_of(leaf.id);
+                self.fart(leaf.id, selected)
+            }
             (Panel::Web, KeyCode::Enter) => {
                 monitor.modal = Some(Modal::Input(Input {
                     leaf: leaf.id,
@@ -1752,6 +1770,12 @@ impl App {
                     .map(|(_, _, index)| *index);
                 if let Some(index) = picked {
                     monitor.selected.insert(leaf, index);
+                    if monitor
+                        .focused()
+                        .is_some_and(|leaf| leaf.panel == Panel::Toybox)
+                    {
+                        self.fart(leaf, index);
+                    }
                 }
             }
             MouseEventKind::Drag(MouseButton::Left) => match &mut monitor.drag {

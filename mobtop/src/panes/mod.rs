@@ -97,7 +97,7 @@ pub fn hints(monitor: &Monitor) -> Vec<(&'static str, &'static str)> {
             ("m", "more"),
             ("1-3", "filter"),
         ],
-        Some(Panel::Toybox) => vec![("enter", "fart")],
+        Some(Panel::Toybox) => vec![("↑↓", "select"), ("enter", "fart"), ("1-4", "fart")],
         Some(Panel::Web) => vec![("enter", "address"), ("t", "Twitch chat"), ("o", "open")],
         _ => Vec::new(),
     };
@@ -325,7 +325,7 @@ fn draw_leaf(frame: &mut Frame, rect: Rect, monitor: &Monitor, leaf: &Leaf) {
             }
         }
         Panel::Message => message::draw(frame, inner, monitor, leaf),
-        Panel::Toybox => toybox::draw(frame, inner, monitor),
+        Panel::Toybox => toybox::draw(frame, inner, monitor, leaf),
         Panel::Web => web::draw(frame, inner, monitor, leaf),
     }
 }
@@ -451,12 +451,13 @@ fn draw_menu(frame: &mut Frame, area: Rect, monitor: &Monitor, menu: &menu::Menu
         .collect();
 }
 
-pub fn centered_text(frame: &mut Frame, area: Rect, lines: Vec<Line>) {
+pub fn centered_text(frame: &mut Frame, area: Rect, lines: Vec<Line>) -> Rect {
     let height = (lines.len() as u16).min(area.height);
     let [rect] = Layout::vertical([Constraint::Length(height)])
         .flex(Flex::Center)
         .areas(area);
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), rect);
+    rect
 }
 
 pub fn bar(fraction: f64, width: usize, color: Color) -> Vec<Span<'static>> {

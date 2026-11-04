@@ -28,6 +28,7 @@ import {
   type TrafficDirection,
 } from "../data/account";
 import { BackendError, isSignedOut } from "../data/backend";
+import { effectName, effects } from "../data/effects";
 import { formatBytes } from "../format";
 import { createFlash } from "../flash";
 import { t } from "../i18n";
@@ -836,56 +837,68 @@ function WhoopeeCushion(props: { squished: boolean }) {
   );
 }
 
-function ToyboxPanel(props: { session: string; page?: string; onSignOut: () => void }) {
+function FartButton(props: { effect: string; onSend: (effect: string) => Promise<boolean> }) {
   const [sending, setSending] = createSignal(false);
   const [sent, flashSent] = createFlash(3000);
   const [squished, squish] = createFlash(700);
+
+  return (
+    <button
+      type="button"
+      disabled={sending()}
+      onClick={async () => {
+        squish();
+        setSending(true);
+        try {
+          if (await props.onSend(props.effect)) {
+            flashSent();
+          }
+        } finally {
+          setSending(false);
+        }
+      }}
+      class="flex w-32 flex-col items-center gap-1 rounded-2xl p-2 outline-none hover:bg-ghost focus-visible:bg-ghost disabled:opacity-70"
+    >
+      <WhoopeeCushion squished={squished()} />
+      <span
+        aria-live="polite"
+        class="flex items-center gap-1 text-center font-display text-[15px] font-semibold text-ink"
+      >
+        <Show when={sent()}>
+          <Icon name="check" class="size-4 shrink-0 text-leaf" />
+        </Show>
+        {sent() ? t("Sent") : effectName(props.effect)}
+      </span>
+    </button>
+  );
+}
+
+function ToyboxPanel(props: { session: string; page?: string; onSignOut: () => void }) {
   const [error, setError] = createSignal<string | null>(null);
 
-  const fart = async () => {
+  const send = async (effect: string) => {
     setError(null);
-    setSending(true);
     try {
-      await sendTest(props.session, "effect", { effect: "fart" }, props.page);
-      flashSent();
+      await sendTest(props.session, "effect", { effect }, props.page);
+      return true;
     } catch (error) {
       if (isSignedOut(error)) {
         props.onSignOut();
-        return;
+        return false;
       }
       setError(
         error instanceof BackendError && error.status < 500 && error.message
           ? error.message
           : t("Something went wrong. Try again."),
       );
-    } finally {
-      setSending(false);
+      return false;
     }
   };
 
   return (
     <div class="flex flex-col gap-2 p-3">
       <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={sending()}
-          onClick={() => {
-            squish();
-            void fart();
-          }}
-          class="flex w-32 flex-col items-center gap-1 rounded-2xl p-2 outline-none hover:bg-ghost focus-visible:bg-ghost disabled:opacity-70"
-        >
-          <WhoopeeCushion squished={squished()} />
-          <span
-            aria-live="polite"
-            class="flex items-center gap-1 font-display text-[15px] font-semibold text-ink"
-          >
-            <Show when={sent()}>
-              <Icon name="check" class="size-4 text-leaf" />
-            </Show>
-            {sent() ? t("Queued for Moblin") : t("Fart")}
-          </span>
-        </button>
+        <For each={effects}>{(effect) => <FartButton effect={effect} onSend={send} />}</For>
       </div>
       <Show when={error()}>
         {(error) => (
