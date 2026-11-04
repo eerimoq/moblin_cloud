@@ -106,6 +106,7 @@ export function createEditor(
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
     let syncing: Promise<void> | null = null;
+    let lastSync = 0;
     let pendingSwitch: string | null = null;
     let disposed = false;
     const [, setVersion] = createSignal(0);
@@ -220,11 +221,17 @@ export function createEditor(
 
     const markDirty = () => {
       set("dirty", true);
-      if (timer === undefined) {
+      if (timer !== undefined || syncing || disposed) {
+        return;
+      }
+      const wait = lastSync + 1000 - Date.now();
+      if (wait <= 0) {
+        void sync();
+      } else {
         timer = setTimeout(() => {
           timer = undefined;
           void sync();
-        }, 1000);
+        }, wait);
       }
     };
 
@@ -278,13 +285,10 @@ export function createEditor(
 
     const sync = async () => {
       if (syncing) {
-        await syncing;
-        if (state.dirty) {
-          markDirty();
-        }
         return;
       }
       const run = async () => {
+        lastSync = Date.now();
         set("syncing", true);
         set("dirty", false);
         try {
@@ -384,17 +388,21 @@ export function createEditor(
       } finally {
         syncing = null;
       }
+      if (state.dirty && timer === undefined) {
+        markDirty();
+      }
     };
 
     const flush = async () => {
+      while (syncing) {
+        await syncing;
+      }
       if (timer !== undefined) {
         clearTimeout(timer);
         timer = undefined;
       }
       if (state.dirty) {
         await sync();
-      } else if (syncing) {
-        await syncing;
       }
     };
 
