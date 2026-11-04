@@ -78,7 +78,23 @@ impl Identity {
     }
 
     pub fn admin_key(&self) -> String {
-        self.platform.user_key(&self.user_id)
+        format!("{}:{}", self.platform.name(), self.user_id)
+    }
+}
+
+pub fn admin_key_of(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(String::new());
+    }
+    let key = match value.split_once(':') {
+        None => format!("twitch:{value}"),
+        Some(("twitch" | "kick", _)) => value.to_string(),
+        Some(_) => return Err("expected a Twitch user ID, twitch:<ID> or kick:<ID>".to_string()),
+    };
+    match key.split_once(':') {
+        Some((_, "")) => Err("expected a user ID".to_string()),
+        _ => Ok(key),
     }
 }
 
@@ -1230,7 +1246,7 @@ impl Accounts {
                 "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0),
                         count(*) FILTER (WHERE EXISTS (
                             SELECT 1 FROM identities WHERE identities.account = accounts.id
-                            AND iif(platform = 'twitch', user_id, platform || ':' || user_id)
+                            AND platform || ':' || user_id
                                 IN (SELECT value FROM json_each(?1))
                         ))
                  FROM accounts",
@@ -2034,7 +2050,7 @@ mod tests {
     #[test]
     fn premium_accounts_are_counted() {
         let accounts = Accounts::new(Database::memory());
-        assert_eq!(accounts.stats(&["1"]).premium, 0);
+        assert_eq!(accounts.stats(&["twitch:1"]).premium, 0);
         sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
         sign_in(&accounts, "2", "Other", "other", page("q", "l")).unwrap();
         accounts
@@ -2043,16 +2059,36 @@ mod tests {
                 ("random".to_string(), page("r", "m")),
             )
             .unwrap();
-        let stats = accounts.stats(&["1", "1", "3"]);
+        let stats = accounts.stats(&["twitch:1", "twitch:1", "twitch:3"]);
         assert_eq!((stats.total, stats.premium), (3, 1));
         assert_eq!(accounts.stats(&[]).premium, 0);
+        assert_eq!(accounts.stats(&["1"]).premium, 0);
         assert_eq!(accounts.stats(&["7"]).premium, 0);
+        assert_eq!(accounts.stats(&["twitch:7"]).premium, 0);
         assert_eq!(accounts.stats(&["kick:7"]).premium, 1);
         accounts
             .link("1", &Identity::kick("8", "Erik", "erik"))
             .unwrap();
-        assert_eq!(accounts.stats(&["1", "kick:8"]).premium, 1);
+        assert_eq!(accounts.stats(&["twitch:1", "kick:8"]).premium, 1);
         assert_eq!(accounts.stats(&["kick:8", "kick:7"]).premium, 2);
+    }
+
+    #[test]
+    fn admin_keys_are_prefixed() {
+        assert_eq!(admin_key_of("123"), Ok("twitch:123".to_string()));
+        assert_eq!(admin_key_of(" twitch:123 "), Ok("twitch:123".to_string()));
+        assert_eq!(admin_key_of("kick:7"), Ok("kick:7".to_string()));
+        assert!(admin_key_of("kik:7").is_err());
+        assert!(admin_key_of("kick:").is_err());
+        assert_eq!(admin_key_of(" "), Ok(String::new()));
+        assert_eq!(
+            Identity::twitch("123", "Erik", "erik").admin_key(),
+            "twitch:123"
+        );
+        assert_eq!(
+            Identity::kick("7", "Kicker", "kicker").admin_key(),
+            "kick:7"
+        );
     }
 
     #[test]

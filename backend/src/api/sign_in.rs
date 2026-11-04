@@ -1062,7 +1062,7 @@ mod tests {
             accounts: Accounts::new(database.clone()),
             counters: Counters::new(database.clone()),
             database,
-            admins: vec!["42".to_string()],
+            admins: vec!["twitch:42".to_string()],
             premium_accounts: Vec::new(),
             started: 0,
             tests: Mutex::default(),

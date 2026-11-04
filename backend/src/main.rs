@@ -157,11 +157,13 @@ struct Cli {
     /// Kick in development and tests. No client ID and secret are needed to sign in then.
     #[arg(long, value_name = "URL")]
     kick_sign_in_url: Option<String>,
-    /// Twitch user IDs, or kick:<Kick user ID>, allowed to see the admin page.
-    #[arg(long, env = "ADMINS", value_delimiter = ',')]
+    /// twitch:<Twitch user ID> or kick:<Kick user ID> (a bare ID is a Twitch one) of the
+    /// accounts allowed to see the admin page.
+    #[arg(long, env = "ADMINS", value_delimiter = ',', value_parser = accounts::admin_key_of)]
     admins: Vec<String>,
-    /// Twitch user IDs, or kick:<Kick user ID>, of the premium accounts, which get the premium features.
-    #[arg(long, env = "PREMIUM_ACCOUNTS", value_delimiter = ',')]
+    /// twitch:<Twitch user ID> or kick:<Kick user ID> (a bare ID is a Twitch one) of the
+    /// premium accounts, which get the premium features.
+    #[arg(long, env = "PREMIUM_ACCOUNTS", value_delimiter = ',', value_parser = accounts::admin_key_of)]
     premium_accounts: Vec<String>,
 }
 
@@ -181,7 +183,9 @@ fn http_client() -> Client {
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    cli.admins.retain(|key| !key.is_empty());
+    cli.premium_accounts.retain(|key| !key.is_empty());
     let twitch_app = match (
         &cli.twitch_client_id,
         &cli.twitch_client_secret,

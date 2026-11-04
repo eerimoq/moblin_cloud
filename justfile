@@ -36,7 +36,7 @@ dev-backend *args:
 	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
 	cd backend
 	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins 847161455,kick:33069881 --premium-accounts 325813636,kick:57017113 --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
+	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested --twitch-sign-in-url http://localhost:8081 --kick-sign-in-url http://localhost:8082 --admins twitch:847161455,kick:33069881 --premium-accounts twitch:325813636,kick:57017113 --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	wait
 
 [group('dev')]
