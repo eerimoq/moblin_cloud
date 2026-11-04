@@ -1,0 +1,314 @@
+{
+  "repository": "../moblin",
+  "branch": "remote-control-scenes-and-widgets",
+  "ports": [
+    {
+      "files": [
+        "frontend/src/data/moblinSettings.ts",
+        "frontend/src/data/moblinSettings.test.ts",
+        "frontend/src/components/sceneEditor/videoSources.ts"
+      ],
+      "moblin": [
+        "Moblin/Various/Settings/SettingsScene.swift",
+        "Moblin/Various/Utils/Utils.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/data/sceneResolver.ts",
+        "frontend/src/data/sceneResolver.test.ts"
+      ],
+      "moblin": [
+        "Moblin/Various/Model/ModelResolvedScene.swift",
+        "MoblinTests/Moblin/Various/Model/SceneResolverSuite.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/data/widgetOutlines.ts"
+      ],
+      "moblin": [
+        "Moblin/Various/Model/ModelWidgetOutlines.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/data/sceneEditorGeometry.ts",
+        "frontend/src/data/sceneEditorGeometry.test.ts"
+      ],
+      "moblin": [
+        "Moblin/View/ControlBar/QuickButton/SceneEditor/SceneEditorGeometry.swift",
+        "MoblinTests/Moblin/View/ControlBar/QuickButton/SceneEditor/SceneEditorGeometrySuite.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/SceneEditor.tsx",
+        "frontend/src/components/sceneEditor/Canvas.tsx",
+        "frontend/src/components/sceneEditor/Toolbar.tsx",
+        "frontend/src/components/sceneEditor/Popover.tsx",
+        "frontend/src/components/sceneEditor/Stack.tsx",
+        "frontend/src/components/sceneEditor/icons.ts"
+      ],
+      "moblin": [
+        "Moblin/View/ControlBar/QuickButton/SceneEditor/SceneEditorView.swift",
+        "Moblin/Various/Model/ModelSceneEditor.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/store.ts",
+        "backend/src/remote_control.rs",
+        "tests/utils/fake_moblin.py"
+      ],
+      "moblin": [
+        "Moblin/RemoteControl/RemoteControl.swift",
+        "Moblin/Various/Model/ModelRemoteControlScenes.swift",
+        "Moblin/Various/Model/ModelMoblinCloud.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/Form.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Utils/ValueEditView.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/SceneSettings.tsx",
+        "frontend/src/components/sceneEditor/wizards/SceneWizard.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Scene/SceneSettingsView.swift",
+        "Moblin/View/Settings/Scenes/Scene/SceneWizardSettingsView.swift",
+        "Moblin/View/Settings/Scenes/ScenesSettingsView.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/SceneWidgetSettings.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Scene/SceneWidgetSettingsView.swift",
+        "Moblin/View/Utils/PositionEditView.swift",
+        "Moblin/View/Utils/SizeEditView.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/WidgetSettings.tsx",
+        "frontend/src/components/sceneEditor/settings/widgets/shared.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/WidgetSettingsView.swift",
+        "Moblin/View/Settings/Scenes/Widgets/WidgetsSettingsView.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/wizards/WidgetWizard.tsx",
+        "frontend/src/components/sceneEditor/wizards/Sheet.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/WidgetWizardSettingsView.swift",
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Wizard"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/effects.tsx",
+        "frontend/src/components/sceneEditor/settings/widgets/MaskCanvas.tsx",
+        "frontend/src/components/sceneEditor/wizards/EffectWizard.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Effects"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/PositioningRectangle.tsx",
+        "frontend/src/components/sceneEditor/settings/widgets/VideoSource.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/VideoSource"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Alerts.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Alerts"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/BingoCard.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/BingoCard"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Browser.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Browser"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Chat.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Chat"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/ChatEmoteCombo.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/ChatEmoteCombo"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Crop.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Crop"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Image.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Image"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Map.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Map"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/PngTuber.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/PngTuber"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/PomodoroTimer.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/PomodoroTimer"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/QrCode.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/QrCode"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Scene.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Scene"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Scoreboard.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Scoreboard"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Slideshow.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Slideshow"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Snapshot.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Snapshot"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/Text.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/Text"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/VTuber.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/VTuber"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/components/sceneEditor/settings/widgets/WheelOfLuck.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Scenes/Widgets/Widget/WheelOfLuck"
+      ],
+      "commit": "c960f2964"
+    }
+  ]
+}

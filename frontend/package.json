@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@paypal/paypal-js": "^11.2.0",
@@ -18,6 +19,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
-    "vite-plugin-solid": "^2.11.14"
+    "vite-plugin-solid": "^2.11.14",
+    "vitest": "^5.1.0"
   }
 }

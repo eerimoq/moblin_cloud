@@ -3,23 +3,21 @@ import { Section } from "../Form";
 import type { Stack } from "../Stack";
 import type { Editor } from "../store";
 import { NameRow } from "./SceneSettings";
-import {
-  BingoCardForm,
-  BrowserForm,
-  ChatEmoteComboForm,
-  ChatForm,
-  CropForm,
-  ImageForm,
-  MapForm,
-  PngTuberForm,
-  PomodoroTimerForm,
-  QrCodeForm,
-  SceneForm,
-  SlideshowForm,
-  SnapshotForm,
-  VideoSourceForm,
-  VTuberForm,
-} from "./widgets/simple";
+import { BingoCardForm } from "./widgets/BingoCard";
+import { BrowserForm } from "./widgets/Browser";
+import { ChatEmoteComboForm } from "./widgets/ChatEmoteCombo";
+import { ChatForm } from "./widgets/Chat";
+import { CropForm } from "./widgets/Crop";
+import { ImageForm } from "./widgets/Image";
+import { MapForm } from "./widgets/Map";
+import { PngTuberForm } from "./widgets/PngTuber";
+import { PomodoroTimerForm } from "./widgets/PomodoroTimer";
+import { QrCodeForm } from "./widgets/QrCode";
+import { SceneForm } from "./widgets/Scene";
+import { SlideshowForm } from "./widgets/Slideshow";
+import { SnapshotForm } from "./widgets/Snapshot";
+import { VideoSourceForm } from "./widgets/VideoSource";
+import { VTuberForm } from "./widgets/VTuber";
 import { AlertsForm } from "./widgets/Alerts";
 import { ScoreboardForm } from "./widgets/Scoreboard";
 import { TextForm } from "./widgets/Text";

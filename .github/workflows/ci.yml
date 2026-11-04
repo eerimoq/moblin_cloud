@@ -31,5 +31,13 @@ jobs:
         run: |
           brew install codespell
           just spell-check
-      - name: Backend tests
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Tests
         run: just test

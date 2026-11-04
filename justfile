@@ -93,6 +93,7 @@ spell-check:
 
 [group('check')]
 test:
+	cd frontend && npm test
 	cd backend && cargo test
 	cd mobtop && cargo test
 
@@ -100,6 +101,11 @@ test:
 [doc("Runs the backend system tests, see tests/README.md.")]
 system-test *args:
 	python3 -m tests.test {{args}}
+
+[group('maintenance')]
+[doc("Lists the Moblin commits the scene editor has not ported yet, from ../moblin, see scripts/moblin_ports.json.")]
+moblin-drift *args:
+	python3 scripts/moblin_drift.py {{args}}
 
 npm-latest-args := "python -c \"import json,sys; print(' '.join(f'{d}@latest' for d in json.load(open('package.json'))[sys.argv[1]]))\""
 
