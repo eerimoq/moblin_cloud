@@ -3123,7 +3123,7 @@ function SignedIn(props: {
   );
 
   return (
-    <div class={monitor() ? "flex h-lvh flex-col" : "contents"}>
+    <div class={monitor() ? "flex h-dvh flex-col" : "contents"}>
       <Show when={!(monitor() && fullscreen())}>
         <CloudHeader premium={props.account.premium} wide={monitor()}>
           <div class="ml-auto flex min-w-0 items-center gap-3">
