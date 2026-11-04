@@ -120,7 +120,7 @@ export const sceneEditorResizedRect = (rect: Rect, fixed: Point, factor: number)
 });
 
 const layoutOffsetFromPosition = (position: number, size: number, total: number, near: boolean) =>
-  near ? (position * 100) / total : ((total - position - size) * 100) / total;
+  clamped(near ? (position * 100) / total : ((total - position - size) * 100) / total, 0, 100);
 
 export const sceneEditorLayout = <T extends Layout>(layout: T, rect: Rect, canvas: Size): T => {
   const result = { ...layout };

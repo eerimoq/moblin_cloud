@@ -200,3 +200,12 @@ describe("SceneEditorGeometrySuite", () => {
     expect(sceneEditorTapSelection(hits, null, true)).toBe("small");
   });
 });
+
+describe("sceneEditorLayout", () => {
+  test("layoutAtFarEdgesIsNeverNegative", () => {
+    const rect = { x: 1920 - 1.1, y: 1080 - 1.1, width: 1.1, height: 1.1 };
+    const layout = sceneEditorLayout(makeLayout("BottomRight"), rect, canvasSize);
+    expect(layout.x).toBe(0);
+    expect(layout.y).toBe(0);
+  });
+});
