@@ -42,6 +42,7 @@ pub enum Message {
     Frame(String, String, Box<RgbImage>),
     Encoded(String, String, Box<StatefulProtocol>, Size, u64),
     Controlled(String, Result<(), BackendError>),
+    Widgets(String, Result<Value, BackendError>),
     Copied(String, Result<(), BackendError>),
     Farted(Result<(), BackendError>),
     Saved(Result<(), BackendError>),
@@ -162,6 +163,7 @@ pub struct Monitor {
     pub moving: Option<Moving>,
     pub drag: Option<Drag>,
     pub pending: HashSet<String>,
+    pub widgets: HashMap<String, Value>,
     pub fart: Option<Instant>,
     pub queued: Option<Instant>,
     pub hits: RefCell<Hits>,
@@ -189,6 +191,7 @@ impl Monitor {
             moving: None,
             drag: None,
             pending: HashSet::new(),
+            widgets: HashMap::new(),
             fart: None,
             queued: None,
             hits: RefCell::default(),
@@ -587,6 +590,17 @@ impl App {
                 }
                 if let Err(error) = result {
                     self.failed(error);
+                }
+            }
+            Message::Widgets(device, result) => {
+                if let Some(monitor) = self.monitor_mut() {
+                    monitor.pending.remove(&format!("{device}:getWidgets"));
+                    match result {
+                        Ok(answer) => {
+                            monitor.widgets.insert(device, answer["widgets"].clone());
+                        }
+                        Err(error) => self.failed(error),
+                    }
                 }
             }
             Message::Copied(page, result) => match result {
@@ -1016,6 +1030,23 @@ impl App {
         self.spawn(async move {
             let sent = backend.control(&page, &device, control.body).await;
             Message::Controlled(key, sent)
+        });
+    }
+
+    fn fetch_widgets(&mut self, device: &str) {
+        let Some(monitor) = self.monitor_mut() else {
+            return;
+        };
+        if !monitor.pending.insert(format!("{device}:getWidgets")) {
+            return;
+        }
+        let page = monitor.page_id();
+        let (backend, device) = (self.backend.clone(), device.to_string());
+        self.spawn(async move {
+            let answer = backend
+                .query(&page, &device, serde_json::json!({ "getWidgets": {} }))
+                .await;
+            Message::Widgets(device, answer)
         });
     }
 
@@ -1545,6 +1576,12 @@ impl App {
                     .unwrap_or_default();
                 menu.select(checked);
                 monitor.modal = Some(Modal::Menu(menu));
+                if matches!(
+                    kind,
+                    MenuKind::MoblinCloud | MenuKind::CloudAlerts | MenuKind::CloudWheel
+                ) {
+                    self.fetch_widgets(&device);
+                }
             }
             Action::Send(control) => {
                 monitor.modal = Some(Modal::Menu(menu));

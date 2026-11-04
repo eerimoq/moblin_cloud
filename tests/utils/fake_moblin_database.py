@@ -93,6 +93,7 @@ def database(ids: dict[str, str], icon: str) -> dict:
             "customSounds": [{"id": ids["G6"], "name": "My sound"}],
         },
         "scoreboardPlayers": [],
+        "moblinCloud": {"alertsWidgetId": None, "wheelOfLuckWidgetId": None},
         "zoom": {"back": [{"id": ids["Z1"], "name": "1x", "x": 1}, {"id": ids["Z2"], "name": "2x", "x": 2}]},
         "iconImage": icon,
         "macros": {

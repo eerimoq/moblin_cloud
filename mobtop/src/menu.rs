@@ -21,6 +21,9 @@ pub enum MenuKind {
     Switchers,
     Macros,
     Filters,
+    MoblinCloud,
+    CloudAlerts,
+    CloudWheel,
 }
 
 pub struct Menu {
@@ -141,6 +144,16 @@ fn named(list: Option<&Value>) -> Vec<(&str, &str)> {
         .into_iter()
         .flatten()
         .filter_map(|item| Some((item["id"].as_str()?, item["name"].as_str()?)))
+        .collect()
+}
+
+fn cloud_widgets<'a>(widgets: Option<&'a Value>, kind: &str) -> Vec<(&'a str, String)> {
+    widgets
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|widget| widget["type"].as_str() == Some(kind))
+        .filter_map(|widget| Some((widget["id"].as_str()?, widget["name"].as_str()?.to_string())))
         .collect()
 }
 
@@ -359,10 +372,8 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
                     label,
                     if selected {
                         Action::Nothing
-                    } else if kind == "setAutoSceneSwitcher" {
-                        Action::Send(controls::auto_scene_switcher(
-                            (!id.is_empty()).then_some(id),
-                        ))
+                    } else if controls::OPTIONAL_PICKS.contains(&kind) {
+                        Action::Send(controls::optional(kind, (!id.is_empty()).then_some(id)))
                     } else {
                         Action::Send(controls::select(kind, id))
                     },
@@ -380,7 +391,78 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
             .map(|(_, name)| name.to_string())
     };
     let loading = settings.is_none();
+    let cloud = settings
+        .map(|settings| &settings["moblinCloud"])
+        .filter(|cloud| cloud.is_object());
+    let widgets = monitor.widgets.get(device);
+    let cloud_pick = |title: &'static str, widget_type: &str, key: &str, kind: &str, footer| {
+        (
+            title,
+            if widgets.is_none() {
+                Vec::new()
+            } else {
+                pick(
+                    std::iter::once(("", "None".to_string()))
+                        .chain(cloud_widgets(widgets, widget_type))
+                        .collect(),
+                    Some(
+                        cloud
+                            .and_then(|cloud| cloud[key].as_str())
+                            .unwrap_or_default(),
+                    ),
+                    kind,
+                )
+            },
+            Some("Loading…"),
+            Some(footer),
+        )
+    };
     let (title, items, empty, footer) = match kind {
+        MenuKind::MoblinCloud => {
+            let picked = |widget_type: &str, key: &str| {
+                let Some(id) = cloud.and_then(|cloud| cloud[key].as_str()) else {
+                    return "None".to_string();
+                };
+                if widgets.is_none() {
+                    return "…".to_string();
+                }
+                cloud_widgets(widgets, widget_type)
+                    .into_iter()
+                    .find(|(widget, _)| *widget == id)
+                    .map_or_else(|| "Unknown widget".to_string(), |(_, name)| name)
+            };
+            (
+                "Moblin Cloud",
+                if cloud.is_none() {
+                    Vec::new()
+                } else {
+                    vec![
+                        Item::new("Message", Action::Open(MenuKind::CloudAlerts))
+                            .detail(Some(picked("Alerts", "alertsWidgetId")))
+                            .mark(Mark::Open),
+                        Item::new("Wheel of luck", Action::Open(MenuKind::CloudWheel))
+                            .detail(Some(picked("Wheel of luck", "wheelOfLuckWidgetId")))
+                            .mark(Mark::Open),
+                    ]
+                },
+                Some("This Moblin does not share its Moblin Cloud settings. Update Moblin."),
+                Some("The widgets that show what viewers do on your Moblin Cloud page."),
+            )
+        }
+        MenuKind::CloudAlerts => cloud_pick(
+            "Message",
+            "Alerts",
+            "alertsWidgetId",
+            "setMoblinCloudAlertsWidget",
+            "Alerts widget that shows messages on stream. Messages always show in chat. Create one in Moblin and add it to the scenes you stream with.",
+        ),
+        MenuKind::CloudWheel => cloud_pick(
+            "Wheel of luck",
+            "Wheel of luck",
+            "wheelOfLuckWidgetId",
+            "setMoblinCloudWheelOfLuckWidget",
+            "Wheel of luck widget that viewers spin. Viewers can only spin while one is picked. Create one in Moblin and add it to the scenes you stream with.",
+        ),
         MenuKind::Scenes => (
             "Scene",
             pick(
@@ -657,6 +739,7 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
                     ))
                     .mark(Mark::Open),
                 Item::new("Macros", Action::Open(MenuKind::Macros)).mark(Mark::Open),
+                Item::new("Moblin Cloud", Action::Open(MenuKind::MoblinCloud)).mark(Mark::Open),
                 toggle("Gimbal tracking", "gimbalTracking", "setGimbalTracking"),
                 toggle("Preview stream", "previewStream", "setPreviewStream"),
             ]);
@@ -665,7 +748,11 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
     };
     let needs_settings = matches!(
         kind,
-        MenuKind::Scenes | MenuKind::Mics | MenuKind::Bitrates | MenuKind::Priorities
+        MenuKind::Scenes
+            | MenuKind::Mics
+            | MenuKind::Bitrates
+            | MenuKind::Priorities
+            | MenuKind::MoblinCloud
     );
     let device_name = monitor
         .page

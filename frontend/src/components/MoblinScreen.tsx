@@ -464,6 +464,9 @@ export default function MoblinScreen(props: {
     },
     disabled,
     control: (control: Control) => props.onControl(control),
+    get request() {
+      return props.onRequest;
+    },
   };
 
   const controlBarWidth = () => (props.window ? 106 : 150);

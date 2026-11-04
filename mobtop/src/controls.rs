@@ -57,9 +57,15 @@ pub fn filter(key: &str, on: bool) -> Control {
     Control::new("setFilter", json!({ "filter": { key: {} }, "on": on }))
 }
 
-pub fn auto_scene_switcher(id: Option<&str>) -> Control {
+pub const OPTIONAL_PICKS: [&str; 3] = [
+    "setAutoSceneSwitcher",
+    "setMoblinCloudAlertsWidget",
+    "setMoblinCloudWheelOfLuckWidget",
+];
+
+pub fn optional(kind: &str, id: Option<&str>) -> Control {
     Control::new(
-        "setAutoSceneSwitcher",
+        kind,
         match id {
             Some(id) => json!({ "id": id }),
             None => json!({}),
@@ -135,12 +141,12 @@ mod tests {
             json!({"setFilter": {"filter": {"grayScale": {}}, "on": false}})
         );
         assert_eq!(
-            auto_scene_switcher(None).body,
+            optional("setAutoSceneSwitcher", None).body,
             json!({"setAutoSceneSwitcher": {}})
         );
         assert_eq!(
-            auto_scene_switcher(Some("s")).body,
-            json!({"setAutoSceneSwitcher": {"id": "s"}})
+            optional("setMoblinCloudWheelOfLuckWidget", Some("w")).body,
+            json!({"setMoblinCloudWheelOfLuckWidget": {"id": "w"}})
         );
         let set = priority("c", 3, true);
         assert_eq!(set.key, "setSrtConnectionPriority:c");

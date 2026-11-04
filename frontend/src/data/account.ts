@@ -122,6 +122,10 @@ export type DeviceSettings = {
     connectionPrioritiesEnabled: boolean;
     connectionPriorities: { id: string; name: string; priority: number; enabled: boolean }[];
   };
+  moblinCloud?: {
+    alertsWidgetId?: string;
+    wheelOfLuckWidgetId?: string;
+  };
 };
 
 export type DeviceState = {
@@ -194,6 +198,8 @@ export type Control =
   | { stopMacro: { id: string } }
   | { setGimbalTracking: { on: boolean } }
   | { sendMessage: { text: string } }
+  | { setMoblinCloudAlertsWidget: { id?: string } }
+  | { setMoblinCloudWheelOfLuckWidget: { id?: string } }
   | EditorControl;
 
 export type EditorControl =

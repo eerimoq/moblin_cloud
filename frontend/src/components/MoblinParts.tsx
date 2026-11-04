@@ -10,6 +10,7 @@ export type Remote = {
   settings: DeviceSettings | null;
   disabled: (key: string) => boolean;
   control: (control: Control) => Promise<void>;
+  request?: <T>(control: Control) => Promise<T>;
 };
 
 export const rowClass =
@@ -99,13 +100,21 @@ export function Loading() {
   return <Empty text={t("Loading…")} />;
 }
 
-export function NavRow(props: { icon?: IconName; label: string; onClick: () => void }) {
+export function NavRow(props: {
+  icon?: IconName;
+  label: string;
+  detail?: string;
+  onClick: () => void;
+}) {
   return (
     <button type="button" class={rowClass} onClick={() => props.onClick()}>
       <Show when={props.icon}>
         {(icon) => <Icon name={icon()} class="size-[18px] shrink-0 text-phone-tint" />}
       </Show>
       <span class="min-w-0 flex-1 truncate">{props.label}</span>
+      <Show when={props.detail}>
+        <span class="max-w-[45%] truncate text-phone-border">{props.detail}</span>
+      </Show>
       <Icon name="chevron-right" class="size-[16px] shrink-0 text-phone-border" />
     </button>
   );

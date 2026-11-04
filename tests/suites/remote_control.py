@@ -241,6 +241,51 @@ class RemoteControlDeviceScreen(RemoteControlTestCase):
             preview.close()
 
 
+class RemoteControlMoblinCloudSettings(RemoteControlTestCase):
+    """Pick the wheel of luck and alerts widgets Moblin Cloud uses from the device page, like in
+    Moblin's Moblin Cloud settings."""
+
+    login = "cloudsettings"
+
+    def run(self):
+        self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), WHEEL)
+        self.wait_until(self.connected, "Moblin to connect")
+        self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be on the page")
+        page_id = self.dashboard.page_id()
+        device = self.dashboard.account()["devices"][0]["id"]
+        events = self.dashboard.device_events(page_id, device)
+        try:
+            cloud = events.wait_for("settings")["data"]["moblinCloud"]
+            wheel = cloud["wheelOfLuckWidgetId"]
+            widgets = self.dashboard.control_device(page_id, device, {"getWidgets": {}})["widgets"]
+            self.assert_in(wheel, [widget["id"] for widget in widgets if widget["type"] == "Wheel of luck"])
+            self.assert_true("alertsWidgetId" not in cloud, "no alerts widget is picked at first")
+            alerts = next(widget["id"] for widget in widgets if widget["type"] == "Alerts")
+            self.dashboard.control_device(page_id, device, {"setMoblinCloudWheelOfLuckWidget": {}})
+            self.wait_until(lambda: self.viewer.spin()["wheel"] is None, "the wheel to be gone from the page")
+            self.wait_until(
+                lambda: "wheelOfLuckWidgetId" not in events.wait_for("settings")["data"]["moblinCloud"],
+                "the settings to show no wheel",
+            )
+            self.dashboard.control_device(page_id, device, {"setMoblinCloudAlertsWidget": {"id": alerts}})
+            self.wait_until(
+                lambda: events.wait_for("settings")["data"]["moblinCloud"].get("alertsWidgetId") == alerts,
+                "the alerts widget to be picked",
+            )
+            self.dashboard.control_device(page_id, device, {"setMoblinCloudWheelOfLuckWidget": {"id": wheel}})
+            self.wait_until(
+                lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be back on the page"
+            )
+            self.assert_backend_error(
+                422,
+                lambda: self.dashboard.control_device(
+                    page_id, device, {"setMoblinCloudWheelOfLuckWidget": {"id": "W"}}
+                ),
+            )
+        finally:
+            events.close()
+
+
 def tests(context: Context):
     return [
         RemoteControlConnects(context),
@@ -254,4 +299,5 @@ def tests(context: Context):
         RemoteControlDevices(context),
         RemoteControlDeviceStatus(context),
         RemoteControlDeviceScreen(context),
+        RemoteControlMoblinCloudSettings(context),
     ]

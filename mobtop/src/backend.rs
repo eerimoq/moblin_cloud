@@ -170,6 +170,23 @@ impl Backend {
         .await
     }
 
+    pub async fn query(
+        &self,
+        page: &str,
+        device: &str,
+        body: Value,
+    ) -> Result<Value, BackendError> {
+        let request = self
+            .client
+            .post(format!(
+                "{}/account/pages/{page}/devices/{}/control",
+                self.url,
+                url::form_urlencoded::byte_serialize(device.as_bytes()).collect::<String>()
+            ))
+            .json(&body);
+        Ok(self.send(request).await?.json().await?)
+    }
+
     pub async fn layout(&self, page: &str) -> Result<Value, BackendError> {
         let answer: Value = self.get(&format!("/account/pages/{page}/monitor")).await?;
         Ok(answer["layout"].clone())

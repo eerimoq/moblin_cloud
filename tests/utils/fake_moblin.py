@@ -50,6 +50,17 @@ def wheel_of(options: list[dict] | None) -> dict | None:
     return {"options": [{"text": option["text"], "weight": option["weight"]} for option in options]}
 
 
+def wheel_widget(options: list[dict]) -> dict:
+    return {
+        "id": str(uuid.uuid4()).upper(),
+        "name": "Wheel",
+        "type": "Wheel of luck",
+        "enabled": True,
+        "effects": [],
+        "wheelOfLuck": {"advanced": False, "options": options},
+    }
+
+
 def png(width: int, height: int, rows: bytes) -> bytes:
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
@@ -75,7 +86,6 @@ class FakeMoblin:
         self.api_url = api_url
         self.key = key
         self.device_id = device_id or str(uuid.uuid4()).upper()
-        self.wheel: dict | None = None
         self.icon = "AppIcon"
         self.ids = {
             name: str(uuid.uuid4()).upper()
@@ -215,7 +225,7 @@ class FakeMoblin:
                 self.send(websocket, {"identify": {"streamerId": self.device_id, "authentication": "fake"}})
             elif "identified" in message:
                 if name == "cloud":
-                    self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
+                    self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel()}}}})
                     self.send(websocket, {"event": {"data": {"icon": {"id": self.icon}}}})
             elif "request" in message:
                 request = message["request"]
@@ -225,12 +235,37 @@ class FakeMoblin:
                     response["data"] = data
                 self.send(websocket, {"response": response})
 
-    def change_wheel(self, options: list[dict] | None):
-        self.wheel = wheel_of(options)
+    def cloud_widget(self, kind: str, key: str) -> dict | None:
+        widget_id = self.database["moblinCloud"][key]
+        if widget_id is None:
+            return None
+        widget = find(self.database["widgets"], widget_id)
+        return widget if widget is not None and widget["type"] == kind else None
+
+    def wheel(self) -> dict | None:
+        widget = self.cloud_widget("Wheel of luck", "wheelOfLuckWidgetId")
+        return wheel_of(widget["wheelOfLuck"]["options"]) if widget is not None else None
+
+    def send_wheel(self):
         with self._lock:
             websocket = self._websockets.get("cloud")
         if websocket is not None:
-            self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel}}}})
+            self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel()}}}})
+
+    def change_wheel(self, options: list[dict] | None):
+        cloud = self.database["moblinCloud"]
+        if options is None:
+            cloud["wheelOfLuckWidgetId"] = None
+        else:
+            widget = self.cloud_widget("Wheel of luck", "wheelOfLuckWidgetId") or next(
+                (widget for widget in self.database["widgets"] if widget["type"] == "Wheel of luck"), None
+            )
+            if widget is None:
+                widget = wheel_widget(options)
+                self.database["widgets"].append(widget)
+            widget["wheelOfLuck"]["options"] = options
+            cloud["wheelOfLuckWidgetId"] = widget["id"]
+        self.send_wheel()
 
     def change_icon(self, icon: str):
         self.icon = icon
@@ -341,6 +376,7 @@ class FakeMoblin:
         items[index] = item
         self.remove_dead_scene_widgets()
         self.scenes_changed()
+        self.widget_changed(kind, item["id"])
         return OK, None
 
     def delete_item(self, kind: str, item_id: str) -> tuple[dict, dict | None]:
@@ -351,7 +387,13 @@ class FakeMoblin:
         del items[index]
         self.remove_dead_scene_widgets()
         self.scenes_changed()
+        self.widget_changed(kind, item_id)
         return OK, None
+
+    def widget_changed(self, kind: str, item_id: str):
+        picked = self.database["moblinCloud"]["wheelOfLuckWidgetId"]
+        if kind == "widgets" and picked is not None and same_id(picked, item_id):
+            self.send_wheel()
 
     def video_source_snapshot(self, widget_id: str) -> bytes | None:
         found = find(self.database["widgets"], widget_id)
@@ -381,6 +423,9 @@ class FakeMoblin:
             "srt": {
                 "connectionPrioritiesEnabled": self.priorities_enabled,
                 "connectionPriorities": self.priorities,
+            },
+            "moblinCloud": {
+                key: value for key, value in self.database["moblinCloud"].items() if value is not None
             },
         }
 
@@ -536,6 +581,17 @@ class FakeMoblin:
         }
         if kind in changes:
             self.change_state(**changes[kind]())
+        elif kind in ("setMoblinCloudAlertsWidget", "setMoblinCloudWheelOfLuckWidget"):
+            wheel = kind == "setMoblinCloudWheelOfLuckWidget"
+            widget_id = body.get("id")
+            widget = None if widget_id is None else find(self.database["widgets"], widget_id)
+            if widget_id is None or (
+                widget is not None and widget["type"] == ("Wheel of luck" if wheel else "Alerts")
+            ):
+                key = "wheelOfLuckWidgetId" if wheel else "alertsWidgetId"
+                self.database["moblinCloud"][key] = None if widget_id is None else widget_id.upper()
+                if wheel:
+                    self.send_wheel()
         elif kind == "setSrtConnectionPrioritiesEnabled":
             self.priorities_enabled = body["enabled"]
         elif kind == "setSrtConnectionPriority":
@@ -626,8 +682,10 @@ class FakeMoblin:
         self.url = settings["remoteControl"]["server"]["url"]
         moblin_cloud = settings["moblinCloud"]
         self.key = moblin_cloud["key"] if moblin_cloud["enabled"] else None
-        widgets = settings.get("widgets") or []
-        self.wheel = wheel_of(widgets[0]["wheelOfLuck"]["options"] if widgets else None)
+        self.database["widgets"] = [
+            widget for widget in self.database["widgets"] if widget["type"] != "Wheel of luck"
+        ] + (settings.get("widgets") or [])
+        self.database["moblinCloud"]["wheelOfLuckWidgetId"] = moblin_cloud.get("wheelOfLuckWidgetId")
         self.close("cloud")
 
 

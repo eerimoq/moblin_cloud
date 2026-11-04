@@ -100,7 +100,7 @@ class RecordingMoblin(FakeMoblin):
         super().__init__(None, backend_url, key=key, device_id=device_id)
         self.tips: list[dict] = []
         if wheel is not None:
-            self.wheel = {"options": [{"text": text, "weight": 1} for text in wheel]}
+            self.change_wheel([{"text": text, "weight": 1} for text in wheel])
 
     def handle(self, data: dict) -> tuple[dict, dict | None]:
         result, response = super().handle(data)

@@ -323,6 +323,14 @@ pub enum Control {
     GetVideoSourceSnapshot {
         id: Uuid,
     },
+    SetMoblinCloudAlertsWidget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Uuid>,
+    },
+    SetMoblinCloudWheelOfLuckWidget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Uuid>,
+    },
 }
 
 fn has_uuid_id(object: &Value) -> bool {
@@ -390,6 +398,8 @@ impl Control {
             Self::DeleteWidget { .. } => "deleteWidget",
             Self::SetScoreboardPlayers { .. } => "setScoreboardPlayers",
             Self::GetVideoSourceSnapshot { .. } => "getVideoSourceSnapshot",
+            Self::SetMoblinCloudAlertsWidget { .. } => "setMoblinCloudAlertsWidget",
+            Self::SetMoblinCloudWheelOfLuckWidget { .. } => "setMoblinCloudWheelOfLuckWidget",
         }
     }
 
@@ -455,6 +465,8 @@ impl Control {
                 | Self::CreateScene { .. }
                 | Self::UpdateScene { .. }
                 | Self::DeleteScene { .. }
+                | Self::SetMoblinCloudAlertsWidget { .. }
+                | Self::SetMoblinCloudWheelOfLuckWidget { .. }
         )
     }
 }
@@ -1723,6 +1735,31 @@ mod tests {
             ),
             r#"{"request":{"id":22,"data":{"sendMessage":{"text":"Hi!","name":"Erik"}}}}"#
         );
+        assert_eq!(
+            control(
+                23,
+                serde_json::from_str(r#"{"setMoblinCloudWheelOfLuckWidget":{}}"#).unwrap()
+            ),
+            r#"{"request":{"id":23,"data":{"setMoblinCloudWheelOfLuckWidget":{}}}}"#
+        );
+        assert_eq!(
+            control(
+                24,
+                Control::SetMoblinCloudAlertsWidget {
+                    id: Some(Uuid::parse_str("0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60").unwrap())
+                }
+            ),
+            r#"{"request":{"id":24,"data":{"setMoblinCloudAlertsWidget":{"id":"0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60"}}}}"#
+        );
+        assert!(
+            serde_json::from_str::<Control>(r#"{"setMoblinCloudWheelOfLuckWidget":{"id":"W"}}"#)
+                .is_err()
+        );
+        assert!(
+            serde_json::from_str::<Control>(r#"{"setMoblinCloudWheelOfLuckWidget":{}}"#)
+                .unwrap()
+                .changes_settings()
+        );
         let message = |text: &str| Control::SendMessage {
             text: text.to_string(),
             name: None,
@@ -1974,6 +2011,8 @@ mod tests {
                 text: "Hi".to_string(),
                 name: None,
             },
+            Control::SetMoblinCloudAlertsWidget { id: Some(id) },
+            Control::SetMoblinCloudWheelOfLuckWidget { id: None },
         ];
         let messages = [
             MessageToStreamer::Hello {
