@@ -13,4 +13,3 @@ def manual_validation(logger: Logger, message: str):
 
 def manual_requirement(logger: Logger, message: str):
     logger.info("👷‍♂️: %s", message)
-
