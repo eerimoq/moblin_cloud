@@ -37,8 +37,8 @@ and durable state. `mobtop` is an API client, not a second backend.
 | `justfile` | Shared development and verification commands. |
 
 Detailed implementation notes are in `docs/architecture.md`. Consult the relevant
-section before changing a subsystem. `CLAUDE.md` is a compatibility pointer to
-this shared guidance; keep instructions here rather than in competing copies.
+section before changing a subsystem. Keep shared instructions in `AGENTS.md`
+rather than in competing agent-specific files.
 
 ## Work safely and keep scope small
 
