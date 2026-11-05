@@ -1,9 +1,8 @@
 import { asset } from "../asset";
-import type { FrontendConfig } from "./frontendConfig";
 
 declare global {
   interface Window {
-    config: FrontendConfig;
+    config: { backendUrl: string; selfHosted?: boolean; tippingEnabled?: boolean };
   }
 }
 

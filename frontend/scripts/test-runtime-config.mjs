@@ -11,7 +11,7 @@ const script = readFileSync(new URL("../runtime-config.sh", import.meta.url), "u
   "/srv/config.js",
   output,
 );
-const flags = ["SELFHOSTED", "LANDING_DETAILS_ENABLED", "TIPPING_ENABLED"];
+const flags = ["SELFHOSTED", "TIPPING_ENABLED"];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !flags.includes(key)));
 const run = (values) =>
   spawnSync("sh", ["-s", "--", "true"], {
@@ -29,14 +29,12 @@ try {
   assert.deepEqual(config(), {
     backendUrl: "/api",
     selfHosted: false,
-    landingDetailsEnabled: true,
     tippingEnabled: true,
   });
   assert.equal(run(Object.fromEntries(flags.map((key) => [key, "false"]))).status, 0);
   assert.deepEqual(config(), {
     backendUrl: "/api",
     selfHosted: false,
-    landingDetailsEnabled: false,
     tippingEnabled: false,
   });
   assert.equal(run({ SELFHOSTED: "true" }).status, 0);

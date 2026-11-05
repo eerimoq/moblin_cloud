@@ -187,32 +187,30 @@ export default function CloudLanding(props: { failed: boolean; connecting: boole
         </div>
         <PageMockup />
       </section>
-      <Show when={window.config.landingDetailsEnabled !== false}>
-        <section class="bg-band py-16 lg:py-20">
-          <div class="mx-auto flex max-w-[1120px] flex-col gap-10 px-5 sm:px-8">
-            <div class="flex max-w-[640px] flex-col gap-2.5">
-              <span class="font-display text-[15px] font-semibold tracking-[0.08em] text-leaf uppercase">
-                {t("How it works")}
-              </span>
-              <h2 class="text-4xl font-bold sm:text-[46px]">{t("Up and running in minutes.")}</h2>
-            </div>
-            <ol class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <For each={cloudSteps()}>
-                {(step, index) => (
-                  <li class="flex flex-col gap-3">
-                    <span class="flex size-11 items-center justify-center rounded-full bg-moss font-display text-xl font-bold text-white">
-                      {index() + 1}
-                    </span>
-                    <h3 class="text-[23px] font-semibold">{step.title}</h3>
-                    <p class="text-base text-ink-2">{step.text}</p>
-                  </li>
-                )}
-              </For>
-            </ol>
-            <SignInButtons />
+      <section class="bg-band py-16 lg:py-20">
+        <div class="mx-auto flex max-w-[1120px] flex-col gap-10 px-5 sm:px-8">
+          <div class="flex max-w-[640px] flex-col gap-2.5">
+            <span class="font-display text-[15px] font-semibold tracking-[0.08em] text-leaf uppercase">
+              {t("How it works")}
+            </span>
+            <h2 class="text-4xl font-bold sm:text-[46px]">{t("Up and running in minutes.")}</h2>
           </div>
-        </section>
-      </Show>
+          <ol class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <For each={cloudSteps()}>
+              {(step, index) => (
+                <li class="flex flex-col gap-3">
+                  <span class="flex size-11 items-center justify-center rounded-full bg-moss font-display text-xl font-bold text-white">
+                    {index() + 1}
+                  </span>
+                  <h3 class="text-[23px] font-semibold">{step.title}</h3>
+                  <p class="text-base text-ink-2">{step.text}</p>
+                </li>
+              )}
+            </For>
+          </ol>
+          <SignInButtons />
+        </div>
+      </section>
     </>
   );
 }

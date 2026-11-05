@@ -48,94 +48,43 @@ docker compose up -d
 Update with `docker compose pull && docker compose up -d`. The database is
 `data/database.sqlite`; stop the backend before copying it for a backup.
 
-## Public pages
+## Self-hosted options
 
-Use matching frontend and backend images that include these settings and the
-server configuration endpoint. Keep both images on the same reviewed version
-so the frontend can read configured sign-in and payment providers.
+Use matching frontend and backend images. Set these options in `.env` and run
+`docker compose up -d` to recreate the containers; no image rebuild is needed.
 
-The frontend container reads these optional settings at startup. Set them in
-`.env` and recreate the affected containers with `docker compose up -d`; no
-frontend image rebuild is needed.
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `SELFHOSTED` | `false` | A compact device-management landing page instead of the original landing page. |
+| `TIPPING_ENABLED` | `true` | Public viewer pages and new tip, spin and effect orders. |
 
-- `SELFHOSTED=true`: replace the marketing landing page with a compact sign-in
-  page for managing devices, with a setup guide and upstream attribution. Defaults
-  to `false`. It does not change permissions or payment settings.
-- `LANDING_DETAILS_ENABLED=false`: hide the default landing page's How it works
-  section and lower sign-in buttons. Defaults to `true`; it has no effect on the
-  compact self-hosted page.
-- `TIPPING_ENABLED`: enable or disable public viewer pages and new tip, spin and
-  effect orders. Compose passes this setting to both the frontend and backend.
-  When disabled, the frontend hides viewer pages and share links, and the backend
-  returns 404 for public viewer APIs. Phone connections, dashboard APIs,
-  page-address discovery, payment webhooks and capture of existing orders remain
-  available. Defaults to `true`. Existing open pages may remain visible until a
-  request or reload.
-
-Twitch and Kick sign-in buttons are shown automatically only for providers
-configured on the backend with a nonempty client ID and secret. The frontend
-reads the `signIn` flags from `/api/config`, which also lists available payment
-providers; credentials stay on the backend. This applies to the header, landing
-pages, account-link prompts and subscriber sign-in buttons. Buttons stay hidden
-while configuration loads; upstream's compatibility fallback can offer all
-providers if that request fails. Keep the endpoint reachable. The compact page
-shows a message when the server reports no sign-in providers. Existing linked
-accounts remain visible; unlinking cannot remove the last configured sign-in
-provider. Restart the backend after changing its credentials and reload the
-browser to refresh availability.
-
-Missing payment credentials do not disable the whole viewer page, since
-non-payment interactions can still be used. `TIPPING_ENABLED=false` explicitly
-disables it even when payment providers are configured.
-
-Frontend settings are public booleans in `/config.js`, served without caching.
-Do not pass provider secrets to the frontend. For local Vite development, use
-`selfHosted`, `landingDetailsEnabled` and `tippingEnabled` in
-`frontend/public/config.js`. An omitted `selfHosted` is false; the other settings
-default to true. Provider availability always comes from the backend, not this
-public configuration file.
-
-### Self-hosted example
-
-After setting `DOMAIN`, a persistent `SESSION_SECRET` and the integrations you
-want below, add these settings to `.env` for a compact device-management instance
-without public tipping pages:
+For a device-management instance without public viewer pages:
 
 ```dotenv
 SELFHOSTED=true
 TIPPING_ENABLED=false
 ```
 
-`SELFHOSTED` changes the landing page only; it does not create a separate edition,
-restrict who can sign in, enable premium access or disable tipping by itself.
-`LANDING_DETAILS_ENABLED` can be omitted for this mode. Set `TIPPING_ENABLED=true`
-if you want viewer pages and interactions too.
+`SELFHOSTED` only changes presentation. It does not restrict sign-in or grant
+premium/admin access. Disabling tipping hides viewer/share links and returns 404
+for public viewer APIs and new orders. Device connections, dashboard APIs,
+page-address discovery, existing payment captures and webhooks remain available.
+Already open viewer pages may remain visible until a request or reload.
 
-| Backend configuration | Sign-in buttons |
-| --- | --- |
-| `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` only | Twitch |
-| `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET` only | Kick |
-| Both complete pairs | Twitch and Kick |
-| Neither complete pair | No buttons; the compact page shows an availability message |
+Twitch and Kick sign-in buttons follow the backend's configured client ID and
+secret pairs through `/api/config`. Configure either or both providers below;
+with neither, the page explains that sign-in needs setup. Missing payment
+credentials alone do not disable public viewer pages.
 
-The IDs and secrets must be nonempty. Availability means the app is configured;
-it does not validate credentials with Twitch or Kick. Complete an actual sign-in
-after setting the provider's callback URL to verify that configuration.
+With custom Compose, pass `SELFHOSTED` to the frontend and `TIPPING_ENABLED` to
+both services. Keep OAuth credentials and `SESSION_SECRET` on the backend only.
+Frontend flags are public booleans in `/config.js`; for Vite development, use
+`selfHosted` and `tippingEnabled` in `frontend/public/config.js`.
 
-Run `docker compose up -d` after changing `.env`, then reload the browser. With a
-custom Compose file, pass `SELFHOSTED` to the frontend and `TIPPING_ENABLED` to
-both services; keep OAuth credentials and `SESSION_SECRET` on the backend only.
-
-Keep `/config.js` and `/api/config` reachable from the signed-out page.
-An Access rule or reverse proxy that redirects the provider endpoint to a login
-page prevents provider discovery. Sign-in availability is presentation, not an
-access policy: use application or proxy access controls if the instance should
-be private. Keep the phone's WebSocket and event-stream paths outside any
-browser-only login gate.
-
-If buttons are missing, check `/api/config` for the expected booleans,
-confirm the backend received both values for the provider, check for proxy
-redirects or errors, and confirm the frontend and backend are compatible.
+Keep `/config.js` and `/api/config` reachable when signed out. If buttons are
+missing, check provider credentials and proxy redirects. Browser login gates
+must not intercept the phone's WebSocket or event-stream connections. Complete
+a real sign-in to verify credentials; availability flags do not validate them.
 
 ## Integrations
 

@@ -9,7 +9,6 @@ boolean() {
 }
 
 selfhosted=$(boolean SELFHOSTED "${SELFHOSTED:-false}")
-details=$(boolean LANDING_DETAILS_ENABLED "${LANDING_DETAILS_ENABLED:-true}")
 tipping=$(boolean TIPPING_ENABLED "${TIPPING_ENABLED:-true}")
-printf 'window.config = { backendUrl: "/api", selfHosted: %s, landingDetailsEnabled: %s, tippingEnabled: %s };\n' "$selfhosted" "$details" "$tipping" > /srv/config.js
+printf 'window.config = { backendUrl: "/api", selfHosted: %s, tippingEnabled: %s };\n' "$selfhosted" "$tipping" > /srv/config.js
 exec "$@"
