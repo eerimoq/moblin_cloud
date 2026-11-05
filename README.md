@@ -38,4 +38,4 @@ just spell-check
 just test
 ```
 
-CI runs the same commands.
+CI runs the same commands, with `just style-check` instead of `just style`.
