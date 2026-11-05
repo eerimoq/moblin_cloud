@@ -109,6 +109,14 @@ impl Leaf {
         }
     }
 
+    pub fn with_panel(&self, panel: Panel) -> Self {
+        Self {
+            id: self.id,
+            device: self.device.clone(),
+            ..Self::new(panel)
+        }
+    }
+
     pub fn shows(&self, kind: &str) -> bool {
         self.kinds
             .as_ref()
@@ -562,6 +570,23 @@ mod tests {
             .unwrap()
             .1
             .id
+    }
+
+    #[test]
+    fn a_pane_keeps_its_device_when_its_panel_changes() {
+        let mut leaf = Leaf::new(Panel::Phone);
+        leaf.device = Some("d".to_string());
+        leaf.hide_preview = true;
+        let activity = leaf.with_panel(Panel::Activity);
+        assert_eq!(activity.id, leaf.id);
+        assert_eq!(
+            serde_json::to_value(&activity).unwrap(),
+            json!({"panel": "activity", "device": "d"})
+        );
+        assert_eq!(
+            serde_json::to_value(activity.with_panel(Panel::Status)).unwrap(),
+            json!({"panel": "status", "device": "d"})
+        );
     }
 
     #[test]

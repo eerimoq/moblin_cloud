@@ -1603,12 +1603,7 @@ impl App {
                     control,
                 }));
             }
-            Action::SetPanel(panel) => self.edit_leaf(leaf, |leaf| {
-                *leaf = Leaf {
-                    id: leaf.id,
-                    ..Leaf::new(panel)
-                }
-            }),
+            Action::SetPanel(panel) => self.edit_leaf(leaf, |leaf| *leaf = leaf.with_panel(panel)),
             Action::SetDevice(device) => self.edit_leaf(leaf, |leaf| leaf.device = device),
             Action::TogglePreview => {
                 self.edit_leaf(leaf, |leaf| leaf.hide_preview = !leaf.hide_preview)
