@@ -6,7 +6,6 @@ import Icon, { kindIcons, type IconName } from "./Icon";
 import { Notice, PlatformSignIn } from "./PageParts";
 import { platformNames, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
-import { links } from "../data/links";
 
 function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
   return (
@@ -30,7 +29,10 @@ function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
             <Notice status>{t("Sign in to let mobtop use your account.")}</Notice>
           </Show>
           <SignInButtons />
-          <a href={links.docs} class="text-base font-semibold text-leaf hover:text-leaf-bright">
+          <a
+            href="https://github.com/eerimoq/moblin_cloud/blob/main/deploy/README.md"
+            class="text-base font-semibold text-leaf hover:text-leaf-bright"
+          >
             {t("Setup guide")} ↗
           </a>
         </div>
@@ -56,7 +58,9 @@ function SignInButtons() {
         )}
       </For>
       <Show when={noSignInPlatforms()}>
-        <Notice status>{t("Signing in is not set up on this server.")}</Notice>
+        <Notice status>
+          {t("Sign-in setup is required. Ask the server administrator to configure Twitch or Kick.")}
+        </Notice>
       </Show>
     </div>
   );
