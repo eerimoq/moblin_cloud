@@ -55,6 +55,8 @@ const TIMEOUT: Duration = Duration::from_secs(15);
     about = "Serves Moblin Cloud: the streamers' tip pages, their dashboard and Moblin's connections"
 )]
 struct Cli {
+    #[arg(long, env = "TIPPING_ENABLED", default_value = "true", action = clap::ArgAction::Set)]
+    tipping_enabled: bool,
     /// Address to listen on.
     #[arg(long, env = "LISTEN", default_value = "127.0.0.1:8080")]
     listen: SocketAddr,
@@ -370,10 +372,14 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("failed to listen on {}", cli.listen))?;
     info!("listening on http://{}", cli.listen);
-    serve(listener, api::router(api.clone()), async move {
-        shutdown_signal().await;
-        api.stopping.send_replace(true);
-    })
+    serve(
+        listener,
+        api::router(api.clone(), cli.tipping_enabled),
+        async move {
+            shutdown_signal().await;
+            api.stopping.send_replace(true);
+        },
+    )
     .await?;
     info!("stopped");
     Ok(())
