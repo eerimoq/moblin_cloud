@@ -11,7 +11,7 @@ const script = readFileSync(new URL("../runtime-config.sh", import.meta.url), "u
   "/srv/config.js",
   output,
 );
-const flags = ["SELFHOSTED", "TIPPING_ENABLED"];
+const flags = ["SELF_HOSTED", "TIPPING_ENABLED"];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !flags.includes(key)));
 const run = (values) =>
   spawnSync("sh", ["-s", "--", "true"], {
@@ -37,7 +37,7 @@ try {
     selfHosted: false,
     tippingEnabled: false,
   });
-  assert.equal(run({ SELFHOSTED: "true" }).status, 0);
+  assert.equal(run({ SELF_HOSTED: "true" }).status, 0);
   assert.equal(config().selfHosted, true);
   assert.equal(run(Object.fromEntries(flags.map((key) => [key, "false"]))).status, 0);
   for (const flag of flags) {

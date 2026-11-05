@@ -55,17 +55,17 @@ Use matching frontend and backend images. Set these options in `.env` and run
 
 | Setting | Default | Behavior |
 | --- | --- | --- |
-| `SELFHOSTED` | `false` | A compact device-management landing page instead of the original landing page. |
+| `SELF_HOSTED` | `false` | A compact device-management landing page instead of the original landing page. |
 | `TIPPING_ENABLED` | `true` | Public viewer pages and new tip, spin and effect orders. |
 
 For a device-management instance without public viewer pages:
 
 ```dotenv
-SELFHOSTED=true
+SELF_HOSTED=true
 TIPPING_ENABLED=false
 ```
 
-`SELFHOSTED` only changes presentation. It does not restrict sign-in or grant
+`SELF_HOSTED` only changes presentation. It does not restrict sign-in or grant
 premium/admin access. Disabling tipping hides viewer/share links and returns 404
 for public viewer APIs and new orders. Device connections, dashboard APIs,
 page-address discovery, existing payment captures and webhooks remain available.
@@ -76,7 +76,7 @@ secret pairs through `/api/config`. Configure either or both providers below;
 with neither, the page explains that sign-in needs setup. Missing payment
 credentials alone do not disable public viewer pages.
 
-With custom Compose, pass `SELFHOSTED` to the frontend and `TIPPING_ENABLED` to
+With custom Compose, pass `SELF_HOSTED` to the frontend and `TIPPING_ENABLED` to
 both services. Keep OAuth credentials and `SESSION_SECRET` on the backend only.
 Frontend flags are public booleans in `/config.js`; for Vite development, use
 `selfHosted` and `tippingEnabled` in `frontend/public/config.js`.
