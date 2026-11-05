@@ -17,6 +17,8 @@ import {
   type Setter,
 } from "solid-js";
 import { asset } from "../asset";
+import { signInEnabled } from "../data/frontendConfig";
+import { useSignInProviders } from "../data/signInProviders";
 import { BackendError, isSignedOut, moblinIconUrl } from "../data/backend";
 import { fetchAccount, readSession, type Account } from "../data/account";
 import Icon, { kindIcons } from "../components/Icon";
@@ -671,6 +673,7 @@ function SubscriberBox(props: {
   onSignOut: () => void;
   onRequest: () => void;
 }) {
+  const providers = useSignInProviders();
   const tiers = () =>
     tierNumbers
       .map((tier) => ({ tier, count: tierCount(props.tiers, tier) }))
@@ -775,7 +778,7 @@ function SubscriberBox(props: {
       </Show>
       <Show when={!props.signedIn}>
         <div class="flex flex-wrap justify-center gap-3">
-          <For each={props.platforms}>
+          <For each={props.platforms.filter((platform) => signInEnabled(providers(), platform))}>
             {(platform) => (
               <button
                 type="button"

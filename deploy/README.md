@@ -50,22 +50,32 @@ Update with `docker compose pull && docker compose up -d`. The database is
 
 ## Public pages
 
-The frontend container reads these optional settings at startup. All default to
-`true`, preserving the existing pages. Set a value to `false` in `.env` and
-recreate the affected containers with `docker compose up -d`; no frontend image
-rebuild is needed.
+The frontend container reads these optional settings at startup. Set them in
+`.env` and recreate the affected containers with `docker compose up -d`; no
+frontend image rebuild is needed.
 
-- `TWITCH_SIGN_IN_ENABLED` and `KICK_SIGN_IN_ENABLED`: show or hide each
-  provider's sign-in buttons, including the header and account-link prompts.
-  Match them to the providers configured below. These are presentation settings;
-  they do not disable OAuth endpoints or replace backend authentication.
-- `LANDING_DETAILS_ENABLED`: show or hide the landing page's How it works section.
+- `SELFHOSTED=true`: replace the marketing landing page with a compact sign-in
+  page for managing devices, with a setup guide and upstream attribution. Defaults
+  to `false`. It does not change permissions or payment settings.
+- `LANDING_DETAILS_ENABLED=false`: hide the default landing page's How it works
+  section and lower sign-in buttons. Defaults to `true`; it has no effect on the
+  compact self-hosted page.
 - `TIPPING_ENABLED`: enable or disable public viewer pages and new tip, spin and
   effect orders. Compose passes this setting to both the frontend and backend.
   When disabled, the frontend hides viewer pages and share links, and the backend
   returns 404 for public viewer APIs. Phone connections, dashboard APIs,
   page-address discovery, payment webhooks and capture of existing orders remain
-  available. Existing open pages may remain visible until a request or reload.
+  available. Defaults to `true`. Existing open pages may remain visible until a
+  request or reload.
+
+Twitch and Kick sign-in buttons are shown automatically only for providers
+configured on the backend with a nonempty client ID and secret. The frontend
+reads public booleans from `/api/auth/providers`; credentials stay on the backend.
+This applies to the header, landing pages, account-link prompts and subscriber
+sign-in buttons. While availability is loading or unavailable, buttons stay
+hidden; the compact page shows a message if no providers are available. Existing
+linked-account details and unlink controls remain accessible. Restart the backend
+after changing its credentials and reload the browser to refresh availability.
 
 Missing payment credentials do not disable the whole viewer page, since
 non-payment interactions can still be used. `TIPPING_ENABLED=false` explicitly
@@ -73,8 +83,10 @@ disables it even when payment providers are configured.
 
 Frontend settings are public booleans in `/config.js`, served without caching.
 Do not pass provider secrets to the frontend. For local Vite development, use
-`twitchSignInEnabled`, `kickSignInEnabled`, `landingDetailsEnabled` and
-`tippingEnabled` in `frontend/public/config.js`; omitted fields default to true.
+`selfHosted`, `landingDetailsEnabled` and `tippingEnabled` in
+`frontend/public/config.js`. An omitted `selfHosted` is false; the other settings
+default to true. Provider availability always comes from the backend, not this
+public configuration file.
 
 ## Integrations
 

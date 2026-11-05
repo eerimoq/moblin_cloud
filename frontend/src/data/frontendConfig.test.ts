@@ -1,16 +1,20 @@
 import { describe, expect, test } from "vitest";
 import { signInEnabled } from "./frontendConfig";
 
-describe("sign-in visibility", () => {
-  test("preserves upstream defaults for existing config files", () => {
-    expect(signInEnabled({ backendUrl: "/api" }, "twitch")).toBe(true);
-    expect(signInEnabled({ backendUrl: "/api" }, "kick")).toBe(true);
+describe("configured sign-in providers", () => {
+  test("hides buttons while availability is unknown", () => {
+    expect(signInEnabled(null, "twitch")).toBe(false);
+    expect(signInEnabled(null, "kick")).toBe(false);
   });
 
-  test("controls providers independently", () => {
-    const config = { backendUrl: "/api", twitchSignInEnabled: true, kickSignInEnabled: false };
-    expect(signInEnabled(config, "twitch")).toBe(true);
-    expect(signInEnabled(config, "kick")).toBe(false);
-    expect(signInEnabled({ ...config, twitchSignInEnabled: false }, "twitch")).toBe(false);
+  test.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])("uses backend availability independently: Twitch %s, Kick %s", (twitch, kick) => {
+    const providers = { twitch, kick };
+    expect(signInEnabled(providers, "twitch")).toBe(twitch);
+    expect(signInEnabled(providers, "kick")).toBe(kick);
   });
 });

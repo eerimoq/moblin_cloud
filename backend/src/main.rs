@@ -203,7 +203,9 @@ async fn main() -> Result<()> {
                 client_secret.clone().unwrap_or_default(),
             ))
         }
-        (Some(client_id), Some(client_secret), None) => {
+        (Some(client_id), Some(client_secret), None)
+            if !client_id.trim().is_empty() && !client_secret.trim().is_empty() =>
+        {
             Some(OAuthApp::twitch(client_id.clone(), client_secret.clone()))
         }
         _ => {
@@ -225,7 +227,9 @@ async fn main() -> Result<()> {
                 client_secret.unwrap_or_default(),
             ))
         }
-        (Some(client_id), Some(client_secret), None) => {
+        (Some(client_id), Some(client_secret), None)
+            if !client_id.trim().is_empty() && !client_secret.trim().is_empty() =>
+        {
             Some(KickApp::kick(client_id, client_secret))
         }
         _ => {

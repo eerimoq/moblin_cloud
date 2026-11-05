@@ -10,6 +10,8 @@ import {
   type Account,
 } from "../data/account";
 import { BackendError, isSignedOut } from "../data/backend";
+import { signInEnabled } from "../data/frontendConfig";
+import { useSignInProviders } from "../data/signInProviders";
 import { channelText, type Platform, platformNames, platforms } from "../data/remoteControl";
 import { t } from "../i18n";
 
@@ -31,6 +33,7 @@ function LinkedAccounts(props: {
   onAccount: (account: Account) => void;
   onSignOut: () => void;
 }) {
+  const providers = useSignInProviders();
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [resultDismissed, setResultDismissed] = createSignal(false);
@@ -92,9 +95,11 @@ function LinkedAccounts(props: {
               <Show
                 when={props.account[platform]}
                 fallback={
-                  <a href={linkUrl(platform)} class={smallButtonClass}>
-                    {t("Link")}
-                  </a>
+                  <Show when={signInEnabled(providers(), platform)}>
+                    <a href={linkUrl(platform)} class={smallButtonClass}>
+                      {t("Link")}
+                    </a>
+                  </Show>
                 }
               >
                 <button

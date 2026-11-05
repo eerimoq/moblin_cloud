@@ -3219,7 +3219,7 @@ export default function Dashboard() {
       fallback={
         <>
           <CloudHeader>
-            <Show when={!loading()}>
+            <Show when={!loading() && window.config.selfHosted !== true}>
               <span class="ml-auto flex items-center gap-2">
                 <PlatformSignIn platform="twitch" />
                 <PlatformSignIn platform="kick" />

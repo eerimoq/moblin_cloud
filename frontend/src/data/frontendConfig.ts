@@ -1,11 +1,15 @@
 export interface FrontendConfig {
   backendUrl: string;
-  twitchSignInEnabled?: boolean;
-  kickSignInEnabled?: boolean;
+  selfHosted?: boolean;
   landingDetailsEnabled?: boolean;
   tippingEnabled?: boolean;
 }
 
-export function signInEnabled(config: FrontendConfig, platform: "twitch" | "kick") {
-  return (platform === "twitch" ? config.twitchSignInEnabled : config.kickSignInEnabled) !== false;
+export interface SignInProviders {
+  twitch: boolean;
+  kick: boolean;
+}
+
+export function signInEnabled(providers: SignInProviders | null, platform: "twitch" | "kick") {
+  return providers?.[platform] === true;
 }

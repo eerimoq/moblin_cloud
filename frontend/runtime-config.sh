@@ -8,9 +8,8 @@ boolean() {
   esac
 }
 
-twitch=$(boolean TWITCH_SIGN_IN_ENABLED "${TWITCH_SIGN_IN_ENABLED:-true}")
-kick=$(boolean KICK_SIGN_IN_ENABLED "${KICK_SIGN_IN_ENABLED:-true}")
+selfhosted=$(boolean SELFHOSTED "${SELFHOSTED:-false}")
 details=$(boolean LANDING_DETAILS_ENABLED "${LANDING_DETAILS_ENABLED:-true}")
 tipping=$(boolean TIPPING_ENABLED "${TIPPING_ENABLED:-true}")
-printf 'window.config = { backendUrl: "/api", twitchSignInEnabled: %s, kickSignInEnabled: %s, landingDetailsEnabled: %s, tippingEnabled: %s };\n' "$twitch" "$kick" "$details" "$tipping" > /srv/config.js
+printf 'window.config = { backendUrl: "/api", selfHosted: %s, landingDetailsEnabled: %s, tippingEnabled: %s };\n' "$selfhosted" "$details" "$tipping" > /srv/config.js
 exec "$@"

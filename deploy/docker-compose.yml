@@ -14,8 +14,7 @@ services:
     restart: unless-stopped
     environment:
       BACKEND_HOST: backend:8080
-      TWITCH_SIGN_IN_ENABLED: ${TWITCH_SIGN_IN_ENABLED:-true}
-      KICK_SIGN_IN_ENABLED: ${KICK_SIGN_IN_ENABLED:-true}
+      SELFHOSTED: ${SELFHOSTED:-false}
       LANDING_DETAILS_ENABLED: ${LANDING_DETAILS_ENABLED:-true}
       TIPPING_ENABLED: ${TIPPING_ENABLED:-true}
   caddy:

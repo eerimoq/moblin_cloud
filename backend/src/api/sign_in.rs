@@ -14,6 +14,21 @@ use crate::auth::{ConnectPoll, STATE_COOKIE, SignIn, StateError, Terminal};
 
 use super::*;
 
+pub(super) async fn handle_sign_in_providers(
+    State(api): State<Arc<Api>>,
+) -> (
+    [(axum::http::header::HeaderName, &'static str); 1],
+    Json<serde_json::Value>,
+) {
+    (
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(serde_json::json!({
+            "twitch": api.auth.has_twitch(),
+            "kick": api.auth.has_kick(),
+        })),
+    )
+}
+
 #[derive(Deserialize)]
 pub(super) struct LoginQuery {
     page: Option<String>,
@@ -492,6 +507,31 @@ mod tests {
     use crate::remote_control::Streamers;
     use crate::requests::Requests;
     use crate::subscribers::Allowances;
+
+    #[tokio::test]
+    async fn public_provider_availability_matches_configured_apps_without_exposing_keys() {
+        for (twitch, kick) in [(false, false), (true, false), (false, true), (true, true)] {
+            let (address, _) = start_api_with(
+                None,
+                None,
+                twitch.then(|| {
+                    crate::auth::OAuthApp::twitch("client-id".into(), "private-secret".into())
+                }),
+                kick.then(|| {
+                    crate::auth::KickApp::kick("client-id".into(), "private-secret".into())
+                }),
+                None,
+            )
+            .await;
+            let response = reqwest::get(format!("http://{address}/auth/providers"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+            let value: Value = response.json().await.unwrap();
+            assert_eq!(value, json!({ "twitch": twitch, "kick": kick }));
+        }
+    }
 
     #[tokio::test]
     async fn streamers_sign_in_and_manage_their_page() {

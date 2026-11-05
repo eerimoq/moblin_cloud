@@ -3,6 +3,7 @@ import { asset } from "../asset";
 import { signInUrl } from "../data/account";
 import { pages } from "../data/links";
 import { signInEnabled } from "../data/frontendConfig";
+import { useSignInProviders } from "../data/signInProviders";
 import { type Platform, platformNames } from "../data/remoteControl";
 import CopyButton from "./CopyButton";
 import Icon, { type IconName } from "./Icon";
@@ -82,8 +83,9 @@ export function PlatformSignIn(props: {
   large?: boolean;
   children?: JSX.Element;
 }) {
+  const providers = useSignInProviders();
   return (
-    <Show when={signInEnabled(window.config, props.platform)}>
+    <Show when={signInEnabled(providers(), props.platform)}>
       <a
         href={props.href ?? signInUrl(props.platform)}
         aria-label={t("Sign in with {platform}", { platform: platformNames[props.platform] })}
