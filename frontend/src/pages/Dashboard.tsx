@@ -3229,15 +3229,7 @@ export default function Dashboard() {
       keyed
       fallback={
         <>
-          <CloudHeader>
-            <Show when={!loading() && window.config.selfHosted !== true}>
-              <span class="ml-auto flex items-center gap-2">
-                <For each={signInPlatforms()}>
-                  {(platform) => <PlatformSignIn platform={platform} />}
-                </For>
-              </span>
-            </Show>
-          </CloudHeader>
+          <CloudHeader />
           <main>
             <Show
               when={loading()}

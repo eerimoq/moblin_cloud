@@ -208,7 +208,6 @@ export default function CloudLanding(props: { failed: boolean; connecting: boole
               )}
             </For>
           </ol>
-          <SignInButtons />
         </div>
       </section>
     </>
