@@ -10,14 +10,17 @@ export default function DashboardPage() {
       <Dashboard />
       <Show when={!fullWindow()}>
         <Footer
+          hidePrivacy={window.config.selfHostedLandingPage === true}
           note={
-            window.config.tippingEnabled === false
-              ? tRich("Using Moblin Cloud means you agree to the {terms}.", {
-                  terms: <TermsLink leaf />,
-                })
-              : tRich("Using Moblin Cloud and your tip page means you agree to the {terms}.", {
-                  terms: <TermsLink leaf />,
-                })
+            window.config.selfHostedLandingPage === true
+              ? undefined
+              : window.config.tippingEnabled === false
+                ? tRich("Using Moblin Cloud means you agree to the {terms}.", {
+                    terms: <TermsLink leaf />,
+                  })
+                : tRich("Using Moblin Cloud and your tip page means you agree to the {terms}.", {
+                    terms: <TermsLink leaf />,
+                  })
           }
         />
       </Show>

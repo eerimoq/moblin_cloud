@@ -56,6 +56,7 @@ Use matching frontend and backend images. Set these options in `.env` and run
 | Setting | Default | Behavior |
 | --- | --- | --- |
 | `SELF_HOSTED_LANDING_PAGE` | `false` | A compact device-management landing page instead of the original landing page. |
+| `INSTANCE_NAME` | Empty | Optional public name shown as “Moblin Cloud — name” in self-hosted mode. |
 | `TIPPING_ENABLED` | `true` | Public viewer pages and new tip, spin and effect orders. |
 
 ### What SELF_HOSTED_LANDING_PAGE does
@@ -66,10 +67,23 @@ the original promotional landing page with a compact sign-in page containing:
 
 - A device-management introduction instead of the viewer-page demonstration
   and How it works section.
-- One sign-in group, offering whichever Twitch/Kick providers the backend reports
+- Main and navigation sign-in buttons, offering whichever Twitch/Kick providers the backend reports
   as configured. If neither is configured, it explains that an administrator
   must finish sign-in setup.
-- A setup link to the Moblin documentation and attribution to Moblin Cloud.
+- A link to the Moblin documentation in the shared footer and linked attribution
+  to Moblin Cloud beneath the card.
+
+The compact page is always labeled “Self-hosted instance” to distinguish it from
+the official service. Optionally set `INSTANCE_NAME` to your organization or
+server name: the page and header then show “Moblin Cloud — name”. The mascot
+image stays unchanged. An empty or whitespace-only name keeps “Moblin Cloud”.
+The name is public text, not a URL or secret, and is ignored on the original
+landing page. Custom Compose files must pass it to the frontend container;
+local Vite configuration uses `instanceName` in `frontend/public/config.js`.
+
+Self-hosted mode omits the official service's terms notice and privacy-policy
+link from the dashboard footer. Other footer links and the language picker stay
+available. Operators are responsible for their instance's policies.
 
 The default is `false`, which keeps the original landing page. This setting is
 only a presentation choice: it does not create a different backend, configure
@@ -92,6 +106,7 @@ For a device-management instance without public viewer pages:
 
 ```dotenv
 SELF_HOSTED_LANDING_PAGE=true
+INSTANCE_NAME=My workspace
 TIPPING_ENABLED=false
 ```
 

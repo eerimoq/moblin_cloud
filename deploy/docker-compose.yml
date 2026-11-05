@@ -15,6 +15,7 @@ services:
     environment:
       BACKEND_HOST: backend:8080
       SELF_HOSTED_LANDING_PAGE: ${SELF_HOSTED_LANDING_PAGE:-false}
+      INSTANCE_NAME: ${INSTANCE_NAME:-}
       TIPPING_ENABLED: ${TIPPING_ENABLED:-true}
   caddy:
     image: caddy:2

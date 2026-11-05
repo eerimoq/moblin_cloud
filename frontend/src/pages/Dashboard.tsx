@@ -3229,7 +3229,15 @@ export default function Dashboard() {
       keyed
       fallback={
         <>
-          <CloudHeader />
+          <CloudHeader>
+            <Show when={!loading()}>
+              <span class="ml-auto flex items-center gap-2">
+                <For each={signInPlatforms()}>
+                  {(platform) => <PlatformSignIn platform={platform} />}
+                </For>
+              </span>
+            </Show>
+          </CloudHeader>
           <main>
             <Show
               when={loading()}

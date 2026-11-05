@@ -2,9 +2,19 @@ import { asset } from "../asset";
 
 declare global {
   interface Window {
-    config: { backendUrl: string; selfHostedLandingPage?: boolean; tippingEnabled?: boolean };
+    config: {
+      backendUrl: string;
+      selfHostedLandingPage?: boolean;
+      tippingEnabled?: boolean;
+      instanceName?: string;
+    };
   }
 }
+
+export const cloudName = () => {
+  const name = window.config.selfHostedLandingPage && window.config.instanceName?.trim();
+  return name ? `Moblin Cloud — ${name}` : "Moblin Cloud";
+};
 
 export const links = {
   api: window.config.backendUrl,

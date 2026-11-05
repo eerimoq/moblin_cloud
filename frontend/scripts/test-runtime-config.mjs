@@ -12,7 +12,9 @@ const script = readFileSync(new URL("../runtime-config.sh", import.meta.url), "u
   output,
 );
 const flags = ["SELF_HOSTED_LANDING_PAGE", "TIPPING_ENABLED"];
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !flags.includes(key)));
+const env = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => ![...flags, "INSTANCE_NAME"].includes(key)),
+);
 const run = (values) =>
   spawnSync("sh", ["-s", "--", "true"], {
     input: script,
@@ -30,15 +32,25 @@ try {
     backendUrl: "/api",
     selfHostedLandingPage: false,
     tippingEnabled: true,
+    instanceName: "",
   });
   assert.equal(run(Object.fromEntries(flags.map((key) => [key, "false"]))).status, 0);
   assert.deepEqual(config(), {
     backendUrl: "/api",
     selfHostedLandingPage: false,
     tippingEnabled: false,
+    instanceName: "",
   });
   assert.equal(run({ SELF_HOSTED_LANDING_PAGE: "true" }).status, 0);
   assert.equal(config().selfHostedLandingPage, true);
+  for (const name of [
+    "MrDemonWolf",
+    'Quotes " and \\ slashes\n\t\u0001',
+    'Wolf 🐺"; throw Error("injection"); //',
+  ]) {
+    assert.equal(run({ INSTANCE_NAME: name }).status, 0);
+    assert.equal(config().instanceName, name);
+  }
   assert.equal(run(Object.fromEntries(flags.map((key) => [key, "false"]))).status, 0);
   for (const flag of flags) {
     const result = run({ [flag]: "false; echo unsafe" });

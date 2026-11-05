@@ -15,7 +15,7 @@ const footerLinks: { label: string; href: string; icon?: IconName }[] = [
 
 const isExternal = (href: string) => /^https?:/.test(href);
 
-export default function Footer(props: { note?: JSX.Element }) {
+export default function Footer(props: { note?: JSX.Element; hidePrivacy?: boolean }) {
   return (
     <footer class="border-t border-line/40 py-10">
       <div class="mx-auto flex max-w-[1120px] flex-col items-center px-5 text-center sm:px-8">
@@ -23,17 +23,19 @@ export default function Footer(props: { note?: JSX.Element }) {
           <p class="mb-6 text-[15px] text-muted">{props.note}</p>
         </Show>
         <nav class="flex flex-wrap justify-center gap-x-7 gap-y-2" aria-label="Footer">
-          {footerLinks.map((l) => (
-            <a
-              href={l.href}
-              target={isExternal(l.href) ? "_blank" : undefined}
-              rel={isExternal(l.href) ? "noopener" : undefined}
-              class="flex items-center gap-1.5 text-[15px] font-bold whitespace-nowrap text-muted hover:text-ink"
-            >
-              {l.icon && <Icon name={l.icon} class="size-4" />}
-              {l.label}
-            </a>
-          ))}
+          {footerLinks
+            .filter((l) => !props.hidePrivacy || l.href !== links.privacyPolicy)
+            .map((l) => (
+              <a
+                href={l.href}
+                target={isExternal(l.href) ? "_blank" : undefined}
+                rel={isExternal(l.href) ? "noopener" : undefined}
+                class="flex items-center gap-1.5 text-[15px] font-bold whitespace-nowrap text-muted hover:text-ink"
+              >
+                {l.icon && <Icon name={l.icon} class="size-4" />}
+                {l.label}
+              </a>
+            ))}
         </nav>
         <label class="mt-6 flex items-center gap-2 text-[15px] font-bold text-muted">
           <Icon name="globe" class="size-4" />
