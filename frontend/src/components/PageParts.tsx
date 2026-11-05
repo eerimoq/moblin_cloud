@@ -142,9 +142,9 @@ export function CloudHeader(props: {
           aria-label={cloudName()}
         >
           <img src={asset("logos/logo-cloud.png")} alt="" class="h-9 w-auto" />
-          <span class="flex flex-col">
+          <span class="flex min-w-0 flex-col">
             <span
-              class="font-display text-2xl leading-tight font-bold break-words"
+              class="font-display text-2xl leading-tight font-bold [overflow-wrap:anywhere]"
               aria-hidden="true"
             >
               <Show

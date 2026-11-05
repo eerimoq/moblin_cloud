@@ -15,7 +15,9 @@ export default function SelfHostedLanding(props: {
         <div class="flex flex-col items-start gap-6 p-7 sm:p-12">
           <img src={asset("logos/logo-cloud.png")} alt="" class="h-16 w-auto" />
           <div class="flex max-w-full flex-col gap-2">
-            <span class="font-display text-xl font-semibold break-words">{cloudName()}</span>
+            <span class="font-display text-xl font-semibold [overflow-wrap:anywhere]">
+              {cloudName()}
+            </span>
             <span class="text-sm font-semibold text-leaf">{t("Self-hosted instance")}</span>
           </div>
           <h1 class="text-[40px] leading-[1.05] font-bold text-balance sm:text-6xl">
