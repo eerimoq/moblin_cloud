@@ -19,6 +19,8 @@ Tests are Vitest in Node, `src/**/*.test.ts`, only for the pure code in `src/dat
 
 ## Rules
 
+- Treat operator policy destinations as untrusted public URLs: allow only HTTP(S), preserve the service's existing defaults outside self-hosted mode, and test empty and rejected values as well as valid links.
+
 - The base path is dynamic: `/` when `public/CNAME` exists and `/moblin_cloud/` otherwise. Anything referencing a file under `public/` must go through `asset()` in `src/asset.ts`; never hardcode a leading slash in a src attribute.
 - Content lives in `src/data/`, not in components: URLs in `links.ts`, effects, Moblin's settings and the remote control types in their own files.
 - Backend access goes through `data/backend.ts`. The backend is configured at deploy time, not build time: `backendUrl` in `public/config.js`, which the Deploy frontend workflow overwrites in `dist/` since GitHub Pages can't proxy `/api`.
