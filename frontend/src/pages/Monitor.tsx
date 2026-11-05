@@ -213,7 +213,9 @@ function PaneMenu(props: {
               type="button"
               role="menuitem"
               class={menuItemClass}
-              onClick={() => run(() => props.actions.change({ panel: "web" }))}
+              onClick={() =>
+                run(() => props.actions.change({ panel: "web", device: props.leaf.device }))
+              }
             >
               {t("Change web page")}
             </button>
@@ -443,7 +445,9 @@ function PaneFrame(props: {
             label: panelNames()[kind],
             icon: panelIcons[kind],
           }))}
-          onChange={(panel) => props.actions.change({ panel: panel as PanelKind })}
+          onChange={(panel) =>
+            props.actions.change({ panel: panel as PanelKind, device: props.leaf.device })
+          }
         />
         <Show when={hasDevice()}>
           <span class="text-muted">·</span>
@@ -737,7 +741,11 @@ function WebPanel(props: { leaf: Leaf; account: Account; actions: LeafActions })
             onSubmit={(event) => {
               event.preventDefault();
               if (valid()) {
-                props.actions.change({ panel: "web", url: address().trim() });
+                props.actions.change({
+                  panel: "web",
+                  device: props.leaf.device,
+                  url: address().trim(),
+                });
               }
             }}
           >
@@ -760,7 +768,9 @@ function WebPanel(props: { leaf: Leaf; account: Account; actions: LeafActions })
           <Show when={props.account.twitch}>
             <button
               type="button"
-              onClick={() => props.actions.change({ panel: "web", twitchChat: true })}
+              onClick={() =>
+                props.actions.change({ panel: "web", device: props.leaf.device, twitchChat: true })
+              }
               class="inline-flex h-9 items-center gap-2 self-start rounded-full border-[1.5px] border-ghost-line bg-ghost px-4 font-display text-[15px] font-semibold text-ink hover:bg-ghost-hover"
             >
               <Icon name="twitch" class="size-4" />

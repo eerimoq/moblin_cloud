@@ -86,7 +86,7 @@ fn allowance_response(
     tiers: impl FnOnce(&Settings) -> Option<&Tiers>,
 ) -> Result<Json<AllowanceResponse>, Failure> {
     let (account, settings) = page_settings(api, id);
-    let tiers = linked_tiers(account.as_ref(), tiers(&settings));
+    let tiers = linked_tiers(api, account.as_ref(), tiers(&settings));
     let viewer = viewer(api, headers, id, account.as_ref())?;
     let allowance = tiers.map_or(0, |tiers| tiers.allowance(viewer.tier));
     Ok(Json(AllowanceResponse {
@@ -180,7 +180,7 @@ pub(super) fn subscriber(
     tiers: Option<&Tiers>,
 ) -> Result<Subscriber, Failure> {
     let doing = perk.doing();
-    let tiers = linked_tiers(account, tiers).ok_or(failure(
+    let tiers = linked_tiers(api, account, tiers).ok_or(failure(
         "feature-off",
         StatusCode::BAD_REQUEST,
         &format!("The streamer no longer lets subscribers {doing}. Reload the page."),
@@ -451,7 +451,9 @@ mod tests {
 
     #[tokio::test]
     async fn twitch_subscribers_spin_the_wheel_every_month() {
-        let (address, api) = start_api(None).await;
+        let twitch = start_twitch().await;
+        let (address, api) =
+            start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {

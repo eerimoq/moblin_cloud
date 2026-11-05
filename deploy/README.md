@@ -51,8 +51,8 @@ Update with `docker compose pull && docker compose up -d`. The database is
 ## Public pages
 
 Use matching frontend and backend images that include these settings and the
-provider-availability endpoint. Updating only the frontend against an older
-backend leaves sign-in buttons hidden because availability cannot be loaded.
+server configuration endpoint. Keep both images on the same reviewed version
+so the frontend can read configured sign-in and payment providers.
 
 The frontend container reads these optional settings at startup. Set them in
 `.env` and recreate the affected containers with `docker compose up -d`; no
@@ -74,12 +74,15 @@ frontend image rebuild is needed.
 
 Twitch and Kick sign-in buttons are shown automatically only for providers
 configured on the backend with a nonempty client ID and secret. The frontend
-reads public booleans from `/api/auth/providers`; credentials stay on the backend.
-This applies to the header, landing pages, account-link prompts and subscriber
-sign-in buttons. While availability is loading or unavailable, buttons stay
-hidden; the compact page shows a message if no providers are available. Existing
-linked-account details and unlink controls remain accessible. Restart the backend
-after changing its credentials and reload the browser to refresh availability.
+reads the `signIn` flags from `/api/config`, which also lists available payment
+providers; credentials stay on the backend. This applies to the header, landing
+pages, account-link prompts and subscriber sign-in buttons. Buttons stay hidden
+while configuration loads; upstream's compatibility fallback can offer all
+providers if that request fails. Keep the endpoint reachable. The compact page
+shows a message when the server reports no sign-in providers. Existing linked
+accounts remain visible; unlinking cannot remove the last configured sign-in
+provider. Restart the backend after changing its credentials and reload the
+browser to refresh availability.
 
 Missing payment credentials do not disable the whole viewer page, since
 non-payment interactions can still be used. `TIPPING_ENABLED=false` explicitly
@@ -123,14 +126,14 @@ Run `docker compose up -d` after changing `.env`, then reload the browser. With 
 custom Compose file, pass `SELFHOSTED` to the frontend and `TIPPING_ENABLED` to
 both services; keep OAuth credentials and `SESSION_SECRET` on the backend only.
 
-Keep `/config.js` and `/api/auth/providers` reachable from the signed-out page.
+Keep `/config.js` and `/api/config` reachable from the signed-out page.
 An Access rule or reverse proxy that redirects the provider endpoint to a login
 page prevents provider discovery. Sign-in availability is presentation, not an
 access policy: use application or proxy access controls if the instance should
 be private. Keep the phone's WebSocket and event-stream paths outside any
 browser-only login gate.
 
-If buttons are missing, check `/api/auth/providers` for the expected booleans,
+If buttons are missing, check `/api/config` for the expected booleans,
 confirm the backend received both values for the provider, check for proxy
 redirects or errors, and confirm the frontend and backend are compatible.
 
@@ -181,5 +184,5 @@ confirm the phone connects. To troubleshoot missing buttons, this public request
 should return JSON booleans rather than HTML or a login redirect:
 
 ```sh
-curl --fail https://example.com/api/auth/providers
+curl --fail https://example.com/api/config
 ```

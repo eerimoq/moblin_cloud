@@ -1,6 +1,16 @@
 import { createSignal, onMount } from "solid-js";
 import { BackendError, backendUrl, call, isSignedOut, post } from "./backend";
-import { type Identity, type Page, type Platform, type Settings } from "./remoteControl";
+import {
+  type Identity,
+  type Page,
+  type Platform,
+  platforms,
+  type Provider,
+  providerName,
+  providers,
+  type Settings,
+} from "./remoteControl";
+import { t } from "../i18n";
 import { readStored, store } from "../storage";
 
 export type Device = {
@@ -312,6 +322,37 @@ function takeSignInResult(): {
   return { session, failed, link, linkFailed };
 }
 
+type ServerConfig = { signIn: Record<Platform, boolean>; payments: Record<Provider, boolean> };
+
+const everything: ServerConfig = {
+  signIn: { twitch: true, kick: true },
+  payments: { paypal: true, stripe: true },
+};
+
+const [answeredConfig, setAnsweredConfig] = createSignal<ServerConfig | null>(null);
+let configAsked = false;
+
+function serverConfig() {
+  if (!configAsked) {
+    configAsked = true;
+    call<ServerConfig>("/config").then(setAnsweredConfig, () => setAnsweredConfig(everything));
+  }
+  return answeredConfig();
+}
+
+export const signInPlatforms = () =>
+  platforms.filter((platform) => serverConfig()?.signIn[platform]);
+
+export const noSignInPlatforms = () => serverConfig() !== null && signInPlatforms().length === 0;
+
+export const paymentProviders = () =>
+  providers.filter((provider) => (serverConfig() ?? everything).payments[provider]);
+
+export function paymentProvidersText() {
+  const offered = paymentProviders();
+  return offered.length === 1 ? providerName(offered[0]) : t("PayPal or Stripe");
+}
+
 export const signInUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/login`;
 
 export const linkUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/login?link=1`;
@@ -319,6 +360,7 @@ export const linkUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/l
 export type LinkResult = { linked: true } | { linked: false; error: string | null };
 
 export function createAccountSession() {
+  serverConfig();
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [signInFailed, setSignInFailed] = createSignal(false);

@@ -487,8 +487,8 @@ export default function Icon(props: Props) {
           <path d="M8 11V7a4 4 0 0 1 7.6-1.8" />
         </Match>
         <Match when={props.name === "square-split-diagonal"}>
-          <rect x="4" y="4" width="16" height="16" rx="2" />
-          <path d="M20 4 4 20M12 4v16M4 12h16" />
+          <rect x="5" y="5" width="14" height="14" rx="1.5" />
+          <path d="m5 5 14 14M19 5 5 19" />
         </Match>
         <Match when={props.name === "arrow-left"}>
           <path d="M19 12H5m6-6-6 6 6 6" />

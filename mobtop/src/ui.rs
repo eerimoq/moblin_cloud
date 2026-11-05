@@ -25,7 +25,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
     match &app.screen {
         Screen::SignedOut { error } => {
             signed_out(frame, body, app, error.as_deref());
-            hints.extend([("t", "Twitch"), ("k", "Kick"), ("c", "another device")]);
+            hints.extend(
+                app.offered()
+                    .iter()
+                    .map(|platform| (platform.key(), platform.title())),
+            );
+            hints.push(("c", "another device"));
         }
         Screen::SigningIn { platform, url } => {
             let mut lines = vec![
@@ -113,12 +118,23 @@ fn signed_out(frame: &mut Frame, area: Rect, app: &App, error: Option<&str>) {
     let mut lines = vec![
         Line::from("Sign in to watch your stream, its tips and your Moblins."),
         Line::default(),
-        Line::from(vec![" t ".bold(), "Sign in with Twitch".into()]),
-        Line::from(vec![" k ".bold(), "Sign in with Kick".into()]),
+    ];
+    if app.platforms.as_ref().is_some_and(Vec::is_empty) {
+        lines.push(Line::from(
+            "Signing in with Twitch or Kick is not set up on this server.".fg(MUTED),
+        ));
+    }
+    lines.extend(app.offered().iter().map(|platform| {
+        Line::from(vec![
+            format!(" {} ", platform.key()).bold(),
+            format!("Sign in with {}", platform.title()).into(),
+        ])
+    }));
+    lines.extend([
         Line::from(vec![" c ".bold(), "Sign in on another device".into()]),
         Line::default(),
         Line::from(app.backend.url.as_str().fg(MUTED)),
-    ];
+    ]);
     if let Some(error) = error {
         lines.push(Line::default());
         lines.push(Line::from(error.red()));

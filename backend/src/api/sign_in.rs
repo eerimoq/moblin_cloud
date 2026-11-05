@@ -9,25 +9,10 @@ use axum::response::Redirect;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
-use crate::accounts::{Page, Platform};
+use crate::accounts::{AccountError, Page, Platform};
 use crate::auth::{ConnectPoll, STATE_COOKIE, SignIn, StateError, Terminal};
 
 use super::*;
-
-pub(super) async fn handle_sign_in_providers(
-    State(api): State<Arc<Api>>,
-) -> (
-    [(axum::http::header::HeaderName, &'static str); 1],
-    Json<serde_json::Value>,
-) {
-    (
-        [(axum::http::header::CACHE_CONTROL, "no-store")],
-        Json(serde_json::json!({
-            "twitch": api.auth.has_twitch(),
-            "kick": api.auth.has_kick(),
-        })),
-    )
-}
 
 #[derive(Deserialize)]
 pub(super) struct LoginQuery {
@@ -478,8 +463,16 @@ pub(super) async fn handle_account_unlink(
     Path(platform): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let SignedIn { id, .. } = signed_in(&api, &headers)?;
+    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     let platform = platform_of(&platform)?;
+    if account.identity(platform).is_some()
+        && !account
+            .identities
+            .iter()
+            .any(|identity| identity.platform != platform && api.auth.has(identity.platform))
+    {
+        return Err(account_error(AccountError::LastIdentity));
+    }
     let account = api.accounts.unlink(&id, platform).map_err(account_error)?;
     api.remote_control
         .changes
@@ -496,7 +489,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::accounts::{Accounts, Platform};
+    use crate::accounts::{Accounts, Identity, Platform};
     use crate::api::test_utils::*;
     use crate::auth::Auth;
     use crate::counters::Counters;
@@ -507,31 +500,6 @@ mod tests {
     use crate::remote_control::Streamers;
     use crate::requests::Requests;
     use crate::subscribers::Allowances;
-
-    #[tokio::test]
-    async fn public_provider_availability_matches_configured_apps_without_exposing_keys() {
-        for (twitch, kick) in [(false, false), (true, false), (false, true), (true, true)] {
-            let (address, _) = start_api_with(
-                None,
-                None,
-                twitch.then(|| {
-                    crate::auth::OAuthApp::twitch("client-id".into(), "private-secret".into())
-                }),
-                kick.then(|| {
-                    crate::auth::KickApp::kick("client-id".into(), "private-secret".into())
-                }),
-                None,
-            )
-            .await;
-            let response = reqwest::get(format!("http://{address}/auth/providers"))
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
-            assert_eq!(response.headers()["cache-control"], "no-store");
-            let value: Value = response.json().await.unwrap();
-            assert_eq!(value, json!({ "twitch": twitch, "kick": kick }));
-        }
-    }
 
     #[tokio::test]
     async fn streamers_sign_in_and_manage_their_page() {
@@ -914,6 +882,73 @@ mod tests {
             2
         );
         assert_eq!(api.accounts.stats(&["123", "456"]).premium, 0);
+    }
+
+    #[tokio::test]
+    async fn only_configured_platforms_are_offered() {
+        let (kick, fake) = start_kick().await;
+        let (address, api) = start_api_with(None, None, None, Some(kick_app(&kick)), None).await;
+        let client = reqwest::Client::new();
+        let config: Value = client
+            .get(format!("http://{address}/config"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(config["signIn"], json!({"twitch": false, "kick": true}));
+        let session = session_of(
+            &SignInFlow::new(&address, fake)
+                .sign_in("kick", "kick-a")
+                .await,
+        );
+        let account = account_of(&address, &session).await;
+        let page = account["settings"]["id"].as_str().unwrap().to_string();
+        let id = api.auth.session_of(&session).unwrap().account;
+        api.accounts
+            .link(&id, &Identity::twitch("9", "Nine", "nine"))
+            .unwrap();
+        let response = client
+            .post(format!("http://{address}/account/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"subSpins": {"tier1": 1, "tier2": 2, "tier3": 3}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let sub_spins = || async {
+            let spin: Value = client
+                .get(format!("http://{address}/pages/{page}/spin"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            spin["subSpins"].clone()
+        };
+        assert_eq!(sub_spins().await["tier1"], 1);
+        let unlink = |platform: &str| {
+            client
+                .post(format!("http://{address}/account/unlink/{platform}"))
+                .bearer_auth(&session)
+                .send()
+        };
+        let response = unlink("kick").await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "You can't unlink the only way to sign in. Link another platform first."
+        );
+        api.accounts.unlink(&id, Platform::Kick).unwrap();
+        assert_eq!(sub_spins().await, Value::Null);
+        assert_eq!(account_of(&address, &session).await["kick"], Value::Null);
+        api.accounts
+            .link(&id, &Identity::kick("8", "Eight", "eight"))
+            .unwrap();
+        let response = unlink("twitch").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

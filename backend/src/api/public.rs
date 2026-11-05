@@ -33,6 +33,38 @@ pub(super) struct ProfileResponse {
     icon: Option<String>,
 }
 
+#[derive(Serialize)]
+struct SignInConfig {
+    twitch: bool,
+    kick: bool,
+}
+
+#[derive(Serialize)]
+struct PaymentConfig {
+    paypal: bool,
+    stripe: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ConfigResponse {
+    sign_in: SignInConfig,
+    payments: PaymentConfig,
+}
+
+pub(super) async fn handle_config(State(api): State<Arc<Api>>) -> Json<ConfigResponse> {
+    Json(ConfigResponse {
+        sign_in: SignInConfig {
+            twitch: api.auth.has(Platform::Twitch),
+            kick: api.auth.has(Platform::Kick),
+        },
+        payments: PaymentConfig {
+            paypal: api.paypal.is_some(),
+            stripe: api.stripe.is_some(),
+        },
+    })
+}
+
 pub(super) async fn handle_page(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
@@ -168,10 +200,19 @@ pub(super) fn page_settings(api: &Api, id: &str) -> (Option<Account>, Settings) 
     }
 }
 
-pub(super) fn linked_tiers(account: Option<&Account>, tiers: Option<&Tiers>) -> Option<Tiers> {
+pub(super) fn linked_tiers(
+    api: &Api,
+    account: Option<&Account>,
+    tiers: Option<&Tiers>,
+) -> Option<Tiers> {
     tiers
         .filter(|_| {
-            account.is_some_and(|account| account.twitch().is_some() || account.kick().is_some())
+            account.is_some_and(|account| {
+                account
+                    .identities
+                    .iter()
+                    .any(|identity| api.auth.has(identity.platform))
+            })
         })
         .cloned()
 }
@@ -285,7 +326,7 @@ pub(super) async fn handle_effects(
                 price: effects.price,
                 payment,
             }),
-        sub_effects: linked_tiers(account.as_ref(), settings.sub_effects()),
+        sub_effects: linked_tiers(&api, account.as_ref(), settings.sub_effects()),
         options: EFFECTS
             .iter()
             .map(|effect| PublicEffect {
@@ -326,7 +367,7 @@ pub(super) async fn handle_spin(
                 options: spin.options.clone(),
                 payment,
             }),
-        sub_spins: linked_tiers(account.as_ref(), settings.sub_spins()),
+        sub_spins: linked_tiers(&api, account.as_ref(), settings.sub_spins()),
         wheel: api.remote_control.wheel(&id),
         connected: api.remote_control.is_connected(&id),
     })

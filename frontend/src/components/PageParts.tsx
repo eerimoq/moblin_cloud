@@ -2,8 +2,6 @@ import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "soli
 import { asset } from "../asset";
 import { signInUrl } from "../data/account";
 import { pages } from "../data/links";
-import { signInEnabled } from "../data/frontendConfig";
-import { useSignInProviders } from "../data/signInProviders";
 import { type Platform, platformNames } from "../data/remoteControl";
 import CopyButton from "./CopyButton";
 import Icon, { type IconName } from "./Icon";
@@ -83,20 +81,17 @@ export function PlatformSignIn(props: {
   large?: boolean;
   children?: JSX.Element;
 }) {
-  const providers = useSignInProviders();
   return (
-    <Show when={signInEnabled(providers(), props.platform)}>
-      <a
-        href={props.href ?? signInUrl(props.platform)}
-        aria-label={t("Sign in with {platform}", { platform: platformNames[props.platform] })}
-        class={`inline-flex items-center justify-center rounded-full font-display font-semibold whitespace-nowrap transition-colors ${
-          props.large ? "h-13 gap-2.5 px-6 text-lg" : "h-11 gap-2 px-5 text-base"
-        } ${platformButtonClass(props.platform)}`}
-      >
-        <Icon name={props.platform} class="size-5" />
-        {props.children ?? platformNames[props.platform]}
-      </a>
-    </Show>
+    <a
+      href={props.href ?? signInUrl(props.platform)}
+      aria-label={t("Sign in with {platform}", { platform: platformNames[props.platform] })}
+      class={`inline-flex items-center justify-center rounded-full font-display font-semibold whitespace-nowrap transition-colors ${
+        props.large ? "h-13 gap-2.5 px-6 text-lg" : "h-11 gap-2 px-5 text-base"
+      } ${platformButtonClass(props.platform)}`}
+    >
+      <Icon name={props.platform} class="size-5" />
+      {props.children ?? platformNames[props.platform]}
+    </a>
   );
 }
 

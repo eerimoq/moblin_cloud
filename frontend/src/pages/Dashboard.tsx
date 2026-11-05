@@ -66,6 +66,7 @@ import {
   createAccountSession,
   type Assistant,
   removeAssistant,
+  signInPlatforms,
   setAssistantEditTips,
   setAssistantGoLive,
   setAssistantPreview,
@@ -78,6 +79,8 @@ import {
   connectStripe,
   disconnectPayPal,
   disconnectStripe,
+  paymentProviders,
+  paymentProvidersText,
   fetchAccount,
   pageEventsUrl,
   fetchMoreRecent,
@@ -183,7 +186,7 @@ function paymentErrorText(error: unknown, invalid: string) {
       case 400:
         return invalid;
       case 409:
-        return t("Connect PayPal or Stripe first.");
+        return t("Connect {providers} first.", { providers: paymentProvidersText() });
       case 503:
         return t("Payments are unavailable right now.");
     }
@@ -241,7 +244,7 @@ function stripeErrorText(error: unknown) {
 function SignInAgain() {
   return (
     <span class="flex flex-wrap gap-3">
-      <For each={platforms}>
+      <For each={signInPlatforms()}>
         {(platform) => (
           <PlatformSignIn platform={platform} large>
             {t("Sign in again")}
@@ -858,7 +861,7 @@ function GetStarted(props: {
       {
         shown: props.payments,
         done: props.settings.payable,
-        title: t("Connect PayPal or Stripe"),
+        title: t("Connect {providers}", { providers: paymentProvidersText() }),
         text: t("The money goes straight to your account."),
         section: "payments",
       },
@@ -1251,6 +1254,7 @@ function AssistantSettings(props: {
             session={props.session}
             platform={platform}
             titled={linked().length > 1}
+            addable={signInPlatforms().includes(platform)}
             assistants={
               platform === "twitch" ? props.account.twitchAssistants : props.account.kickAssistants
             }
@@ -1367,6 +1371,7 @@ function AssistantList(props: {
   session: string;
   platform: Platform;
   titled: boolean;
+  addable: boolean;
   assistants: Assistant[];
   onAccount: (account: Account) => void;
   onSignOut: () => void;
@@ -1530,23 +1535,25 @@ function AssistantList(props: {
           </Index>
         </ul>
       </Show>
-      <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
-        <input
-          type="text"
-          value={username()}
-          onInput={(event) => setUsername(event.currentTarget.value)}
-          placeholder={placeholder()}
-          aria-label={placeholder()}
-          maxLength={50}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck={false}
-          class={`${inputClass} min-w-0 flex-1`}
-        />
-        <button type="submit" class={buttonClass} disabled={busy() || !username().trim()}>
-          {t("Add")}
-        </button>
-      </form>
+      <Show when={props.addable}>
+        <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
+          <input
+            type="text"
+            value={username()}
+            onInput={(event) => setUsername(event.currentTarget.value)}
+            placeholder={placeholder()}
+            aria-label={placeholder()}
+            maxLength={50}
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck={false}
+            class={`${inputClass} min-w-0 flex-1`}
+          />
+          <button type="submit" class={buttonClass} disabled={busy() || !username().trim()}>
+            {t("Add")}
+          </button>
+        </form>
+      </Show>
       <Show when={error()}>
         {(error) => (
           <Notice status onClose={() => setError(null)}>
@@ -1960,6 +1967,8 @@ function Admin(props: {
     props.onAccount({ ...props.account, settings });
   const [busy, setBusy] = createSignal(false);
   const assisting = () => props.page !== undefined;
+  const subscriberSignIn = (platform: Platform) =>
+    account()[platform] !== null && signInPlatforms().includes(platform);
   const { recent, loadRecent, loadMore } = createRecent(
     (limit) => fetchRecent(props.session, props.page, limit),
     (kind, limit, before) => fetchMoreRecent(props.session, props.page, kind, limit, before),
@@ -2188,13 +2197,13 @@ function Admin(props: {
               />
             </Editable>
           </Show>
-          <Show when={account().twitch || account().kick}>
+          <Show when={subscriberSignIn("twitch") || subscriberSignIn("kick")}>
             <Editable readOnly={!account().editTips}>
               <SubscriberSettings
                 perk="spin"
                 tiers={settings().subSpins}
-                twitch={account().twitch !== null}
-                kick={account().kick !== null}
+                twitch={subscriberSignIn("twitch")}
+                kick={subscriberSignIn("kick")}
                 busy={busy()}
                 onSave={(subSpins) => save({ subSpins })}
               />
@@ -2234,13 +2243,13 @@ function Admin(props: {
               />
             </Editable>
           </Show>
-          <Show when={account().twitch || account().kick}>
+          <Show when={subscriberSignIn("twitch") || subscriberSignIn("kick")}>
             <Editable readOnly={!account().editTips}>
               <SubscriberSettings
                 perk="effect"
                 tiers={settings().subEffects}
-                twitch={account().twitch !== null}
-                kick={account().kick !== null}
+                twitch={subscriberSignIn("twitch")}
+                kick={subscriberSignIn("kick")}
                 busy={busy()}
                 onSave={(subEffects) => save({ subEffects })}
               />
@@ -2407,28 +2416,30 @@ function NeedsPayments(props: {
   streamer: string | null;
   onConnect: () => void;
 }) {
+  const available = () =>
+    props.streamer === null ? props.available : paymentProviders().length > 0;
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{props.title}</h2>
       <Show
-        when={props.streamer === null}
-        fallback={
-          <p class="text-ink-2">
-            {t(
-              "{name} has to connect PayPal or Stripe first, so the money goes straight to them.",
-              {
-                name: props.streamer!,
-              },
-            )}
-          </p>
-        }
+        when={available()}
+        fallback={<p class="text-ink-2">{t("Payments are not available right now.")}</p>}
       >
         <Show
-          when={props.available}
-          fallback={<p class="text-ink-2">{t("Payments are not available right now.")}</p>}
+          when={props.streamer === null}
+          fallback={
+            <p class="text-ink-2">
+              {t("{name} has to connect {providers} first, so the money goes straight to them.", {
+                name: props.streamer!,
+                providers: paymentProvidersText(),
+              })}
+            </p>
+          }
         >
           <p class="text-ink-2">
-            {t("Connect PayPal or Stripe first, so the money goes straight to you.")}
+            {t("Connect {providers} first, so the money goes straight to you.", {
+              providers: paymentProvidersText(),
+            })}
           </p>
           <div>
             <button type="button" class={buttonClass} onClick={() => props.onConnect()}>
@@ -3221,8 +3232,9 @@ export default function Dashboard() {
           <CloudHeader>
             <Show when={!loading() && window.config.selfHosted !== true}>
               <span class="ml-auto flex items-center gap-2">
-                <PlatformSignIn platform="twitch" />
-                <PlatformSignIn platform="kick" />
+                <For each={signInPlatforms()}>
+                  {(platform) => <PlatformSignIn platform={platform} />}
+                </For>
               </span>
             </Show>
           </CloudHeader>

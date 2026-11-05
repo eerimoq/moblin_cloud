@@ -167,6 +167,8 @@ export const currencies = [
   "USD",
 ];
 
+export const providers: Provider[] = ["paypal", "stripe"];
+
 export const providerName = (provider: Provider) => (provider === "paypal" ? "PayPal" : "Stripe");
 
 export const spinsText = (spins: number) =>

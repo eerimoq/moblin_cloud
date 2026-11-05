@@ -17,10 +17,8 @@ import {
   type Setter,
 } from "solid-js";
 import { asset } from "../asset";
-import { signInEnabled } from "../data/frontendConfig";
-import { useSignInProviders } from "../data/signInProviders";
 import { BackendError, isSignedOut, moblinIconUrl } from "../data/backend";
-import { fetchAccount, readSession, type Account } from "../data/account";
+import { fetchAccount, readSession, signInPlatforms, type Account } from "../data/account";
 import Icon, { kindIcons } from "../components/Icon";
 import Mascot from "../components/Mascot";
 import { fireConfetti } from "../confetti";
@@ -673,7 +671,6 @@ function SubscriberBox(props: {
   onSignOut: () => void;
   onRequest: () => void;
 }) {
-  const providers = useSignInProviders();
   const tiers = () =>
     tierNumbers
       .map((tier) => ({ tier, count: tierCount(props.tiers, tier) }))
@@ -778,7 +775,7 @@ function SubscriberBox(props: {
       </Show>
       <Show when={!props.signedIn}>
         <div class="flex flex-wrap justify-center gap-3">
-          <For each={props.platforms.filter((platform) => signInEnabled(providers(), platform))}>
+          <For each={props.platforms}>
             {(platform) => (
               <button
                 type="button"
@@ -1808,8 +1805,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   };
   const streamerName = () => streamerOf()?.name;
   const subPlatforms = () => {
+    const configured = signInPlatforms();
     const current = profile();
-    return current ? platforms.filter((platform) => current[platform] !== null) : [];
+    return current
+      ? platforms.filter((platform) => current[platform] !== null && configured.includes(platform))
+      : [];
   };
   const subscribersText = () => {
     const linked = subPlatforms();

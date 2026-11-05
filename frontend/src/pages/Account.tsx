@@ -6,12 +6,12 @@ import {
   deleteAccount,
   linkUrl,
   type LinkResult,
+  paymentProviders,
+  signInPlatforms,
   unlinkAccount,
   type Account,
 } from "../data/account";
 import { BackendError, isSignedOut } from "../data/backend";
-import { signInEnabled } from "../data/frontendConfig";
-import { useSignInProviders } from "../data/signInProviders";
 import { channelText, type Platform, platformNames, platforms } from "../data/remoteControl";
 import { t } from "../i18n";
 
@@ -33,11 +33,16 @@ function LinkedAccounts(props: {
   onAccount: (account: Account) => void;
   onSignOut: () => void;
 }) {
-  const providers = useSignInProviders();
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [resultDismissed, setResultDismissed] = createSignal(false);
   const linked = () => platforms.filter((platform) => props.account[platform] !== null);
+  const shown = () =>
+    platforms.filter(
+      (platform) => props.account[platform] !== null || signInPlatforms().includes(platform),
+    );
+  const lastSignIn = (platform: Platform) =>
+    !linked().some((other) => other !== platform && signInPlatforms().includes(other));
   const unlink = async (platform: Platform) => {
     setBusy(true);
     setError(null);
@@ -80,7 +85,7 @@ function LinkedAccounts(props: {
         )}
       </Show>
       <ul class="flex flex-col gap-3">
-        <For each={platforms}>
+        <For each={shown()}>
           {(platform) => (
             <li class="flex items-center gap-3 rounded-2xl border-[1.5px] border-line bg-well px-4 py-3">
               <BrandIcon name={platform} class="size-9" />
@@ -95,18 +100,16 @@ function LinkedAccounts(props: {
               <Show
                 when={props.account[platform]}
                 fallback={
-                  <Show when={signInEnabled(providers(), platform)}>
-                    <a href={linkUrl(platform)} class={smallButtonClass}>
-                      {t("Link")}
-                    </a>
-                  </Show>
+                  <a href={linkUrl(platform)} class={smallButtonClass}>
+                    {t("Link")}
+                  </a>
                 }
               >
                 <button
                   type="button"
                   class={smallButtonClass}
-                  disabled={busy() || linked().length < 2}
-                  title={linked().length < 2 ? t("Link another account first.") : undefined}
+                  disabled={busy() || lastSignIn(platform)}
+                  title={lastSignIn(platform) ? t("Link another account first.") : undefined}
                   onClick={() => void unlink(platform)}
                 >
                   {t("Unlink")}
@@ -181,11 +184,11 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{t("Delete account")}</h2>
       <p class="text-ink-2">
-        {t(
-          "Deletes your account with its tip page, Moblin devices, settings and history. Your PayPal " +
-            "and Stripe accounts stay as they are, and tips you got stay with you. Signing in " +
-            "again starts over with a new account.",
-        )}
+        {t("Deletes your account with its tip page, Moblin devices, settings and history.")}{" "}
+        <Show when={paymentProviders().length > 0}>
+          {t("Your payment accounts stay as they are, and tips you got stay with you.")}{" "}
+        </Show>
+        {t("Signing in again starts over with a new account.")}
       </p>
       <div class="flex flex-wrap items-center gap-4">
         <button

@@ -1,15 +1,14 @@
 import { createSignal, For, Show } from "solid-js";
 import { asset } from "../asset";
+import { noSignInPlatforms, signInPlatforms } from "../data/account";
 import { cloudSteps } from "../data/cloud";
 import Icon, { kindIcons, type IconName } from "./Icon";
 import { Notice, PlatformSignIn } from "./PageParts";
-import { spinsText } from "../data/remoteControl";
+import { platformNames, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
 import { links } from "../data/links";
-import { useSignInProviders } from "../data/signInProviders";
 
 function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
-  const providers = useSignInProviders();
   return (
     <section class="mx-auto max-w-[800px] px-5 py-14 sm:px-8 lg:py-24">
       <div class="overflow-hidden rounded-3xl border-[1.5px] border-line bg-card">
@@ -31,11 +30,6 @@ function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
             <Notice status>{t("Sign in to let mobtop use your account.")}</Notice>
           </Show>
           <SignInButtons />
-          <Show when={providers() !== null && !providers()?.twitch && !providers()?.kick}>
-            <Notice status>
-              {t("Sign-in is unavailable. Contact this instance's administrator.")}
-            </Notice>
-          </Show>
           <a href={links.docs} class="text-base font-semibold text-leaf hover:text-leaf-bright">
             {t("Setup guide")} ↗
           </a>
@@ -53,13 +47,17 @@ function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
 
 function SignInButtons() {
   return (
-    <div class="flex flex-wrap gap-3">
-      <PlatformSignIn platform="twitch" large>
-        {t("Sign in with Twitch")}
-      </PlatformSignIn>
-      <PlatformSignIn platform="kick" large>
-        {t("Sign in with Kick")}
-      </PlatformSignIn>
+    <div class="flex min-h-13 flex-wrap gap-3">
+      <For each={signInPlatforms()}>
+        {(platform) => (
+          <PlatformSignIn platform={platform} large>
+            {t("Sign in with {platform}", { platform: platformNames[platform] })}
+          </PlatformSignIn>
+        )}
+      </For>
+      <Show when={noSignInPlatforms()}>
+        <Notice status>{t("Signing in is not set up on this server.")}</Notice>
+      </Show>
     </div>
   );
 }
@@ -194,7 +192,7 @@ export default function CloudLanding(props: { failed: boolean; connecting: boole
               <h2 class="text-4xl font-bold sm:text-[46px]">{t("Up and running in minutes.")}</h2>
             </div>
             <ol class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <For each={cloudSteps}>
+              <For each={cloudSteps()}>
                 {(step, index) => (
                   <li class="flex flex-col gap-3">
                     <span class="flex size-11 items-center justify-center rounded-full bg-moss font-display text-xl font-bold text-white">

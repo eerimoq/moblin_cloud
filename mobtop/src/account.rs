@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::sign_in::Platform;
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
@@ -121,6 +123,27 @@ pub struct Received {
     pub received: bool,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct Platforms {
+    twitch: bool,
+    kick: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfig {
+    pub sign_in: Platforms,
+}
+
+impl Platforms {
+    pub fn configured(self) -> Vec<Platform> {
+        [(Platform::Twitch, self.twitch), (Platform::Kick, self.kick)]
+            .into_iter()
+            .filter_map(|(platform, configured)| configured.then_some(platform))
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connect {
@@ -208,6 +231,23 @@ mod tests {
             status: "delivered".to_string(),
             devices: Vec::new(),
         }
+    }
+
+    #[test]
+    fn only_configured_platforms_are_listed() {
+        let platforms = Platforms {
+            twitch: false,
+            kick: true,
+        };
+        assert_eq!(platforms.configured(), vec![Platform::Kick]);
+        let platforms = Platforms {
+            twitch: true,
+            kick: true,
+        };
+        assert_eq!(
+            platforms.configured(),
+            vec![Platform::Twitch, Platform::Kick]
+        );
     }
 
     fn ids(recent: &Recent) -> Vec<&str> {
