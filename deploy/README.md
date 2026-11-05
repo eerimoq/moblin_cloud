@@ -58,6 +58,36 @@ Use matching frontend and backend images. Set these options in `.env` and run
 | `SELF_HOSTED` | `false` | A compact device-management landing page instead of the original landing page. |
 | `TIPPING_ENABLED` | `true` | Public viewer pages and new tip, spin and effect orders. |
 
+### What SELF_HOSTED does
+
+Set `SELF_HOSTED=true` when this server is your own Moblin workspace and visitors
+primarily need to sign in to manage devices and streaming settings. It replaces
+the original promotional landing page with a compact sign-in page containing:
+
+- A device-management introduction instead of the viewer-page demonstration
+  and How it works section.
+- One sign-in group, offering whichever Twitch/Kick providers the backend reports
+  as configured. If neither is configured, it explains that an administrator
+  must finish sign-in setup.
+- A setup link to the Moblin documentation and attribution to Moblin Cloud.
+
+The default is `false`, which keeps the original landing page. This setting is
+only a presentation choice: it does not create a different backend, configure
+OAuth credentials, restrict registrations or access, grant premium/admin rights,
+or change device connections and dashboard features.
+
+Tipping is independent. Use `SELF_HOSTED=true` with `TIPPING_ENABLED=true` to
+keep public viewer pages, or set `TIPPING_ENABLED=false` to disable them. Choosing
+the compact landing page alone does not make the instance private.
+
+Compose passes `SELF_HOSTED` to the frontend container, which reads it at startup.
+Use the literal value `true` or `false`; other nonempty values are rejected.
+After editing `.env` (or your deployment platform's environment settings),
+recreate the frontend container and reload the page. No frontend rebuild is
+needed. The former development name `SELFHOSTED` is not recognized.
+
+### Example
+
 For a device-management instance without public viewer pages:
 
 ```dotenv
