@@ -6,6 +6,7 @@ import Icon, { kindIcons, type IconName } from "./Icon";
 import { Notice, PlatformSignIn } from "./PageParts";
 import { platformNames, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
+import { links } from "../data/links";
 
 function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
   return (
@@ -30,7 +31,7 @@ function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
           </Show>
           <SignInButtons />
           <a
-            href="https://github.com/eerimoq/moblin_cloud/blob/main/deploy/README.md"
+            href={links.selfHosting}
             class="text-base font-semibold text-leaf hover:text-leaf-bright"
           >
             {t("Setup guide")} ↗
