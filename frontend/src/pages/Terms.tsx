@@ -2,22 +2,38 @@ import { For, type JSX } from "solid-js";
 import { asset } from "../asset";
 import Footer from "../components/Footer";
 import { Band, cardClass, CloudHeader, Hero } from "../components/PageParts";
+import { paymentProviders } from "../data/account";
 import { links, pages } from "../data/links";
+import { providerName } from "../data/remoteControl";
 
 const linkClass = "text-leaf hover:text-leaf-bright";
 
-const sections: { title: string; body: JSX.Element[] }[] = [
+const providerNames = () => paymentProviders().map(providerName);
+const plural = () => providerNames().length > 1;
+const offers = (provider: "paypal" | "stripe") => paymentProviders().includes(provider);
+
+const disputeRoutes = () =>
+  [
+    ...(offers("paypal") ? ["PayPal's resolution center"] : []),
+    ...(offers("stripe") ? ["your card issuer"] : []),
+  ].join(" or ");
+
+const sections = (): { title: string; body: JSX.Element[] }[] => [
   {
     title: "Tips go straight to the streamer",
     body: [
       <>
         Tip pages on cloud.moblin.app let viewers tip streamers. Every payment on a tip page is a
-        tip, sent directly to the streamer's PayPal or Stripe account. Tips do not constitute the
-        purchase of physical goods.
+        tip, sent directly to the streamer
+        {providerNames().length > 0 ? `'s ${providerNames().join(" or ")} account` : ""}. Tips do
+        not constitute the purchase of physical goods.
       </>,
       <>
         Moblin only provides the software. Moblin does not receive, hold or forward the money and
-        takes no fee. PayPal and Stripe charge the streamer their usual fees.
+        takes no fee.
+        {providerNames().length > 0
+          ? ` ${providerNames().join(" and ")} ${plural() ? "charge" : "charges"} the streamer their usual fees.`
+          : ""}
       </>,
     ],
   },
@@ -34,7 +50,7 @@ const sections: { title: string; body: JSX.Element[] }[] = [
       </>,
       <>
         Questions about a tip, refunds and disputes are between you and the streamer. Contact the
-        streamer first, or use PayPal's resolution center or your card issuer. Moblin cannot refund
+        streamer first{disputeRoutes() ? `, or use ${disputeRoutes()}` : ""}. Moblin cannot refund
         tips.
       </>,
     ],
@@ -42,25 +58,41 @@ const sections: { title: string; body: JSX.Element[] }[] = [
   {
     title: "Streamers",
     body: [
-      <>
-        When you connect PayPal, you sign up or sign in on PayPal and give Moblin permission to send
-        tips to your PayPal account. Moblin cannot move money out of your account or refund tips.
-        You can remove the permission in your PayPal settings at any time.
-      </>,
-      <>
-        When you connect Stripe, you sign up or sign in on Stripe with an account that Moblin
-        creates for you. Moblin only uses it to take tips for you, and never refunds tips or moves
-        money out of it. You can disconnect Stripe in the dashboard at any time.
-      </>,
+      ...(offers("paypal")
+        ? [
+            <>
+              When you connect PayPal, you sign up or sign in on PayPal and give Moblin permission
+              to send tips to your PayPal account. Moblin cannot move money out of your account or
+              refund tips. You can remove the permission in your PayPal settings at any time.
+            </>,
+          ]
+        : []),
+      ...(offers("stripe")
+        ? [
+            <>
+              When you connect Stripe, you sign up or sign in on Stripe with an account that Moblin
+              creates for you. Moblin only uses it to take tips for you, and never refunds tips or
+              moves money out of it. You can disconnect Stripe in the dashboard at any time.
+            </>,
+          ]
+        : []),
       <>
         You are responsible for what your tip page says, for refunds and disputes with your viewers,
-        for any taxes on what you receive, and for following PayPal's or Stripe's terms and the
-        rules of the platforms you stream on.
+        for any taxes on what you receive, and for following{" "}
+        {providerNames().length > 0
+          ? `${providerNames()
+              .map((name) => `${name}'s`)
+              .join(" or ")} terms and `
+          : ""}
+        the rules of the platforms you stream on.
       </>,
       <>
         Tips are sent to your Moblin app. When it is not connected, Moblin keeps them for 7 days and
-        then gives up, so don't rely on it as your only record; PayPal and Stripe have all your
-        tips.
+        then gives up, so don't rely on it as your only record
+        {providerNames().length > 0
+          ? `; ${providerNames().join(" and ")} ${plural() ? "have" : "has"} all your tips`
+          : ""}
+        .
       </>,
     ],
   },
@@ -118,7 +150,7 @@ export default function Terms() {
           <p class="text-[15px] text-muted">Last updated October 28, 2026.</p>
         </Hero>
         <Band>
-          <For each={sections}>
+          <For each={sections()}>
             {(section) => (
               <div class={cardClass}>
                 <h2 class="text-[23px] font-semibold">{section.title}</h2>

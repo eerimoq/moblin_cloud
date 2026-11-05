@@ -79,6 +79,8 @@ import {
   connectStripe,
   disconnectPayPal,
   disconnectStripe,
+  paymentProviders,
+  paymentProvidersText,
   fetchAccount,
   pageEventsUrl,
   fetchMoreRecent,
@@ -184,7 +186,7 @@ function paymentErrorText(error: unknown, invalid: string) {
       case 400:
         return invalid;
       case 409:
-        return t("Connect PayPal or Stripe first.");
+        return t("Connect {providers} first.", { providers: paymentProvidersText() });
       case 503:
         return t("Payments are unavailable right now.");
     }
@@ -859,7 +861,7 @@ function GetStarted(props: {
       {
         shown: props.payments,
         done: props.settings.payable,
-        title: t("Connect PayPal or Stripe"),
+        title: t("Connect {providers}", { providers: paymentProvidersText() }),
         text: t("The money goes straight to your account."),
         section: "payments",
       },
@@ -2414,28 +2416,30 @@ function NeedsPayments(props: {
   streamer: string | null;
   onConnect: () => void;
 }) {
+  const available = () =>
+    props.streamer === null ? props.available : paymentProviders().length > 0;
   return (
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{props.title}</h2>
       <Show
-        when={props.streamer === null}
-        fallback={
-          <p class="text-ink-2">
-            {t(
-              "{name} has to connect PayPal or Stripe first, so the money goes straight to them.",
-              {
-                name: props.streamer!,
-              },
-            )}
-          </p>
-        }
+        when={available()}
+        fallback={<p class="text-ink-2">{t("Payments are not available right now.")}</p>}
       >
         <Show
-          when={props.available}
-          fallback={<p class="text-ink-2">{t("Payments are not available right now.")}</p>}
+          when={props.streamer === null}
+          fallback={
+            <p class="text-ink-2">
+              {t("{name} has to connect {providers} first, so the money goes straight to them.", {
+                name: props.streamer!,
+                providers: paymentProvidersText(),
+              })}
+            </p>
+          }
         >
           <p class="text-ink-2">
-            {t("Connect PayPal or Stripe first, so the money goes straight to you.")}
+            {t("Connect {providers} first, so the money goes straight to you.", {
+              providers: paymentProvidersText(),
+            })}
           </p>
           <div>
             <button type="button" class={buttonClass} onClick={() => props.onConnect()}>

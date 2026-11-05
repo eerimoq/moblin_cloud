@@ -22,19 +22,6 @@ pub(super) struct LoginQuery {
     challenge: Option<String>,
 }
 
-#[derive(Serialize)]
-pub(super) struct PlatformsResponse {
-    twitch: bool,
-    kick: bool,
-}
-
-pub(super) async fn handle_platforms(State(api): State<Arc<Api>>) -> Json<PlatformsResponse> {
-    Json(PlatformsResponse {
-        twitch: api.auth.has(Platform::Twitch),
-        kick: api.auth.has(Platform::Kick),
-    })
-}
-
 pub(super) async fn handle_twitch_login(
     State(api): State<Arc<Api>>,
     Query(query): Query<LoginQuery>,
@@ -902,15 +889,15 @@ mod tests {
         let (kick, fake) = start_kick().await;
         let (address, api) = start_api_with(None, None, None, Some(kick_app(&kick)), None).await;
         let client = reqwest::Client::new();
-        let platforms: Value = client
-            .get(format!("http://{address}/auth/platforms"))
+        let config: Value = client
+            .get(format!("http://{address}/config"))
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(platforms, json!({"twitch": false, "kick": true}));
+        assert_eq!(config["signIn"], json!({"twitch": false, "kick": true}));
         let session = session_of(
             &SignInFlow::new(&address, fake)
                 .sign_in("kick", "kick-a")

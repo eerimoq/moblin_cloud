@@ -129,6 +129,12 @@ pub struct Platforms {
     kick: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfig {
+    pub sign_in: Platforms,
+}
+
 impl Platforms {
     pub fn configured(self) -> Vec<Platform> {
         [(Platform::Twitch, self.twitch), (Platform::Kick, self.kick)]

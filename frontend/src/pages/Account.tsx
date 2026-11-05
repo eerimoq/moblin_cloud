@@ -6,6 +6,7 @@ import {
   deleteAccount,
   linkUrl,
   type LinkResult,
+  paymentProviders,
   signInPlatforms,
   unlinkAccount,
   type Account,
@@ -183,11 +184,11 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
     <div class={cardClass}>
       <h2 class="text-[23px] font-semibold">{t("Delete account")}</h2>
       <p class="text-ink-2">
-        {t(
-          "Deletes your account with its tip page, Moblin devices, settings and history. Your PayPal " +
-            "and Stripe accounts stay as they are, and tips you got stay with you. Signing in " +
-            "again starts over with a new account.",
-        )}
+        {t("Deletes your account with its tip page, Moblin devices, settings and history.")}{" "}
+        <Show when={paymentProviders().length > 0}>
+          {t("Your payment accounts stay as they are, and tips you got stay with you.")}{" "}
+        </Show>
+        {t("Signing in again starts over with a new account.")}
       </p>
       <div class="flex flex-wrap items-center gap-4">
         <button

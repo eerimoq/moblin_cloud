@@ -33,6 +33,38 @@ pub(super) struct ProfileResponse {
     icon: Option<String>,
 }
 
+#[derive(Serialize)]
+struct SignInConfig {
+    twitch: bool,
+    kick: bool,
+}
+
+#[derive(Serialize)]
+struct PaymentConfig {
+    paypal: bool,
+    stripe: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ConfigResponse {
+    sign_in: SignInConfig,
+    payments: PaymentConfig,
+}
+
+pub(super) async fn handle_config(State(api): State<Arc<Api>>) -> Json<ConfigResponse> {
+    Json(ConfigResponse {
+        sign_in: SignInConfig {
+            twitch: api.auth.has(Platform::Twitch),
+            kick: api.auth.has(Platform::Kick),
+        },
+        payments: PaymentConfig {
+            paypal: api.paypal.is_some(),
+            stripe: api.stripe.is_some(),
+        },
+    })
+}
+
 pub(super) async fn handle_page(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,

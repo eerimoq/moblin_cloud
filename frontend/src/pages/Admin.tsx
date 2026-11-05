@@ -3,6 +3,7 @@ import Icon, { type IconName } from "../components/Icon";
 import { subscribe } from "../sse";
 import { cardClass, Notice, Spinner } from "../components/PageParts";
 import { adminStatsEventsUrl, type AdminStats } from "../data/account";
+import type { Provider } from "../data/remoteControl";
 import { formatBytes } from "../format";
 
 type Counts = { today: number; week: number; total: number };
@@ -32,8 +33,8 @@ const reasonLabels: Record<string, string> = {
   "amount-too-low": "Below the smallest suggested tip",
   "no-such-effect": "Unknown effect",
   "invalid-option": "Unknown spin option",
-  "payments-unavailable": "PayPal or Stripe not connected",
-  provider: "PayPal or Stripe failed",
+  "payments-unavailable": "Payment provider not connected",
+  provider: "Payment provider failed",
   expired: "Order unknown or expired",
   "not-approved": "Viewer had not approved the payment",
   declined: "Provider declined the payment",
@@ -65,23 +66,32 @@ const problemReasons = [
 
 type Problem = { label: string; hint: string; matches: (name: string, reason: string) => boolean };
 
-const providers = [
+type ProviderRow = { slug: Provider; label: string };
+
+const providerRows: ProviderRow[] = [
   { slug: "paypal", label: "PayPal" },
   { slug: "stripe", label: "Stripe" },
 ];
 
-const problems: Problem[] = [
-  ...providers.map((provider) => ({
+const servicesText = (offered: ProviderRow[]) =>
+  [offered.map(({ label }) => label).join(", "), "Moblin"].filter(Boolean).join(" or ");
+
+const problemsOf = (offered: ProviderRow[]): Problem[] => [
+  ...offered.map((provider) => ({
     label: `${provider.label} failed`,
     hint: `${provider.label} could not start or complete a payment, or did not answer.`,
     matches: (name: string, reason: string) =>
       name.startsWith(provider.slug) && (reason === "provider" || reason === "unknown"),
   })),
-  {
-    label: "PayPal or Stripe not connected",
-    hint: "A viewer tried to pay on a page whose streamer has no working payment account.",
-    matches: (_, reason) => reason === "payments-unavailable",
-  },
+  ...(offered.length > 0
+    ? [
+        {
+          label: "Payment provider not connected",
+          hint: "A viewer tried to pay on a page whose streamer has no working payment account.",
+          matches: (_: string, reason: string) => reason === "payments-unavailable",
+        },
+      ]
+    : []),
   {
     label: "Moblin did not answer",
     hint: "Moblin was connected but did not reply in time. It may need an update.",
@@ -705,10 +715,10 @@ function Tile(props: { label: string; value: string; hint: string; attention?: b
   );
 }
 
-function Status(props: { counters: Counters }) {
+function Status(props: { counters: Counters; problems: Problem[]; services: string }) {
   const issues = () => {
     const issues: string[] = [];
-    for (const problem of problems) {
+    for (const problem of props.problems) {
       const today = props.counters.sum(problem.matches).today;
       if (today > 0) {
         issues.push(`${problem.label}: ${plural(today, "time", "times")} today`);
@@ -728,7 +738,7 @@ function Status(props: { counters: Counters }) {
           <div class="flex flex-col gap-0.5">
             <span class="font-display text-xl font-bold">No problems today</span>
             <span class="text-[15px] text-ink-2">
-              Nothing failed on our side or at PayPal, Stripe or Moblin since midnight UTC.
+              Nothing failed on our side or at {props.services} since midnight UTC.
             </span>
           </div>
         </div>
@@ -782,16 +792,15 @@ function Nav(props: { items: NavItem[] }) {
 
 function Loaded(props: { stats: AdminStats }) {
   const counters = () => new Counters(props.stats.counters);
+  const offered = () => providerRows.filter(({ slug }) => props.stats.server.integrations[slug]);
+  const problems = () => problemsOf(offered());
+  const services = () => servicesText(offered());
 
   const flow = (kind: Kind): Step[] => {
     const paid = (event: string, hint: string, expected: string[]) =>
       counters().step(`${kind.kind}${event}`, event, hint, expected);
     return [
-      paid(
-        "Orders",
-        "Payments started at PayPal or Stripe, before the viewer approves.",
-        kind.orders,
-      ),
+      paid("Orders", "Payments started at the provider, before the viewer approves.", kind.orders),
       paid(
         "Payments",
         "Completed captures, so the streamer got the money and the request was queued. One order can fail several times before it succeeds.",
@@ -849,7 +858,7 @@ function Loaded(props: { stats: AdminStats }) {
     },
   ];
 
-  const provider = ({ slug, label }: (typeof providers)[number]): Step[] => {
+  const provider = ({ slug, label }: ProviderRow): Step[] => {
     const labels = {
       provider: `${label} failed`,
       declined: `${label} declined the payment`,
@@ -885,7 +894,7 @@ function Loaded(props: { stats: AdminStats }) {
   };
 
   const problemsToday = () =>
-    problems.filter((problem) => counters().sum(problem.matches).today > 0).length;
+    problems().filter((problem) => counters().sum(problem.matches).today > 0).length;
   const today = (name: string) => counters().get(name).today;
 
   const navItems = (): NavItem[] => [
@@ -907,13 +916,17 @@ function Loaded(props: { stats: AdminStats }) {
       caption: `${format(problemsToday())} today`,
       attention: problemsToday() > 0,
     },
-    {
-      id: "providers",
-      label: "Providers",
-      caption: providers
-        .map(({ slug, label }) => `${format(today(`${slug}Payments`))} ${label}`)
-        .join(", "),
-    },
+    ...(offered().length > 0
+      ? [
+          {
+            id: "providers",
+            label: "Providers",
+            caption: offered()
+              .map(({ slug, label }) => `${format(today(`${slug}Payments`))} ${label}`)
+              .join(", "),
+          },
+        ]
+      : []),
     ...kinds.map((kind) => ({
       id: kind.kind,
       label: kind.label,
@@ -953,20 +966,37 @@ function Loaded(props: { stats: AdminStats }) {
       ["Stripe", "Stripe platform keys, for card payments.", server().integrations.stripe],
     ] as const;
 
-  const accounts = [
-    ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
+  const accounts = () =>
     [
-      "Premium",
-      "Signed in accounts with the premium features: the admins and the premium accounts list.",
-      props.stats.accounts.premium,
-    ],
-    ["PayPal connected", "A PayPal merchant that can take payments.", props.stats.accounts.paypal],
-    ["Stripe connected", "A Stripe account that takes card payments.", props.stats.accounts.stripe],
-  ] as const;
+      ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
+      [
+        "Premium",
+        "Signed in accounts with the premium features: the admins and the premium accounts list.",
+        props.stats.accounts.premium,
+      ],
+      ...(props.stats.server.integrations.paypal
+        ? [
+            [
+              "PayPal connected",
+              "A PayPal merchant that can take payments.",
+              props.stats.accounts.paypal,
+            ],
+          ]
+        : []),
+      ...(props.stats.server.integrations.stripe
+        ? [
+            [
+              "Stripe connected",
+              "A Stripe account that takes card payments.",
+              props.stats.accounts.stripe,
+            ],
+          ]
+        : []),
+    ] as [string, string, number][];
 
   return (
     <div class="flex flex-col gap-8">
-      <Status counters={counters()} />
+      <Status counters={counters()} problems={problems()} services={services()} />
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Tile
           label="Connected devices"
@@ -995,7 +1025,7 @@ function Loaded(props: { stats: AdminStats }) {
         <div class="flex min-w-0 flex-col gap-10">
           <Section id="accounts" title="Accounts" hint="Right now, not per day.">
             <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              <For each={accounts}>
+              <For each={accounts()}>
                 {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
               </For>
             </div>
@@ -1073,10 +1103,10 @@ function Loaded(props: { stats: AdminStats }) {
           <Section
             id="problems"
             title="Problems"
-            hint="Failures on our side or at PayPal, Stripe or Moblin, across all kinds of tips. Viewer mistakes and streamers being offline are not counted here."
+            hint={`Failures on our side or at ${services()}, across all kinds of tips. Viewer mistakes and streamers being offline are not counted here.`}
           >
             <StepTable
-              steps={problems.map((problem) => ({
+              steps={problems().map((problem) => ({
                 label: problem.label,
                 hint: problem.hint,
                 counts: counters().sum(problem.matches),
@@ -1085,28 +1115,30 @@ function Loaded(props: { stats: AdminStats }) {
               }))}
             />
           </Section>
-          <Section
-            id="providers"
-            title="Providers"
-            hint="Payments by provider, across all kinds of tips, so PayPal and Stripe can be compared. The failures before a provider is involved are under each kind below."
-          >
-            <div class="flex flex-col gap-5">
-              <For each={providers}>
-                {(item) => (
-                  <div class="flex flex-col gap-2">
-                    <h3 class="text-[17px] font-semibold text-ink-2">{item.label}</h3>
-                    <StepTable steps={provider(item)} />
-                  </div>
-                )}
-              </For>
-            </div>
-          </Section>
+          <Show when={offered().length > 0}>
+            <Section
+              id="providers"
+              title="Providers"
+              hint="Payments by provider, across all kinds of tips. The failures before a provider is involved are under each kind below."
+            >
+              <div class="flex flex-col gap-5">
+                <For each={offered()}>
+                  {(item) => (
+                    <div class="flex flex-col gap-2">
+                      <h3 class="text-[17px] font-semibold text-ink-2">{item.label}</h3>
+                      <StepTable steps={provider(item)} />
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Section>
+          </Show>
           <For each={kinds}>
             {(kind) => (
               <Section
                 id={kind.kind}
                 title={kind.label}
-                hint="Every step shows its count, then how often it failed and why. Amber reasons are our, PayPal's, Stripe's or Moblin's fault; grey ones are viewer mistakes or offline streamers."
+                hint={`Every step shows its count, then how often it failed and why. Amber reasons are failures on our side or at ${services()}; grey ones are viewer mistakes or offline streamers.`}
               >
                 <StepTable steps={flow(kind)} />
               </Section>

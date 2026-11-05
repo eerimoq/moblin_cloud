@@ -4,7 +4,7 @@ use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::account::{Account, AllRecent, Connect, Kind, Platforms, Recent};
+use crate::account::{Account, AllRecent, Connect, Kind, Platforms, Recent, ServerConfig};
 
 #[derive(serde::Deserialize)]
 struct Session {
@@ -93,7 +93,8 @@ impl Backend {
     }
 
     pub async fn platforms(&self) -> Result<Platforms, BackendError> {
-        self.get("/auth/platforms").await
+        let config: ServerConfig = self.get("/config").await?;
+        Ok(config.sign_in)
     }
 
     pub async fn session(&self, code: &str, verifier: &str) -> Result<String, BackendError> {

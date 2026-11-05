@@ -340,6 +340,18 @@ mod tests {
     use crate::api::test_utils::*;
 
     #[tokio::test]
+    async fn only_configured_payment_providers_are_offered() {
+        let (address, _, _) = start_stripe_api().await;
+        let config: Value = reqwest::get(format!("http://{address}/config"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(config["payments"], json!({"paypal": false, "stripe": true}));
+    }
+
+    #[tokio::test]
     async fn stripe_connects_and_takes_tips() {
         let (address, api, fake) = start_stripe_api().await;
         let client = reqwest::Client::new();
