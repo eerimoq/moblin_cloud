@@ -1,133 +1,110 @@
-# Moblin Cloud: shared agent guidance
+# Moblin Cloud: shared agent instructions
 
-Read this file first, then the nearest folder's `AGENTS.md`. The guidance is for
-all coding agents. Prefer the current source and manifests over dated examples.
+## Read before working
 
-## Product and architecture
+These instructions are shared by Claude, Codex and other coding agents. Read this
+file, then explicitly read the `AGENTS.md` in each folder you will change. Do not
+assume your client loaded nested guidance. The folder rules apply to that subtree.
 
-Moblin Cloud provides streamer dashboards, public viewer interactions, device
-monitoring and remote control of Moblin. The Moblin marketing website is a
-separate project; do not replace this application's landing page with that site.
+Start by checking Git status, the active branch and the relevant implementation.
+Preserve existing work and follow the requested Git workflow; this repository
+does not require agents to create a PR or use a particular branch naming scheme.
 
-Three clients share one backend:
+Claude startup instructions are in [README.md](README.md#coding-agents). Keep
+`AGENTS.md` as the only instruction filename; do not add model-specific copies,
+compatibility stubs or instruction symlinks.
 
-```text
-SolidJS website ─┐
-mobtop terminal ├─ Rust HTTP/SSE backend ─ SQLite
-Moblin devices ─┘          ├─ device WebSocket connections
-                          └─ Twitch, Kick, PayPal and Stripe integrations
-```
+## What lives here
 
-The frontend is a static multi-page application, not a server-rendered app or a
-client-router framework. The backend owns authentication, permissions, payments
-and durable state. `mobtop` is an API client, not a second backend.
+Moblin Cloud is the dashboard, viewer pages and device connection service, not
+the separate Moblin marketing website. The web frontend and mobtop terminal
+client use the Rust backend; Moblin devices connect through its WebSocket
+protocol. The backend stores durable state in SQLite and integrates with Twitch,
+Kick, PayPal and Stripe.
 
-## Find the owning code
+| Folder | Read next | Responsibility |
+| --- | --- | --- |
+| `frontend/` | [frontend/AGENTS.md](frontend/AGENTS.md) | Static SolidJS/TypeScript site, multi-page Vite entries, styles, translations and browser streams. |
+| `backend/` | [backend/AGENTS.md](backend/AGENTS.md) | Axum API, accounts, SQLite, payments and Moblin connections. |
+| `mobtop/` | [mobtop/AGENTS.md](mobtop/AGENTS.md) | Rust terminal UI and client of the same backend. |
+| `tests/` | [tests/AGENTS.md](tests/AGENTS.md) | Python black-box scenarios and fake external services. |
+| `scripts/` | [scripts/AGENTS.md](scripts/AGENTS.md) | Translation and tracking ports from Moblin's Swift source. |
+| `deploy/` | [deploy/AGENTS.md](deploy/AGENTS.md) | Portable Compose setup and proxy configuration. |
+| `.github/` | [.github/AGENTS.md](.github/AGENTS.md) | Verification and publication workflows. |
 
-| Area | Entry points and responsibilities |
+The [architecture index](docs/architecture.md) links to subsystem notes. Read the
+relevant note and source files rather than loading all implementation notes.
+
+## Existing project conventions
+
+- Do not write comments or docstrings.
+- **Magic numbers are fine, and often preferred, when used in a single place.**
+  Do not hoist a literal into a named constant just because it is a literal; only
+  name it when the same value is used in more than one place.
+- Rust uses edition 2024. Clippy warnings are errors.
+- Moblin's remote-control messages are a contract with the iOS app. Coordinate
+  protocol changes with the app, web client, mobtop and fake Moblin.
+
+Keep changes focused and reuse existing code. Read callers before changing a
+shared function or response. Do not replace the application's architecture or
+add dependencies to solve a local problem without a concrete reason.
+
+## Boundaries to preserve
+
+- Reuse `GET /config` for configured sign-in and payment providers. Credentials
+  stay on the backend; public availability flags do not grant permission.
+- Keep public browser `config.js` distinct from the backend configuration API.
+- Enforce ownership, assistant rights and admin access on the backend. Hiding a
+  control is not authorization, and CORS is not authentication.
+- Capture recording is transactional and idempotent. Device delivery is
+  deliberately **at least once**: retries reuse `requestId`, and Moblin
+  deduplicates it. Do not promise exactly-once network delivery.
+- Preserve recovery from lost provider responses and failed/retried deliveries.
+  Do not weaken validation, permissions or error handling to make a test pass.
+- Keep secrets, device keys, sessions, real databases and private test
+  configuration out of logs, commits and reports. Use isolated fakes for tests.
+- Do not deploy, publish releases/images or operate real accounts/payments unless
+  those actions are part of the user's request.
+
+## Commands and verification
+
+The `justfile` is the executable source of truth for shared commands. See
+`README.md` for prerequisites and `tests/README.md` for system-test setup.
+Use the repository's npm and Cargo lockfiles and existing tool configuration.
+
+| Change | Relevant verification |
 | --- | --- |
-| `frontend/` | Vite HTML entries, SolidJS UI, TypeScript API clients, Tailwind tokens, translations and browser streams. Read `frontend/AGENTS.md`. |
-| `backend/` | Axum HTTP routes, SQLite state, OAuth, provider integration and device protocol. Read `backend/AGENTS.md`. |
-| `mobtop/` | Rust terminal UI, backend client, session persistence and SSE. Read `mobtop/AGENTS.md`. |
-| `tests/` | Python black-box scenarios and fake Twitch, Kick, payment and Moblin services. Read `tests/AGENTS.md` and `tests/README.md`. |
-| `deploy/` | Portable Compose configuration and operator setup. Read `deploy/AGENTS.md`. |
-| `scripts/` | Translation maintenance and tracking ports from Moblin Swift source. |
-| `.github/workflows/` | CI, GitHub Pages publication and tagged container-image publication. |
-| `.config/`, `.codespellrc` | Existing Python and spelling tool configuration. |
-| `justfile` | Shared development and verification commands. |
+| Frontend logic or UI | `cd frontend && npm test`; `npm run build` there for TypeScript and production bundling. |
+| Backend | `cd backend && cargo test`; `cargo clippy --all-targets -- -D warnings` there. |
+| mobtop | Its `cargo test` and strict Clippy checks. |
+| Cross-client/API/payment behavior | Relevant fake-service scenario with `just system-test [pattern]`. |
+| Python | Applicable root style/lint recipes using the existing configuration. |
+| Documentation | Spelling, local links, paths and `git diff --check`. |
 
-Detailed implementation notes are in `docs/architecture.md`. Consult the relevant
-section before changing a subsystem. Keep shared instructions in `AGENTS.md`
-rather than in competing agent-specific files.
+Root check recipes are `just style-check`, `just lint`, `just spell-check` and
+`just test`. Run checks appropriate to the change; do not run the entire stack
+for a prose-only edit. System tests and the frontend production build are not
+currently part of the CI test recipe. Do not infer that they passed from CI.
 
-## Work safely and keep scope small
+For UI changes, use an available browser to check the affected states. Report
+missing browser or real-device coverage rather than inventing results. A fake
+OAuth/payment flow is not a live-provider verification.
 
-- Check Git status and the active branch before editing. Preserve unrelated work.
-- Read the owning implementation and every caller before changing a contract.
-- Keep upstream contributions generic. Instance branding, organization-specific
-  access rules and host provisioning do not belong in a reusable application PR.
-- Preserve the existing architecture and dependencies. Do not introduce a router,
-  framework, ORM, service or generalized abstraction without a concrete need.
-- Follow upstream's convention against adding code comments and docstrings;
-  explain behavior in names, tests and documentation.
-- Leave one-off literals inline; introduce named constants when values are reused.
-- Never commit, print or copy live `.env`, OAuth/session secrets, device keys,
-  user databases, payment details or private test configuration.
-- Do not deploy, release, tag images, modify accounts, use real payments or change
-  external infrastructure without explicit authorization.
-- Keep unrelated changes and instruction-documentation work in separate PRs.
-- Do not rewrite another contributor's commits or force-push without authorization.
+## Keep the guidance useful
 
-## Shared contracts
+When changing behavior, endpoints, ownership or file locations, update the
+affected subsystem note and folder guidance in the same change. The source wins
+when a note is stale. Describe mechanisms in architecture notes; keep commands
+in the `justfile` and agent workflow rules here or in the owning folder's
+`AGENTS.md`. Do not copy command catalogs or policy into architecture notes.
 
-- `GET /config` is the existing source for configured sign-in and payment
-  providers. Its UI availability flags are public; credentials are not. Reuse it
-  instead of adding another provider-discovery endpoint or credential logic.
-- UI visibility is not authorization. Backend checks remain authoritative for
-  account ownership, admin access, assistant rights and device controls.
-- Keep frontend runtime `config.js` distinct from backend `/config`. The former
-  supplies public browser settings; the latter describes server integrations.
-- Presentation and visibility are not access policies. Keep effective feature
-  capabilities consistent between clients and the backend. Disabling new
-  interactions must not strand existing captures, webhooks or reconciliation.
-- HTTP, SSE and WebSocket paths are separate interfaces. A browser-only login
-  gate must not silently break phone or terminal clients.
-- Moblin JSON messages are a contract with the iOS app. Coordinate changes with
-  the Swift source, both clients and the fakes; preserve compatibility.
-- Preserve the exact-once recording/delivery and recovery behavior of payment
-  state transitions. Do not weaken validation or exception handling to pass tests.
+Do not turn temporary CI results, machine-specific problems, PR numbers or
+unmerged features into standing instructions. Preserve unrelated local changes.
+If a required tool/check is unavailable, report the limitation and continue
+unaffected work without weakening safeguards.
 
-## Development and checks
+## Report
 
-Install prerequisites from `README.md` and `requirements.txt`, with versions
-consistent with the manifests, Dockerfiles and CI. Use the lockfiles. This repo
-uses npm for its frontend and separate Cargo projects for both Rust programs.
-
-```sh
-cd frontend
-npm ci
-cd ..
-just dev
-```
-
-Use `just dev kick` to exercise Kick-only configuration and `just dev ""` for
-no sign-in providers. The default development setup uses fake services, not live
-OAuth or payment accounts.
-
-Run the smallest meaningful checks for the touched area, then the applicable
-shared checks before marking a PR ready:
-
-```sh
-just style-check
-just lint
-just spell-check
-just test
-```
-
-Frontend changes also require `cd frontend && npm run build`; unit tests do not
-replace TypeScript checking or a production build. Browser-facing changes need
-an actual preview check, including a narrow layout and relevant empty/error
-states. Do not claim browser tests or live provider integration passed from
-unit tests alone.
-
-Use `just system-test` for changes to end-to-end API, payment recovery or device
-behavior. Its prerequisites and fake-service boundaries are in `tests/README.md`;
-it is not part of the current CI workflow. Never run interactive real-account
-tests without explicit authorization.
-
-For scene-editor or remote-control ports, inspect `scripts/moblin_ports.json` and
-run `just moblin-drift` with the appropriate Moblin checkout/ref. Do not mark a
-port current without reviewing the corresponding Swift changes.
-
-Do not automatically run `just update-dependencies` or `just machine-translate`:
-they broadly change inputs or use an external service. Ask for a scoped request
-when either is needed.
-
-## Finish
-
-Run `git diff --check`, inspect the complete diff and report what changed, which
-behavioral tests passed, and any checks that remain blocked. Omit styling or
-formatting changes from summaries, reviews and commit messages. Distinguish source
-review, simulated integrations and live validation. A queued or approval-blocked
-workflow is not a passing workflow. Keep dates and transient release/CI status
-in the PR or review record rather than these instructions.
+Explain the resulting behavior, relevant tests and remaining limitations. Never
+mention styling or formatting changes in summaries, reviews or commit messages.
+A queued workflow or one requiring approval is not a passing workflow.

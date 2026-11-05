@@ -1,56 +1,55 @@
 # Frontend
 
-Read the repository's `AGENTS.md` first. This is a static SolidJS, TypeScript,
-Tailwind v4 and Vite application with multiple HTML entries.
+Read the root `AGENTS.md` first. Paths below are relative to `frontend/`.
 
-## Ownership
+## Find the implementation
 
-- HTML entries and `src/*.tsx` bootstraps select the page; `vite.config.ts` lists
-  the build inputs. Update all three when adding a page.
-- `src/not-found.tsx` handles friendly viewer, dashboard, device and monitor URLs
-  through the static host's 404 fallback. Test those direct URLs and reloads.
-- `src/pages/Dashboard.tsx` coordinates signed-in navigation, selected streamer
-  and device. Preserve history, hash selection and assistance boundaries.
-- `src/components/CloudLanding.tsx` owns the landing page.
-- `src/data/` owns shared API contracts and transformations. Reuse the existing
-  backend call helpers and `signInPlatforms`/`paymentProviders` from `account.ts`.
-- `src/sse.ts` owns reconnect/visibility behavior; `components/deviceFeed.ts`
-  shares device and preview feeds. Do not create a stream per pane accidentally.
-- `components/sceneEditor/` and `data/moblinSettings.ts` mirror Moblin behavior.
-  Check the port map and the corresponding Swift code before changing semantics.
-- `src/index.css` contains shared design tokens. `src/locales/` contains translated
-  strings; `src/i18n.ts` provides `t` and `tRich`.
+| Location | Owns |
+| --- | --- |
+| HTML entries, `src/*.tsx`, `vite.config.ts` | Page bootstrapping, base path, build inputs and development rewrites. |
+| `src/not-found.tsx` | Static-host fallback for friendly viewer, dashboard, device and monitor URLs. |
+| `src/pages/Dashboard.tsx` | Signed-in navigation, selected page/streamer/device and history. |
+| `src/components/CloudLanding.tsx` | Landing page. |
+| `src/data/account.ts`, `src/data/backend.ts` | API calls, sessions and configured sign-in/payment providers. |
+| `src/sse.ts`, `src/components/deviceFeed.ts` | Streaming lifecycle, reconnection and shared device/preview feeds. |
+| `src/components/sceneEditor/`, `src/data/moblinSettings.ts` | Ports of Moblin editing and settings behavior. |
+| `src/index.css`, `src/i18n.ts`, `src/locales/` | Tokens, translation lookup and locale catalogs. |
 
-## Rules
+The [architecture index](../docs/architecture.md) has separate frontend, scene
+editor and styling/localization notes.
 
-Use Solid signals, resources and cleanup correctly; do not apply React hook or
-state assumptions. Preserve the multi-page structure and use existing controls,
-tokens, asset helpers and responsive behavior.
+## Preserve the client contract
 
-Use literal strings with `t`/`tRich` for new user-facing copy and preserve message
-placeholders. Do not silently replace locale catalogs with machine output.
+This is a static multi-page SolidJS app, not React or a router-based SPA. When
+adding a page, update the HTML entry, its bootstrap and Vite input list together.
+Use existing asset/base-path helpers. Check direct navigation and reloads, not
+only links from the dashboard.
 
-Never send provider credentials to the browser. Runtime `config.js` is public.
-Do not infer privileges from hidden buttons or client-side role checks. Keep
-backend configuration error behavior explicit and test it before changing the
-upstream compatibility fallback.
+Preserve Solid reactivity and ownership. Do not snapshot reactive props
+accidentally or leak timers/listeners when components disappear. Reuse existing
+controls, design tokens and responsive patterns.
 
-Preserve session invalidation handling and cancel timers, listeners and streams
-when owners disappear. Handle 401/403, network failure, reconnect and hidden-tab
-behavior. Validate an event-stream response before treating it as connected.
+Read available integrations through the existing account helpers and `/config`.
+The current compatibility fallback offers providers if configuration loading
+fails; changing that policy requires a deliberate behavior change and tests.
+Never expose credentials or infer authorization from client-side state.
 
-Keep presentation choices independent of backend capabilities. Exercise
-Twitch-only, Kick-only, both and neither provider states, missing payment
-integrations and direct viewer URLs when changing those flows.
+Use the existing fetch-based SSE helper so bearer headers, error handling,
+visibility and reconnect behavior remain consistent. Reuse shared device feeds
+instead of opening one connection per monitor pane. Preserve unauthorized-session
+handling and cleanup.
 
-## Verification
+Use literal strings with `t`/`tRich`, keeping placeholders intact. The translation
+workflow is in [scripts/AGENTS.md](../scripts/AGENTS.md); do not duplicate its rules
+here. Keep scene-editor changes aligned with the Swift source and port map.
 
-```sh
-npm test
-npm run build
-```
+## Check the change
 
-Run the repository's frontend lint/style checks as applicable. Check actual
-desktop and phone-sized layouts for UI changes, including keyboard focus,
-loading, missing integrations and error messages. Do not use real OAuth or
-payment credentials for ordinary visual tests.
+Run `npm test` for logic changes and `npm run build` for TypeScript and production
+output. Use the root check recipes for the applicable lint/style checks.
+
+Vitest runs in Node with small document/storage stubs, not a browser. For UI
+changes, check relevant desktop/narrow-screen states when browser tools are
+available. Exercise configured/unconfigured providers, loading/failure, signed-in
+and signed-out states as applicable. Use fake services rather than real accounts
+for ordinary UI checks. Update the owning architecture note when behavior moves.

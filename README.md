@@ -38,4 +38,22 @@ just spell-check
 just test
 ```
 
-CI runs the same commands.
+CI uses `just style-check` instead of `just style`; the remaining checks are the same.
+
+## Coding agents
+
+Start at the repository root. Read [AGENTS.md](AGENTS.md), then explicitly read
+the `AGENTS.md` in every folder you will change. Nested guidance may load only
+on demand, depending on the client. Do not add model-specific instruction files
+or symlinks.
+
+For Claude Code clients that do not automatically load `AGENTS.md`, start with:
+
+```sh
+claude --append-system-prompt "Read AGENTS.md first, then read each applicable folder’s AGENTS.md before editing files."
+```
+
+The [Claude CLI reference](https://code.claude.com/docs/en/cli-reference) documents
+this option. In an existing session, ask Claude to read those files before
+continuing. Codex uses `AGENTS.md` directly; explicitly read the relevant folder
+guidance when starting work there.

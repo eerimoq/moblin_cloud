@@ -1,33 +1,34 @@
 # System tests and fake services
 
-Read the root `AGENTS.md` and `tests/README.md` first. These Python black-box
-scenarios start the backend and fake external services. They are separate from
-the inline Rust unit/API tests and frontend Vitest checks.
+Read the root `AGENTS.md` and [tests/README.md](README.md). These Python black-box
+scenarios are separate from the inline Rust tests and frontend Vitest tests.
 
-The fake Twitch and Kick implement test sign-in; fake PayPal and Stripe implement
-payment behavior; fake Moblin emulates device connections and remote-control
-requests. Keep fakes consistent with real protocol semantics, including failures.
-Do not add fake-service shortcuts to production handlers.
+## Fixtures and ownership
 
-Use temporary databases and isolated accounts. Keep restart tests' required
-provider/order state alive for the scenario. Never read or write real operator
-databases or use live payment credentials by default.
+`tests/utils/` contains fake Twitch, Kick, PayPal, Stripe and Moblin services.
+They emulate protocol behavior and failures; they are not alternate production
+implementations. Keep fakes aligned with the real contract when endpoints or
+Moblin messages change.
 
-`tests/config.toml` and user-level test configuration can contain credentials.
-Do not print, commit or copy them into reports. The tracked example configuration
-is the place for nonsecret setup documentation.
+Use isolated accounts and temporary databases. Preserve provider/order state
+needed by restart scenarios. Never test against an operator's database or real
+payment account by default. Private `tests/config.toml` and user-level test
+configuration may contain credentials; do not print or commit them.
 
-Run from the repository root:
+## Running scenarios
 
-```sh
-just system-test
-just system-test Tip
-```
+Run `just system-test [pattern]` from the repository root. For example,
+`just system-test Tip` selects the relevant payment scenarios. Prerequisites and
+browser setup are documented in `tests/README.md`; do not copy that setup here.
 
-Install prerequisites and browser dependencies using `tests/README.md` when
-needed. `--interactive` and real-provider tests require an explicit request; a
-successful fake flow is not proof of a real OAuth or payment integration.
+Interactive real-provider tests are distinct from the default fake flows.
+Use them only within the requested scope, and do not describe fake success as
+a real OAuth, payment or phone verification.
 
-For Python edits, use the existing isort, Ruff, pylint and mypy configuration
-through the root `just` recipes. Cover refused operations and recovery, not only
-the happy path. Reproduce each regression with the smallest relevant scenario.
+For a regression, add the smallest scenario that would fail before the fix.
+Check refused operations, ownership/permission boundaries and recovery when
+relevant. Avoid fixtures that simply reproduce the implementation.
+
+Use the existing isort, Ruff, pylint and mypy configuration through the root
+recipes for Python edits. Update `tests/README.md` when test setup changes and
+the owning subsystem note when a fake models a changed contract.

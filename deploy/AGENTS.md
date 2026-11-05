@@ -1,32 +1,28 @@
-# Portable deployment
+# Deployment configuration
 
-Read the root `AGENTS.md` and this folder's `README.md`. Keep these instructions
-portable across self-hosting platforms. Host-specific provisioning belongs in the
-operator's infrastructure repository, not this upstream application.
+Read the root `AGENTS.md` and [deploy/README.md](README.md).
+Keep these instructions portable and grounded in the tracked Compose setup.
 
-Compose runs the backend, the static frontend in Caddy, and an outer TLS Caddy
-when needed. The frontend proxies `/api` to `BACKEND_HOST`; reverse proxies must
-support WebSocket upgrades and unbuffered SSE responses.
+`docker-compose.yml` runs the backend, the static frontend in Caddy and a TLS
+Caddy proxy. The frontend proxies `/api` to `BACKEND_HOST`. Routing changes must
+preserve WebSocket upgrades and unbuffered server-sent events.
 
-Treat `.env` as secret-bearing. Edit only tracked examples for documentation.
-Keep OAuth credentials, `SESSION_SECRET` and device keys out of frontend runtime
-settings, images, logs and source control. A persistent session secret is needed
-to preserve sessions across backend restarts.
+Treat `.env` as secret-bearing. Edit the tracked example for public documentation,
+not a real instance's configuration. Keep OAuth credentials, `SESSION_SECRET`
+and device keys out of browser settings, logs, images and source control.
+A persistent session secret preserves browser sessions across backend restarts.
 
-Use matching reviewed frontend/backend image revisions. Explain whether a
-setting is read at build time, container startup or backend startup. Changing
-`.env` does not update an existing container until it is recreated.
+Use matching frontend/backend versions when changing their shared contract.
+Explain whether a setting is read during build or process startup. Check the
+current Compose file before claiming that a setting exists or is passed to a
+service. Do not document settings from an unmerged branch as current behavior.
 
-Presentation settings do not control access. Effective feature settings must
-agree between clients and the backend. `/config.js` and `/api/config` must be usable by the signed-out
-frontend. Do not put phone/terminal APIs behind a browser-only access gate.
+SQLite uses WAL. A plain file-copy backup needs the writer stopped or a supported
+SQLite snapshot mechanism. Restore to an isolated copy and verify integrity
+before operating on the live database.
 
-Protect SQLite backup consistency: stop the writer for a plain file copy or use
-a supported SQLite snapshot mechanism. Keep WAL behavior in mind. Restore to an
-isolated copy and verify integrity and application behavior before touching the
-live volume.
-
-Validate Compose interpolation and defaults, build affected images, and check
-the generated public config. Test both external TLS termination and the supplied
-TLS proxy when changing routing. Do not publish images or modify production as
-part of a documentation or local-validation task.
+For Compose edits, validate interpolation/defaults without exposing secrets.
+For image/proxy edits, build the affected image and check the relevant routing
+and startup behavior. Local verification does not authorize publication or a
+production configuration change. Update `deploy/README.md` in the same change
+when operator-facing setup or recovery steps change.
