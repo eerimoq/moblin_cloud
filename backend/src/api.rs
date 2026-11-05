@@ -280,7 +280,19 @@ pub(super) fn page_of(api: &Api, id: &str) -> Option<Page> {
 }
 
 fn tipping_route_disabled(path: &str) -> bool {
-    path.starts_with("/pages/") && path != "/pages/addresses" && !path.ends_with("/capture")
+    let capture = matches!(
+        path.split('/').collect::<Vec<_>>().as_slice(),
+        [
+            "",
+            "pages",
+            _,
+            "tips" | "spin" | "effects",
+            "orders",
+            _,
+            "capture"
+        ]
+    );
+    path.starts_with("/pages/") && path != "/pages/addresses" && !capture
 }
 
 async fn tipping_gate(
@@ -580,6 +592,7 @@ mod tipping_tests {
     async fn tipping_switch_blocks_new_orders_but_keeps_device_routes_reachable() {
         for enabled in [false, true] {
             let app = Router::new()
+                .route("/pages/twitch/{login}", get(|| async { "viewer" }))
                 .route("/pages/{id}/tips/orders", post(|| async { "order" }))
                 .route("/remote-control/streamer/{key}", get(|| async { "device" }))
                 .route("/pages/addresses", get(|| async { "addresses" }))
@@ -616,6 +629,19 @@ mod tipping_tests {
             }
             assert_eq!(
                 client
+                    .get(format!("http://{url}/pages/twitch/capture"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                if enabled {
+                    StatusCode::OK
+                } else {
+                    StatusCode::NOT_FOUND
+                }
+            );
+            assert_eq!(
+                client
                     .post(format!("http://{url}/pages/id/tips/orders/order/capture"))
                     .send()
                     .await
@@ -630,6 +656,7 @@ mod tipping_tests {
     fn disables_viewer_pages_without_blocking_devices_or_existing_payments() {
         for path in [
             "/pages/twitch/name",
+            "/pages/twitch/capture",
             "/pages/id",
             "/pages/id/tips/orders",
             "/pages/id/spin",
@@ -645,6 +672,8 @@ mod tipping_tests {
             "/auth/twitch/login",
             "/paypal/webhooks",
             "/pages/id/tips/orders/order/capture",
+            "/pages/id/spin/orders/order/capture",
+            "/pages/id/effects/orders/order/capture",
         ] {
             assert!(!tipping_route_disabled(path), "{path}");
         }
