@@ -30,6 +30,7 @@ pub enum Message {
     Mouse(MouseEvent),
     Redraw,
     Tick,
+    Platforms(Vec<Platform>),
     SignInUrl(String),
     Connect(Connect),
     SignedIn(Result<String, String>),
@@ -430,6 +431,7 @@ pub struct App {
     pub backend: Backend,
     pub screen: Screen,
     pub status: Option<Status>,
+    pub platforms: Option<Vec<Platform>>,
     sender: UnboundedSender<Message>,
     sign_in_task: Option<JoinHandle<()>>,
     page_stream: Option<JoinHandle<()>>,
@@ -455,6 +457,7 @@ impl App {
         let mut app = Self {
             screen: Screen::SignedOut { error: None },
             status: None,
+            platforms: None,
             backend,
             sender,
             sign_in_task: None,
@@ -463,6 +466,7 @@ impl App {
             preview_streams: HashMap::new(),
             picker,
         };
+        app.load_platforms();
         if app.backend.session.is_some() {
             app.load_account();
         }
@@ -483,6 +487,7 @@ impl App {
                     self.save();
                 }
             }
+            Message::Platforms(platforms) => self.platforms = Some(platforms),
             Message::SignInUrl(url) => {
                 if let Screen::SigningIn { url: shown, .. } = &mut self.screen {
                     *shown = Some(url);
@@ -665,6 +670,24 @@ impl App {
         tokio::spawn(async move {
             let _ = sender.send(task.await);
         })
+    }
+
+    pub fn offered(&self) -> &[Platform] {
+        self.platforms.as_deref().unwrap_or_default()
+    }
+
+    fn offers(&self, platform: Platform) -> bool {
+        self.offered().contains(&platform)
+    }
+
+    fn load_platforms(&self) {
+        let backend = self.backend.clone();
+        self.spawn(async move {
+            Message::Platforms(match backend.platforms().await {
+                Ok(platforms) => platforms.configured(),
+                Err(_) => vec![Platform::Twitch, Platform::Kick],
+            })
+        });
     }
 
     fn load_account(&mut self) {
@@ -1126,8 +1149,12 @@ impl App {
         match &mut self.screen {
             Screen::SignedOut { .. } => match key.code {
                 KeyCode::Char('q') => return true,
-                KeyCode::Char('t') => self.start_sign_in(Platform::Twitch),
-                KeyCode::Char('k') => self.start_sign_in(Platform::Kick),
+                KeyCode::Char('t') if self.offers(Platform::Twitch) => {
+                    self.start_sign_in(Platform::Twitch)
+                }
+                KeyCode::Char('k') if self.offers(Platform::Kick) => {
+                    self.start_sign_in(Platform::Kick)
+                }
                 KeyCode::Char('c') => self.start_connect(),
                 _ => {}
             },

@@ -18,7 +18,7 @@ import {
 } from "solid-js";
 import { asset } from "../asset";
 import { BackendError, isSignedOut, moblinIconUrl } from "../data/backend";
-import { fetchAccount, readSession, type Account } from "../data/account";
+import { fetchAccount, readSession, signInPlatforms, type Account } from "../data/account";
 import Icon, { kindIcons } from "../components/Icon";
 import Mascot from "../components/Mascot";
 import { fireConfetti } from "../confetti";
@@ -1805,8 +1805,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   };
   const streamerName = () => streamerOf()?.name;
   const subPlatforms = () => {
+    const configured = signInPlatforms();
     const current = profile();
-    return current ? platforms.filter((platform) => current[platform] !== null) : [];
+    return current
+      ? platforms.filter((platform) => current[platform] !== null && configured.includes(platform))
+      : [];
   };
   const subscribersText = () => {
     const linked = subPlatforms();

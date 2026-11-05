@@ -66,6 +66,7 @@ import {
   createAccountSession,
   type Assistant,
   removeAssistant,
+  signInPlatforms,
   setAssistantEditTips,
   setAssistantGoLive,
   setAssistantPreview,
@@ -241,7 +242,7 @@ function stripeErrorText(error: unknown) {
 function SignInAgain() {
   return (
     <span class="flex flex-wrap gap-3">
-      <For each={platforms}>
+      <For each={signInPlatforms()}>
         {(platform) => (
           <PlatformSignIn platform={platform} large>
             {t("Sign in again")}
@@ -1251,6 +1252,7 @@ function AssistantSettings(props: {
             session={props.session}
             platform={platform}
             titled={linked().length > 1}
+            addable={signInPlatforms().includes(platform)}
             assistants={
               platform === "twitch" ? props.account.twitchAssistants : props.account.kickAssistants
             }
@@ -1367,6 +1369,7 @@ function AssistantList(props: {
   session: string;
   platform: Platform;
   titled: boolean;
+  addable: boolean;
   assistants: Assistant[];
   onAccount: (account: Account) => void;
   onSignOut: () => void;
@@ -1530,23 +1533,25 @@ function AssistantList(props: {
           </Index>
         </ul>
       </Show>
-      <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
-        <input
-          type="text"
-          value={username()}
-          onInput={(event) => setUsername(event.currentTarget.value)}
-          placeholder={placeholder()}
-          aria-label={placeholder()}
-          maxLength={50}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck={false}
-          class={`${inputClass} min-w-0 flex-1`}
-        />
-        <button type="submit" class={buttonClass} disabled={busy() || !username().trim()}>
-          {t("Add")}
-        </button>
-      </form>
+      <Show when={props.addable}>
+        <form class="flex flex-wrap gap-3" onSubmit={(event) => void add(event)}>
+          <input
+            type="text"
+            value={username()}
+            onInput={(event) => setUsername(event.currentTarget.value)}
+            placeholder={placeholder()}
+            aria-label={placeholder()}
+            maxLength={50}
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck={false}
+            class={`${inputClass} min-w-0 flex-1`}
+          />
+          <button type="submit" class={buttonClass} disabled={busy() || !username().trim()}>
+            {t("Add")}
+          </button>
+        </form>
+      </Show>
       <Show when={error()}>
         {(error) => (
           <Notice status onClose={() => setError(null)}>
@@ -1960,6 +1965,8 @@ function Admin(props: {
     props.onAccount({ ...props.account, settings });
   const [busy, setBusy] = createSignal(false);
   const assisting = () => props.page !== undefined;
+  const subscriberSignIn = (platform: Platform) =>
+    account()[platform] !== null && signInPlatforms().includes(platform);
   const { recent, loadRecent, loadMore } = createRecent(
     (limit) => fetchRecent(props.session, props.page, limit),
     (kind, limit, before) => fetchMoreRecent(props.session, props.page, kind, limit, before),
@@ -2188,13 +2195,13 @@ function Admin(props: {
               />
             </Editable>
           </Show>
-          <Show when={account().twitch || account().kick}>
+          <Show when={subscriberSignIn("twitch") || subscriberSignIn("kick")}>
             <Editable readOnly={!account().editTips}>
               <SubscriberSettings
                 perk="spin"
                 tiers={settings().subSpins}
-                twitch={account().twitch !== null}
-                kick={account().kick !== null}
+                twitch={subscriberSignIn("twitch")}
+                kick={subscriberSignIn("kick")}
                 busy={busy()}
                 onSave={(subSpins) => save({ subSpins })}
               />
@@ -2234,13 +2241,13 @@ function Admin(props: {
               />
             </Editable>
           </Show>
-          <Show when={account().twitch || account().kick}>
+          <Show when={subscriberSignIn("twitch") || subscriberSignIn("kick")}>
             <Editable readOnly={!account().editTips}>
               <SubscriberSettings
                 perk="effect"
                 tiers={settings().subEffects}
-                twitch={account().twitch !== null}
-                kick={account().kick !== null}
+                twitch={subscriberSignIn("twitch")}
+                kick={subscriberSignIn("kick")}
                 busy={busy()}
                 onSave={(subEffects) => save({ subEffects })}
               />
@@ -3221,8 +3228,9 @@ export default function Dashboard() {
           <CloudHeader>
             <Show when={!loading()}>
               <span class="ml-auto flex items-center gap-2">
-                <PlatformSignIn platform="twitch" />
-                <PlatformSignIn platform="kick" />
+                <For each={signInPlatforms()}>
+                  {(platform) => <PlatformSignIn platform={platform} />}
+                </For>
               </span>
             </Show>
           </CloudHeader>

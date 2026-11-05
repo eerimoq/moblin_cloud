@@ -6,7 +6,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use serde::Serialize;
 
-use crate::accounts::AccountStats;
+use crate::accounts::{AccountStats, Platform};
 use crate::counters::Counter;
 use crate::deliveries;
 use crate::requests::RequestStats;
@@ -106,8 +106,8 @@ pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
             now: deliveries::now(),
             memory: resident_memory(),
             integrations: Integrations {
-                twitch: api.auth.has_twitch(),
-                kick: api.auth.has_kick(),
+                twitch: api.auth.has(Platform::Twitch),
+                kick: api.auth.has(Platform::Kick),
                 app_attest: api.app_attest.is_some(),
                 paypal: api.paypal.is_some(),
                 stripe: api.stripe.is_some(),

@@ -248,7 +248,9 @@ mod tests {
 
     #[tokio::test]
     async fn subscribers_play_effects_every_month() {
-        let (address, api) = start_api(None).await;
+        let twitch = start_twitch().await;
+        let (address, api) =
+            start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
         let (session, key, id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {

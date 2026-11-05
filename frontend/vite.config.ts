@@ -17,7 +17,11 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           const host = new URL(`http://${req.headers.host ?? "localhost"}`);
-          if (req.url?.startsWith("/api/auth/") && host.hostname !== "localhost") {
+          if (
+            req.url?.startsWith("/api/auth/") &&
+            req.url !== "/api/auth/platforms" &&
+            host.hostname !== "localhost"
+          ) {
             res.writeHead(302, { location: `http://localhost:${host.port}${req.url}` });
             res.end();
             return;

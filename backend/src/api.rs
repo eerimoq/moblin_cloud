@@ -113,6 +113,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/pages/twitch/{login}", get(handle_twitch_page))
         .route("/pages/kick/{login}", get(handle_kick_page))
         .route("/pages/addresses", get(handle_page_addresses))
+        .route("/auth/platforms", get(handle_platforms))
         .route("/auth/twitch/login", get(handle_twitch_login))
         .route("/auth/twitch/callback", get(handle_twitch_callback))
         .route("/auth/kick/login", get(handle_kick_login))

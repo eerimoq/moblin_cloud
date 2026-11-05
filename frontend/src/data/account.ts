@@ -1,6 +1,6 @@
 import { createSignal, onMount } from "solid-js";
 import { BackendError, backendUrl, call, isSignedOut, post } from "./backend";
-import { type Identity, type Page, type Platform, type Settings } from "./remoteControl";
+import { type Identity, type Page, type Platform, platforms, type Settings } from "./remoteControl";
 import { readStored, store } from "../storage";
 
 export type Device = {
@@ -312,6 +312,22 @@ function takeSignInResult(): {
   return { session, failed, link, linkFailed };
 }
 
+const [configuredPlatforms, setConfiguredPlatforms] = createSignal<Platform[] | null>(null);
+let platformsAsked = false;
+
+export function signInPlatforms() {
+  if (!platformsAsked) {
+    platformsAsked = true;
+    call<Record<Platform, boolean>>("/auth/platforms").then(
+      (configured) => setConfiguredPlatforms(platforms.filter((platform) => configured[platform])),
+      () => setConfiguredPlatforms(platforms),
+    );
+  }
+  return configuredPlatforms() ?? [];
+}
+
+export const noSignInPlatforms = () => configuredPlatforms()?.length === 0;
+
 export const signInUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/login`;
 
 export const linkUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/login?link=1`;
@@ -319,6 +335,7 @@ export const linkUrl = (platform: Platform) => `${backendUrl}/auth/${platform}/l
 export type LinkResult = { linked: true } | { linked: false; error: string | null };
 
 export function createAccountSession() {
+  signInPlatforms();
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [signInFailed, setSignInFailed] = createSignal(false);

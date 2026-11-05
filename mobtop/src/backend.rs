@@ -4,7 +4,7 @@ use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::account::{Account, AllRecent, Connect, Kind, Recent};
+use crate::account::{Account, AllRecent, Connect, Kind, Platforms, Recent};
 
 #[derive(serde::Deserialize)]
 struct Session {
@@ -90,6 +90,10 @@ impl Backend {
 
     pub fn get_url(&self, path: &str) -> RequestBuilder {
         self.client.get(format!("{}{path}", self.url))
+    }
+
+    pub async fn platforms(&self) -> Result<Platforms, BackendError> {
+        self.get("/auth/platforms").await
     }
 
     pub async fn session(&self, code: &str, verifier: &str) -> Result<String, BackendError> {

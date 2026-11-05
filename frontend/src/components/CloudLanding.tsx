@@ -1,20 +1,25 @@
 import { createSignal, For, Show } from "solid-js";
 import { asset } from "../asset";
+import { noSignInPlatforms, signInPlatforms } from "../data/account";
 import { cloudSteps } from "../data/cloud";
 import Icon, { kindIcons, type IconName } from "./Icon";
 import { Notice, PlatformSignIn } from "./PageParts";
-import { spinsText } from "../data/remoteControl";
+import { platformNames, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
 
 function SignInButtons() {
   return (
-    <div class="flex flex-wrap gap-3">
-      <PlatformSignIn platform="twitch" large>
-        {t("Sign in with Twitch")}
-      </PlatformSignIn>
-      <PlatformSignIn platform="kick" large>
-        {t("Sign in with Kick")}
-      </PlatformSignIn>
+    <div class="flex min-h-13 flex-wrap gap-3">
+      <For each={signInPlatforms()}>
+        {(platform) => (
+          <PlatformSignIn platform={platform} large>
+            {t("Sign in with {platform}", { platform: platformNames[platform] })}
+          </PlatformSignIn>
+        )}
+      </For>
+      <Show when={noSignInPlatforms()}>
+        <Notice status>{t("Signing in is not set up on this server.")}</Notice>
+      </Show>
     </div>
   );
 }

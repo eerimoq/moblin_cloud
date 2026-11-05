@@ -168,10 +168,19 @@ pub(super) fn page_settings(api: &Api, id: &str) -> (Option<Account>, Settings) 
     }
 }
 
-pub(super) fn linked_tiers(account: Option<&Account>, tiers: Option<&Tiers>) -> Option<Tiers> {
+pub(super) fn linked_tiers(
+    api: &Api,
+    account: Option<&Account>,
+    tiers: Option<&Tiers>,
+) -> Option<Tiers> {
     tiers
         .filter(|_| {
-            account.is_some_and(|account| account.twitch().is_some() || account.kick().is_some())
+            account.is_some_and(|account| {
+                account
+                    .identities
+                    .iter()
+                    .any(|identity| api.auth.has(identity.platform))
+            })
         })
         .cloned()
 }
@@ -285,7 +294,7 @@ pub(super) async fn handle_effects(
                 price: effects.price,
                 payment,
             }),
-        sub_effects: linked_tiers(account.as_ref(), settings.sub_effects()),
+        sub_effects: linked_tiers(&api, account.as_ref(), settings.sub_effects()),
         options: EFFECTS
             .iter()
             .map(|effect| PublicEffect {
@@ -326,7 +335,7 @@ pub(super) async fn handle_spin(
                 options: spin.options.clone(),
                 payment,
             }),
-        sub_spins: linked_tiers(account.as_ref(), settings.sub_spins()),
+        sub_spins: linked_tiers(&api, account.as_ref(), settings.sub_spins()),
         wheel: api.remote_control.wheel(&id),
         connected: api.remote_control.is_connected(&id),
     })

@@ -258,12 +258,11 @@ impl Auth {
         })
     }
 
-    pub fn has_twitch(&self) -> bool {
-        self.twitch.is_some()
-    }
-
-    pub fn has_kick(&self) -> bool {
-        self.kick.is_some()
+    pub fn has(&self, platform: Platform) -> bool {
+        match platform {
+            Platform::Twitch => self.twitch.is_some(),
+            Platform::Kick => self.kick.is_some(),
+        }
     }
 
     fn redirect_uri(&self, platform: Platform) -> String {

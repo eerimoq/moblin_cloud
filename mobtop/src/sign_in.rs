@@ -29,6 +29,13 @@ impl Platform {
             Platform::Kick => "Kick",
         }
     }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Platform::Twitch => "t",
+            Platform::Kick => "k",
+        }
+    }
 }
 
 pub struct Listening {

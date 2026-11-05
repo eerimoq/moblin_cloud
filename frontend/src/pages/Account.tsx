@@ -6,6 +6,7 @@ import {
   deleteAccount,
   linkUrl,
   type LinkResult,
+  signInPlatforms,
   unlinkAccount,
   type Account,
 } from "../data/account";
@@ -35,6 +36,12 @@ function LinkedAccounts(props: {
   const [error, setError] = createSignal<string | null>(null);
   const [resultDismissed, setResultDismissed] = createSignal(false);
   const linked = () => platforms.filter((platform) => props.account[platform] !== null);
+  const shown = () =>
+    platforms.filter(
+      (platform) => props.account[platform] !== null || signInPlatforms().includes(platform),
+    );
+  const lastSignIn = (platform: Platform) =>
+    !linked().some((other) => other !== platform && signInPlatforms().includes(other));
   const unlink = async (platform: Platform) => {
     setBusy(true);
     setError(null);
@@ -77,7 +84,7 @@ function LinkedAccounts(props: {
         )}
       </Show>
       <ul class="flex flex-col gap-3">
-        <For each={platforms}>
+        <For each={shown()}>
           {(platform) => (
             <li class="flex items-center gap-3 rounded-2xl border-[1.5px] border-line bg-well px-4 py-3">
               <BrandIcon name={platform} class="size-9" />
@@ -100,8 +107,8 @@ function LinkedAccounts(props: {
                 <button
                   type="button"
                   class={smallButtonClass}
-                  disabled={busy() || linked().length < 2}
-                  title={linked().length < 2 ? t("Link another account first.") : undefined}
+                  disabled={busy() || lastSignIn(platform)}
+                  title={lastSignIn(platform) ? t("Link another account first.") : undefined}
                   onClick={() => void unlink(platform)}
                 >
                   {t("Unlink")}
