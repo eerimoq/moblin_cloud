@@ -50,6 +50,10 @@ Update with `docker compose pull && docker compose up -d`. The database is
 
 ## Public pages
 
+Use matching frontend and backend images that include these settings and the
+provider-availability endpoint. Updating only the frontend against an older
+backend leaves sign-in buttons hidden because availability cannot be loaded.
+
 The frontend container reads these optional settings at startup. Set them in
 `.env` and recreate the affected containers with `docker compose up -d`; no
 frontend image rebuild is needed.
@@ -87,6 +91,48 @@ Do not pass provider secrets to the frontend. For local Vite development, use
 `frontend/public/config.js`. An omitted `selfHosted` is false; the other settings
 default to true. Provider availability always comes from the backend, not this
 public configuration file.
+
+### Self-hosted example
+
+After setting `DOMAIN`, a persistent `SESSION_SECRET` and the integrations you
+want below, add these settings to `.env` for a compact device-management instance
+without public tipping pages:
+
+```dotenv
+SELFHOSTED=true
+TIPPING_ENABLED=false
+```
+
+`SELFHOSTED` changes the landing page only; it does not create a separate edition,
+restrict who can sign in, enable premium access or disable tipping by itself.
+`LANDING_DETAILS_ENABLED` can be omitted for this mode. Set `TIPPING_ENABLED=true`
+if you want viewer pages and interactions too.
+
+| Backend configuration | Sign-in buttons |
+| --- | --- |
+| `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` only | Twitch |
+| `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET` only | Kick |
+| Both complete pairs | Twitch and Kick |
+| Neither complete pair | No buttons; the compact page shows an availability message |
+
+The IDs and secrets must be nonempty. Availability means the app is configured;
+it does not validate credentials with Twitch or Kick. Complete an actual sign-in
+after setting the provider's callback URL to verify that configuration.
+
+Run `docker compose up -d` after changing `.env`, then reload the browser. With a
+custom Compose file, pass `SELFHOSTED` to the frontend and `TIPPING_ENABLED` to
+both services; keep OAuth credentials and `SESSION_SECRET` on the backend only.
+
+Keep `/config.js` and `/api/auth/providers` reachable from the signed-out page.
+An Access rule or reverse proxy that redirects the provider endpoint to a login
+page prevents provider discovery. Sign-in availability is presentation, not an
+access policy: use application or proxy access controls if the instance should
+be private. Keep the phone's WebSocket and event-stream paths outside any
+browser-only login gate.
+
+If buttons are missing, check `/api/auth/providers` for the expected booleans,
+confirm the backend received both values for the provider, check for proxy
+redirects or errors, and confirm the frontend and backend are compatible.
 
 ## Integrations
 
