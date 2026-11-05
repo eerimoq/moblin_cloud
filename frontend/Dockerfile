@@ -9,3 +9,6 @@ FROM caddy:2
 ENV BACKEND_HOST=backend:8080
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=builder /app/dist /srv
+COPY runtime-config.sh /usr/local/bin/runtime-config.sh
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/runtime-config.sh"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

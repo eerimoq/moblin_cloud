@@ -48,6 +48,33 @@ docker compose up -d
 Update with `docker compose pull && docker compose up -d`. The database is
 `data/database.sqlite`; stop the backend before copying it for a backup.
 
+## Self-hosted policy links
+
+Set `SELF_HOSTED_LANDING_PAGE=true` on the frontend to use instance-owned policy
+links in the dashboard footer. Default: `false`, keeping the existing service
+policies and notice. This setting can be combined with the separate compact
+landing-page feature; this PR only changes the footer.
+
+In self-hosted mode, the official service notice and policy links are omitted.
+Optional `TERMS_URL` and `PRIVACY_POLICY_URL` show links to your own website's
+policies. Empty, invalid or non-HTTP(S) URLs stay hidden. Other footer links and
+the language picker stay available. Prefer HTTPS.
+
+```dotenv
+SELF_HOSTED_LANDING_PAGE=true
+TERMS_URL=https://example.com/terms
+PRIVACY_POLICY_URL=https://example.com/privacy
+```
+
+Edit the policy content on your own website. Changing these URLs only requires
+recreating the frontend container with `docker compose up -d` and reloading the
+browser; no image rebuild is needed. Values are public and are serialized safely
+at container startup. Custom Compose files must pass all three settings to the
+frontend. Vite development uses `selfHostedLandingPage`, `termsUrl` and
+`privacyPolicyUrl` in `frontend/public/config.js`.
+
+No editor, policy pages, backend endpoints or database changes are added.
+
 ## Integrations
 
 Everything is optional, but nobody can sign in without Twitch or Kick.
