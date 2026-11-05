@@ -85,6 +85,15 @@ Self-hosted mode omits the official service's terms notice, Terms link and priva
 link from the dashboard footer. Other footer links and the language picker stay
 available. Operators are responsible for their instance's policies.
 
+To link your own policies, set optional `TERMS_URL` and `PRIVACY_POLICY_URL` on
+the frontend container. Each footer link appears only when its value is a valid
+absolute HTTP(S) URL; empty or invalid values leave it hidden. Prefer HTTPS.
+For example, use `TERMS_URL=https://example.com/terms` and
+`PRIVACY_POLICY_URL=https://example.com/privacy`. Edit the policy content on your
+website, then recreate the frontend container after changing these URLs.
+Local Vite config uses `termsUrl` and `privacyPolicyUrl`. These settings only
+affect self-hosted mode; the original landing keeps the existing policy links.
+
 The default is `false`, which keeps the original landing page. This setting is
 only a presentation choice: it does not create a different backend, configure
 OAuth credentials, restrict registrations or access, grant premium/admin rights,

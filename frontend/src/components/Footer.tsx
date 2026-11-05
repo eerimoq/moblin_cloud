@@ -1,6 +1,6 @@
 import { Show, type JSX } from "solid-js";
 import { asset } from "../asset";
-import { links, pages } from "../data/links";
+import { links, pages, policyUrl } from "../data/links";
 import { language, languages, setLanguage, t } from "../i18n";
 import Icon, { type IconName } from "./Icon";
 
@@ -16,6 +16,13 @@ const footerLinks: { label: string; href: string; icon?: IconName }[] = [
 const isExternal = (href: string) => /^https?:/.test(href);
 
 export default function Footer(props: { note?: JSX.Element; hidePolicies?: boolean }) {
+  const customPolicies = () =>
+    props.hidePolicies
+      ? [
+          { label: t("Terms"), href: policyUrl(window.config.termsUrl) },
+          { label: t("Privacy policy"), href: policyUrl(window.config.privacyPolicyUrl) },
+        ].flatMap((link) => (link.href ? [{ ...link, href: link.href, icon: undefined }] : []))
+      : [];
   return (
     <footer class="border-t border-line/40 py-10">
       <div class="mx-auto flex max-w-[1120px] flex-col items-center px-5 text-center sm:px-8">
@@ -23,23 +30,24 @@ export default function Footer(props: { note?: JSX.Element; hidePolicies?: boole
           <p class="mb-6 text-[15px] text-muted">{props.note}</p>
         </Show>
         <nav class="flex flex-wrap justify-center gap-x-7 gap-y-2" aria-label="Footer">
-          {footerLinks
-            .filter(
+          {[
+            ...footerLinks.filter(
               (l) =>
                 !props.hidePolicies ||
                 (l.href !== links.privacyPolicy && l.href !== asset(pages.terms)),
-            )
-            .map((l) => (
-              <a
-                href={l.href}
-                target={isExternal(l.href) ? "_blank" : undefined}
-                rel={isExternal(l.href) ? "noopener" : undefined}
-                class="flex items-center gap-1.5 text-[15px] font-bold whitespace-nowrap text-muted hover:text-ink"
-              >
-                {l.icon && <Icon name={l.icon} class="size-4" />}
-                {l.label}
-              </a>
-            ))}
+            ),
+            ...customPolicies(),
+          ].map((l) => (
+            <a
+              href={l.href}
+              target={isExternal(l.href) ? "_blank" : undefined}
+              rel={isExternal(l.href) ? "noopener" : undefined}
+              class="flex items-center gap-1.5 text-[15px] font-bold whitespace-nowrap text-muted hover:text-ink"
+            >
+              {l.icon && <Icon name={l.icon} class="size-4" />}
+              {l.label}
+            </a>
+          ))}
         </nav>
         <label class="mt-6 flex items-center gap-2 text-[15px] font-bold text-muted">
           <Icon name="globe" class="size-4" />

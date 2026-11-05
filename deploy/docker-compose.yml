@@ -16,6 +16,8 @@ services:
       BACKEND_HOST: backend:8080
       SELF_HOSTED_LANDING_PAGE: ${SELF_HOSTED_LANDING_PAGE:-false}
       INSTANCE_NAME: ${INSTANCE_NAME:-}
+      TERMS_URL: ${TERMS_URL:-}
+      PRIVACY_POLICY_URL: ${PRIVACY_POLICY_URL:-}
       TIPPING_ENABLED: ${TIPPING_ENABLED:-true}
   caddy:
     image: caddy:2

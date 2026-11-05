@@ -10,9 +10,10 @@ boolean() {
 
 selfhosted=$(boolean SELF_HOSTED_LANDING_PAGE "${SELF_HOSTED_LANDING_PAGE:-false}")
 tipping=$(boolean TIPPING_ENABLED "${TIPPING_ENABLED:-true}")
-instance_name=$(awk 'BEGIN {
+json_string() {
+awk -v variable="$1" 'BEGIN {
   for (i = 1; i < 32; i++) control[sprintf("%c", i)] = i
-  value = ENVIRON["INSTANCE_NAME"]
+  value = ENVIRON[variable]
   printf "\""
   for (i = 1; i <= length(value); i++) {
     char = substr(value, i, 1)
@@ -21,6 +22,7 @@ instance_name=$(awk 'BEGIN {
     else printf "%s", char
   }
   printf "\""
-}')
-printf 'window.config = { backendUrl: "/api", selfHostedLandingPage: %s, tippingEnabled: %s, instanceName: %s };\n' "$selfhosted" "$tipping" "$instance_name" > /srv/config.js
+}'
+}
+printf 'window.config = { backendUrl: "/api", selfHostedLandingPage: %s, tippingEnabled: %s, instanceName: %s, termsUrl: %s, privacyPolicyUrl: %s };\n' "$selfhosted" "$tipping" "$(json_string INSTANCE_NAME)" "$(json_string TERMS_URL)" "$(json_string PRIVACY_POLICY_URL)" > /srv/config.js
 exec "$@"

@@ -13,7 +13,9 @@ const script = readFileSync(new URL("../runtime-config.sh", import.meta.url), "u
 );
 const flags = ["SELF_HOSTED_LANDING_PAGE", "TIPPING_ENABLED"];
 const env = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => ![...flags, "INSTANCE_NAME"].includes(key)),
+  Object.entries(process.env).filter(
+    ([key]) => ![...flags, "INSTANCE_NAME", "TERMS_URL", "PRIVACY_POLICY_URL"].includes(key),
+  ),
 );
 const run = (values) =>
   spawnSync("sh", ["-s", "--", "true"], {
@@ -33,6 +35,8 @@ try {
     selfHostedLandingPage: false,
     tippingEnabled: true,
     instanceName: "",
+    termsUrl: "",
+    privacyPolicyUrl: "",
   });
   assert.equal(run(Object.fromEntries(flags.map((key) => [key, "false"]))).status, 0);
   assert.deepEqual(config(), {
@@ -40,9 +44,20 @@ try {
     selfHostedLandingPage: false,
     tippingEnabled: false,
     instanceName: "",
+    termsUrl: "",
+    privacyPolicyUrl: "",
   });
   assert.equal(run({ SELF_HOSTED_LANDING_PAGE: "true" }).status, 0);
   assert.equal(config().selfHostedLandingPage, true);
+  assert.equal(
+    run({
+      TERMS_URL: 'https://example.com/terms?text="hello"',
+      PRIVACY_POLICY_URL: "https://example.com/privacy",
+    }).status,
+    0,
+  );
+  assert.equal(config().termsUrl, 'https://example.com/terms?text="hello"');
+  assert.equal(config().privacyPolicyUrl, "https://example.com/privacy");
   for (const name of [
     "MrDemonWolf",
     'Quotes " and \\ slashes\n\t\u0001',

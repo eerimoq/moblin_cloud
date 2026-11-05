@@ -7,6 +7,8 @@ declare global {
       selfHostedLandingPage?: boolean;
       tippingEnabled?: boolean;
       instanceName?: string;
+      termsUrl?: string;
+      privacyPolicyUrl?: string;
     };
   }
 }
@@ -14,6 +16,15 @@ declare global {
 export const cloudName = () => {
   const name = window.config.selfHostedLandingPage && window.config.instanceName?.trim();
   return name ? `Moblin Cloud — ${name}` : "Moblin Cloud";
+};
+
+export const policyUrl = (value?: string) => {
+  try {
+    const url = new URL(value?.trim() || "");
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 export const links = {
