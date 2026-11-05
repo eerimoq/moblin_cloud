@@ -19,6 +19,9 @@ Tests are Vitest in Node, `src/**/*.test.ts`, only for the pure code in `src/dat
 
 ## Rules
 
+- Keep container runtime options aligned across `runtime-config.sh`, the config type, runtime tests, Compose, `.env.example` and deployment docs. Values in browser config are public; serialize user-supplied strings safely and never put credentials there.
+- Landing-page selection and instance naming are presentation only. Do not let them change provider availability, authorization or device protocols. Keep the original page as the default.
+
 - The base path is dynamic: `/` when `public/CNAME` exists and `/moblin_cloud/` otherwise. Anything referencing a file under `public/` must go through `asset()` in `src/asset.ts`; never hardcode a leading slash in a src attribute.
 - Content lives in `src/data/`, not in components: URLs in `links.ts`, effects, Moblin's settings and the remote control types in their own files.
 - Backend access goes through `data/backend.ts`. The backend is configured at deploy time, not build time: `backendUrl` in `public/config.js`, which the Deploy frontend workflow overwrites in `dist/` since GitHub Pages can't proxy `/api`.

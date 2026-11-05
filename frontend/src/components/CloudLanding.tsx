@@ -20,7 +20,9 @@ function SignInButtons() {
       </For>
       <Show when={noSignInPlatforms()}>
         <Notice status>
-          {t("Sign-in setup is required. Ask the server administrator to configure Twitch or Kick.")}
+          {t(
+            "Sign-in setup is required. Ask the server administrator to configure Twitch or Kick.",
+          )}
         </Notice>
       </Show>
     </div>
