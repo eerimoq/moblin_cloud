@@ -48,97 +48,35 @@ docker compose up -d
 Update with `docker compose pull && docker compose up -d`. The database is
 `data/database.sqlite`; stop the backend before copying it for a backup.
 
-## Self-hosted options
+## Self-hosted landing page
 
-Use matching frontend and backend images. Set these options in `.env` and run
-`docker compose up -d` to recreate the containers; no image rebuild is needed.
+Set `SELF_HOSTED_LANDING_PAGE=true` on the frontend container to select a compact
+device-management landing page at `/`. Default: `false`, keeping the original
+landing page. The compact page lives in its own component, clearly labeled
+“Self-hosted instance”, with linked attribution to Moblin Cloud.
 
-| Setting | Default | Behavior |
-| --- | --- | --- |
-| `SELF_HOSTED_LANDING_PAGE` | `false` | A compact device-management landing page instead of the original landing page. |
-| `INSTANCE_NAME` | Empty | Optional public name shown as “Moblin Cloud — name” in self-hosted mode. |
-| `TIPPING_ENABLED` | `true` | Public viewer pages and new tip, spin and effect orders. |
-
-### What SELF_HOSTED_LANDING_PAGE does
-
-Set `SELF_HOSTED_LANDING_PAGE=true` when this server is your own Moblin workspace and visitors
-primarily need to sign in to manage devices and streaming settings. It selects a separate landing-page component at the same root URL, replacing
-the original promotional landing page with a compact sign-in page containing:
-
-- A device-management introduction instead of the viewer-page demonstration
-  and How it works section.
-- Main and navigation sign-in buttons, offering whichever Twitch/Kick providers the backend reports
-  as configured. If neither is configured, it explains that an administrator
-  must finish sign-in setup.
-- A link to the Moblin documentation in the shared footer and linked attribution
-  to Moblin Cloud beneath the card.
-
-The compact page is always labeled “Self-hosted instance” to distinguish it from
-the official service. Optionally set `INSTANCE_NAME` to your organization or
-server name: the page and header then show “Moblin Cloud — name”. The mascot
-image stays unchanged. An empty or whitespace-only name keeps “Moblin Cloud”.
-The name is public text, not a URL or secret, and is ignored on the original
-landing page. Custom Compose files must pass it to the frontend container;
-local Vite configuration uses `instanceName` in `frontend/public/config.js`.
-
-Self-hosted mode omits the official service's terms notice, Terms link and privacy-policy
-link from the dashboard footer. Other footer links and the language picker stay
-available. Operators are responsible for their instance's policies.
-
-To link your own policies, set optional `TERMS_URL` and `PRIVACY_POLICY_URL` on
-the frontend container. Each footer link appears only when its value is a valid
-absolute HTTP(S) URL; empty or invalid values leave it hidden. Prefer HTTPS.
-For example, use `TERMS_URL=https://example.com/terms` and
-`PRIVACY_POLICY_URL=https://example.com/privacy`. Edit the policy content on your
-website, then recreate the frontend container after changing these URLs.
-Local Vite config uses `termsUrl` and `privacyPolicyUrl`. These settings only
-affect self-hosted mode; the original landing keeps the existing policy links.
-
-The default is `false`, which keeps the original landing page. This setting is
-only a presentation choice: it does not create a different backend, configure
-OAuth credentials, restrict registrations or access, grant premium/admin rights,
-or change device connections and dashboard features.
-
-Tipping is independent. Use `SELF_HOSTED_LANDING_PAGE=true` with `TIPPING_ENABLED=true` to
-keep public viewer pages, or set `TIPPING_ENABLED=false` to disable them. Choosing
-the compact landing page alone does not make the instance private.
-
-Compose passes `SELF_HOSTED_LANDING_PAGE` to the frontend container, which reads it at startup.
-Use the literal value `true` or `false`; other nonempty values are rejected.
-After editing `.env` (or your deployment platform's environment settings),
-recreate the frontend container and reload the page. No frontend rebuild is
-needed. The former development names `SELFHOSTED` and `SELF_HOSTED` are not recognized.
-
-### Example
-
-For a device-management instance without public viewer pages:
+Optionally set `INSTANCE_NAME` to show “Moblin Cloud — name” in the shared header
+and compact card. Empty or whitespace-only names keep “Moblin Cloud”. The mascot
+stays unchanged; names are public text, not secrets. The original landing ignores
+the name. Browser titles, emails, API responses and viewer-page branding stay
+unchanged.
 
 ```dotenv
 SELF_HOSTED_LANDING_PAGE=true
 INSTANCE_NAME=My workspace
-TIPPING_ENABLED=false
 ```
 
-`SELF_HOSTED_LANDING_PAGE` only changes presentation. It does not restrict sign-in or grant
-premium/admin access. Disabling tipping hides viewer/share links and returns 404
-for public viewer APIs and new orders. Device connections, dashboard APIs,
-page-address discovery, existing payment captures and webhooks remain available.
-Already open viewer pages may remain visible until a request or reload.
+Compose passes both values to the frontend. Recreate it with
+`docker compose up -d` after editing `.env`, then reload the browser. No image
+rebuild is needed. Use literal `true` or `false` for the landing flag; other
+nonempty values are rejected. Local Vite config uses `selfHostedLandingPage`
+and `instanceName` in `frontend/public/config.js`.
 
-Twitch and Kick sign-in buttons follow the backend's configured client ID and
-secret pairs through `/api/config`. Configure either or both providers below;
-with neither, the page explains that sign-in needs setup. Missing payment
-credentials alone do not disable public viewer pages.
-
-With custom Compose, pass `SELF_HOSTED_LANDING_PAGE` to the frontend and `TIPPING_ENABLED` to
-both services. Keep OAuth credentials and `SESSION_SECRET` on the backend only.
-Frontend flags are public booleans in `/config.js`; for Vite development, use
-`selfHostedLandingPage` and `tippingEnabled` in `frontend/public/config.js`.
-
-Keep `/config.js` and `/api/config` reachable when signed out. If buttons are
-missing, check provider credentials and proxy redirects. Browser login gates
-must not intercept the phone's WebSocket or event-stream connections. Complete
-a real sign-in to verify credentials; availability flags do not validate them.
+The landing flag only changes presentation. It does not restrict sign-in,
+configure OAuth, grant admin/premium rights or alter tipping and device APIs.
+Twitch/Kick buttons use the backend's existing `/api/config` availability. Keep
+that endpoint reachable when signed out. If no providers are configured, the
+page explains that an administrator must finish setup.
 
 ## Integrations
 
@@ -170,22 +108,6 @@ all with their defaults:
 docker compose run --rm backend --help
 ```
 
-## Connect Moblin
-
-If your Moblin build has a server URL field in its Moblin Cloud settings, set it
-to `https://example.com/api` without a trailing slash, enter the Cloud key from
-your dashboard and enable the connection. Moblin converts the URL to a WebSocket
-URL and appends its connection path; do not add that path or the key to the URL.
-The compact landing page and disabled tipping do not change this connection.
-
-For a build without that setting, build Moblin with `MOBLIN_CLOUD_API_URL` set to
-`https://example.com/api`. Set the backend's `APP_ID` to that custom build's app ID
-when configuring app attestation.
-
-After setup, verify the expected sign-in buttons, complete provider sign-in and
-confirm the phone connects. To troubleshoot missing buttons, this public request
-should return JSON booleans rather than HTML or a login redirect:
-
-```sh
-curl --fail https://example.com/api/config
-```
+Moblin connects to `https://cloud-api.moblin.app`, so a Moblin has to be built
+with `MOBLIN_CLOUD_API_URL` set to `https://example.com/api` to connect to your
+copy, and `APP_ID` set to that build's app ID.

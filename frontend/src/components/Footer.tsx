@@ -1,6 +1,6 @@
 import { Show, type JSX } from "solid-js";
 import { asset } from "../asset";
-import { links, pages, policyUrl } from "../data/links";
+import { links, pages } from "../data/links";
 import { language, languages, setLanguage, t } from "../i18n";
 import Icon, { type IconName } from "./Icon";
 
@@ -15,14 +15,7 @@ const footerLinks: { label: string; href: string; icon?: IconName }[] = [
 
 const isExternal = (href: string) => /^https?:/.test(href);
 
-export default function Footer(props: { note?: JSX.Element; hidePolicies?: boolean }) {
-  const customPolicies = () =>
-    props.hidePolicies
-      ? [
-          { label: t("Terms"), href: policyUrl(window.config.termsUrl) },
-          { label: t("Privacy policy"), href: policyUrl(window.config.privacyPolicyUrl) },
-        ].flatMap((link) => (link.href ? [{ ...link, href: link.href, icon: undefined }] : []))
-      : [];
+export default function Footer(props: { note?: JSX.Element }) {
   return (
     <footer class="border-t border-line/40 py-10">
       <div class="mx-auto flex max-w-[1120px] flex-col items-center px-5 text-center sm:px-8">
@@ -30,14 +23,7 @@ export default function Footer(props: { note?: JSX.Element; hidePolicies?: boole
           <p class="mb-6 text-[15px] text-muted">{props.note}</p>
         </Show>
         <nav class="flex flex-wrap justify-center gap-x-7 gap-y-2" aria-label="Footer">
-          {[
-            ...footerLinks.filter(
-              (l) =>
-                !props.hidePolicies ||
-                (l.href !== links.privacyPolicy && l.href !== asset(pages.terms)),
-            ),
-            ...customPolicies(),
-          ].map((l) => (
+          {footerLinks.map((l) => (
             <a
               href={l.href}
               target={isExternal(l.href) ? "_blank" : undefined}

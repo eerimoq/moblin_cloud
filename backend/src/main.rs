@@ -55,9 +55,6 @@ const TIMEOUT: Duration = Duration::from_secs(15);
     about = "Serves Moblin Cloud: the streamers' tip pages, their dashboard and Moblin's connections"
 )]
 struct Cli {
-    /// Enable public tipping pages and new viewer interactions.
-    #[arg(long, env = "TIPPING_ENABLED", default_value = "true", action = clap::ArgAction::Set)]
-    tipping_enabled: bool,
     /// Address to listen on.
     #[arg(long, env = "LISTEN", default_value = "127.0.0.1:8080")]
     listen: SocketAddr,
@@ -203,9 +200,7 @@ async fn main() -> Result<()> {
                 client_secret.clone().unwrap_or_default(),
             ))
         }
-        (Some(client_id), Some(client_secret), None)
-            if !client_id.trim().is_empty() && !client_secret.trim().is_empty() =>
-        {
+        (Some(client_id), Some(client_secret), None) => {
             Some(OAuthApp::twitch(client_id.clone(), client_secret.clone()))
         }
         _ => {
@@ -227,9 +222,7 @@ async fn main() -> Result<()> {
                 client_secret.unwrap_or_default(),
             ))
         }
-        (Some(client_id), Some(client_secret), None)
-            if !client_id.trim().is_empty() && !client_secret.trim().is_empty() =>
-        {
+        (Some(client_id), Some(client_secret), None) => {
             Some(KickApp::kick(client_id, client_secret))
         }
         _ => {
@@ -377,14 +370,10 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("failed to listen on {}", cli.listen))?;
     info!("listening on http://{}", cli.listen);
-    serve(
-        listener,
-        api::router(api.clone(), cli.tipping_enabled),
-        async move {
-            shutdown_signal().await;
-            api.stopping.send_replace(true);
-        },
-    )
+    serve(listener, api::router(api.clone()), async move {
+        shutdown_signal().await;
+        api.stopping.send_replace(true);
+    })
     .await?;
     info!("stopped");
     Ok(())

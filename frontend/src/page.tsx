@@ -4,10 +4,7 @@ import "./index.css";
 import { asset } from "./asset";
 import { pages } from "./data/links";
 
-if (
-  window.config.tippingEnabled !== false &&
-  new URLSearchParams(location.search).has("streamer")
-) {
+if (new URLSearchParams(location.search).has("streamer")) {
   const { default: Page } = await import("./pages/Page");
   render(() => <Page />, document.getElementById("root")!);
 } else {

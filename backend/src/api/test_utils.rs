@@ -111,10 +111,7 @@ pub(crate) async fn start_api_built(api: Api) -> (String, Arc<Api>) {
         let api = api.clone();
         async move { api.deliveries.run(&api.remote_control).await }
     });
-    (
-        serve_local(router(api.clone(), true)).await.to_string(),
-        api,
-    )
+    (serve_local(router(api.clone())).await.to_string(), api)
 }
 
 pub(crate) async fn serve_local(router: axum::Router) -> std::net::SocketAddr {
