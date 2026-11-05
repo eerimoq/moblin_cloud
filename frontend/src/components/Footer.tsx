@@ -15,7 +15,7 @@ const footerLinks: { label: string; href: string; icon?: IconName }[] = [
 
 const isExternal = (href: string) => /^https?:/.test(href);
 
-export default function Footer(props: { note?: JSX.Element; hidePrivacy?: boolean }) {
+export default function Footer(props: { note?: JSX.Element; hidePolicies?: boolean }) {
   return (
     <footer class="border-t border-line/40 py-10">
       <div class="mx-auto flex max-w-[1120px] flex-col items-center px-5 text-center sm:px-8">
@@ -24,7 +24,11 @@ export default function Footer(props: { note?: JSX.Element; hidePrivacy?: boolea
         </Show>
         <nav class="flex flex-wrap justify-center gap-x-7 gap-y-2" aria-label="Footer">
           {footerLinks
-            .filter((l) => !props.hidePrivacy || l.href !== links.privacyPolicy)
+            .filter(
+              (l) =>
+                !props.hidePolicies ||
+                (l.href !== links.privacyPolicy && l.href !== asset(pages.terms)),
+            )
             .map((l) => (
               <a
                 href={l.href}

@@ -81,7 +81,7 @@ The name is public text, not a URL or secret, and is ignored on the original
 landing page. Custom Compose files must pass it to the frontend container;
 local Vite configuration uses `instanceName` in `frontend/public/config.js`.
 
-Self-hosted mode omits the official service's terms notice and privacy-policy
+Self-hosted mode omits the official service's terms notice, Terms link and privacy-policy
 link from the dashboard footer. Other footer links and the language picker stay
 available. Operators are responsible for their instance's policies.
 

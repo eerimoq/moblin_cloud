@@ -10,7 +10,7 @@ export default function DashboardPage() {
       <Dashboard />
       <Show when={!fullWindow()}>
         <Footer
-          hidePrivacy={window.config.selfHostedLandingPage === true}
+          hidePolicies={window.config.selfHostedLandingPage === true}
           note={
             window.config.selfHostedLandingPage === true
               ? undefined
