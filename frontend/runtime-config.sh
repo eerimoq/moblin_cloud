@@ -8,7 +8,7 @@ boolean() {
   esac
 }
 
-selfhosted=$(boolean SELF_HOSTED "${SELF_HOSTED:-false}")
+selfhosted=$(boolean SELF_HOSTED_LANDING_PAGE "${SELF_HOSTED_LANDING_PAGE:-false}")
 tipping=$(boolean TIPPING_ENABLED "${TIPPING_ENABLED:-true}")
-printf 'window.config = { backendUrl: "/api", selfHosted: %s, tippingEnabled: %s };\n' "$selfhosted" "$tipping" > /srv/config.js
+printf 'window.config = { backendUrl: "/api", selfHostedLandingPage: %s, tippingEnabled: %s };\n' "$selfhosted" "$tipping" > /srv/config.js
 exec "$@"

@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
     environment:
       BACKEND_HOST: backend:8080
-      SELF_HOSTED: ${SELF_HOSTED:-false}
+      SELF_HOSTED_LANDING_PAGE: ${SELF_HOSTED_LANDING_PAGE:-false}
       TIPPING_ENABLED: ${TIPPING_ENABLED:-true}
   caddy:
     image: caddy:2

@@ -11,7 +11,7 @@ const script = readFileSync(new URL("../runtime-config.sh", import.meta.url), "u
   "/srv/config.js",
   output,
 );
-const flags = ["SELF_HOSTED", "TIPPING_ENABLED"];
+const flags = ["SELF_HOSTED_LANDING_PAGE", "TIPPING_ENABLED"];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !flags.includes(key)));
 const run = (values) =>
   spawnSync("sh", ["-s", "--", "true"], {
@@ -28,17 +28,17 @@ try {
   assert.equal(run({}).status, 0);
   assert.deepEqual(config(), {
     backendUrl: "/api",
-    selfHosted: false,
+    selfHostedLandingPage: false,
     tippingEnabled: true,
   });
   assert.equal(run(Object.fromEntries(flags.map((key) => [key, "false"]))).status, 0);
   assert.deepEqual(config(), {
     backendUrl: "/api",
-    selfHosted: false,
+    selfHostedLandingPage: false,
     tippingEnabled: false,
   });
-  assert.equal(run({ SELF_HOSTED: "true" }).status, 0);
-  assert.equal(config().selfHosted, true);
+  assert.equal(run({ SELF_HOSTED_LANDING_PAGE: "true" }).status, 0);
+  assert.equal(config().selfHostedLandingPage, true);
   assert.equal(run(Object.fromEntries(flags.map((key) => [key, "false"]))).status, 0);
   for (const flag of flags) {
     const result = run({ [flag]: "false; echo unsafe" });

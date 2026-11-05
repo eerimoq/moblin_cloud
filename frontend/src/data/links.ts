@@ -2,7 +2,7 @@ import { asset } from "../asset";
 
 declare global {
   interface Window {
-    config: { backendUrl: string; selfHosted?: boolean; tippingEnabled?: boolean };
+    config: { backendUrl: string; selfHostedLandingPage?: boolean; tippingEnabled?: boolean };
   }
 }
 
