@@ -164,6 +164,22 @@ all with their defaults:
 docker compose run --rm backend --help
 ```
 
-Moblin connects to `https://cloud-api.moblin.app`, so a Moblin has to be built
-with `MOBLIN_CLOUD_API_URL` set to `https://example.com/api` to connect to your
-copy, and `APP_ID` set to that build's app ID.
+## Connect Moblin
+
+If your Moblin build has a server URL field in its Moblin Cloud settings, set it
+to `https://example.com/api` without a trailing slash, enter the Cloud key from
+your dashboard and enable the connection. Moblin converts the URL to a WebSocket
+URL and appends its connection path; do not add that path or the key to the URL.
+The compact landing page and disabled tipping do not change this connection.
+
+For a build without that setting, build Moblin with `MOBLIN_CLOUD_API_URL` set to
+`https://example.com/api`. Set the backend's `APP_ID` to that custom build's app ID
+when configuring app attestation.
+
+After setup, verify the expected sign-in buttons, complete provider sign-in and
+confirm the phone connects. To troubleshoot missing buttons, this public request
+should return JSON booleans rather than HTML or a login redirect:
+
+```sh
+curl --fail https://example.com/api/auth/providers
+```
