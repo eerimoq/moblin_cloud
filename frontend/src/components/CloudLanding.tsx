@@ -31,7 +31,7 @@ function SelfHostedLanding(props: { failed: boolean; connecting: boolean }) {
           </Show>
           <SignInButtons />
           <a
-            href={links.selfHosting}
+            href={links.docs}
             class="text-base font-semibold text-leaf hover:text-leaf-bright"
           >
             {t("Setup guide")} ↗

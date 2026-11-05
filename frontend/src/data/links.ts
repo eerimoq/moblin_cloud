@@ -10,7 +10,6 @@ export const links = {
   api: window.config.backendUrl,
   website: "https://moblin.app",
   docs: "https://moblin.app/docs/",
-  selfHosting: "https://github.com/eerimoq/moblin_cloud/blob/main/deploy/README.md",
   discord: "https://discord.gg/kh3KMng4JV",
   discordPremium: "https://discord.gg/YzpsZfNSZ",
   github: "https://github.com/eerimoq/moblin",
