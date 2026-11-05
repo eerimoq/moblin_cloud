@@ -48,6 +48,34 @@ docker compose up -d
 Update with `docker compose pull && docker compose up -d`. The database is
 `data/database.sqlite`; stop the backend before copying it for a backup.
 
+## Public pages
+
+The frontend container reads these optional settings at startup. All default to
+`true`, preserving the existing pages. Set a value to `false` in `.env` and
+recreate the affected containers with `docker compose up -d`; no frontend image
+rebuild is needed.
+
+- `TWITCH_SIGN_IN_ENABLED` and `KICK_SIGN_IN_ENABLED`: show or hide each
+  provider's sign-in buttons, including the header and account-link prompts.
+  Match them to the providers configured below. These are presentation settings;
+  they do not disable OAuth endpoints or replace backend authentication.
+- `LANDING_DETAILS_ENABLED`: show or hide the landing page's How it works section.
+- `TIPPING_ENABLED`: enable or disable public viewer pages and new tip, spin and
+  effect orders. Compose passes this setting to both the frontend and backend.
+  When disabled, the frontend hides viewer pages and share links, and the backend
+  returns 404 for public viewer APIs. Phone connections, dashboard APIs,
+  page-address discovery, payment webhooks and capture of existing orders remain
+  available. Existing open pages may remain visible until a request or reload.
+
+Missing payment credentials do not disable the whole viewer page, since
+non-payment interactions can still be used. `TIPPING_ENABLED=false` explicitly
+disables it even when payment providers are configured.
+
+Frontend settings are public booleans in `/config.js`, served without caching.
+Do not pass provider secrets to the frontend. For local Vite development, use
+`twitchSignInEnabled`, `kickSignInEnabled`, `landingDetailsEnabled` and
+`tippingEnabled` in `frontend/public/config.js`; omitted fields default to true.
+
 ## Integrations
 
 Everything is optional, but nobody can sign in without Twitch or Kick.

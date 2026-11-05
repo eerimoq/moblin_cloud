@@ -1074,7 +1074,7 @@ mod tests {
         let address = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         tokio::spawn({
             let api = api.clone();
-            async move { axum::serve(listener, router(api)).await }
+            async move { axum::serve(listener, router(api, true)).await }
         });
         assert_eq!(api.accounts.get("42"), None);
         let id = api

@@ -172,7 +172,7 @@ const pageUrl = (platform: Platform, login: string) =>
   new URL(asset(`/${platform}/${encodeURIComponent(login)}`), location.origin).href;
 
 const pageUrls = (account: Account) =>
-  platforms.flatMap((platform) => {
+  (window.config.tippingEnabled === false ? [] : platforms).flatMap((platform) => {
     const identity = account[platform];
     return identity ? [{ platform, url: pageUrl(platform, identity.login) }] : [];
   });

@@ -1,8 +1,9 @@
 import { asset } from "../asset";
+import type { FrontendConfig } from "./frontendConfig";
 
 declare global {
   interface Window {
-    config: { backendUrl: string };
+    config: FrontendConfig;
   }
 }
 

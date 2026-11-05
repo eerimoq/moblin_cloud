@@ -21,7 +21,7 @@ if (streamer) {
 
 render(
   () =>
-    streamer ? (
+    streamer && window.config.tippingEnabled !== false ? (
       <Page platform={streamer[1] as "twitch" | "kick"} login={decodeURIComponent(streamer[2])} />
     ) : dashboard ? (
       <DashboardPage />
