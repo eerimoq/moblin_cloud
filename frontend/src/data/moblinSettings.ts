@@ -297,7 +297,7 @@ export type SettingsWidgetCrop = {
 
 export type SettingsWidgetMap = { northUp: boolean; delay: number; scale: number };
 
-export type SettingsWidgetScene = { sceneId: string };
+export type SettingsWidgetScene = { sceneId: string | null };
 
 export type SettingsWidgetQrCode = { message: string };
 
@@ -963,7 +963,7 @@ export const defaultWidget = (id: string, type: SettingsWidgetType): SettingsWid
   },
   crop: { sourceWidgetId: derivedId(`${id}:crop`), x: 0, y: 0, width: 200, height: 200 },
   map: { northUp: false, delay: 0, scale: 1000 },
-  scene: { sceneId: derivedId(`${id}:scene`) },
+  scene: { sceneId: null },
   qrCode: { message: "" },
   alerts: {
     twitch: {

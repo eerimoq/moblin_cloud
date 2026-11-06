@@ -4,6 +4,7 @@ A copy of Moblin's scene editor (`SceneEditorView.swift` and friends in the Mobl
 
 - It edits a local draft of the device's scenes and widgets (`store.ts`, `createEditor`) and syncs it after a change, then at most once a second, so a slider or a dragged widget follows along on the phone. There is no save button. Only what differs from what was last synced is sent, one request at a time, and a failure is shown and retried after 5 s.
 - A new widget's `createWidget` carries as `sceneIds` the scenes already on the device that the draft added it to, like Moblin's wizard, and `adoptSceneWidgets` then takes the scene widget ids Moblin made, keeping the draft's layout.
+- Moblin clears the Scene widgets pointing at a scene it deletes, so `removeScene` clears them in both the draft and `synced` and no `updateWidget` is sent: a Moblin older than 40.0.0-462 refuses a `sceneId` of `null`, and a refused update blocks the sync before it reaches `deleteScene`.
 - `data/moblinSettings.ts` holds the types of Moblin's `SettingsScene` and `SettingsWidget` JSON. `normalizeScene` and `normalizeWidget` fill missing keys with Moblin's decode defaults and deterministic ids for missing UUIDs, so a refetch never looks like a change.
 - `update*` replaces whole objects, and the synthesized Codable sub objects need every field.
 - `encodeWidget` and `encodeScene` port Moblin's hand-written encoders: they leave out what Moblin itself would not write and keep any field they do not know, so a newer Moblin's settings survive an update.

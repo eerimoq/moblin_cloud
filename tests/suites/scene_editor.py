@@ -133,9 +133,23 @@ class SceneEditorChanges(SceneEditorTestCase):
             self.assert_equal(
                 next(scene for scene in self.scenes() if scene["id"] == scene_id)["widgets"], []
             )
+            nesting_id = new_id()
+            nesting = {
+                "id": nesting_id,
+                "name": "Remote scene",
+                "type": "Scene",
+                "enabled": True,
+                "scene": {"sceneId": scene_id},
+            }
+            self.control({"createWidget": {"widget": nesting, "sceneIds": []}})
             self.control({"deleteScene": {"id": scene_id}})
             self.assert_backend_error(409, lambda: self.control({"deleteScene": {"id": scene_id}}))
             self.assert_not_in(scene_id, [scene["id"] for scene in self.scenes()])
+            self.assert_equal(
+                next(widget for widget in self.widgets() if widget["id"] == nesting_id)["scene"],
+                {"sceneId": None},
+            )
+            self.control({"deleteWidget": {"id": nesting_id}})
         finally:
             events.close()
 

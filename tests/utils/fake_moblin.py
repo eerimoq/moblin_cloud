@@ -387,6 +387,10 @@ class FakeMoblin:
         if index is None:
             return ERROR, None
         del items[index]
+        if kind == "scenes":
+            for widget in self.database["widgets"]:
+                if same_id(widget.get("scene", {}).get("sceneId") or "", item_id):
+                    widget["scene"]["sceneId"] = None
         self.remove_dead_scene_widgets()
         self.scenes_changed()
         self.widget_changed(kind, item_id)

@@ -65,6 +65,17 @@ describe("normalizeWidget", () => {
     expect((widget.text as unknown as Record<string, unknown>).alsoNewer).toBe(true);
   });
 
+  test("a scene widget's scene is optional", () => {
+    const sceneOf = (scene?: unknown) =>
+      normalizeWidget({ id: widgetId, type: "Scene", scene }).scene.sceneId;
+    expect(defaultWidget(widgetId, "Scene").scene.sceneId).toBeNull();
+    expect(sceneOf()).toBeNull();
+    expect(sceneOf({})).toBeNull();
+    expect(sceneOf({ sceneId: null })).toBeNull();
+    expect(sceneOf({ sceneId })).toBe(sceneId);
+    expect(encodeWidget(defaultWidget(widgetId, "Scene")).scene).toEqual({ sceneId: null });
+  });
+
   test("an unknown type is read as a text widget", () => {
     expect(normalizeWidget({ id: widgetId, type: "Hologram" }).type).toBe("Text");
   });

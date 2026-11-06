@@ -451,8 +451,17 @@ export function createEditor(
         markDirty();
       },
       removeScene: (id) => {
+        const clearScene = (widgets: SettingsWidget[]) => {
+          for (const widget of widgets) {
+            if (sameId(widget.scene.sceneId, id)) {
+              widget.scene.sceneId = null;
+            }
+          }
+        };
         batch(() => {
           set("scenes", (scenes) => scenes.filter((scene) => !sameId(scene.id, id)));
+          set("widgets", produce(clearScene));
+          clearScene(synced.widgets);
           if (sameId(state.sceneId, id)) {
             set("sceneId", null);
           }

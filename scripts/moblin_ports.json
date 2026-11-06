@@ -23,7 +23,7 @@
         "Moblin/Various/Model/ModelResolvedScene.swift",
         "MoblinTests/Moblin/Various/Model/SceneResolverSuite.swift"
       ],
-      "commit": "c960f2964"
+      "commit": "cbe4b01ab"
     },
     {
       "files": [
@@ -114,7 +114,7 @@
         "Moblin/View/Settings/Scenes/Widgets/Widget/WidgetSettingsView.swift",
         "Moblin/View/Settings/Scenes/Widgets/WidgetsSettingsView.swift"
       ],
-      "commit": "c960f2964"
+      "commit": "cbe4b01ab"
     },
     {
       "files": [
@@ -254,7 +254,7 @@
       "moblin": [
         "Moblin/View/Settings/Scenes/Widgets/Widget/Scene"
       ],
-      "commit": "c960f2964"
+      "commit": "cbe4b01ab"
     },
     {
       "files": [

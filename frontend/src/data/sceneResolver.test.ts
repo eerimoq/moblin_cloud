@@ -134,6 +134,14 @@ describe("SceneResolverSuite", () => {
     expect(resolver.addableWidgets(main).map((widget) => widget.name)).toEqual(["Image"]);
   });
 
+  test("sceneWidgetWithoutScene", () => {
+    const sceneWidget = { ...defaultWidget(newUuid(), "Scene"), name: "Scene" };
+    const main = makeScene("Main", [sceneWidget]);
+    const resolved = new SceneResolver([main], [sceneWidget]).resolve(main);
+    expect(widgetNames(resolved.widgets)).toEqual(["Scene"]);
+    expect(resolved.sceneIds).toEqual([main.id]);
+  });
+
   test("selectableScenes", () => {
     const text = makeWidget("Text");
     const image = makeWidget("Image");
