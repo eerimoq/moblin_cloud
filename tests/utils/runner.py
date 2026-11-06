@@ -11,6 +11,7 @@ from .backend import Backend
 from .backend import build_backend
 from .config import Config
 from .context import Context
+from .coverage import Coverage
 from .moblin import Moblin
 from .utils import FILES_DIR
 
@@ -29,9 +30,9 @@ class HelpFormatter(argparse.HelpFormatter):
 def create_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description, formatter_class=HelpFormatter)
     parser.add_argument(
-        "--interactive",
+        "--coverage",
         action="store_true",
-        help="Run all tests that requires user interaction, and show the browser.",
+        help="Report the backend's code coverage, from a build of its own in backend/target/coverage.",
     )
     return parser
 
@@ -51,17 +52,12 @@ def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests):
     logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
     logging.getLogger("websockets").setLevel(logging.WARNING)
     config = Config()
-    build_backend()
-    with Backend(config) as backend:
+    coverage = Coverage() if args.coverage else None
+    build_backend(coverage is not None)
+    with Backend(config, coverage is not None) as backend:
         with Moblin(config, backend) as moblin:
             moblin.disconnect_from_backend()
-            context = Context(config, backend, moblin, args.interactive)
-            run_tests(sequencer, context, make_tests)
+            sequencer.run(*make_tests(Context(backend, moblin)))
+    if coverage is not None:
+        coverage.report()
     sequencer.report_and_exit(json=False, dot=False)
-
-
-def run_tests(sequencer: systest.Sequencer, context: Context, make_tests: MakeTests):
-    try:
-        sequencer.run(*make_tests(context))
-    finally:
-        context.close()

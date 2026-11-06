@@ -49,7 +49,7 @@ pub(super) async fn handle_page_events(
         changes: api.remote_control.changes.subscribe(&id),
         page: id,
         lagged: false,
-        check_at: Instant::now() + Duration::from_secs(60),
+        check_at: Instant::now() + api.timing.access_recheck,
     };
     let stream = unfold(watching, |mut watching| async move {
         if watching.lagged {
@@ -74,7 +74,7 @@ pub(super) async fn handle_page_events(
                     if assistant(&watching.api, &watching.headers, &watching.page).is_err() {
                         return None;
                     }
-                    watching.check_at = Instant::now() + Duration::from_secs(60);
+                    watching.check_at = Instant::now() + watching.api.timing.access_recheck;
                 }
             }
         }

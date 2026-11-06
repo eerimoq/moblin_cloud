@@ -450,10 +450,10 @@ impl Control {
         )
     }
 
-    fn wait(&self) -> Duration {
+    fn wait(&self, answer: Duration) -> Duration {
         match self {
             Self::GetVideoSourceSnapshot { .. } => Duration::from_secs(60),
-            _ => Duration::from_secs(5),
+            _ => answer,
         }
     }
 
@@ -1394,9 +1394,10 @@ impl Streamers {
         &self,
         (page, device): (&str, &str),
         control: Control,
+        answer: Duration,
     ) -> Result<Option<Value>, RequestError> {
         let changes_settings = control.changes_settings();
-        let wait = control.wait();
+        let wait = control.wait(answer);
         let data = self
             .request((page, device), Request::Control(control), wait)
             .await?;

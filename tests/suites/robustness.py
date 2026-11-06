@@ -41,7 +41,6 @@ class RobustnessTestCase(TestCase):
     """Throw what a broken or hostile client might send at every route, which must never be a server error."""
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in("robust")
         self.settings = self.context.page_with_paypal(self.dashboard)
         self.page_id = self.settings["id"]

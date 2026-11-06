@@ -4,6 +4,8 @@ from collections.abc import Callable
 
 from ..utils.context import Context
 from ..utils.fake_moblin import FakeMoblin
+from ..utils.fake_paypal import FakePayPal
+from ..utils.fake_stripe import FakeStripe
 from ..utils.frontend import BackendError
 from ..utils.moblin import Moblin
 from ..utils.moblin import wheel_option
@@ -13,6 +15,11 @@ LOGGER = logging.getLogger(__name__)
 TIPS = {"amounts": [100, 700]}
 SPIN = {"options": [{"spins": 1, "price": 100}, {"spins": 3, "price": 250}]}
 WHEEL = [wheel_option("Push-ups"), wheel_option("Sing a song", 2), wheel_option("Nothing", 3)]
+DEADLINE = ["--payment-deadline", "2"]
+
+
+def wait_past_deadline():
+    time.sleep(3.1)
 
 
 class PaymentTestCase(TestCase):
@@ -38,6 +45,8 @@ class PaymentTestCase(TestCase):
         self.dashboard.save_settings(currency="USD")
 
     def teardown(self):
+        self.backend.fake_paypal.reset()
+        self.backend.fake_stripe.reset()
         if hasattr(self, "dashboard"):
             self.dashboard.save_settings()
             self.dashboard.save_settings(currency="USD")
@@ -45,6 +54,25 @@ class PaymentTestCase(TestCase):
     @property
     def moblin(self) -> Moblin:
         return self.context.moblin
+
+    @property
+    def fake(self) -> FakePayPal | FakeStripe:
+        return self.backend.fake_stripe if self.provider == "stripe" else self.backend.fake_paypal
+
+    @property
+    def provider_name(self) -> str:
+        return "Stripe" if self.provider == "stripe" else "PayPal"
+
+    def no_answer(self, kept: str = "the tip will still be shown") -> str:
+        return f"{self.provider_name} did not answer. If the money was taken, {kept} or the money refunded."
+
+    def paid_tip(self, amount: int, user: str) -> str:
+        order_id = self.order_tip(amount, user)
+        self.pay(order_id)
+        return order_id
+
+    def received(self, order_id: str) -> bool:
+        return order_id in [item["id"] for item in self.dashboard.recent("tip")["items"]]
 
     def connect_moblin(self, wheel: list[dict] | None = None):
         self.moblin.connect_to_backend(self.dashboard.moblin_cloud_key(), wheel)
@@ -224,7 +252,11 @@ class PaymentsTipToEveryDevice(PaymentTestCase):
         self.connect_moblin()
         self.dashboard.save_settings(tips=TIPS)
         self.second = FakeMoblin(
-            None, self.backend.url, key=self.dashboard.moblin_cloud_key(), device_id="REFUSING"
+            None,
+            self.backend.url,
+            key=self.dashboard.moblin_cloud_key(),
+            device_id="REFUSING",
+            reconnect_delay=0.1,
         )
         self.second.refuse_tips = True
         self.second.start()
@@ -356,6 +388,274 @@ class PaymentsSpinWhenWheelIsGone(PaymentTestCase):
         self.assert_hold_released(order_id)
 
 
+class PaymentsTipDeclined(PaymentTestCase):
+    """Tell the viewer when PayPal or Stripe declines the payment, and show no tip."""
+
+    def run(self):
+        self.dashboard.save_settings(tips=TIPS)
+        for outcome in ["declined"] if self.provider == "stripe" else ["declined", "refused"]:
+            order_id = self.paid_tip(100, "Declined")
+            self.fake.plan_capture(order_id, outcome)
+            self.assert_backend_error(
+                402,
+                lambda order_id=order_id: self.viewer.capture_tip(order_id),
+                f"{self.provider_name} declined the payment.",
+            )
+            self.assert_not_paid(order_id)
+            self.assert_false(self.received(order_id))
+
+
+class PaymentsTipUnderReview(PaymentTestCase):
+    """Tell the viewer when PayPal or Stripe is still reviewing the payment, and show the tip once the review ends with the money taken."""
+
+    def run(self):
+        self.connect_moblin()
+        self.dashboard.save_settings(tips=TIPS)
+        order_id = self.paid_tip(700, "Reviewed")
+        self.fake.plan_capture(order_id, "pending")
+        name = self.provider_name
+        reviewing = (
+            f"{name} is still reviewing the tip. If {name} approves it within half an hour, the tip "
+            "will be shown and the money reaches the streamer, otherwise the money is refunded."
+        )
+        for _ in range(2):
+            self.assert_backend_error(402, lambda: self.viewer.capture_tip(order_id), reviewing)
+        self.assert_false(self.received(order_id))
+        self.fake.complete(order_id)
+        self.assert_equal(self.viewer.capture_tip(order_id), {})
+        self.assert_paid(order_id, "7.00")
+        tip = self.moblin.wait_for_backend_request("message", order_id)
+        self.assert_equal(tip.body["name"], "Reviewed")
+
+
+class PaymentsSpinAndEffectUnderReview(PaymentTestCase):
+    """Tell the viewer that the wheel is not spun and the effect not played yet while PayPal or Stripe reviews the payment."""
+
+    def run(self):
+        self.connect_moblin(WHEEL)
+        self.dashboard.change_settings(spin=SPIN, effects={"price": 100})
+        self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be on the page")
+        name = self.provider_name
+        spin = self.order_spin(1)
+        effect = self.viewer.order_effect("fart", 100, provider=self.provider)
+        for order_id in [spin, effect]:
+            self.pay(order_id)
+            self.fake.plan_capture(order_id, "pending")
+        self.assert_backend_error(
+            402,
+            lambda: self.viewer.capture_spin(spin),
+            f"{name} is still reviewing the tip, so the wheel was not spun yet. It will be spun if "
+            f"{name} approves it within half an hour, otherwise the money is refunded.",
+        )
+        self.assert_backend_error(
+            402,
+            lambda: self.viewer.capture_effect(effect),
+            f"{name} is still reviewing the tip, so the effect was not played yet. It will be played if "
+            f"{name} approves it within half an hour, otherwise the money is refunded.",
+        )
+        self.fake.complete(spin)
+        self.assert_equal(self.viewer.capture_spin(spin), {})
+        self.moblin.wait_for_backend_request("wheelOfLuck", spin)
+
+    def teardown(self):
+        if hasattr(self, "dashboard"):
+            self.dashboard.change_settings(spin=None, effects=None)
+        super().teardown()
+
+
+class PaymentsTipAnswerLost(PaymentTestCase):
+    """Show a tip whose money was taken although the answer to the capture was lost, and take the money once when the viewer tries a failed capture again."""
+
+    def run(self):
+        self.connect_moblin()
+        self.dashboard.save_settings(tips=TIPS)
+        lost = self.paid_tip(100, "Lost")
+        self.fake.plan_capture(lost, "lost")
+        self.assert_equal(self.viewer.capture_tip(lost), {})
+        self.assert_paid(lost, "1.00")
+        self.moblin.wait_for_backend_request("message", lost)
+        failed = self.paid_tip(700, "Failed")
+        self.fake.plan_capture(failed, "failed")
+        self.assert_backend_error(502, lambda: self.viewer.capture_tip(failed), self.no_answer())
+        self.assert_not_paid(failed)
+        self.assert_false(self.received(failed))
+        self.assert_equal(self.viewer.capture_tip(failed), {})
+        self.assert_paid(failed, "7.00")
+        self.moblin.wait_for_backend_request("message", failed)
+        ids = [item["id"] for item in self.dashboard.recent("tip")["items"]]
+        self.assert_equal([ids.count(lost), ids.count(failed)], [1, 1])
+
+
+class PaymentDeadlineTestCase(PaymentTestCase):
+    """The backend giving viewers 2 seconds to pay instead of half an hour, so a test can be too late."""
+
+    def setup(self):
+        self.backend.restart(extra=DEADLINE)
+        super().setup()
+
+    def teardown(self):
+        try:
+            super().teardown()
+        finally:
+            self.backend.restart()
+
+    def late_tips(self, *users: str) -> list[str]:
+        """Tips whose money the provider takes after a review that ends after the deadline."""
+        order_ids = [self.paid_tip(100, user) for user in users]
+        for order_id in order_ids:
+            self.fake.plan_capture(order_id, "pending")
+            self.assert_backend_error(402, lambda order_id=order_id: self.viewer.capture_tip(order_id))
+        wait_past_deadline()
+        for order_id in order_ids:
+            self.fake.complete(order_id)
+        return order_ids
+
+    def assert_refunded(self, order_id: str):
+        if self.provider == "stripe":
+            refunds = self.context.stripe.refunds(order_id, self.account_id)
+            self.assert_equal([refund["status"] for refund in refunds], ["succeeded"])
+            return
+        unit = self.context.paypal.order(order_id, self.merchant_id)["purchase_units"][0]
+        self.assert_equal(unit["payments"]["captures"][0]["status"], "REFUNDED")
+
+
+class PaymentsTipTooLate(PaymentDeadlineTestCase):
+    """Take no money for a tip the viewer pays after the deadline, and release Stripe's hold on the card."""
+
+    def run(self):
+        self.dashboard.save_settings(tips=TIPS)
+        too_late = "The tip took too long, so no money was taken. Try again."
+        slow = self.paid_tip(100, "Slow")
+        unpaid = self.order_tip(100, "Unpaid")
+        self.assert_backend_error(402, lambda: self.viewer.capture_tip(unpaid), "The tip was not completed.")
+        wait_past_deadline()
+        self.assert_backend_error(410, lambda: self.viewer.capture_tip(slow), too_late)
+        self.assert_not_paid(slow)
+        self.assert_backend_error(410, lambda: self.viewer.capture_tip(unpaid), too_late)
+        self.assert_hold_released(unpaid)
+        self.assert_backend_error(
+            410,
+            lambda: self.viewer.capture_tip(unpaid),
+            "This tip is unknown or expired, so no money was taken.",
+        )
+
+
+class PaymentsTipRefundedWhenLate(PaymentDeadlineTestCase):
+    """Refund a tip whose money is taken after the deadline, and show it late only when the refund is refused."""
+
+    def run(self):
+        self.connect_moblin()
+        self.dashboard.save_settings(tips=TIPS)
+        refunded, kept = self.late_tips("Refunded", "Kept")
+        self.fake.refunds = "failed"
+        self.assert_backend_error(502, lambda: self.viewer.capture_tip(refunded), self.no_answer())
+        self.fake.refunds = "accepted"
+        self.assert_backend_error(
+            410,
+            lambda: self.viewer.capture_tip(refunded),
+            "The tip took too long, so the money was refunded.",
+        )
+        self.assert_refunded(refunded)
+        self.assert_false(self.received(refunded))
+        self.assert_backend_error(
+            410,
+            lambda: self.viewer.capture_tip(refunded),
+            "This tip is unknown or expired, so no money was taken.",
+        )
+        self.fake.refunds = "refused"
+        self.assert_equal(self.viewer.capture_tip(kept), {})
+        self.assert_paid(kept, "1.00")
+        tip = self.moblin.wait_for_backend_request("message", kept)
+        self.assert_equal(tip.body["name"], "Kept")
+        self.assert_true(self.received(kept))
+        requests = self.moblin.backend_requests("message")
+        self.assert_not_in(refunded, [request.body.get("requestId") for request in requests])
+
+
+class PaymentsProviderDown(PaymentTestCase):
+    """Start no payment while PayPal or Stripe is down, and finish a paid one once it is back."""
+
+    def run(self):
+        self.connect_moblin()
+        self.dashboard.save_settings(tips=TIPS)
+        order_id = self.paid_tip(100, "Down")
+        self.fake.down = True
+        self.assert_backend_error(
+            502,
+            lambda: self.order_tip(100),
+            f"{self.provider_name} could not start the payment. Try again.",
+        )
+        self.assert_backend_error(502, lambda: self.viewer.capture_tip(order_id), self.no_answer())
+        self.fake.down = False
+        self.assert_equal(self.viewer.capture_tip(order_id), {})
+        self.assert_paid(order_id, "1.00")
+        self.moblin.wait_for_backend_request("message", order_id)
+
+
+class PaymentsSettledWithoutTheViewer(TestCase):
+    """Refund a late payment and give an abandoned one up without the viewer asking again."""
+
+    def run(self):
+        self.backend.restart(extra=DEADLINE + ["--settle-interval", "1"])
+        abandoned = {}
+        late = {}
+        for provider in ["paypal", "stripe"]:
+            dashboard = self.sign_in(f"settled{provider}")
+            if provider == "stripe":
+                settings = self.context.page_with_stripe(dashboard)
+                seller = settings["stripeAccountId"]
+                fake: FakePayPal | FakeStripe = self.backend.fake_stripe
+                pay: Callable[[str, str], None] = self.context.stripe.pay_with_card
+            else:
+                settings = self.context.page_with_paypal(dashboard)
+                seller = settings["merchantId"]
+                fake = self.backend.fake_paypal
+                pay = self.context.paypal.pay_with_card
+            dashboard.change_settings(tips=TIPS)
+            viewer = self.frontend.viewer(settings["id"])
+            abandoned[provider] = (viewer, viewer.order_tip(100, provider=provider), seller)
+            late[provider] = (dashboard, viewer.order_tip(100, provider=provider), seller)
+            for _, order_id, _ in [abandoned[provider], late[provider]]:
+                pay(order_id, seller)
+            order_id = late[provider][1]
+            fake.plan_capture(order_id, "pending")
+            self.assert_backend_error(
+                402, lambda viewer=viewer, order_id=order_id: viewer.capture_tip(order_id)
+            )
+        wait_past_deadline()
+        self.backend.fake_paypal.complete(late["paypal"][1])
+        self.backend.fake_stripe.complete(late["stripe"][1])
+
+        def refunded() -> bool:
+            unit = self.context.paypal.order(late["paypal"][1], late["paypal"][2])["purchase_units"][0]
+            return (
+                unit["payments"]["captures"][0]["status"] == "REFUNDED"
+                and len(self.context.stripe.refunds(late["stripe"][1], late["stripe"][2])) == 1
+            )
+
+        def cancelled() -> bool:
+            _, order_id, account_id = abandoned["stripe"]
+            return self.context.stripe.payment(order_id, account_id)["status"] == "canceled"
+
+        self.wait_until(refunded, "the late payments to be refunded")
+        self.wait_until(cancelled, "the abandoned Stripe payment to be cancelled")
+        for viewer, order_id, _ in abandoned.values():
+            self.assert_backend_error(
+                410,
+                lambda viewer=viewer, order_id=order_id: viewer.capture_tip(order_id),
+                "This tip is unknown or expired, so no money was taken.",
+            )
+        _, order_id, merchant_id = abandoned["paypal"]
+        self.assert_not_equal(self.context.paypal.order(order_id, merchant_id)["status"], "COMPLETED")
+        for dashboard, order_id, _ in late.values():
+            self.assert_not_in(order_id, [item["id"] for item in dashboard.recent("tip")["items"]])
+
+    def teardown(self):
+        self.backend.fake_paypal.reset()
+        self.backend.fake_stripe.reset()
+        self.backend.restart()
+
+
 def tests(context: Context):
     return [
         test(context, provider)
@@ -372,5 +672,12 @@ def tests(context: Context):
             PaymentsSpinNeedsWheel,
             PaymentsSpinPaid,
             PaymentsSpinWhenWheelIsGone,
+            PaymentsTipDeclined,
+            PaymentsTipUnderReview,
+            PaymentsSpinAndEffectUnderReview,
+            PaymentsTipAnswerLost,
+            PaymentsTipTooLate,
+            PaymentsTipRefundedWhenLate,
+            PaymentsProviderDown,
         ]
-    ]
+    ] + [PaymentsSettledWithoutTheViewer(context)]

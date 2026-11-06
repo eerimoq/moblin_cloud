@@ -39,12 +39,7 @@ def signed(payload: bytes) -> str:
     return f"{unpadded(payload)}.{unpadded(tag)}"
 
 
-class AccessTestCase(TestCase):
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
-
-class AccessAssistantPreview(AccessTestCase):
+class AccessAssistantPreview(TestCase):
     """Show an assistant the stream preview only once the streamer let them, and stop showing it when turned off."""
 
     def run(self):
@@ -88,7 +83,7 @@ class AccessAssistantPreview(AccessTestCase):
         streamer.remove_assistant("twitch", assistant_id)
 
 
-class AccessAssistantRemoteControl(AccessTestCase):
+class AccessAssistantRemoteControl(TestCase):
     """Let an assistant see a device only once the streamer let them view it, and control it only once they let them control it."""
 
     def run(self):
@@ -142,7 +137,7 @@ class AccessAssistantRemoteControl(AccessTestCase):
         streamer.remove_assistant("twitch", assistant_id)
 
 
-class AccessAssistantGoLive(AccessTestCase):
+class AccessAssistantGoLive(TestCase):
     """Let an assistant who may use the remote control go live only once the streamer let them, while ending the stream and their other controls always work."""
 
     def run(self):
@@ -190,7 +185,7 @@ class AccessAssistantGoLive(AccessTestCase):
         streamer.remove_assistant("twitch", assistant_id)
 
 
-class AccessRightsOnBothPlatforms(AccessTestCase):
+class AccessRightsOnBothPlatforms(TestCase):
     """Give an assistant listed under the same streamer on Twitch and on Kick what either list grants, the higher
     remote control access of the two, and only what the remaining list grants once one is removed."""
 
@@ -249,7 +244,7 @@ class AccessRightsOnBothPlatforms(AccessTestCase):
         self.assert_backend_error(403, lambda: assistant.assisted_account(page_id), NOT_ASSISTANT)
 
 
-class AccessAssistantsLimit(AccessTestCase):
+class AccessAssistantsLimit(TestCase):
     """Keep at most 50 assistants per platform, but let one listed already be added again."""
 
     def run(self):
@@ -263,7 +258,7 @@ class AccessAssistantsLimit(AccessTestCase):
         self.assert_equal(len(streamer.add_assistant("twitch", "MANYMOD7")["twitchAssistants"]), 50)
 
 
-class AccessDeletedAssistants(AccessTestCase):
+class AccessDeletedAssistants(TestCase):
     """Remove a deleted account's assistant rows both ways, so signing in again assists nothing and is assisted by nobody."""
 
     def run(self):
@@ -286,7 +281,7 @@ class AccessDeletedAssistants(AccessTestCase):
         self.assert_backend_error(403, lambda: again.assisted_account(returned.page_id()), NOT_ASSISTANT)
 
 
-class AccessAssistantLimits(AccessTestCase):
+class AccessAssistantLimits(TestCase):
     """Keep an assistant to the page they assist, its devices and what the streamer may do."""
 
     def run(self):
@@ -318,7 +313,7 @@ class AccessAssistantLimits(AccessTestCase):
         streamer.remove_assistant("twitch", user_id_of("limitedmod"))
 
 
-class AccessTokens(AccessTestCase):
+class AccessTokens(TestCase):
     """Accept sessions, viewer tokens and link tokens only where each belongs, and only while valid."""
 
     def run(self):
@@ -360,7 +355,7 @@ class AccessTokens(AccessTestCase):
         dashboard.change_settings(subEffects=None)
 
 
-class AccessCors(AccessTestCase):
+class AccessCors(TestCase):
     """Let the frontend send its session and JSON bodies from the browser, and nobody else."""
 
     def run(self):

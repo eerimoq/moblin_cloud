@@ -14,7 +14,6 @@ class EventsTestCase(TestCase):
     login = "eventsbase"
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.page_id = self.dashboard.page_id()
 
@@ -167,7 +166,7 @@ class EventsEndOnShutdown(EventsTestCase):
             EventStream(self.sign_in("admin"), "/admin/stats/events"),
         ]
         started = time.monotonic()
-        self.backend.restart()
+        self.backend.restart(graceful=True)
         took = time.monotonic() - started
         for stream in streams:
             self.assert_true(stream.wait_for_end(5), "the stream ended")

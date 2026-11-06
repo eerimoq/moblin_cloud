@@ -16,7 +16,7 @@ use crate::counters::Counters;
 use crate::database::Database;
 use crate::deliveries::Deliveries;
 use crate::pages::Pages;
-use crate::payments::Orders;
+use crate::payments::{DEADLINE, Orders};
 use crate::paypal::PayPal;
 use crate::remote_control::Streamers;
 use crate::requests::Requests;
@@ -80,7 +80,7 @@ pub(crate) fn build_api(
         pages,
         paypal,
         stripe,
-        orders: Orders::new(database.clone()),
+        orders: Orders::new(database.clone(), DEADLINE),
         allowances: Allowances::new(database.clone()),
         deliveries: Deliveries::new(database.clone()),
         auth: Auth::new(
@@ -102,6 +102,7 @@ pub(crate) fn build_api(
         connect_tries: Mutex::default(),
         requests: Requests::default(),
         stopping: tokio::sync::watch::channel(false).0,
+        timing: Timing::default(),
     }
 }
 
@@ -109,7 +110,11 @@ pub(crate) async fn start_api_built(api: Api) -> (String, Arc<Api>) {
     let api = Arc::new(api);
     tokio::spawn({
         let api = api.clone();
-        async move { api.deliveries.run(&api.remote_control).await }
+        async move {
+            api.deliveries
+                .run(&api.remote_control, api.timing.delivery_retry)
+                .await
+        }
     });
     (serve_local(router(api.clone())).await.to_string(), api)
 }

@@ -1,3 +1,5 @@
+import threading
+import time
 import uuid
 
 import requests
@@ -11,12 +13,7 @@ from ..utils.test_case import TestCase
 from .images import image
 
 
-class LifecycleTestCase(TestCase):
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
-
-class LifecycleKeptOnRestart(LifecycleTestCase):
+class LifecycleKeptOnRestart(TestCase):
     """Keep everything a streamer set up when the backend restarts: identities, devices, assistants, look and features."""
 
     def run(self):
@@ -78,7 +75,7 @@ class LifecycleKeptOnRestart(LifecycleTestCase):
                 dashboard.remove_assistant(platform, assistant["id"])
 
 
-class LifecycleOneProviderLeft(LifecycleTestCase):
+class LifecycleOneProviderLeft(TestCase):
     """Keep taking payments with Stripe when the streamer disconnects PayPal, and with PayPal when they disconnect Stripe."""
 
     def run(self):
@@ -112,7 +109,7 @@ class LifecycleOneProviderLeft(LifecycleTestCase):
         dashboard.delete_account()
 
 
-class LifecycleCaptureAfterDelete(LifecycleTestCase):
+class LifecycleCaptureAfterDelete(TestCase):
     """Take no money for an order of a page whose streamer deleted their account before the viewer paid."""
 
     def run(self):
@@ -141,7 +138,7 @@ class LifecycleCaptureAfterDelete(LifecycleTestCase):
                 self.assert_not_equal(status, "COMPLETED", "no money was taken with PayPal")
 
 
-class LifecycleNewKey(LifecycleTestCase):
+class LifecycleNewKey(TestCase):
     """Disconnect every device when the key is replaced, keep them listed, and let them back with the new key."""
 
     def run(self):
@@ -168,7 +165,7 @@ class LifecycleNewKey(LifecycleTestCase):
         again.close()
 
 
-class LifecycleStatsBounded(LifecycleTestCase):
+class LifecycleStatsBounded(TestCase):
     """Keep the operator's traffic and request statistics bounded whatever devices and clients send."""
 
     def run(self):
@@ -201,7 +198,7 @@ class LifecycleStatsBounded(LifecycleTestCase):
         )
 
 
-class LifecycleAssistantOfMany(LifecycleTestCase):
+class LifecycleAssistantOfMany(TestCase):
     """List every channel a user assists, on each platform, and only those."""
 
     def run(self):
@@ -227,6 +224,31 @@ class LifecycleAssistantOfMany(LifecycleTestCase):
         self.assert_not_in(both.page_id(), [channel["id"] for channel in assistant.account()["assisting"]])
 
 
+class LifecycleCaptureFinishesOnShutdown(TestCase):
+    """Finish a capture in flight before shutting down, so a deploy never takes a viewer's money without saving the tip."""
+
+    def run(self):
+        dashboard = self.sign_in("shutdowncapture")
+        settings = self.context.page_with_paypal(dashboard)
+        dashboard.change_settings(tips={"amounts": [100]})
+        viewer = self.frontend.viewer(settings["id"])
+        order_id = viewer.order_tip(100, "Deployed")
+        self.context.paypal.pay_with_card(order_id, settings["merchantId"])
+        self.backend.fake_paypal.plan_capture(order_id, "slow")
+        answers: list[dict] = []
+        capture = threading.Thread(target=lambda: answers.append(viewer.capture_tip(order_id)))
+        capture.start()
+        time.sleep(1)
+        self.backend.restart(graceful=True)
+        capture.join(30)
+        self.assert_equal(answers, [{}])
+        self.assert_equal(self.context.paypal.order(order_id, settings["merchantId"])["status"], "COMPLETED")
+        self.assert_in(order_id, [item["id"] for item in dashboard.recent("tip")["items"]])
+
+    def teardown(self):
+        self.backend.fake_paypal.reset()
+
+
 def tests(context: Context):
     return [
         LifecycleKeptOnRestart(context),
@@ -235,4 +257,5 @@ def tests(context: Context):
         LifecycleNewKey(context),
         LifecycleStatsBounded(context),
         LifecycleAssistantOfMany(context),
+        LifecycleCaptureFinishesOnShutdown(context),
     ]

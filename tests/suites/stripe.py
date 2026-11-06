@@ -116,6 +116,30 @@ class StripePaidSettings(TestCase):
         dashboard.save_settings(currency="USD")
 
 
+class StripeDown(TestCase):
+    """Tell the streamer when Stripe can't be reached, and connect the same account once it is back."""
+
+    def run(self):
+        dashboard = self.sign_in("stripedown")
+        fake = self.backend.fake_stripe
+        unreachable = "Stripe could not be reached"
+        fake.down = True
+        self.assert_backend_error(502, dashboard.connect_stripe, "Stripe could not create the account")
+        fake.down = False
+        onboarding_url = dashboard.connect_stripe()
+        fake.down = True
+        self.assert_backend_error(502, dashboard.connect_stripe, unreachable)
+        self.assert_backend_error(502, dashboard.check_stripe, unreachable)
+        fake.down = False
+        self.context.stripe.onboard_account(onboarding_url)
+        settings = dashboard.check_stripe()
+        self.assert_true(onboarding_url.startswith(f"{fake.url}/setup/{settings['stripeAccountId']}?"))
+        self.assert_false(settings["stripePending"])
+
+    def teardown(self):
+        self.backend.fake_stripe.reset()
+
+
 def tests(context: Context):
     return [
         StripeConnectStarts(context),
@@ -123,4 +147,5 @@ def tests(context: Context):
         StripeNotForPagesWithoutIt(context),
         StripeConnect(context),
         StripePaidSettings(context),
+        StripeDown(context),
     ]
