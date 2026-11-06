@@ -114,6 +114,11 @@ test:
 system-test *args:
 	python3 -m tests.test {{args}}
 
+[group('check')]
+[doc("Runs the backend system tests and reports the backend's code coverage, see tests/README.md.")]
+system-test-coverage *args:
+	python3 -m tests.test --coverage {{args}}
+
 [group('maintenance')]
 [doc("Lists the Moblin commits the scene editor has not ported yet, from ../moblin, see scripts/moblin_ports.json.")]
 moblin-drift *args:

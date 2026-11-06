@@ -32,7 +32,7 @@ use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::accounts::Accounts;
-use crate::api::Api;
+use crate::api::{Api, Timing};
 use crate::app_attest::{AppAttest, Environment};
 use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::counters::Counters;
@@ -165,6 +165,16 @@ struct Cli {
     /// premium accounts, which get the premium features.
     #[arg(long, env = "PREMIUM_ACCOUNTS", value_delimiter = ',', value_parser = accounts::admin_key_of)]
     premium_accounts: Vec<String>,
+    #[arg(long, hide = true, value_name = "SECONDS", default_value_t = payments::DEADLINE.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
+    payment_deadline: u64,
+    #[arg(long, hide = true, value_name = "SECONDS", default_value_t = Timing::default().settle.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
+    settle_interval: u64,
+    #[arg(long, hide = true, value_name = "SECONDS", default_value_t = Timing::default().delivery_retry.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
+    delivery_retry_interval: u64,
+    #[arg(long, hide = true, value_name = "SECONDS", default_value_t = Timing::default().access_recheck.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
+    access_recheck_interval: u64,
+    #[arg(long, hide = true, value_name = "SECONDS", default_value_t = Timing::default().moblin_answer.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
+    moblin_answer_timeout: u64,
 }
 
 fn http_client() -> Client {
@@ -346,7 +356,7 @@ async fn main() -> Result<()> {
         pages,
         paypal,
         stripe,
-        orders: Orders::new(database.clone()),
+        orders: Orders::new(database.clone(), Duration::from_secs(cli.payment_deadline)),
         allowances: Allowances::new(database.clone()),
         deliveries,
         auth,
@@ -360,10 +370,20 @@ async fn main() -> Result<()> {
         connect_tries: Mutex::default(),
         requests: Requests::default(),
         stopping: tokio::sync::watch::channel(false).0,
+        timing: Timing {
+            delivery_retry: Duration::from_secs(cli.delivery_retry_interval),
+            access_recheck: Duration::from_secs(cli.access_recheck_interval),
+            settle: Duration::from_secs(cli.settle_interval),
+            moblin_answer: Duration::from_secs(cli.moblin_answer_timeout),
+        },
     });
     tokio::spawn({
         let api = api.clone();
-        async move { api.deliveries.run(&api.remote_control).await }
+        async move {
+            api.deliveries
+                .run(&api.remote_control, api.timing.delivery_retry)
+                .await
+        }
     });
     tokio::spawn(api::settle_orders(api.clone()));
     let listener = TcpListener::bind(cli.listen)

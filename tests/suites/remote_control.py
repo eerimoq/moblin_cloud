@@ -157,7 +157,7 @@ class RemoteControlDevices(RemoteControlTestCase):
         key = self.dashboard.moblin_cloud_key()
         self.moblin.connect_to_backend(key, WHEEL)
         self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be on the page")
-        self.second = FakeMoblin(None, self.backend.url, key=key, device_id="SECOND")
+        self.second = FakeMoblin(None, self.backend.url, key=key, device_id="SECOND", reconnect_delay=0.1)
         self.second.start()
         self.wait_until(lambda: len(self.connected()) == 2, "the second device to connect")
         devices = self.connected()

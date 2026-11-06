@@ -25,7 +25,6 @@ class Config:
             self._config = {}
         else:
             self._config = tomllib.loads(self.config_toml.read_text())
-        self._validate()
 
     def general(self) -> dict:
         return self._config.get("general", {})
@@ -35,19 +34,3 @@ class Config:
 
     def remote_control_port(self) -> int:
         return self.general().get("remote-control-port", 2345)
-
-    def headless_browser(self) -> bool:
-        return self.general().get("headless-browser", True)
-
-    def twitch(self) -> dict | None:
-        return self._config.get("twitch")
-
-    def twitch_sign_in(self) -> str:
-        twitch = self.twitch() or {}
-        return twitch.get("sign-in", "fake")
-
-    def _validate(self):
-        if self.twitch_sign_in() not in ["fake", "real"]:
-            raise Exception(f"[twitch] sign-in must be 'fake' or 'real' in '{self.config_toml}'.")
-        if self.twitch_sign_in() == "real" and self.twitch() is None:
-            raise Exception("Real Twitch sign in needs [twitch] client-id and client-secret.")

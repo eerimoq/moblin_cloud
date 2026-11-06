@@ -59,10 +59,7 @@ def identified(port: int, key: str, device_id: str) -> ClientConnection | None:
 
 
 class AccountTestCase(TestCase):
-    """Tests needing made-up Twitch users, each with its own fresh account."""
-
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
+    """Each test has its own fresh account."""
 
     def assert_signed_out(self, dashboard: Dashboard):
         self.assert_backend_error(401, dashboard.account, "not signed in")
@@ -98,18 +95,6 @@ class AccountSignIn(AccountTestCase):
                 "kickAssistants": [],
             },
         )
-
-
-class AccountSignInWithTwitch(TestCase):
-    """Sign in with a real Twitch account in a browser and get the account."""
-
-    def run(self):
-        self.skip_if_no_twitch()
-        if self.context.config.twitch_sign_in() != "real":
-            self.skip_if_not_interactive()
-        account = self.sign_in().account()
-        self.assert_not_equal(account["twitch"]["login"], "")
-        self.assert_not_equal(account["name"], "")
 
 
 class AccountSignInFromAnotherBrowser(AccountTestCase):
@@ -175,8 +160,7 @@ class AccountPageAtSignIn(AccountTestCase):
         )
         self.assert_true(settings["paypal"])
         self.assert_true(settings["paypalSandbox"])
-        if self.context.config.twitch_sign_in() == "fake":
-            self.assert_equal(self.sign_in("createpage").account(), account)
+        self.assert_equal(self.sign_in("createpage").account(), account)
         page_id = settings["id"]
         self.assert_equal(self.frontend.id_of_twitch_login(account["twitch"]["login"]), page_id)
         self.assert_equal(self.frontend.id_of_twitch_login(account["twitch"]["login"].upper()), page_id)
@@ -457,7 +441,6 @@ class AccountCors(TestCase):
 def tests(context: Context):
     return [
         AccountSignIn(context),
-        AccountSignInWithTwitch(context),
         AccountSignInFromAnotherBrowser(context),
         AccountNotSignedIn(context),
         AccountExpiredSession(context),

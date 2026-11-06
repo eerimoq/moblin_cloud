@@ -72,6 +72,36 @@ class Frontend(Client):
     def viewer(self, page_id: str) -> "Viewer":
         return Viewer(self.url, page_id)
 
+    def config(self) -> dict:
+        return self.get("/config")
+
+    def terminal_sign_in(self, login: str, port: int, challenge: str, platform: str = "twitch") -> str:
+        """Signs in like the browser mobtop opens, returning where the callback redirects to, which is
+        mobtop's own port on the same machine."""
+        callback_url, browser = self._start_sign_in(
+            {"port": str(port), "challenge": challenge}, login, platform
+        )
+        return self.finish_sign_in(callback_url, browser)
+
+    def session_of_code(self, code: str, verifier: str) -> "Dashboard":
+        """Trades the code mobtop got on its port for the session, like mobtop."""
+        return Dashboard(
+            self.url, self.post("/auth/session", {"code": code, "verifier": verifier})["session"]
+        )
+
+    def start_connect(self) -> dict:
+        """Starts signing in on another device, like mobtop showing a code to type into the Connect page."""
+        return self.post("/auth/connect")
+
+    def connect_session(self, device_code: str) -> "Dashboard | None":
+        """Asks if the code has been approved yet, like mobtop every few seconds."""
+        response = self.request("POST", "/auth/connect/session", {"deviceCode": device_code})
+        if not response.ok:
+            raise BackendError(response.status_code, response.text)
+        if response.status_code == 202:
+            return None
+        return Dashboard(self.url, response.json()["session"])
+
     def id_of_twitch_login(self, login: str) -> str:
         return self.get(f"/pages/twitch/{quote(login, safe='')}")["id"]
 
@@ -178,6 +208,20 @@ class Dashboard(Client):
 
     def new_moblin_cloud_key(self) -> dict:
         return self.post("/account/key")
+
+    def decide_connect(self, code: str, approve: bool) -> dict:
+        """Approves or denies the code typed into the Connect page."""
+        return self.post("/account/connect", {"code": code, "approve": approve})
+
+    def monitor_layout(self, page_id: str):
+        return self.get(f"/account/pages/{quote(page_id, safe='')}/monitor")["layout"]
+
+    def save_monitor_layout(self, page_id: str, layout):
+        response = self.request(
+            "POST", f"/account/pages/{quote(page_id, safe='')}/monitor", {"layout": layout}
+        )
+        if not response.ok:
+            raise BackendError(response.status_code, response.text)
 
     def rename_device(self, device: str, name: str) -> dict:
         return self.post(f"/account/devices/{device}/name", {"name": name})

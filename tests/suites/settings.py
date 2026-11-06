@@ -7,7 +7,6 @@ class SettingsTestCase(TestCase):
     login = "settingsbase"
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.settings = self.context.page_with_paypal(self.dashboard)
         self.page_id = self.settings["id"]
@@ -104,9 +103,6 @@ class SettingsAssistantKeepsCurrency(SettingsTestCase):
 class SettingsAccent(TestCase):
     """Let premium streamers pick any #rrggbb accent color and others only the fixed ones."""
 
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
     def run(self):
         premium = self.sign_in("admin")
         settings = premium.change_settings(accent="#12ab34")
@@ -125,9 +121,6 @@ class SettingsAccent(TestCase):
 
 class SettingsSubscriberTiers(TestCase):
     """Take 0 to 100 subscriber spins and effects per tier, at least one above 0, and keep them while off."""
-
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
 
     def run(self):
         dashboard = self.sign_in("settingstiers")

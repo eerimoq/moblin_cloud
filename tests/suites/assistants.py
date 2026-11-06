@@ -18,7 +18,6 @@ class AssistantsTestCase(TestCase):
     login = "streamer"
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.page_id = self.dashboard.page_id()
         self.viewer = self.frontend.viewer(self.page_id)

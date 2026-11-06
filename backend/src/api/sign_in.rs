@@ -496,7 +496,7 @@ mod tests {
     use crate::database::Database;
     use crate::deliveries::Deliveries;
     use crate::pages::Pages;
-    use crate::payments::Orders;
+    use crate::payments::{DEADLINE, Orders};
     use crate::remote_control::Streamers;
     use crate::requests::Requests;
     use crate::subscribers::Allowances;
@@ -1122,7 +1122,7 @@ mod tests {
             pages: Pages::new(database.clone()),
             paypal: None,
             stripe: None,
-            orders: Orders::new(database.clone()),
+            orders: Orders::new(database.clone(), DEADLINE),
             allowances: Allowances::new(database.clone()),
             deliveries: Deliveries::new(database.clone()),
             auth: Auth::new(
@@ -1144,6 +1144,7 @@ mod tests {
             connect_tries: Mutex::default(),
             requests: Requests::default(),
             stopping: tokio::sync::watch::channel(false).0,
+            timing: Timing::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());

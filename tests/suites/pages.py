@@ -7,9 +7,6 @@ from ..utils.test_case import TestCase
 
 
 class PagesTestCase(TestCase):
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
     def addresses(self, logins: str) -> requests.Response:
         return requests.get(f"{self.backend.url}/pages/addresses", params={"logins": logins}, timeout=10)
 
@@ -100,9 +97,20 @@ class PagesPublicRoutes(PagesTestCase):
             self.assert_true(response.status_code < 500, f"{path}: {response.status_code}")
 
 
+class PagesConfig(PagesTestCase):
+    """Tell the frontend and mobtop which sign in platforms and payment providers the backend is set up with."""
+
+    def run(self):
+        self.assert_equal(
+            self.frontend.config(),
+            {"signIn": {"twitch": True, "kick": True}, "payments": {"paypal": True, "stripe": True}},
+        )
+
+
 def tests(context: Context):
     return [
         PagesAddresses(context),
         PagesAddressesLimit(context),
         PagesPublicRoutes(context),
+        PagesConfig(context),
     ]

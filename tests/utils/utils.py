@@ -1,15 +1,13 @@
-from logging import Logger
+from collections.abc import Callable
 from pathlib import Path
+
+import systest
 
 TEST_DIR = Path(__file__).parent.parent.resolve()
 REPO_DIR = TEST_DIR.parent
 FILES_DIR = TEST_DIR / "files"
-CACHE_DIR = TEST_DIR / "cache"
 
 
-def manual_validation(logger: Logger, message: str):
-    logger.info("🧪: %s", message)
-
-
-def manual_requirement(logger: Logger, message: str):
-    logger.info("👷‍♂️: %s", message)
+def wait_until(check: Callable[[], bool], description: str, timeout: float = 60):
+    """Like systest's wait_until, but checks 20 times a second instead of twice."""
+    systest.wait_until(check, description, timeout, interval=0.05)
