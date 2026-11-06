@@ -1,6 +1,5 @@
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::Json;
 use axum::extract::rejection::JsonRejection;
@@ -95,12 +94,13 @@ pub(super) async fn handle_device_events(
         })
         .ok();
     let stopping = api.stopping.subscribe();
+    let check_at = Instant::now() + api.timing.access_recheck;
     let streaming = Streaming {
         api,
         headers,
         page: id,
         watch,
-        check_at: Instant::now() + Duration::from_secs(60),
+        check_at,
         stopping,
     };
     let stream = unfold(streaming, |mut streaming| async move {
@@ -120,7 +120,7 @@ pub(super) async fn handle_device_events(
                     if watcher(&streaming.api, &streaming.headers, &streaming.page).is_err() {
                         return None;
                     }
-                    streaming.check_at = Instant::now() + Duration::from_secs(60);
+                    streaming.check_at = Instant::now() + streaming.api.timing.access_recheck;
                 }
             }
         }
@@ -159,12 +159,13 @@ pub(super) async fn handle_device_preview(
     let watch = api.remote_control.watch_preview((&id, &device));
     let first = watch.frame.as_deref().and_then(frame_event);
     let stopping = api.stopping.subscribe();
+    let check_at = Instant::now() + api.timing.access_recheck;
     let previewing = Previewing {
         api,
         headers,
         page: id,
         watch,
-        check_at: Instant::now() + Duration::from_secs(60),
+        check_at,
         stopping,
     };
     let stream = unfold(previewing, |mut previewing| async move {
@@ -183,7 +184,7 @@ pub(super) async fn handle_device_preview(
                     if previewer(&previewing.api, &previewing.headers, &previewing.page).is_err() {
                         return None;
                     }
-                    previewing.check_at = Instant::now() + Duration::from_secs(60);
+                    previewing.check_at = Instant::now() + previewing.api.timing.access_recheck;
                 }
             }
         }

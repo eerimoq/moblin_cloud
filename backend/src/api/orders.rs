@@ -488,12 +488,12 @@ async fn cancel_expired(api: &Api, order_id: &str, order: &Order) {
 
 pub async fn settle_orders(api: Arc<Api>) {
     loop {
-        settle(&api, Duration::from_secs(60)).await;
+        settle(&api, api.timing.settle).await;
         expire_orders(&api).await;
         api.orders.prune();
         api.allowances.prune();
         api.deliveries.expire();
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(api.timing.settle).await;
     }
 }
 

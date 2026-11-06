@@ -175,6 +175,8 @@ class Backend:
             ["--admins", twitch_user_id_of("admin")],
             ["--premium-accounts", twitch_user_id_of("pagelook")],
             ["--allow-unattested"],
+            ["--delivery-retry-interval", "1"],
+            ["--access-recheck-interval", "1"],
             ["--twitch-sign-in-url", self.fake_twitch.url],
             ["--kick-sign-in-url", self.fake_kick.url],
             ["--paypal-url", self.fake_paypal.url],

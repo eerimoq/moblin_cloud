@@ -21,6 +21,17 @@ class Stripe:
         response.raise_for_status()
         return response.json()
 
+    def refunds(self, payment_id: str, account_id: str) -> list[dict]:
+        response = requests.get(
+            f"{self.url}/v1/refunds",
+            auth=(SECRET_KEY, ""),
+            headers={"stripe-account": account_id},
+            params={"payment_intent": payment_id},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()["data"]
+
     def pay_with_card(self, payment_id: str, account_id: str):
         """Confirms the payment with a test card, like a viewer paying in Stripe's Payment Element."""
         response = requests.post(

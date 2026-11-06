@@ -72,6 +72,23 @@ use subscriber::*;
 use test_sends::*;
 use tips::*;
 
+#[derive(Clone, Copy)]
+pub struct Timing {
+    pub delivery_retry: Duration,
+    pub access_recheck: Duration,
+    pub settle: Duration,
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        Self {
+            delivery_retry: Duration::from_secs(10),
+            access_recheck: Duration::from_secs(60),
+            settle: Duration::from_secs(60),
+        }
+    }
+}
+
 pub struct Api {
     pub app_attest: Option<AppAttest>,
     pub require_attested_moblin: bool,
@@ -93,6 +110,7 @@ pub struct Api {
     pub connect_tries: Mutex<HashMap<String, Vec<Instant>>>,
     pub requests: Requests,
     pub stopping: watch::Sender<bool>,
+    pub timing: Timing,
 }
 
 pub fn router(api: Arc<Api>) -> Router {

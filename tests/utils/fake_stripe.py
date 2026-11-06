@@ -5,8 +5,8 @@ Connected accounts take payments once their onboarding link has been opened, whi
 return URL at once. Payments are confirmed with the test card pm_card_visa, captured, canceled and
 looked up like in test mode.
 
-A test makes Stripe misbehave through the fake itself: down for every request and a capture that
-ends another way.
+A test makes Stripe misbehave through the fake itself: down for every request, a capture that ends
+another way and refunds that are "refused" or "failed" with a server error instead of "accepted".
 """
 
 import base64
@@ -50,10 +50,13 @@ class FakeStripe:
         self._accounts: dict[str, dict] = {}
         self._payments: dict[str, dict] = {}
         self._captures: dict[str, str] = {}
+        self._refunds: dict[str, dict] = {}
         self.down = False
+        self.refunds = "accepted"
 
     def reset(self):
         self.down = False
+        self.refunds = "accepted"
         with self._lock:
             self._captures.clear()
 
@@ -109,6 +112,11 @@ class FakeStripe:
                 payment = re.match(r"^/v1/payment_intents/(pi_\w+)$", parts.path)
                 if account:
                     self.account(account[1])
+                elif parts.path == "/v1/refunds":
+                    with fake._lock:  # pylint: disable=protected-access
+                        if self.payment(query.get("payment_intent", "")) is not None:
+                            refund = fake._refunds.get(query["payment_intent"])  # pylint: disable=protected-access
+                            self.json({"object": "list", "data": [refund] if refund else []})
                 elif payment:
                     with fake._lock:  # pylint: disable=protected-access
                         found = self.payment(payment[1])
@@ -143,6 +151,9 @@ class FakeStripe:
                 elif action:
                     with fake._lock:  # pylint: disable=protected-access
                         self.change_payment(action[1], action[2], form)
+                elif path == "/v1/refunds":
+                    with fake._lock:  # pylint: disable=protected-access
+                        self.refund(form.get("payment_intent", ""))
                 else:
                     self.json(error("resource_missing", "Unrecognized request URL."), 404)
 
@@ -309,6 +320,29 @@ class FakeStripe:
                     self.json(error("payment_intent_unexpected_state", message, self.public(payment)), 400)
                     return
                 self.json(self.public(payment))
+
+            def refund(self, payment_id: str):
+                if self.payment(payment_id) is None:
+                    return
+                payment = fake._payments[payment_id]  # pylint: disable=protected-access
+                if fake.refunds == "refused":
+                    self.json(error("charge_disputed", "The charge can't be refunded."), 400)
+                elif fake.refunds == "failed":
+                    self.json({"error": {"type": "api_error", "message": "Try again."}}, 500)
+                elif payment_id in fake._refunds:  # pylint: disable=protected-access
+                    self.json(error("charge_already_refunded", "The charge is already refunded."), 400)
+                elif payment["status"] != "succeeded":
+                    self.json(error("payment_intent_unexpected_state", "Nothing to refund."), 400)
+                else:
+                    refund = {
+                        "id": random_id("re_", 24),
+                        "object": "refund",
+                        "amount": payment["amount"],
+                        "payment_intent": payment_id,
+                        "status": "succeeded",
+                    }
+                    fake._refunds[payment_id] = refund  # pylint: disable=protected-access
+                    self.json(refund)
 
             def json(self, body: dict, status: int = 200):
                 self.respond(status, "application/json", json.dumps(body).encode())

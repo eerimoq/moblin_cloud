@@ -6,7 +6,8 @@ return URL with the merchant ID, like PayPal. Orders are approved with confirm-p
 sandbox. Webhook signatures verify only when the transmission signature is "good".
 
 A test makes PayPal misbehave through the fake itself: down for every request, sellers that granted
-no permissions or can't receive payments and a capture that ends another way.
+no permissions or can't receive payments, a capture that ends another way and refunds that are
+"refused" or "failed" with a server error instead of "accepted".
 """
 
 import base64
@@ -69,11 +70,13 @@ class FakePayPal:
         self.down = False
         self.sellers_grant_permissions = True
         self.sellers_receive_payments = True
+        self.refunds = "accepted"
 
     def reset(self):
         self.down = False
         self.sellers_grant_permissions = True
         self.sellers_receive_payments = True
+        self.refunds = "accepted"
         with self._lock:
             self._captures.clear()
 
@@ -152,6 +155,7 @@ class FakePayPal:
                     self.json(error("INVALID_REQUEST", "MALFORMED_REQUEST_JSON"), 400)
                     return
                 order = re.match(r"^/v2/checkout/orders/([A-Z0-9]+)/(confirm-payment-source|capture)$", path)
+                refund = re.match(r"^/v2/payments/captures/([A-Z0-9]+)/refund$", path)
                 if path == "/v2/customer/partner-referrals":
                     self.referral(data)
                 elif path == "/v1/notifications/verify-webhook-signature":
@@ -163,6 +167,8 @@ class FakePayPal:
                     self.confirm(order[1])
                 elif order:
                     self.capture(order[1])
+                elif refund:
+                    self.refund(refund[1])
                 else:
                     self.json(error("RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID"), 404)
 
@@ -344,6 +350,31 @@ class FakePayPal:
                         self.json(error("INTERNAL_SERVER_ERROR", "INTERNAL_SERVICE_ERROR"), 500)
                         return
                     self.json(order, 201)
+
+            def refund(self, capture_id: str):
+                payer = payer_of(self.headers.get("paypal-auth-assertion", ""))
+                with fake._lock:  # pylint: disable=protected-access
+                    captures = [
+                        capture
+                        for order in fake._orders.values()  # pylint: disable=protected-access
+                        for unit in order["purchase_units"]
+                        if unit["payee"]["merchant_id"] == payer
+                        for capture in unit.get("payments", {}).get("captures", [])
+                        if capture["id"] == capture_id
+                    ]
+                    if not captures:
+                        self.json(error("RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID"), 404)
+                    elif fake.refunds == "refused":
+                        self.json(error("NOT_AUTHORIZED", "PERMISSION_DENIED"), 403)
+                    elif fake.refunds == "failed":
+                        self.json(error("INTERNAL_SERVER_ERROR", "INTERNAL_SERVICE_ERROR"), 500)
+                    elif captures[0]["status"] == "REFUNDED":
+                        self.json(error("UNPROCESSABLE_ENTITY", "CAPTURE_FULLY_REFUNDED"), 422)
+                    elif captures[0]["status"] != "COMPLETED":
+                        self.json(error("UNPROCESSABLE_ENTITY", "CAPTURE_STATUS_NOT_VALID"), 422)
+                    else:
+                        captures[0]["status"] = "REFUNDED"
+                        self.json({"id": random_id(17), "status": "COMPLETED"}, 201)
 
             def json(self, body: dict, status: int = 200):
                 self.respond(status, "application/json", json.dumps(body).encode())

@@ -15,6 +15,11 @@ LOGGER = logging.getLogger(__name__)
 TIPS = {"amounts": [100, 700]}
 SPIN = {"options": [{"spins": 1, "price": 100}, {"spins": 3, "price": 250}]}
 WHEEL = [wheel_option("Push-ups"), wheel_option("Sing a song", 2), wheel_option("Nothing", 3)]
+DEADLINE = ["--payment-deadline", "2"]
+
+
+def wait_past_deadline():
+    time.sleep(3.1)
 
 
 class PaymentTestCase(TestCase):
@@ -481,6 +486,92 @@ class PaymentsTipAnswerLost(PaymentTestCase):
         self.assert_equal([ids.count(lost), ids.count(failed)], [1, 1])
 
 
+class PaymentDeadlineTestCase(PaymentTestCase):
+    """The backend giving viewers 2 seconds to pay instead of half an hour, so a test can be too late."""
+
+    def setup(self):
+        self.backend.restart(extra=DEADLINE)
+        super().setup()
+
+    def teardown(self):
+        try:
+            super().teardown()
+        finally:
+            self.backend.restart()
+
+    def late_tips(self, *users: str) -> list[str]:
+        """Tips whose money the provider takes after a review that ends after the deadline."""
+        order_ids = [self.paid_tip(100, user) for user in users]
+        for order_id in order_ids:
+            self.fake.plan_capture(order_id, "pending")
+            self.assert_backend_error(402, lambda order_id=order_id: self.viewer.capture_tip(order_id))
+        wait_past_deadline()
+        for order_id in order_ids:
+            self.fake.complete(order_id)
+        return order_ids
+
+    def assert_refunded(self, order_id: str):
+        if self.provider == "stripe":
+            refunds = self.context.stripe.refunds(order_id, self.account_id)
+            self.assert_equal([refund["status"] for refund in refunds], ["succeeded"])
+            return
+        unit = self.context.paypal.order(order_id, self.merchant_id)["purchase_units"][0]
+        self.assert_equal(unit["payments"]["captures"][0]["status"], "REFUNDED")
+
+
+class PaymentsTipTooLate(PaymentDeadlineTestCase):
+    """Take no money for a tip the viewer pays after the deadline, and release Stripe's hold on the card."""
+
+    def run(self):
+        self.dashboard.save_settings(tips=TIPS)
+        too_late = "The tip took too long, so no money was taken. Try again."
+        slow = self.paid_tip(100, "Slow")
+        unpaid = self.order_tip(100, "Unpaid")
+        self.assert_backend_error(402, lambda: self.viewer.capture_tip(unpaid), "The tip was not completed.")
+        wait_past_deadline()
+        self.assert_backend_error(410, lambda: self.viewer.capture_tip(slow), too_late)
+        self.assert_not_paid(slow)
+        self.assert_backend_error(410, lambda: self.viewer.capture_tip(unpaid), too_late)
+        self.assert_hold_released(unpaid)
+        self.assert_backend_error(
+            410,
+            lambda: self.viewer.capture_tip(unpaid),
+            "This tip is unknown or expired, so no money was taken.",
+        )
+
+
+class PaymentsTipRefundedWhenLate(PaymentDeadlineTestCase):
+    """Refund a tip whose money is taken after the deadline, and show it late only when the refund is refused."""
+
+    def run(self):
+        self.connect_moblin()
+        self.dashboard.save_settings(tips=TIPS)
+        refunded, kept = self.late_tips("Refunded", "Kept")
+        self.fake.refunds = "failed"
+        self.assert_backend_error(502, lambda: self.viewer.capture_tip(refunded), self.no_answer())
+        self.fake.refunds = "accepted"
+        self.assert_backend_error(
+            410,
+            lambda: self.viewer.capture_tip(refunded),
+            "The tip took too long, so the money was refunded.",
+        )
+        self.assert_refunded(refunded)
+        self.assert_false(self.received(refunded))
+        self.assert_backend_error(
+            410,
+            lambda: self.viewer.capture_tip(refunded),
+            "This tip is unknown or expired, so no money was taken.",
+        )
+        self.fake.refunds = "refused"
+        self.assert_equal(self.viewer.capture_tip(kept), {})
+        self.assert_paid(kept, "1.00")
+        tip = self.moblin.wait_for_backend_request("message", kept)
+        self.assert_equal(tip.body["name"], "Kept")
+        self.assert_true(self.received(kept))
+        requests = self.moblin.backend_requests("message")
+        self.assert_not_in(refunded, [request.body.get("requestId") for request in requests])
+
+
 class PaymentsProviderDown(PaymentTestCase):
     """Start no payment while PayPal or Stripe is down, and finish a paid one once it is back."""
 
@@ -499,6 +590,70 @@ class PaymentsProviderDown(PaymentTestCase):
         self.assert_equal(self.viewer.capture_tip(order_id), {})
         self.assert_paid(order_id, "1.00")
         self.moblin.wait_for_backend_request("message", order_id)
+
+
+class PaymentsSettledWithoutTheViewer(TestCase):
+    """Refund a late payment and give an abandoned one up without the viewer asking again."""
+
+    def run(self):
+        self.backend.restart(extra=DEADLINE + ["--settle-interval", "1"])
+        abandoned = {}
+        late = {}
+        for provider in ["paypal", "stripe"]:
+            dashboard = self.sign_in(f"settled{provider}")
+            if provider == "stripe":
+                settings = self.context.page_with_stripe(dashboard)
+                seller = settings["stripeAccountId"]
+                fake: FakePayPal | FakeStripe = self.backend.fake_stripe
+                pay: Callable[[str, str], None] = self.context.stripe.pay_with_card
+            else:
+                settings = self.context.page_with_paypal(dashboard)
+                seller = settings["merchantId"]
+                fake = self.backend.fake_paypal
+                pay = self.context.paypal.pay_with_card
+            dashboard.change_settings(tips=TIPS)
+            viewer = self.frontend.viewer(settings["id"])
+            abandoned[provider] = (viewer, viewer.order_tip(100, provider=provider), seller)
+            late[provider] = (dashboard, viewer.order_tip(100, provider=provider), seller)
+            for _, order_id, _ in [abandoned[provider], late[provider]]:
+                pay(order_id, seller)
+            order_id = late[provider][1]
+            fake.plan_capture(order_id, "pending")
+            self.assert_backend_error(
+                402, lambda viewer=viewer, order_id=order_id: viewer.capture_tip(order_id)
+            )
+        wait_past_deadline()
+        self.backend.fake_paypal.complete(late["paypal"][1])
+        self.backend.fake_stripe.complete(late["stripe"][1])
+
+        def refunded() -> bool:
+            unit = self.context.paypal.order(late["paypal"][1], late["paypal"][2])["purchase_units"][0]
+            return (
+                unit["payments"]["captures"][0]["status"] == "REFUNDED"
+                and len(self.context.stripe.refunds(late["stripe"][1], late["stripe"][2])) == 1
+            )
+
+        def cancelled() -> bool:
+            _, order_id, account_id = abandoned["stripe"]
+            return self.context.stripe.payment(order_id, account_id)["status"] == "canceled"
+
+        self.wait_until(refunded, "the late payments to be refunded")
+        self.wait_until(cancelled, "the abandoned Stripe payment to be cancelled")
+        for viewer, order_id, _ in abandoned.values():
+            self.assert_backend_error(
+                410,
+                lambda viewer=viewer, order_id=order_id: viewer.capture_tip(order_id),
+                "This tip is unknown or expired, so no money was taken.",
+            )
+        _, order_id, merchant_id = abandoned["paypal"]
+        self.assert_not_equal(self.context.paypal.order(order_id, merchant_id)["status"], "COMPLETED")
+        for dashboard, order_id, _ in late.values():
+            self.assert_not_in(order_id, [item["id"] for item in dashboard.recent("tip")["items"]])
+
+    def teardown(self):
+        self.backend.fake_paypal.reset()
+        self.backend.fake_stripe.reset()
+        self.backend.restart()
 
 
 def tests(context: Context):
@@ -521,6 +676,8 @@ def tests(context: Context):
             PaymentsTipUnderReview,
             PaymentsSpinAndEffectUnderReview,
             PaymentsTipAnswerLost,
+            PaymentsTipTooLate,
+            PaymentsTipRefundedWhenLate,
             PaymentsProviderDown,
         ]
-    ]
+    ] + [PaymentsSettledWithoutTheViewer(context)]

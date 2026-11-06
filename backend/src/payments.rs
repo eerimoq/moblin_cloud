@@ -133,7 +133,7 @@ pub enum PaymentStatus {
     Refunded,
 }
 
-const DEADLINE: u64 = 30 * 60;
+pub const DEADLINE: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Stage {
@@ -168,11 +168,15 @@ pub struct Saved {
 
 pub struct Orders {
     database: Arc<Database>,
+    deadline: u64,
 }
 
 impl Orders {
-    pub fn new(database: Arc<Database>) -> Self {
-        Self { database }
+    pub fn new(database: Arc<Database>, deadline: Duration) -> Self {
+        Self {
+            database,
+            deadline: deadline.as_secs(),
+        }
     }
 
     pub fn make_room(&self) -> Result<()> {
@@ -190,7 +194,7 @@ impl Orders {
             )
             .and_then(|mut statement| {
                 statement
-                    .query_map([now().saturating_sub(DEADLINE)], |row| {
+                    .query_map([now().saturating_sub(self.deadline)], |row| {
                         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
@@ -229,7 +233,7 @@ impl Orders {
             .lock()
             .query_row(
                 "SELECT state, details, created_at < ?2 FROM orders WHERE id = ?1",
-                params![id, now().saturating_sub(DEADLINE)],
+                params![id, now().saturating_sub(self.deadline)],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -330,7 +334,7 @@ impl Orders {
                     .query_map(
                         params![
                             now().saturating_sub(min_age.as_secs()),
-                            now().saturating_sub(DEADLINE)
+                            now().saturating_sub(self.deadline)
                         ],
                         |row| {
                             Ok((
@@ -503,7 +507,7 @@ mod tests {
     #[test]
     fn orders_survive_restarts() {
         let database = Database::memory();
-        let orders = Orders::new(database.clone());
+        let orders = Orders::new(database.clone(), DEADLINE);
         orders.make_room().unwrap();
         orders.insert("ORDER1", &order()).unwrap();
         assert!(
@@ -511,7 +515,7 @@ mod tests {
                 .transition("ORDER1", Stage::Created, Stage::Capturing)
                 .unwrap()
         );
-        let orders = Orders::new(database);
+        let orders = Orders::new(database, DEADLINE);
         let saved = Saved {
             id: "ORDER1".to_string(),
             stage: Stage::Capturing,
@@ -527,7 +531,7 @@ mod tests {
 
     #[test]
     fn transitions_only_from_the_expected_state() {
-        let orders = Orders::new(Database::memory());
+        let orders = Orders::new(Database::memory(), DEADLINE);
         orders.insert("ORDER1", &order()).unwrap();
         assert!(
             !orders
@@ -572,7 +576,7 @@ mod tests {
 
     #[test]
     fn a_failed_capture_record_keeps_the_order_capturing() {
-        let orders = Orders::new(Database::memory());
+        let orders = Orders::new(Database::memory(), DEADLINE);
         orders.insert("ORDER1", &order()).unwrap();
         orders
             .transition("ORDER1", Stage::Created, Stage::Capturing)
@@ -591,7 +595,7 @@ mod tests {
     #[test]
     fn prune_gives_old_orders_up_and_forgets_old_captures() {
         let database = Database::memory();
-        let orders = Orders::new(database.clone());
+        let orders = Orders::new(database.clone(), DEADLINE);
         for id in [
             "OLD_CAPTURING",
             "OLD_CAPTURED",
@@ -629,7 +633,7 @@ mod tests {
     #[test]
     fn created_orders_expire_after_30_minutes() {
         let database = Database::memory();
-        let orders = Orders::new(database.clone());
+        let orders = Orders::new(database.clone(), DEADLINE);
         orders.insert("OLD", &order()).unwrap();
         orders.insert("NEW", &order()).unwrap();
         database
