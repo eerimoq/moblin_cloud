@@ -23,9 +23,6 @@ def challenge_of(verifier: str) -> str:
 class SignInTestCase(TestCase):
     """mobtop signing in, which has no browser of its own to end up in the dashboard with."""
 
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
     def code(self, login: str, verifier: str) -> str:
         """The code the browser hands to mobtop's port after signing in."""
         returned = urlsplit(self.frontend.terminal_sign_in(login, PORT, challenge_of(verifier)))
@@ -148,7 +145,6 @@ class SignInWhenTwitchIsDown(SignInTestCase):
     def run(self):
         streamer = self.sign_in("twitchdown")
         fake = self.backend.fake_twitch
-        assert fake is not None
         fake.down = True
         callback_url, browser = self.frontend.start_sign_in("twitchdownlater")
         returned = self.frontend.finish_sign_in(callback_url, browser)
@@ -164,8 +160,7 @@ class SignInWhenTwitchIsDown(SignInTestCase):
         streamer.add_assistant("twitch", "twitchdownmod")
 
     def teardown(self):
-        if self.backend.fake_twitch is not None:
-            self.backend.fake_twitch.down = False
+        self.backend.fake_twitch.down = False
 
 
 def tests(context: Context):

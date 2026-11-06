@@ -1,7 +1,6 @@
 .DS_Store
 tests/config.toml
 tests/files/
-tests/cache/
 tests/logs/
 logs/
 __pycache__/

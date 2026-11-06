@@ -13,7 +13,6 @@ class DeliveriesTestCase(TestCase):
     login = "deliveriesbase"
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.settings = self.context.page_with_paypal(self.dashboard)
         self.page_id = self.settings["id"]

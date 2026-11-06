@@ -69,8 +69,8 @@ class Backend:
         self._lines_lock = threading.Lock()
         self._lines: list[str] = []
         self._process: ManagedProcess | None = None
-        self.fake_twitch: FakeTwitch | None = None
-        self.fake_kick: FakeKick | None = None
+        self.fake_twitch = FakeTwitch()
+        self.fake_kick = FakeKick()
         self.fake_paypal = FakePayPal()
         self.fake_stripe = FakeStripe()
 
@@ -92,11 +92,10 @@ class Backend:
             if sock.connect_ex(("127.0.0.1", self.port)) == 0:
                 raise Exception(f"Port {self.port} is in use, maybe by a backend left from an earlier run.")
         self.files_dir.mkdir(parents=True, exist_ok=True)
-        if self.config.twitch_sign_in() == "fake":
-            self.fake_twitch = FakeTwitch()
-            self.fake_twitch.start()
-            self.fake_kick = FakeKick()
-            self.fake_kick.start()
+        self.fake_twitch = FakeTwitch()
+        self.fake_twitch.start()
+        self.fake_kick = FakeKick()
+        self.fake_kick.start()
         self._process = ManagedProcess(
             [str(self.binary), *self._arguments(without), *extra],
             LOGGER_PROCESS,
@@ -116,12 +115,8 @@ class Backend:
                 wait_until(lambda: not process.is_running(), "the backend to stop", timeout=30)
             process.stop()
             self._process = None
-        if self.fake_twitch is not None:
-            self.fake_twitch.stop()
-            self.fake_twitch = None
-        if self.fake_kick is not None:
-            self.fake_kick.stop()
-            self.fake_kick = None
+        self.fake_twitch.stop()
+        self.fake_kick.stop()
 
     def restart(self, without: Iterable[str] = (), extra: Iterable[str] = (), graceful: bool = False):
         self.stop(graceful)
@@ -174,6 +169,8 @@ class Backend:
             self._lines.append(line)
 
     def _arguments(self, without: Iterable[str]) -> list[str]:
+        paypal = self.fake_paypal.config
+        stripe = self.fake_stripe.config
         options = [
             ["--listen", f"0.0.0.0:{self.port}"],
             ["--backend-url", self.url],
@@ -183,20 +180,8 @@ class Backend:
             ["--admins", twitch_user_id_of("admin")],
             ["--premium-accounts", twitch_user_id_of("pagelook")],
             ["--allow-unattested"],
-        ]
-        if self.fake_twitch is not None:
-            options.append(["--twitch-sign-in-url", self.fake_twitch.url])
-        if self.fake_kick is not None:
-            options.append(["--kick-sign-in-url", self.fake_kick.url])
-        twitch = self.config.twitch()
-        if twitch is not None:
-            options += [
-                ["--twitch-client-id", twitch["client-id"]],
-                ["--twitch-client-secret", twitch["client-secret"]],
-            ]
-        paypal = self.fake_paypal.config
-        stripe = self.fake_stripe.config
-        options += [
+            ["--twitch-sign-in-url", self.fake_twitch.url],
+            ["--kick-sign-in-url", self.fake_kick.url],
             ["--paypal-url", self.fake_paypal.url],
             ["--paypal-client-id", paypal["client-id"]],
             ["--paypal-client-secret", paypal["client-secret"]],

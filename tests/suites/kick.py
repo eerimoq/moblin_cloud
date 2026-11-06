@@ -16,9 +16,6 @@ TAKEN = "This Kick account already has its own page. Delete it first."
 class KickTestCase(TestCase):
     """Streamers signing in with the fake Kick, and Twitch streamers linking a Kick account to their page."""
 
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
     def kick_sign_in(self, login: str) -> Dashboard:
         return self.frontend.fake_sign_in(login, "kick")
 

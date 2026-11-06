@@ -7,9 +7,6 @@ from ..utils.test_case import TestCase
 
 
 class PagesTestCase(TestCase):
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
     def addresses(self, logins: str) -> requests.Response:
         return requests.get(f"{self.backend.url}/pages/addresses", params={"logins": logins}, timeout=10)
 

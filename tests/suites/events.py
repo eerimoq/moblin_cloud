@@ -14,7 +14,6 @@ class EventsTestCase(TestCase):
     login = "eventsbase"
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.page_id = self.dashboard.page_id()
 

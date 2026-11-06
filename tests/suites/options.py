@@ -25,9 +25,6 @@ FAKE_SIGN_IN = ["--twitch-sign-in-url", "--kick-sign-in-url"]
 class OptionsTestCase(TestCase):
     """The backend started with other options than in the other tests, and with theirs again afterwards."""
 
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
-
     def teardown(self):
         self.backend.restart()
 

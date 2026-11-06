@@ -15,18 +15,6 @@ class TestCase(systest.TestCase):
         self.backend = context.backend
         self.frontend = context.frontend
 
-    def skip_if_no_twitch(self):
-        if self.context.config.twitch() is None:
-            raise systest.TestCaseSkippedError("No [twitch] in the configuration.")
-
-    def skip_if_real_twitch_sign_in(self):
-        if self.context.config.twitch_sign_in() == "real":
-            raise systest.TestCaseSkippedError("Needs made-up Twitch users.")
-
-    def skip_if_not_interactive(self):
-        if not self.context.interactive:
-            raise systest.TestCaseSkippedError("Not interactive.")
-
     def sign_in(self, login: str = "streamer") -> Dashboard:
         return self.context.sign_in(login)
 

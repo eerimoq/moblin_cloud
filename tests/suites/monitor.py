@@ -9,7 +9,6 @@ class MonitorLayout(TestCase):
     """Keep the Monitor's layout for each user and page, which the web Monitor and mobtop share, starting a page the user has no layout for from their latest one."""
 
     def run(self):
-        self.skip_if_real_twitch_sign_in()
         streamer = self.sign_in("monitorstreamer")
         assistant = self.sign_in("monitormod")
         page_id = streamer.page_id()

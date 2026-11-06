@@ -25,7 +25,6 @@ class ImagesTestCase(TestCase):
     """Banner images of premium streamers' pages. admin is an admin, and so premium."""
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.premium = self.sign_in("admin")
         self.page_id = self.premium.page_id()
         self.viewer = self.frontend.viewer(self.page_id)
