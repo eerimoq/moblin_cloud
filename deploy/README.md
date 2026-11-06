@@ -48,6 +48,25 @@ docker compose up -d
 Update with `docker compose pull && docker compose up -d`. The database is
 `data/database.sqlite`; stop the backend before copying it for a backup.
 
+## Landing page
+
+`LANDING_PAGE=compact` in `.env` replaces the default landing page with a compact
+sign in page. `INSTANCE_NAME` shows “Moblin Cloud — name” in the header and on
+the compact page.
+
+```dotenv
+LANDING_PAGE=compact
+INSTANCE_NAME=My workspace
+```
+
+The frontend writes them to `config.js` when it starts, so run
+`docker compose up -d frontend` after editing them in `.env`. A plain
+`docker compose up -d` also recreates the backend, since it reads `.env` too,
+which disconnects every Moblin. Browsers load `config.js`, so keep secrets out of
+it. The name is not escaped, so a `"` or `\` in it blanks every page. Put a name
+with `#` or `$` in single quotes. A copy set up before these options existed has
+to fetch `docker-compose.yml` again with the command above.
+
 ## Integrations
 
 Everything is optional, but nobody can sign in without Twitch or Kick.

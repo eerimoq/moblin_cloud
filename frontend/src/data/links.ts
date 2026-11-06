@@ -2,9 +2,22 @@ import { asset } from "../asset";
 
 declare global {
   interface Window {
-    config: { backendUrl: string };
+    config: {
+      backendUrl: string;
+      landingPage?: "default" | "compact";
+      instanceName?: string;
+    };
   }
 }
+
+export const isCompactLanding = () => window.config.landingPage === "compact";
+
+export const instanceName = () => window.config.instanceName?.trim();
+
+export const cloudName = () => {
+  const name = instanceName();
+  return name ? `Moblin Cloud — ${name}` : "Moblin Cloud";
+};
 
 export const links = {
   api: window.config.backendUrl,
@@ -13,6 +26,7 @@ export const links = {
   discord: "https://discord.gg/kh3KMng4JV",
   discordPremium: "https://discord.gg/YzpsZfNSZ",
   github: "https://github.com/eerimoq/moblin",
+  cloudGithub: "https://github.com/eerimoq/moblin_cloud",
   privacyPolicy: "https://eerimoq.github.io/moblin/privacy-policy/en.html",
 } as const;
 

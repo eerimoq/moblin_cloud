@@ -31,6 +31,11 @@ dev platforms="twitch,kick":
 	wait
 
 [group('dev')]
+[doc("Runs just dev with the compact landing page and an instance name, like just dev-compact \"My workspace\" kick.")]
+dev-compact name="My workspace" platforms="twitch,kick":
+	LANDING_PAGE=compact INSTANCE_NAME="{{name}}" just dev "{{platforms}}"
+
+[group('dev')]
 [doc("Runs the backend with the fake Twitch and Kick, or those in PLATFORMS, like PLATFORMS=kick, and an empty one none.")]
 dev-backend *args:
 	#!/usr/bin/env bash

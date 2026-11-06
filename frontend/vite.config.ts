@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 // On a custom domain (public/CNAME present) the site lives at the root.
 // Until then GitHub Pages serves it from https://eerimoq.github.io/moblin_cloud/.
 const base = existsSync("public/CNAME") ? "/" : "/moblin_cloud/";
+const { LANDING_PAGE: landingPage, INSTANCE_NAME: instanceName } = process.env;
 
 export default defineConfig({
   base,
@@ -16,6 +17,12 @@ export default defineConfig({
       name: "twitch-pages",
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          if (req.url === `${base}config.js` && (landingPage || instanceName)) {
+            const config = { backendUrl: "/api", landingPage, instanceName };
+            res.writeHead(200, { "content-type": "text/javascript" });
+            res.end(`window.config = ${JSON.stringify(config)};`);
+            return;
+          }
           const host = new URL(`http://${req.headers.host ?? "localhost"}`);
           if (
             req.url?.startsWith("/api/auth/") &&

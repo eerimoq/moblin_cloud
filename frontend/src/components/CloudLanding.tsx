@@ -1,13 +1,15 @@
-import { createSignal, For, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import { asset } from "../asset";
 import { noSignInPlatforms, signInPlatforms } from "../data/account";
 import { cloudSteps } from "../data/cloud";
+import { isCompactLanding } from "../data/links";
 import Icon, { kindIcons, type IconName } from "./Icon";
-import { Notice, PlatformSignIn } from "./PageParts";
+import { Notice, PlatformSignIn, SignInNotices } from "./PageParts";
 import { platformNames, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
+import CompactLanding from "./CompactLanding";
 
-function SignInButtons() {
+function SignInButtons(props: { notSetUp?: string }) {
   return (
     <div class="flex min-h-13 flex-wrap gap-3">
       <For each={signInPlatforms()}>
@@ -18,7 +20,7 @@ function SignInButtons() {
         )}
       </For>
       <Show when={noSignInPlatforms()}>
-        <Notice status>{t("Signing in is not set up on this server.")}</Notice>
+        <Notice status>{props.notSetUp ?? t("Signing in is not set up on this server.")}</Notice>
       </Show>
     </div>
   );
@@ -111,20 +113,23 @@ function PageMockup() {
 }
 
 export default function CloudLanding(props: { failed: boolean; connecting: boolean }) {
-  const [dismissed, setDismissed] = createSignal(false);
+  if (isCompactLanding()) {
+    return (
+      <CompactLanding {...props}>
+        <SignInButtons
+          notSetUp={t(
+            "Sign-in setup is required. Ask the server administrator to configure Twitch or Kick.",
+          )}
+        />
+      </CompactLanding>
+    );
+  }
 
   return (
     <>
       <section class="mx-auto grid max-w-[1120px] items-center gap-12 px-5 pt-10 pb-16 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16 lg:pt-16 lg:pb-24">
         <div class="flex flex-col gap-6">
-          <Show when={props.failed && !dismissed()}>
-            <Notice status onClose={() => setDismissed(true)}>
-              {t("Signing in did not work. Try again.")}
-            </Notice>
-          </Show>
-          <Show when={props.connecting}>
-            <Notice status>{t("Sign in to let mobtop use your account.")}</Notice>
-          </Show>
+          <SignInNotices failed={props.failed} connecting={props.connecting} />
           <span class="font-display text-[15px] font-semibold tracking-[0.08em] text-leaf uppercase">
             Moblin Cloud
           </span>

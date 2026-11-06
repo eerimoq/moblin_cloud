@@ -19,9 +19,12 @@ Tests are Vitest in Node, `src/**/*.test.ts`, only for the pure code in `src/dat
 
 ## Rules
 
+- Keep the options in `config.js` aligned across the config type, `runtime-config.sh`, `vite.config.ts`, Compose, `.env.example` and the deployment docs. `public/config.js` and the Deploy frontend workflow only set `backendUrl`, so every other option has to be optional. `runtime-config.sh` does not escape them. Everything in it is public, so never put credentials there.
+- Landing-page selection and instance naming are presentation only. Do not let them change provider availability, authorization or device protocols. Keep the original page as the default.
+
 - The base path is dynamic: `/` when `public/CNAME` exists and `/moblin_cloud/` otherwise. Anything referencing a file under `public/` must go through `asset()` in `src/asset.ts`; never hardcode a leading slash in a src attribute.
 - Content lives in `src/data/`, not in components: URLs in `links.ts`, effects, Moblin's settings and the remote control types in their own files.
-- Backend access goes through `data/backend.ts`. The backend is configured at deploy time, not build time: `backendUrl` in `public/config.js`, which the Deploy frontend workflow overwrites in `dist/` since GitHub Pages can't proxy `/api`.
+- Backend access goes through `data/backend.ts`. The backend is configured at deploy time, not build time: `backendUrl` in `public/config.js`, which the Deploy frontend workflow overwrites in `dist/` since GitHub Pages can't proxy `/api`. The Docker image replaces the whole file with `runtime-config.sh` when it starts, so a change to `public/config.js` does not reach a copy.
 - Server-sent events are read with `subscribe` in `src/sse.ts`, with `fetch` and the bearer session. Change streams only name what changed (`subscribeChanges`) and refetch through the normal GET routes, also when the stream reopens, since events may have been missed while it was closed.
 - Theming is Tailwind v4 `@theme` tokens in `src/index.css`. Dark is the default; light overrides the same names. Use the tokens, not raw colors. The `--color-phone-*` and `--color-cushion-*` tokens are the same in both themes, and the `--color-chart-*` ones are validated for both.
 - Icons are inline stroke SVGs in `components/Icon.tsx` keyed by `IconName`; platform logos on a colored disc are `BrandIcon`.

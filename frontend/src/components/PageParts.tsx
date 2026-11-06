@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { asset } from "../asset";
 import { signInUrl } from "../data/account";
-import { pages } from "../data/links";
+import { cloudName, instanceName, pages } from "../data/links";
 import { type Platform, platformNames } from "../data/remoteControl";
 import CopyButton from "./CopyButton";
 import Icon, { type IconName } from "./Icon";
@@ -119,6 +119,23 @@ export function SaveButton(props: { saving: boolean; saved: boolean; disabled: b
   );
 }
 
+export function SignInNotices(props: { failed: boolean; connecting: boolean }) {
+  const [dismissed, setDismissed] = createSignal(false);
+
+  return (
+    <>
+      <Show when={props.failed && !dismissed()}>
+        <Notice status onClose={() => setDismissed(true)}>
+          {t("Signing in did not work. Try again.")}
+        </Notice>
+      </Show>
+      <Show when={props.connecting}>
+        <Notice status>{t("Sign in to let mobtop use your account.")}</Notice>
+      </Show>
+    </>
+  );
+}
+
 export function CloudHeader(props: {
   premium?: boolean;
   wide?: boolean;
@@ -138,14 +155,18 @@ export function CloudHeader(props: {
       >
         <a
           href={asset(pages.dashboard)}
-          class="flex shrink-0 items-center gap-3"
-          aria-label="Moblin Cloud"
+          class="flex min-w-0 items-center gap-3"
+          aria-label={cloudName()}
         >
           <img src={asset("logos/logo-cloud.png")} alt="" class="h-9 w-auto" />
-          <span class="flex flex-col">
+          <span class="flex min-w-0 flex-col">
             <span class="font-display text-2xl leading-tight font-bold" aria-hidden="true">
-              <span class="max-sm:hidden">Moblin Cloud</span>
-              <span class="sm:hidden">Cloud</span>
+              <span class="block max-w-[20rem] truncate max-sm:hidden lg:max-w-[28rem]">
+                {cloudName()}
+              </span>
+              <span class="block max-w-[10rem] truncate sm:hidden">
+                {instanceName() || "Cloud"}
+              </span>
             </span>
             <Show when={props.premium}>
               <span class="-mt-1 font-display text-[11px] leading-none font-bold tracking-[0.12em] text-leaf uppercase">

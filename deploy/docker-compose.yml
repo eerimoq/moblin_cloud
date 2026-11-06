@@ -14,6 +14,8 @@ services:
     restart: unless-stopped
     environment:
       BACKEND_HOST: backend:8080
+      LANDING_PAGE: ${LANDING_PAGE:-default}
+      INSTANCE_NAME: ${INSTANCE_NAME:-}
   caddy:
     image: caddy:2
     restart: unless-stopped
