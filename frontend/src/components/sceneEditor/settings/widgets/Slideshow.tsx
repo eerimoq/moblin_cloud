@@ -75,7 +75,6 @@ export function SlideshowForm(props: WidgetFormProps) {
                                 editor={props.editor}
                                 stack={props.stack}
                                 widgetId={widget().id}
-                                settings={null}
                               />
                             ),
                           })

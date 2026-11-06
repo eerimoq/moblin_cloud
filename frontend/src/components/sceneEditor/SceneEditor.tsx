@@ -122,7 +122,7 @@ export default function SceneEditor(props: {
       const edited = scene();
       const root = widgetOutline
         ? {
-            title: widgetOutline.widget.name,
+            title: () => selected()?.widget.name ?? "",
             render: () => (
               <SceneWidgetSettings
                 editor={editor}
@@ -131,8 +131,6 @@ export default function SceneEditor(props: {
                 sceneWidgetId={widgetOutline.sceneWidget.id}
                 widgetId={widgetOutline.widget.id}
                 canvas={canvas()}
-                settings={props.settings}
-                onCreateWidget={() => setWizard("widget")}
               />
             ),
           }

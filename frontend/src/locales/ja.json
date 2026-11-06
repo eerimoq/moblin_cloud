@@ -974,7 +974,6 @@
   "{name} isn't taking tips right now.": "{name} は現在チップを受け付けていません。",
   "{name} on Kick": "Kickの{name}",
   "{provider} could not complete the tip. Try again.": "{provider}でチップを完了できませんでした。もう一度お試しください。",
-  "{type} widget": "{type}ウィジェット",
   "⚠️ Disable Settings → Scenes → Scene switching → Force transition to enable groups.": "⚠️ グループを有効にするには、設定 → シーン → シーン切り替え → トランジションを強制 をオフにしてください。",
   "⚠️ Start a workout using the Workout quick button or the Start workout button on your Apple Watch to update Apple workout variables.": "⚠️ Appleのワークアウト変数を更新するには、ワークアウトのクイックボタン、またはApple Watchのワークアウト開始ボタンでワークアウトを始めてください。",
   "⚠️ The web based remote control is not enabled.": "⚠️ Webベースのリモコンが有効になっていません。"

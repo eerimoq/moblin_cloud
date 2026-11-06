@@ -1,11 +1,9 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import Icon from "../../Icon";
-import { LinkRow, Section, ToggleRow, ValueEditCompact } from "../Form";
+import { Section, ToggleRow, ValueEditCompact } from "../Form";
 import type { Stack } from "../Stack";
 import type { Editor } from "../store";
-import { SceneSettings } from "./SceneSettings";
 import { WidgetSettings } from "./WidgetSettings";
-import type { DeviceSettings } from "../../../data/account";
 import {
   hasAlignment,
   hasPosition,
@@ -16,7 +14,6 @@ import {
   mirrorPositionHorizontally,
   mirrorPositionVertically,
   sameId,
-  widgetTypeName,
   type SettingsAlignment,
   type SettingsScene,
   type SettingsSceneWidget,
@@ -50,8 +47,6 @@ export function SceneWidgetSettings(props: {
   sceneWidgetId: string;
   widgetId: string;
   canvas: Size;
-  settings: DeviceSettings | null;
-  onCreateWidget: () => void;
 }) {
   const editor = props.editor;
   const scene = createMemo(() =>
@@ -259,49 +254,7 @@ export function SceneWidgetSettings(props: {
               />
             </Section>
           </Show>
-          <Section header={t("Shortcut")}>
-            <LinkRow
-              label={t("Widget")}
-              onClick={() =>
-                props.stack.push({
-                  title: t("{type} widget", { type: widgetTypeName(current().widget.type) }),
-                  render: () => (
-                    <WidgetSettings
-                      editor={editor}
-                      stack={props.stack}
-                      widgetId={current().widget.id}
-                      settings={props.settings}
-                    />
-                  ),
-                })
-              }
-            />
-            <Show when={current().widget.type === "Scene"}>
-              <LinkRow
-                label={t("Scene")}
-                onClick={() => {
-                  const nested = editor.state.scenes.find((candidate) =>
-                    sameId(candidate.id, current().widget.scene.sceneId),
-                  );
-                  if (nested) {
-                    props.stack.push({
-                      title: t("Scene"),
-                      render: () => (
-                        <SceneSettings
-                          editor={editor}
-                          stack={props.stack}
-                          sceneId={nested.id}
-                          canvas={props.canvas}
-                          settings={props.settings}
-                          onCreateWidget={props.onCreateWidget}
-                        />
-                      ),
-                    });
-                  }
-                }}
-              />
-            </Show>
-          </Section>
+          <WidgetSettings editor={editor} stack={props.stack} widgetId={props.widgetId} />
         </>
       )}
     </Show>

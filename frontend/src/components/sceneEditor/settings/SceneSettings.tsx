@@ -108,7 +108,7 @@ export function SceneSettings(props: {
       return;
     }
     props.stack.push({
-      title: widget.name,
+      title: () => widgetOf(widget.id)?.name ?? "",
       render: () => (
         <SceneWidgetSettings
           editor={editor}
@@ -117,8 +117,6 @@ export function SceneSettings(props: {
           sceneWidgetId={sceneWidget.id}
           widgetId={widget.id}
           canvas={props.canvas}
-          settings={props.settings}
-          onCreateWidget={props.onCreateWidget}
         />
       ),
     });

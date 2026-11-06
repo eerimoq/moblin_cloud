@@ -22,15 +22,9 @@ import { AlertsForm } from "./widgets/Alerts";
 import { ScoreboardForm } from "./widgets/Scoreboard";
 import { TextForm } from "./widgets/Text";
 import { WheelOfLuckForm } from "./widgets/WheelOfLuck";
-import type { DeviceSettings } from "../../../data/account";
 import { sameId, type SettingsWidget } from "../../../data/moblinSettings";
 
-export function WidgetSettings(props: {
-  editor: Editor;
-  stack: Stack;
-  widgetId: string;
-  settings: DeviceSettings | null;
-}) {
+export function WidgetSettings(props: { editor: Editor; stack: Stack; widgetId: string }) {
   const editor = props.editor;
   const widget = createMemo(() =>
     editor.state.widgets.find((candidate) => sameId(candidate.id, props.widgetId)),
