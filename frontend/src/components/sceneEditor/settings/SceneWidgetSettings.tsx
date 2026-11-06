@@ -5,6 +5,7 @@ import type { Stack } from "../Stack";
 import type { Editor } from "../store";
 import { WidgetSettings } from "./WidgetSettings";
 import {
+  alignmentName,
   hasAlignment,
   hasPosition,
   hasSize,
@@ -166,7 +167,7 @@ export function SceneWidgetSettings(props: {
                         {row.map((alignment) => (
                           <button
                             type="button"
-                            aria-label={alignment}
+                            aria-label={alignmentName(alignment)}
                             class="text-phone-tint"
                             onClick={() =>
                               edit((draft) => {

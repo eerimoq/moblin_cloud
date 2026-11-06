@@ -28,7 +28,7 @@ export const fontStyleName = (family: string, fontName: string) => {
   const name = fontName.replaceAll("-", "");
   if (name.startsWith(prefix)) {
     const suffix = name.slice(prefix.length);
-    return suffix === "" ? "Regular" : suffix;
+    return suffix === "" ? t("Regular") : suffix;
   }
   return fontName;
 };
@@ -175,8 +175,14 @@ export function SensitivitySection(props: {
   );
 }
 
-export const pickerItems = (values: number[], suffix = "") =>
-  values.map((value) => ({ id: String(value), name: `${value}${suffix}` }));
+export const pickerItems = (values: number[], name: (value: number) => string = String) =>
+  values.map((value) => ({ id: String(value), name: name(value) }));
+
+export const secondsItems = (values: number[]) =>
+  pickerItems(values, (count) => t("{count} sec", { count }));
+
+export const minutesItems = (values: number[]) =>
+  pickerItems(values, (count) => t("{count} min", { count }));
 
 export function Lines(props: {
   header: string;

@@ -30,7 +30,7 @@ import {
 } from "../../../../data/moblinSettings";
 import { t } from "../../../../i18n";
 
-const sports = (): { id: ScoreboardSport; name: string }[] => [
+export const sports = (): { id: ScoreboardSport; name: string }[] => [
   { id: "generic", name: t("Generic") },
   { id: "padel", name: t("Padel") },
   { id: "golf", name: t("Golf") },

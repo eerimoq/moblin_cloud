@@ -145,6 +145,19 @@ export const widgetTypes: SettingsWidgetType[] = [
   "Pomodoro timer",
 ];
 
+export const alignmentName = (alignment: SettingsAlignment): string =>
+  ({
+    TopLeft: t("Top left"),
+    TopCenter: t("Top center"),
+    TopRight: t("Top right"),
+    LeftCenter: t("Left center"),
+    Center: t("Center"),
+    RightCenter: t("Right center"),
+    BottomLeft: t("Bottom left"),
+    BottomCenter: t("Bottom center"),
+    BottomRight: t("Bottom right"),
+  })[alignment];
+
 export const widgetTypeName = (type: SettingsWidgetType): string =>
   ({
     Text: t("Text"),

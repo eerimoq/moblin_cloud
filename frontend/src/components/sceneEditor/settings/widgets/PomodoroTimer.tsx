@@ -1,7 +1,7 @@
 import Icon from "../../../Icon";
 import { ColorRow, MenuRow, PickerRow, Section, SliderRow, TextRow } from "../../Form";
 import { symbolIcon } from "../../icons";
-import { pickerItems, type WidgetFormProps } from "./shared";
+import { minutesItems, type WidgetFormProps } from "./shared";
 import { pomodoroBreakIcons, pomodoroFocusIcons } from "../../../../data/moblinSettings";
 import { t } from "../../../../i18n";
 
@@ -43,7 +43,7 @@ export function PomodoroTimerForm(props: WidgetFormProps) {
       <Section header={t("Durations")}>
         <MenuRow
           label={t("Focus")}
-          items={pickerItems([1, 2, 3, 5, 10, 15, 20, 25, 30, 45, 60, 90, 120], " min")}
+          items={minutesItems([1, 2, 3, 5, 10, 15, 20, 25, 30, 45, 60, 90, 120])}
           selected={String(timer().focusDuration)}
           onPick={(id) =>
             props.edit((draft) => {
@@ -53,7 +53,7 @@ export function PomodoroTimerForm(props: WidgetFormProps) {
         />
         <MenuRow
           label={t("Break")}
-          items={pickerItems([1, 2, 3, 5, 7, 10, 15, 20, 25, 30], " min")}
+          items={minutesItems([1, 2, 3, 5, 7, 10, 15, 20, 25, 30])}
           selected={String(timer().breakDuration)}
           onPick={(id) =>
             props.edit((draft) => {

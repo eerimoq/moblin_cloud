@@ -1,5 +1,5 @@
 import { MenuRow, Section } from "../../Form";
-import { pickerItems, type WidgetFormProps } from "./shared";
+import { pickerItems, secondsItems, type WidgetFormProps } from "./shared";
 import { t } from "../../../../i18n";
 
 export function ChatEmoteComboForm(props: WidgetFormProps) {
@@ -17,7 +17,7 @@ export function ChatEmoteComboForm(props: WidgetFormProps) {
       />
       <MenuRow
         label={t("Timeout")}
-        items={pickerItems([3, 4, 5, 6, 7, 8, 9, 10], "s")}
+        items={secondsItems([3, 4, 5, 6, 7, 8, 9, 10])}
         selected={String(props.widget.chatEmoteCombo.resetAfter)}
         onPick={(id) =>
           props.edit((draft) => {

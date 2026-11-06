@@ -1,6 +1,6 @@
 import { MenuRow, Section } from "../../Form";
 import { EffectsSection } from "./effects";
-import { pickerItems, type WidgetFormProps } from "./shared";
+import { secondsItems, type WidgetFormProps } from "./shared";
 import { t } from "../../../../i18n";
 
 export function SnapshotForm(props: WidgetFormProps) {
@@ -9,7 +9,7 @@ export function SnapshotForm(props: WidgetFormProps) {
       <Section>
         <MenuRow
           label={t("Showtime")}
-          items={pickerItems([3, 5, 10, 15, 30, 60, 120], "s")}
+          items={secondsItems([3, 5, 10, 15, 30, 60, 120])}
           selected={String(props.widget.snapshot.showtime)}
           onPick={(id) =>
             props.edit((draft) => {

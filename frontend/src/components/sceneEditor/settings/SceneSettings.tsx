@@ -32,11 +32,11 @@ import { SceneResolver } from "../../../data/sceneResolver";
 import type { Size } from "../../../data/widgetOutlines";
 import { t } from "../../../i18n";
 
-const stabilizationModes: VideoStabilizationMode[] = [
-  "Off",
-  "Standard",
-  "Cinematic",
-  "Cinematic extended enhanced",
+const stabilizationModes = (): { id: VideoStabilizationMode; name: string }[] => [
+  { id: "Off", name: t("Off") },
+  { id: "Standard", name: t("Standard") },
+  { id: "Cinematic", name: t("Cinematic") },
+  { id: "Cinematic extended enhanced", name: t("Cinematic extended enhanced") },
 ];
 
 export function NameRow(props: {
@@ -306,7 +306,7 @@ export function SceneSettings(props: {
             <Show when={showAll() && current().overrideVideoStabilizationMode}>
               <MenuRow
                 label={t("Video stabilization")}
-                items={stabilizationModes.map((mode) => ({ id: mode, name: mode }))}
+                items={stabilizationModes()}
                 selected={current().videoStabilizationMode}
                 onPick={(id) =>
                   edit((draft) => {

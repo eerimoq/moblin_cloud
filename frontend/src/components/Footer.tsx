@@ -22,7 +22,7 @@ export default function Footer(props: { note?: JSX.Element }) {
         <Show when={props.note}>
           <p class="mb-6 text-[15px] text-muted">{props.note}</p>
         </Show>
-        <nav class="flex flex-wrap justify-center gap-x-7 gap-y-2" aria-label="Footer">
+        <nav class="flex flex-wrap justify-center gap-x-7 gap-y-2" aria-label={t("Footer")}>
           {footerLinks.map((l) => (
             <a
               href={l.href}

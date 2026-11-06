@@ -5,6 +5,7 @@ import { alignmentIcon, widgetIcon } from "./icons";
 import { Popover, PopoverDivider, PopoverList, PopoverRow } from "./Popover";
 import type { Editor } from "./store";
 import {
+  alignmentName,
   defaultSceneWidget,
   hasAlignment,
   sameId,
@@ -373,7 +374,7 @@ export default function Toolbar(props: {
                         {(alignment) => (
                           <button
                             type="button"
-                            aria-label={alignment}
+                            aria-label={alignmentName(alignment)}
                             class="grid size-[44px] place-items-center text-phone-tint"
                             onClick={() => setAlignment(alignment)}
                           >

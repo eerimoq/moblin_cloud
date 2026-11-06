@@ -4,6 +4,7 @@ import { ButtonRow, Footer, MenuRow, ReorderableList, Section } from "../Form";
 import { widgetIcon } from "../icons";
 import { CheckList, InlineField, NextRow, Sheet } from "./Sheet";
 import { formatShortDuration, Lines, validUrl } from "../settings/widgets/shared";
+import { sports } from "../settings/widgets/Scoreboard";
 import { SuggestionsRow } from "../settings/widgets/Text";
 import type { Stack } from "../Stack";
 import type { Editor } from "../store";
@@ -29,20 +30,6 @@ import {
 } from "../../../data/moblinSettings";
 import { SceneResolver } from "../../../data/sceneResolver";
 import { t } from "../../../i18n";
-
-const sports: { id: ScoreboardSport; name: string }[] = [
-  { id: "generic", name: "Generic" },
-  { id: "padel", name: "Padel" },
-  { id: "golf", name: "Golf" },
-  { id: "golfFullScorecard", name: "Golf full scorecard" },
-  { id: "basketball", name: "Basketball" },
-  { id: "generic2", name: "Generic 2" },
-  { id: "genericSets", name: "Generic sets" },
-  { id: "hockey", name: "Hockey" },
-  { id: "football", name: "Football" },
-  { id: "tennis", name: "Tennis" },
-  { id: "volleyball", name: "Volleyball" },
-];
 
 export function WidgetWizard(props: {
   editor: Editor;
@@ -398,7 +385,7 @@ export function WidgetWizard(props: {
               <Section>
                 <MenuRow
                   label={t("Sport")}
-                  items={sports.map((sport) => ({ id: sport.id, name: t(sport.name) }))}
+                  items={sports()}
                   selected={widget().scoreboard.type}
                   onPick={(id) =>
                     edit((draft) => {
