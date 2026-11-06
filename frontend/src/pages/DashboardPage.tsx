@@ -10,9 +10,15 @@ export default function DashboardPage() {
       <Dashboard />
       <Show when={!fullWindow()}>
         <Footer
-          note={tRich("Using Moblin Cloud and your tip page means you agree to the {terms}.", {
-            terms: <TermsLink leaf />,
-          })}
+          note={
+            window.config.tippingEnabled === false
+              ? tRich("Using Moblin Cloud means you agree to the {terms}.", {
+                  terms: <TermsLink leaf />,
+                })
+              : tRich("Using Moblin Cloud and your tip page means you agree to the {terms}.", {
+                  terms: <TermsLink leaf />,
+                })
+          }
         />
       </Show>
     </>

@@ -116,7 +116,10 @@ pub(crate) async fn start_api_built(api: Api) -> (String, Arc<Api>) {
                 .await
         }
     });
-    (serve_local(router(api.clone())).await.to_string(), api)
+    (
+        serve_local(router(api.clone(), true)).await.to_string(),
+        api,
+    )
 }
 
 pub(crate) async fn serve_local(router: axum::Router) -> std::net::SocketAddr {

@@ -115,7 +115,7 @@ pub struct Api {
     pub timing: Timing,
 }
 
-pub fn router(api: Arc<Api>) -> Router {
+pub fn router(api: Arc<Api>, tipping_enabled: bool) -> Router {
     let origin = reqwest::Url::parse(&api.auth.frontend_url)
         .expect("the frontend URL is not a URL")
         .origin()
@@ -285,6 +285,10 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .layer(cors)
         .layer(middleware::from_fn_with_state(
+            tipping_enabled,
+            tipping_gate,
+        ))
+        .layer(middleware::from_fn_with_state(
             api.clone(),
             crate::requests::count,
         ))
@@ -293,6 +297,33 @@ pub fn router(api: Arc<Api>) -> Router {
 
 pub(super) fn page_of(api: &Api, id: &str) -> Option<Page> {
     Some(api.accounts.of_page(id)?.page)
+}
+
+fn tipping_route_disabled(path: &str) -> bool {
+    let capture = matches!(
+        path.split('/').collect::<Vec<_>>().as_slice(),
+        [
+            "",
+            "pages",
+            _,
+            "tips" | "spin" | "effects",
+            "orders",
+            _,
+            "capture"
+        ]
+    );
+    path.starts_with("/pages/") && path != "/pages/addresses" && !capture
+}
+
+async fn tipping_gate(
+    axum::extract::State(enabled): axum::extract::State<bool>,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> Response {
+    if !enabled && tipping_route_disabled(request.uri().path()) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    next.run(request).await
 }
 
 pub(super) fn not_signed_in() -> (StatusCode, String) {
@@ -571,4 +602,100 @@ pub(super) fn within_limit(
     }
     sent.push(Instant::now());
     true
+}
+
+#[cfg(test)]
+mod tipping_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn tipping_switch_blocks_new_orders_but_keeps_device_routes_reachable() {
+        for enabled in [false, true] {
+            let app = Router::new()
+                .route("/pages/twitch/{login}", get(|| async { "viewer" }))
+                .route("/pages/{id}/tips/orders", post(|| async { "order" }))
+                .route("/remote-control/streamer/{key}", get(|| async { "device" }))
+                .route("/pages/addresses", get(|| async { "addresses" }))
+                .route(
+                    "/pages/{id}/tips/orders/{order}/capture",
+                    post(|| async { "capture" }),
+                )
+                .layer(middleware::from_fn_with_state(enabled, tipping_gate));
+            let url = test_utils::serve_local(app).await;
+            let client = reqwest::Client::new();
+            let order = client
+                .post(format!("http://{url}/pages/id/tips/orders"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                order.status(),
+                if enabled {
+                    StatusCode::OK
+                } else {
+                    StatusCode::NOT_FOUND
+                }
+            );
+            for path in ["/remote-control/streamer/key", "/pages/addresses"] {
+                assert_eq!(
+                    client
+                        .get(format!("http://{url}{path}"))
+                        .send()
+                        .await
+                        .unwrap()
+                        .status(),
+                    StatusCode::OK
+                );
+            }
+            assert_eq!(
+                client
+                    .get(format!("http://{url}/pages/twitch/capture"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                if enabled {
+                    StatusCode::OK
+                } else {
+                    StatusCode::NOT_FOUND
+                }
+            );
+            assert_eq!(
+                client
+                    .post(format!("http://{url}/pages/id/tips/orders/order/capture"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::OK
+            );
+        }
+    }
+
+    #[test]
+    fn disables_viewer_pages_without_blocking_devices_or_existing_payments() {
+        for path in [
+            "/pages/twitch/name",
+            "/pages/twitch/capture",
+            "/pages/id",
+            "/pages/id/tips/orders",
+            "/pages/id/spin",
+            "/pages/id/events",
+        ] {
+            assert!(tipping_route_disabled(path), "{path}");
+        }
+        for path in [
+            "/pages/addresses",
+            "/remote-control/streamer/key",
+            "/account",
+            "/account/pages/id/events",
+            "/auth/twitch/login",
+            "/paypal/webhooks",
+            "/pages/id/tips/orders/order/capture",
+            "/pages/id/spin/orders/order/capture",
+            "/pages/id/effects/orders/order/capture",
+        ] {
+            assert!(!tipping_route_disabled(path), "{path}");
+        }
+    }
 }

@@ -48,6 +48,30 @@ docker compose up -d
 Update with `docker compose pull && docker compose up -d`. The database is
 `data/database.sqlite`; stop the backend before copying it for a backup.
 
+## Optional public tipping pages
+
+Set `TIPPING_ENABLED=false` on both frontend and backend to disable public viewer
+pages and new tip, spin and effect orders. Default: `true`, preserving existing
+behavior. Compose passes the frontend value and the backend reads `.env`.
+
+The frontend hides viewer/share links and redirects direct viewer-page entries.
+The backend returns 404 for public viewer APIs and new orders. Device WebSockets,
+dashboard APIs, page-address discovery, payment webhooks and captures of existing
+orders remain available. This does not restrict sign-in, change account rights
+or prevent operators sending test interactions. Existing open pages may remain
+visible until a request or reload.
+
+```dotenv
+TIPPING_ENABLED=false
+```
+
+Use matching frontend/backend versions, recreate both containers with
+`docker compose up -d`, and reload the browser. Custom Compose files must pass
+the same value to both services. Only literal `true` and `false` are accepted.
+No frontend image rebuild is needed; Vite development uses `tippingEnabled` in
+`frontend/public/config.js`. Missing payment credentials alone do not disable
+viewer pages, since non-payment interactions may still be useful.
+
 ## Integrations
 
 Everything is optional, but nobody can sign in without Twitch or Kick.

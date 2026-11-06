@@ -4,6 +4,8 @@ The router, `Api`, `Failure` and the session checks are in `../api.rs`; the hand
 
 ## Access
 
+- A public-viewer disable switch must not interrupt existing payment captures, provider webhooks, device connections or authenticated dashboard streams. Classify new routes explicitly and extend the gate tests when adding a viewer endpoint.
+
 - `page_user` loads the page's account once and merges the assistant's `Rights` over both platforms, the owner getting `Rights::all`. Handlers take the page's account and the rights from the `PageUser` instead of looking them up again.
 - Pick the check that matches the route: `assistant()`, `watcher()`, `previewer()` or `editor()`.
 - Assistants are an allow list kept by hand; Moblin Cloud never asks Twitch or Kick who moderates a channel.
