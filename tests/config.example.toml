@@ -4,13 +4,3 @@ backend-port = 8090
 # The port the fake Moblin's remote control streamer and Moblin Cloud connect to, where the
 # tester acts as Moblin's assistant and relays Moblin Cloud to the backend.
 remote-control-port = 2345
-# Show the browser used for Twitch. It is always shown with --interactive.
-headless-browser = true
-
-# Optional. A Twitch application, for real sign in. Its
-# OAuth redirect URL must be http://localhost:<backend-port>/auth/twitch/callback.
-# [twitch]
-# client-id = "..."
-# client-secret = "..."
-# "fake" signs in as made-up users with the fake Twitch in tests/utils/fake_twitch.py, "real" in the browser with a Twitch account.
-# sign-in = "fake"

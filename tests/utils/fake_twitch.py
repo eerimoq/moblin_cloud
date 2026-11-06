@@ -3,7 +3,8 @@
 
 Any login signs in. Its Twitch user id is a number of 9 digits made from the login, like a real one.
 A login ending in 1, 2 or 3 is a subscriber of that tier to everyone, and any login (except nobody)
-resolves to a Twitch user, so a streamer can add it as an assistant.
+resolves to a Twitch user, so a streamer can add it as an assistant. A test takes Twitch down with
+down, which leaves only its sign in page working.
 """
 
 import argparse
@@ -92,6 +93,7 @@ class FakeTwitch:
     def __init__(self, port: int = 0):
         self.signed_in: set[str] = set()
         self.logins: dict[str, str] = {}
+        self.down = False
         self.url = ""
         self._port = port
         self._server: ThreadingHTTPServer | None = None
@@ -106,8 +108,8 @@ class FakeTwitch:
     def start(self):
         self._server = ThreadingHTTPServer(("0.0.0.0", self._port), self._handler())
         self.url = f"http://localhost:{self._server.server_address[1]}"
-        LOGGER.info("Fake Twitch at %s", self.url)
-        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+        LOGGER.debug("Fake Twitch at %s", self.url)
+        threading.Thread(target=self._server.serve_forever, args=(0.05,), daemon=True).start()
 
     def stop(self):
         if self._server is not None:
@@ -127,6 +129,8 @@ class FakeTwitch:
                 query = {key: values[0] for key, values in parse_qs(parts.query).items()}
                 if parts.path == "/oauth2/authorize":
                     self.authorize(query)
+                elif fake.down:
+                    self.json({"error": "Service Unavailable", "status": 503}, 503)
                 elif parts.path == "/helix/users" and "login" in query:
                     login = query["login"].lower()
                     if self.headers.get("authorization") != f"Bearer {APP_TOKEN}":
@@ -161,6 +165,9 @@ class FakeTwitch:
                 form = {key: values[0] for key, values in parse_qs(self.rfile.read(length).decode()).items()}
                 if urlsplit(self.path).path != "/oauth2/token":
                     self.json({"error": "Bad Request", "status": 400, "message": "bad path"}, 400)
+                    return
+                if fake.down:
+                    self.json({"error": "Service Unavailable", "status": 503}, 503)
                     return
                 if form.get("grant_type") == "client_credentials":
                     self.json({"access_token": APP_TOKEN, "token_type": "bearer", "expires_in": 3600})

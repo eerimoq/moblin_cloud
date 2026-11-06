@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
-from systest import wait_until
 from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import InvalidMessage
 from websockets.exceptions import InvalidStatus
 from websockets.sync.client import ClientConnection
 from websockets.sync.client import connect
@@ -23,6 +23,7 @@ from websockets.sync.server import serve
 from .backend import Backend
 from .config import Config
 from .fake_moblin import FakeMoblin
+from .utils import wait_until
 
 LOGGER = logging.getLogger(__name__)
 LOGGER_TRAFFIC = logging.getLogger(__name__ + ".traffic")
@@ -100,7 +101,7 @@ class StreamerConnection:
             )
             self.moblin.add_rejected_key(self.key)
             return
-        except OSError:
+        except (OSError, InvalidMessage):
             LOGGER.debug("The backend is down, closing Moblin's connection so it retries")
             return
         self._serve_relayed()
@@ -240,7 +241,7 @@ class Moblin:
         self._server = serve(self._handle_connection, "127.0.0.1", self._port, max_size=None)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
-        self._fake = FakeMoblin(self.remote_control_url(), self.api_url())
+        self._fake = FakeMoblin(self.remote_control_url(), self.api_url(), reconnect_delay=0.1)
         self._fake.start()
         self.wait_for_control_connection()
         return self

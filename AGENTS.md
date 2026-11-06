@@ -55,7 +55,7 @@ just dev-frontend   # vite dev server; proxies /api -> localhost:8080
 - There are no database migrations: tables are created with `CREATE TABLE IF NOT EXISTS`, so a schema change needs the existing database changed by hand.
 - The web Monitor and mobtop do the same things and read and write the same saved layout, so a change to one usually needs the other.
 - Nothing is polled: what changes on the backend is pushed as server-sent events. The one exception is mobtop waiting for a sign in on another device.
-- There is no fake logic in the backend: the fakes are in `tests/utils/`, and the options pointing the backend at them are for local development and the system tests only.
+- There is no fake logic in the backend: the fakes are in `tests/utils/`, and the options pointing the backend at them and shortening its timers are for local development and the system tests only.
 - Viewer-facing backend errors are full sentences the page shows as they are, and stay English like the Terms and admin pages.
 - An assistant must never get a streamer's Moblin Cloud key or payment details.
 - A tag publishes the Docker images and a push to main deploys the frontend, so never create a tag or dispatch a deploy workflow to test a change.

@@ -15,7 +15,6 @@ class DevicesTestCase(TestCase):
     login = "devicesbase"
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.page_id = self.dashboard.page_id()
         self.key = self.dashboard.moblin_cloud_key()
@@ -211,16 +210,43 @@ class DevicesAtMostTwenty(DevicesTestCase):
 
     login = "devicestwenty"
 
+    def seen(self, device_id: str):
+        device = self.connect(device_id)
+        self.assert_true(device.ok())
+        device.close()
+        self.wait_for_device(device_id, connected=False)
+
     def run(self):
-        for number in range(1, 22):
-            device = self.connect(f"T{number:02}")
-            self.assert_true(device.ok())
-            device.close()
-            self.wait_for_device(f"T{number:02}", connected=False)
-            time.sleep(1.1)
+        for number in range(1, 21):
+            self.seen(f"T{number:02}")
+        time.sleep(1.1)
+        self.seen("T01")
+        self.seen("T21")
         devices = self.devices()
         self.assert_equal(
-            [device["id"] for device in devices], [f"T{number:02}" for number in range(21, 1, -1)]
+            [device["id"] for device in devices],
+            [
+                "T21",
+                "T01",
+                "T20",
+                "T19",
+                "T18",
+                "T17",
+                "T16",
+                "T15",
+                "T14",
+                "T13",
+                "T12",
+                "T11",
+                "T10",
+                "T09",
+                "T08",
+                "T07",
+                "T06",
+                "T05",
+                "T04",
+                "T03",
+            ],
         )
         names = [device["name"] for device in devices]
         self.assert_equal(len(names), len(set(names)), f"unique names {names}")
@@ -333,7 +359,7 @@ class DevicesControls(DevicesTestCase):
             lambda: self.dashboard.control_device(self.page_id, "K1", mute),
             "Moblin did not answer. Try again.",
         )
-        self.assert_true(4 <= time.monotonic() - started < 15, "waited about 5 seconds")
+        self.assert_true(2 <= time.monotonic() - started < 6, "waited about 2 seconds")
         device.answer = lambda data: ({"error": {}}, None)
         self.assert_backend_error(
             502,
@@ -352,6 +378,42 @@ class DevicesControls(DevicesTestCase):
             )
         other_page = outsider.page_id()
         self.assert_refused(lambda: self.dashboard.control_device(other_page, "K1", mute))
+
+
+class DevicesEveryControl(DevicesTestCase):
+    """Pass each of Moblin's controls on to the device as the dashboard sent it."""
+
+    login = "deviceseverycontrol"
+
+    def run(self):
+        device = self.connect("EC1")
+        some_id = "5b1f0c9e-0c5b-4d0e-9d0a-6f4f6a6b7c8d"
+        controls: list[dict] = [
+            {"setRecord": {"on": True}},
+            {"setLive": {"on": False}},
+            {"setStealthMode": {"on": True}},
+            {"setTorch": {"on": True}},
+            {"setZoom": {"x": 2.5}},
+            {"setZoomPreset": {"id": some_id}},
+            {"setScene": {"id": some_id}},
+            {"setBitratePreset": {"id": some_id}},
+            {"setMic": {"id": "builtin"}},
+            {"setSrtConnectionPriority": {"id": some_id, "priority": 3, "enabled": True}},
+            {"setSrtConnectionPrioritiesEnabled": {"enabled": False}},
+            {"reloadBrowserWidgets": {}},
+            {"instantReplay": {}},
+            {"setAutoSceneSwitcher": {"id": some_id}},
+            {"setAutoSceneSwitcher": {}},
+            {"setPreviewStream": {"on": True}},
+            {"setFilter": {"filter": {"pixellate": {}}, "on": True}},
+            {"startMacro": {"id": some_id}},
+            {"stopMacro": {"id": some_id}},
+            {"setGimbalTracking": {"on": True}},
+        ]
+        for control in controls:
+            self.assert_equal(self.dashboard.control_device(self.page_id, "EC1", control), {}, f"{control}")
+        names = {name for control in controls for name in control}
+        self.assert_equal([request for request in device.requests if set(request) <= names], controls)
 
 
 class DevicesEvents(DevicesTestCase):
@@ -426,5 +488,6 @@ def tests(context: Context):
         DevicesProtocol(context),
         DevicesWheelDevice(context),
         DevicesControls(context),
+        DevicesEveryControl(context),
         DevicesEvents(context),
     ]

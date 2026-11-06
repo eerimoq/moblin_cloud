@@ -1,8 +1,7 @@
 websockets>=14
-systest
+systest>=5.21.0
 requests
 pillow
-playwright
 xdg-base-dirs
 ruff
 pylint

@@ -262,7 +262,7 @@ impl Deliveries {
         }
     }
 
-    pub async fn run(&self, streamers: &Streamers) {
+    pub async fn run(&self, streamers: &Streamers, retry: Duration) {
         loop {
             let mut by_device: Vec<((String, String), Vec<Targeted>)> = Vec::new();
             let mut known: HashMap<String, Vec<String>> = HashMap::new();
@@ -312,7 +312,7 @@ impl Deliveries {
             .await;
             tokio::select! {
                 _ = self.added.notified() => {}
-                _ = sleep(Duration::from_secs(10)) => {}
+                _ = sleep(retry) => {}
             }
         }
     }

@@ -127,8 +127,8 @@ class FakeKick:
     def start(self):
         self._server = ThreadingHTTPServer(("0.0.0.0", self._port), self._handler())
         self.url = f"http://localhost:{self._server.server_address[1]}"
-        LOGGER.info("Fake Kick at %s", self.url)
-        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+        LOGGER.debug("Fake Kick at %s", self.url)
+        threading.Thread(target=self._server.serve_forever, args=(0.05,), daemon=True).start()
 
     def stop(self):
         if self._server is not None:

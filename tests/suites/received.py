@@ -14,7 +14,6 @@ class ReceivedTestCase(TestCase):
     login = "receivedbase"
 
     def setup(self):
-        self.skip_if_real_twitch_sign_in()
         self.dashboard = self.sign_in(self.login)
         self.settings = self.context.page_with_paypal(self.dashboard)
         self.merchant_id = self.settings["merchantId"]
@@ -195,9 +194,6 @@ class ReceivedAmounts(ReceivedTestCase):
 
 class ReceivedTestLimit(TestCase):
     """Refuse more than 10 test sends a minute per page, whoever sends them, and keep only the 5 newest tests."""
-
-    def setup(self):
-        self.skip_if_real_twitch_sign_in()
 
     def run(self):
         dashboard = self.sign_in("testlimit")
