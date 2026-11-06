@@ -2,9 +2,23 @@ import { asset } from "../asset";
 
 declare global {
   interface Window {
-    config: { backendUrl: string };
+    config: {
+      backendUrl: string;
+      selfHostedLandingPage?: boolean;
+      termsUrl?: string;
+      privacyPolicyUrl?: string;
+    };
   }
 }
+
+export const policyUrl = (value?: string) => {
+  try {
+    const url = new URL(value?.trim() || "");
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export const links = {
   api: window.config.backendUrl,

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "vitest run"
+    "test": "vitest run && node scripts/test-runtime-config.mjs"
   },
   "dependencies": {
     "@paypal/paypal-js": "^11.2.0",
