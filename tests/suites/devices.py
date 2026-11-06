@@ -210,16 +210,43 @@ class DevicesAtMostTwenty(DevicesTestCase):
 
     login = "devicestwenty"
 
+    def seen(self, device_id: str):
+        device = self.connect(device_id)
+        self.assert_true(device.ok())
+        device.close()
+        self.wait_for_device(device_id, connected=False)
+
     def run(self):
-        for number in range(1, 22):
-            device = self.connect(f"T{number:02}")
-            self.assert_true(device.ok())
-            device.close()
-            self.wait_for_device(f"T{number:02}", connected=False)
-            time.sleep(1.1)
+        for number in range(1, 21):
+            self.seen(f"T{number:02}")
+        time.sleep(1.1)
+        self.seen("T01")
+        self.seen("T21")
         devices = self.devices()
         self.assert_equal(
-            [device["id"] for device in devices], [f"T{number:02}" for number in range(21, 1, -1)]
+            [device["id"] for device in devices],
+            [
+                "T21",
+                "T01",
+                "T20",
+                "T19",
+                "T18",
+                "T17",
+                "T16",
+                "T15",
+                "T14",
+                "T13",
+                "T12",
+                "T11",
+                "T10",
+                "T09",
+                "T08",
+                "T07",
+                "T06",
+                "T05",
+                "T04",
+                "T03",
+            ],
         )
         names = [device["name"] for device in devices]
         self.assert_equal(len(names), len(set(names)), f"unique names {names}")
