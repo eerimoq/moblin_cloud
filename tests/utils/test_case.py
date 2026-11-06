@@ -1,11 +1,11 @@
 from collections.abc import Callable
 
 import systest
-from systest import wait_until
 
 from .context import Context
 from .frontend import BackendError
 from .frontend import Dashboard
+from .utils import wait_until
 
 
 class TestCase(systest.TestCase):

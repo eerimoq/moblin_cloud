@@ -10,7 +10,6 @@ from collections.abc import Iterable
 
 import requests
 from systest import ManagedProcess
-from systest import wait_until
 
 from .config import FRONTEND_URL
 from .config import Config
@@ -21,6 +20,7 @@ from .fake_twitch import FakeTwitch
 from .fake_twitch import user_id_of as twitch_user_id_of
 from .utils import FILES_DIR
 from .utils import REPO_DIR
+from .utils import wait_until
 
 LOGGER = logging.getLogger(__name__)
 LOGGER_PROCESS = logging.getLogger(__name__ + ".process")

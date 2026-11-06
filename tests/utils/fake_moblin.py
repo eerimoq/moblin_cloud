@@ -81,11 +81,13 @@ class FakeMoblin:
         api_url: str,
         key: str | None = None,
         device_id: str | None = None,
+        reconnect_delay: float = 1,
     ):
         self.url = url
         self.api_url = api_url
         self.key = key
         self.device_id = device_id or str(uuid.uuid4()).upper()
+        self.reconnect_delay = reconnect_delay
         self.icon = "AppIcon"
         self.ids = {
             name: str(uuid.uuid4()).upper()
@@ -216,7 +218,7 @@ class FakeMoblin:
                     if name == "cloud":
                         self._status_requested.clear()
                         self._preview_requested.clear()
-            self._stopped.wait(1)
+            self._stopped.wait(self.reconnect_delay)
 
     def serve(self, name: str, websocket: ClientConnection):
         for text in websocket:

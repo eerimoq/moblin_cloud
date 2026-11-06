@@ -247,7 +247,11 @@ class PaymentsTipToEveryDevice(PaymentTestCase):
         self.connect_moblin()
         self.dashboard.save_settings(tips=TIPS)
         self.second = FakeMoblin(
-            None, self.backend.url, key=self.dashboard.moblin_cloud_key(), device_id="REFUSING"
+            None,
+            self.backend.url,
+            key=self.dashboard.moblin_cloud_key(),
+            device_id="REFUSING",
+            reconnect_delay=0.1,
         )
         self.second.refuse_tips = True
         self.second.start()
