@@ -8,6 +8,8 @@ from .suites import events
 from .suites import images
 from .suites import kick
 from .suites import lifecycle
+from .suites import monitor
+from .suites import options
 from .suites import pages
 from .suites import payments
 from .suites import paypal
@@ -17,6 +19,7 @@ from .suites import remote_control
 from .suites import robustness
 from .suites import scene_editor
 from .suites import settings
+from .suites import sign_in
 from .suites import stripe
 from .suites import subscribers
 from .utils.runner import create_parser
@@ -46,6 +49,9 @@ def create_suites(context):
         robustness.tests(context),
         lifecycle.tests(context),
         kick.tests(context),
+        sign_in.tests(context),
+        monitor.tests(context),
+        options.tests(context),
     ]
 
 

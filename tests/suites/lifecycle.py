@@ -1,3 +1,5 @@
+import threading
+import time
 import uuid
 
 import requests
@@ -227,6 +229,31 @@ class LifecycleAssistantOfMany(LifecycleTestCase):
         self.assert_not_in(both.page_id(), [channel["id"] for channel in assistant.account()["assisting"]])
 
 
+class LifecycleCaptureFinishesOnShutdown(LifecycleTestCase):
+    """Finish a capture in flight before shutting down, so a deploy never takes a viewer's money without saving the tip."""
+
+    def run(self):
+        dashboard = self.sign_in("shutdowncapture")
+        settings = self.context.page_with_paypal(dashboard)
+        dashboard.change_settings(tips={"amounts": [100]})
+        viewer = self.frontend.viewer(settings["id"])
+        order_id = viewer.order_tip(100, "Deployed")
+        self.context.paypal.pay_with_card(order_id, settings["merchantId"])
+        self.backend.fake_paypal.plan_capture(order_id, "slow")
+        answers: list[dict] = []
+        capture = threading.Thread(target=lambda: answers.append(viewer.capture_tip(order_id)))
+        capture.start()
+        time.sleep(1)
+        self.backend.restart(graceful=True)
+        capture.join(30)
+        self.assert_equal(answers, [{}])
+        self.assert_equal(self.context.paypal.order(order_id, settings["merchantId"])["status"], "COMPLETED")
+        self.assert_in(order_id, [item["id"] for item in dashboard.recent("tip")["items"]])
+
+    def teardown(self):
+        self.backend.fake_paypal.reset()
+
+
 def tests(context: Context):
     return [
         LifecycleKeptOnRestart(context),
@@ -235,4 +262,5 @@ def tests(context: Context):
         LifecycleNewKey(context),
         LifecycleStatsBounded(context),
         LifecycleAssistantOfMany(context),
+        LifecycleCaptureFinishesOnShutdown(context),
     ]

@@ -2,9 +2,12 @@ import logging
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
+import sys
 import threading
+from collections.abc import Iterable
 
 import requests
 from systest import ManagedProcess
@@ -24,17 +27,42 @@ LOGGER = logging.getLogger(__name__)
 LOGGER_PROCESS = logging.getLogger(__name__ + ".process")
 BACKEND_DIR = REPO_DIR / "backend"
 BINARY = BACKEND_DIR / "target" / "release" / "moblin-cloud-backend"
+COVERAGE_TARGET_DIR = BACKEND_DIR / "target" / "coverage"
+COVERAGE_BINARY = COVERAGE_TARGET_DIR / "release" / "moblin-cloud-backend"
+COVERAGE_DIR = FILES_DIR / "coverage"
 SESSION_SECRET = "moblin-cloud-system-tests"
 
 
-def build_backend():
+def build_backend(coverage: bool):
     LOGGER.debug("Building the backend...")
-    subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=BACKEND_DIR, check=True)
+    command = ["cargo", "build", "--release", "--quiet"]
+    if coverage:
+        command = [
+            "cargo",
+            "rustc",
+            "--release",
+            "--quiet",
+            "--target-dir",
+            str(COVERAGE_TARGET_DIR),
+            "--",
+            "-C",
+            "instrument-coverage",
+        ]
+        if sys.platform == "darwin":
+            for section in ["cnts", "bits", "data"]:
+                command += ["-C", f"link-arg=-Wl,-sectalign,__DATA,__llvm_prf_{section},0x4000"]
+        else:
+            command += ["-C", "llvm-args=-runtime-counter-relocation"]
+    subprocess.run(command, cwd=BACKEND_DIR, check=True)
 
 
 class Backend:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, coverage: bool):
         self.config = config
+        self.binary = COVERAGE_BINARY if coverage else BINARY
+        self.environment = {**os.environ, "RUST_LOG": "info"}
+        if coverage:
+            self.environment["LLVM_PROFILE_FILE"] = str(COVERAGE_DIR / "%p%c.profraw")
         self.port = config.backend_port()
         self.url = f"http://localhost:{self.port}"
         self.files_dir = FILES_DIR / "backend"
@@ -57,7 +85,9 @@ class Backend:
         self.fake_paypal.stop()
         self.fake_stripe.stop()
 
-    def start(self):
+    def start(self, without: Iterable[str] = (), extra: Iterable[str] = ()):
+        """Starts the backend, without the given options, like "--session-secret", and with the extra
+        arguments, for the tests of how it is set up."""
         with socket.socket() as sock:
             if sock.connect_ex(("127.0.0.1", self.port)) == 0:
                 raise Exception(f"Port {self.port} is in use, maybe by a backend left from an earlier run.")
@@ -68,17 +98,23 @@ class Backend:
             self.fake_kick = FakeKick()
             self.fake_kick.start()
         self._process = ManagedProcess(
-            [str(BINARY), *self._arguments()],
+            [str(self.binary), *self._arguments(without), *extra],
             LOGGER_PROCESS,
-            env={**os.environ, "RUST_LOG": "info"},
+            env=self.environment,
             observer=self._handle_line,
             ready=self._wait_until_ready,
         )
         self._process.start()
 
-    def stop(self):
+    def stop(self, graceful: bool = False):
+        """Kills the backend, or asks it to stop like a deploy does when graceful."""
         if self._process is not None:
-            self._process.stop()
+            process = self._process
+            pid = process.pid()
+            if graceful and pid is not None:
+                os.kill(pid, signal.SIGTERM)
+                wait_until(lambda: not process.is_running(), "the backend to stop", timeout=30)
+            process.stop()
             self._process = None
         if self.fake_twitch is not None:
             self.fake_twitch.stop()
@@ -87,9 +123,20 @@ class Backend:
             self.fake_kick.stop()
             self.fake_kick = None
 
-    def restart(self):
-        self.stop()
-        self.start()
+    def restart(self, without: Iterable[str] = (), extra: Iterable[str] = (), graceful: bool = False):
+        self.stop(graceful)
+        self.start(without, extra)
+
+    def run(self, without: Iterable[str] = (), extra: Iterable[str] = ()) -> subprocess.CompletedProcess:
+        """Runs another backend until it exits, for options it must refuse to start with."""
+        return subprocess.run(
+            [str(self.binary), *self._arguments(without), *extra],
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
 
     def wipe(self):
         self.stop()
@@ -126,57 +173,41 @@ class Backend:
         with self._lines_lock:
             self._lines.append(line)
 
-    def _arguments(self) -> list[str]:
-        arguments = [
-            "--listen",
-            f"0.0.0.0:{self.port}",
-            "--backend-url",
-            self.url,
-            "--frontend-url",
-            FRONTEND_URL,
-            "--session-secret",
-            SESSION_SECRET,
-            "--database",
-            str(self.files_dir / "database.sqlite"),
-            "--admins",
-            twitch_user_id_of("admin"),
-            "--premium-accounts",
-            twitch_user_id_of("pagelook"),
-            "--allow-unattested",
+    def _arguments(self, without: Iterable[str]) -> list[str]:
+        options = [
+            ["--listen", f"0.0.0.0:{self.port}"],
+            ["--backend-url", self.url],
+            ["--frontend-url", FRONTEND_URL],
+            ["--session-secret", SESSION_SECRET],
+            ["--database", str(self.files_dir / "database.sqlite")],
+            ["--admins", twitch_user_id_of("admin")],
+            ["--premium-accounts", twitch_user_id_of("pagelook")],
+            ["--allow-unattested"],
         ]
         if self.fake_twitch is not None:
-            arguments += ["--twitch-sign-in-url", self.fake_twitch.url]
+            options.append(["--twitch-sign-in-url", self.fake_twitch.url])
         if self.fake_kick is not None:
-            arguments += ["--kick-sign-in-url", self.fake_kick.url]
+            options.append(["--kick-sign-in-url", self.fake_kick.url])
         twitch = self.config.twitch()
         if twitch is not None:
-            arguments += [
-                "--twitch-client-id",
-                twitch["client-id"],
-                "--twitch-client-secret",
-                twitch["client-secret"],
+            options += [
+                ["--twitch-client-id", twitch["client-id"]],
+                ["--twitch-client-secret", twitch["client-secret"]],
             ]
         paypal = self.fake_paypal.config
         stripe = self.fake_stripe.config
-        arguments += [
-            "--paypal-url",
-            self.fake_paypal.url,
-            "--paypal-client-id",
-            paypal["client-id"],
-            "--paypal-client-secret",
-            paypal["client-secret"],
-            "--paypal-partner-id",
-            paypal["partner-id"],
-            "--paypal-webhook-id",
-            paypal["webhook-id"],
-            "--stripe-url",
-            self.fake_stripe.url,
-            "--stripe-secret-key",
-            stripe["secret-key"],
-            "--stripe-publishable-key",
-            stripe["publishable-key"],
+        options += [
+            ["--paypal-url", self.fake_paypal.url],
+            ["--paypal-client-id", paypal["client-id"]],
+            ["--paypal-client-secret", paypal["client-secret"]],
+            ["--paypal-partner-id", paypal["partner-id"]],
+            ["--paypal-webhook-id", paypal["webhook-id"]],
+            ["--stripe-url", self.fake_stripe.url],
+            ["--stripe-secret-key", stripe["secret-key"]],
+            ["--stripe-publishable-key", stripe["publishable-key"]],
         ]
-        return arguments
+        without = set(without)
+        return [argument for option in options if option[0] not in without for argument in option]
 
     def _wait_until_ready(self):
         def check() -> bool:

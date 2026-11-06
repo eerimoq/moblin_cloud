@@ -9,3 +9,8 @@
 - The fake Moblin's wheel changes when the widget picked for Moblin Cloud changes, either through the tester's `change_wheel` or `setMoblinCloudWheelOfLuckWidget`.
 - The relay in `utils/moblin.py` closes with 1000 when the tester changes Moblin's settings and 1001 otherwise, so its `disconnect()` acts like a dropped connection.
 - `just dev-fake-moblin` connects the fake to a running `just dev-backend` as the admin user's Moblin, with `--key` taken from the dev database, so sign in as `admin` once first.
+- The fakes only misbehave when a test tells them to, through the fake itself (`down`, `plan_capture`, the seller switches). They are shared by every test and outlive backend restarts, so a test that changes one calls `reset()` in its teardown.
+- The backend is a black box: a test only reaches it like the frontend, Moblin and the providers do, never through its database or files. What can't be reached that way, like the 30 minute payment deadline, is left to the backend's unit tests.
+- A test that starts the backend with other options (`restart(without=..., extra=...)`) restarts it without any in its teardown, or every later test runs with them.
+- Only `stop(graceful=True)` sends SIGTERM, so only the tests using it run the backend's shutdown.
+- The backend is stopped with SIGKILL otherwise, which loses a coverage profile written at exit, so `--coverage` has the backend write its profile continuously (`%c` in `LLVM_PROFILE_FILE`). That needs the counter sections page aligned on macOS and relocatable counters elsewhere, the latter never tried. Only the backend's own crate is instrumented, not its dependencies.

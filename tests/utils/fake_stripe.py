@@ -4,6 +4,9 @@ use to pay payments like a viewer.
 Connected accounts take payments once their onboarding link has been opened, which returns to the
 return URL at once. Payments are confirmed with the test card pm_card_visa, captured, canceled and
 looked up like in test mode.
+
+A test makes Stripe misbehave through the fake itself: down for every request and a capture that
+ends another way.
 """
 
 import base64
@@ -46,6 +49,26 @@ class FakeStripe:
         self._lock = threading.Lock()
         self._accounts: dict[str, dict] = {}
         self._payments: dict[str, dict] = {}
+        self._captures: dict[str, str] = {}
+        self.down = False
+
+    def reset(self):
+        self.down = False
+        with self._lock:
+            self._captures.clear()
+
+    def plan_capture(self, payment_id: str, outcome: str):
+        """Makes the next capture of the payment end as "pending" (processing), "declined", "lost"
+        (captured, but answered with a server error) or "failed" (a server error, nothing captured)."""
+        with self._lock:
+            self._captures[payment_id] = outcome
+
+    def complete(self, payment_id: str):
+        """Ends the processing of a pending capture by taking the money."""
+        with self._lock:
+            payment = self._payments[payment_id]
+            payment["status"] = "succeeded"
+            payment["amount_received"] = payment["amount"]
 
     def __enter__(self):
         self.start()
@@ -80,7 +103,7 @@ class FakeStripe:
                 if onboarding:
                     self.onboard(onboarding[1], query.get("return_url", ""))
                     return
-                if not self.authorized():
+                if self.unavailable() or not self.authorized():
                     return
                 account = re.match(r"^/v2/core/accounts/(acct_\w+)$", parts.path)
                 payment = re.match(r"^/v1/payment_intents/(pi_\w+)$", parts.path)
@@ -98,7 +121,7 @@ class FakeStripe:
                 length = int(self.headers.get("content-length", "0"))
                 body = self.rfile.read(length).decode()
                 path = urlsplit(self.path).path
-                if not self.authorized():
+                if self.unavailable() or not self.authorized():
                     return
                 if path.startswith("/v2/"):
                     try:
@@ -122,6 +145,11 @@ class FakeStripe:
                         self.change_payment(action[1], action[2], form)
                 else:
                     self.json(error("resource_missing", "Unrecognized request URL."), 404)
+
+            def unavailable(self) -> bool:
+                if fake.down:
+                    self.json({"error": {"type": "api_error", "message": "Stripe is down."}}, 503)
+                return fake.down
 
             def authorized(self) -> bool:
                 header = self.headers.get("authorization", "")
@@ -258,8 +286,22 @@ class FakeStripe:
                     if payment["status"] == "succeeded":
                         payment["amount_received"] = payment["amount"]
                 elif action == "capture" and status == "requires_capture":
-                    payment["status"] = "succeeded"
-                    payment["amount_received"] = payment["amount"]
+                    outcome = fake._captures.pop(payment_id, "succeeded")  # pylint: disable=protected-access
+                    if outcome == "failed":
+                        self.json({"error": {"type": "api_error", "message": "Try again."}}, 500)
+                        return
+                    if outcome == "declined":
+                        payment["status"] = "canceled"
+                        self.json(error("card_declined", "The card was declined.", self.public(payment)), 402)
+                        return
+                    if outcome == "pending":
+                        payment["status"] = "processing"
+                    else:
+                        payment["status"] = "succeeded"
+                        payment["amount_received"] = payment["amount"]
+                    if outcome == "lost":
+                        self.json({"error": {"type": "api_error", "message": "Try again."}}, 500)
+                        return
                 elif action == "cancel" and status not in ["succeeded", "canceled"]:
                     payment["status"] = "canceled"
                 else:

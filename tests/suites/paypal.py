@@ -190,6 +190,78 @@ class PayPalWebhooks(TestCase):
         self.assert_is_none(dashboard.account()["settings"]["merchantId"])
 
 
+class PayPalConnectRefused(TestCase):
+    """Connect no PayPal account that did not grant the permissions or can't receive payments yet."""
+
+    def run(self):
+        dashboard = self.sign_in("paypalrefused")
+        fake = self.backend.fake_paypal
+        merchant_id = self.context.paypal.onboard_seller(dashboard.connect_paypal())
+        fake.sellers_grant_permissions = False
+        self.assert_backend_error(
+            409, dashboard.check_paypal, "the PayPal account did not grant the permissions"
+        )
+        self.assert_equal(
+            post_webhook(self.backend.url, "MERCHANT.ONBOARDING.COMPLETED", merchant_id, "good"), 200
+        )
+        fake.sellers_grant_permissions = True
+        fake.sellers_receive_payments = False
+        self.assert_backend_error(
+            422, dashboard.check_paypal, "the PayPal account can't receive payments yet"
+        )
+        settings = dashboard.account()["settings"]
+        self.assert_equal([settings["merchantId"], settings["paypalPending"]], [None, True])
+        fake.sellers_receive_payments = True
+        self.assert_equal(dashboard.check_paypal()["merchantId"], merchant_id)
+
+    def teardown(self):
+        self.backend.fake_paypal.reset()
+
+
+class PayPalDown(TestCase):
+    """Tell the streamer when PayPal can't be reached, and have PayPal send its webhook again."""
+
+    def run(self):
+        dashboard = self.sign_in("paypaldown")
+        fake = self.backend.fake_paypal
+        unreachable = "PayPal could not be reached"
+        fake.down = True
+        self.assert_backend_error(502, dashboard.connect_paypal, unreachable)
+        self.assert_false(dashboard.account()["settings"]["paypalPending"])
+        fake.down = False
+        merchant_id = self.context.paypal.onboard_seller(dashboard.connect_paypal())
+        fake.down = True
+        self.assert_backend_error(502, dashboard.check_paypal, unreachable)
+        self.assert_equal(
+            post_webhook(self.backend.url, "MERCHANT.ONBOARDING.COMPLETED", merchant_id, "good"), 502
+        )
+        self.assert_is_none(dashboard.account()["settings"]["merchantId"])
+        fake.down = False
+        self.assert_equal(
+            post_webhook(self.backend.url, "MERCHANT.ONBOARDING.COMPLETED", merchant_id, "good"), 200
+        )
+        self.assert_equal(dashboard.account()["settings"]["merchantId"], merchant_id)
+
+    def teardown(self):
+        self.backend.fake_paypal.reset()
+
+
+class PayPalWebhooksForNobody(TestCase):
+    """Accept PayPal's webhooks about merchants nobody is connecting and about anything else, so PayPal stops sending them, but not one about a merchant PayPal does not know."""
+
+    def run(self):
+        dashboard = self.sign_in("webhooknobody")
+        merchant_id = self.context.paypal.onboard_seller(dashboard.connect_paypal())
+        dashboard.delete_account()
+        for event_type in ["MERCHANT.ONBOARDING.COMPLETED", "PAYMENT.CAPTURE.COMPLETED"]:
+            self.assert_equal(
+                post_webhook(self.backend.url, event_type, merchant_id, "good"), 200, event_type
+            )
+        self.assert_equal(
+            post_webhook(self.backend.url, "MERCHANT.ONBOARDING.COMPLETED", "UNKNOWNMERCHANT", "good"), 502
+        )
+
+
 def tests(context: Context):
     return [
         PayPalConnect(context),
@@ -199,4 +271,7 @@ def tests(context: Context):
         PayPalDisconnect(context),
         PayPalWebhookWithBadSignature(context),
         PayPalWebhooks(context),
+        PayPalConnectRefused(context),
+        PayPalDown(context),
+        PayPalWebhooksForNobody(context),
     ]

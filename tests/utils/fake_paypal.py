@@ -4,6 +4,9 @@ use to pay orders like a viewer.
 Seller onboarding is a sign up link that connects a new made-up merchant at once and returns to the
 return URL with the merchant ID, like PayPal. Orders are approved with confirm-payment-source, captured and looked up like in the
 sandbox. Webhook signatures verify only when the transmission signature is "good".
+
+A test makes PayPal misbehave through the fake itself: down for every request, sellers that granted
+no permissions or can't receive payments and a capture that ends another way.
 """
 
 import base64
@@ -14,6 +17,7 @@ import re
 import secrets
 import string
 import threading
+import time
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from urllib.parse import parse_qs
@@ -61,6 +65,30 @@ class FakePayPal:
         self._referrals: dict[str, str] = {}
         self._merchants: dict[str, str] = {}
         self._orders: dict[str, dict] = {}
+        self._captures: dict[str, str] = {}
+        self.down = False
+        self.sellers_grant_permissions = True
+        self.sellers_receive_payments = True
+
+    def reset(self):
+        self.down = False
+        self.sellers_grant_permissions = True
+        self.sellers_receive_payments = True
+        with self._lock:
+            self._captures.clear()
+
+    def plan_capture(self, order_id: str, outcome: str):
+        """Makes the next capture of the order end as "pending" (under review), "declined", "refused"
+        (the card is declined before anything is captured), "lost" (captured, but answered with a
+        server error), "failed" (a server error, nothing captured) or "slow" (captured after three
+        seconds)."""
+        with self._lock:
+            self._captures[order_id] = outcome
+
+    def complete(self, order_id: str):
+        """Ends the review of a pending capture by taking the money."""
+        with self._lock:
+            self._orders[order_id]["purchase_units"][0]["payments"]["captures"][0]["status"] = "COMPLETED"
 
     def __enter__(self):
         self.start()
@@ -94,7 +122,7 @@ class FakePayPal:
                 if parts.path == "/signup":
                     self.sign_up(query.get("tracking_id", ""))
                     return
-                if not self.authorized():
+                if self.unavailable() or not self.authorized():
                     return
                 integrations = f"/v1/customer/partners/{PARTNER_ID}/merchant-integrations"
                 order = re.match(r"^/v2/checkout/orders/([A-Z0-9]+)$", parts.path)
@@ -111,6 +139,8 @@ class FakePayPal:
                 length = int(self.headers.get("content-length", "0"))
                 body = self.rfile.read(length).decode()
                 path = urlsplit(self.path).path
+                if self.unavailable():
+                    return
                 if path == "/v1/oauth2/token":
                     self.token()
                     return
@@ -135,6 +165,11 @@ class FakePayPal:
                     self.capture(order[1])
                 else:
                     self.json(error("RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID"), 404)
+
+            def unavailable(self) -> bool:
+                if fake.down:
+                    self.json(error("SERVICE_UNAVAILABLE", "SERVICE_UNAVAILABLE"), 503)
+                return fake.down
 
             def authorized(self) -> bool:
                 if self.headers.get("authorization", "") != f"Bearer {TOKEN}":
@@ -198,7 +233,7 @@ class FakePayPal:
                     {
                         "merchant_id": merchant_id,
                         "tracking_id": tracking_id,
-                        "payments_receivable": True,
+                        "payments_receivable": fake.sellers_receive_payments,
                         "primary_email_confirmed": True,
                         "oauth_integrations": [
                             {
@@ -212,7 +247,9 @@ class FakePayPal:
                                     }
                                 ],
                             }
-                        ],
+                        ]
+                        if fake.sellers_grant_permissions
+                        else [],
                     }
                 )
 
@@ -271,24 +308,41 @@ class FakePayPal:
                 if order is None:
                     return
                 with fake._lock:  # pylint: disable=protected-access
+                    slow = fake._captures.get(order_id) == "slow"  # pylint: disable=protected-access
+                if slow:
+                    time.sleep(3)
+                with fake._lock:  # pylint: disable=protected-access
                     if order["status"] == "COMPLETED":
                         self.json(error("UNPROCESSABLE_ENTITY", "ORDER_ALREADY_CAPTURED"), 422)
                         return
                     if order["status"] != "APPROVED":
                         self.json(error("UNPROCESSABLE_ENTITY", "ORDER_NOT_APPROVED"), 422)
                         return
-                    order["status"] = "COMPLETED"
+                    outcome = fake._captures.pop(order_id, "completed")  # pylint: disable=protected-access
+                    if outcome == "failed":
+                        self.json(error("INTERNAL_SERVER_ERROR", "INTERNAL_SERVICE_ERROR"), 500)
+                        return
+                    if outcome == "refused":
+                        self.json(error("UNPROCESSABLE_ENTITY", "INSTRUMENT_DECLINED"), 422)
+                        return
+                    if outcome != "declined":
+                        order["status"] = "COMPLETED"
                     unit = order["purchase_units"][0]
                     unit["payments"] = {
                         "captures": [
                             {
                                 "id": random_id(17),
-                                "status": "COMPLETED",
+                                "status": {"pending": "PENDING", "declined": "DECLINED"}.get(
+                                    outcome, "COMPLETED"
+                                ),
                                 "amount": unit["amount"],
                                 "final_capture": True,
                             }
                         ]
                     }
+                    if outcome == "lost":
+                        self.json(error("INTERNAL_SERVER_ERROR", "INTERNAL_SERVICE_ERROR"), 500)
+                        return
                     self.json(order, 201)
 
             def json(self, body: dict, status: int = 200):

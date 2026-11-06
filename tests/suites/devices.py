@@ -354,6 +354,42 @@ class DevicesControls(DevicesTestCase):
         self.assert_refused(lambda: self.dashboard.control_device(other_page, "K1", mute))
 
 
+class DevicesEveryControl(DevicesTestCase):
+    """Pass each of Moblin's controls on to the device as the dashboard sent it."""
+
+    login = "deviceseverycontrol"
+
+    def run(self):
+        device = self.connect("EC1")
+        some_id = "5b1f0c9e-0c5b-4d0e-9d0a-6f4f6a6b7c8d"
+        controls: list[dict] = [
+            {"setRecord": {"on": True}},
+            {"setLive": {"on": False}},
+            {"setStealthMode": {"on": True}},
+            {"setTorch": {"on": True}},
+            {"setZoom": {"x": 2.5}},
+            {"setZoomPreset": {"id": some_id}},
+            {"setScene": {"id": some_id}},
+            {"setBitratePreset": {"id": some_id}},
+            {"setMic": {"id": "builtin"}},
+            {"setSrtConnectionPriority": {"id": some_id, "priority": 3, "enabled": True}},
+            {"setSrtConnectionPrioritiesEnabled": {"enabled": False}},
+            {"reloadBrowserWidgets": {}},
+            {"instantReplay": {}},
+            {"setAutoSceneSwitcher": {"id": some_id}},
+            {"setAutoSceneSwitcher": {}},
+            {"setPreviewStream": {"on": True}},
+            {"setFilter": {"filter": {"pixellate": {}}, "on": True}},
+            {"startMacro": {"id": some_id}},
+            {"stopMacro": {"id": some_id}},
+            {"setGimbalTracking": {"on": True}},
+        ]
+        for control in controls:
+            self.assert_equal(self.dashboard.control_device(self.page_id, "EC1", control), {}, f"{control}")
+        names = {name for control in controls for name in control}
+        self.assert_equal([request for request in device.requests if set(request) <= names], controls)
+
+
 class DevicesEvents(DevicesTestCase):
     """Stream a device's state to its device page, also while it is not connected."""
 
@@ -426,5 +462,6 @@ def tests(context: Context):
         DevicesProtocol(context),
         DevicesWheelDevice(context),
         DevicesControls(context),
+        DevicesEveryControl(context),
         DevicesEvents(context),
     ]
