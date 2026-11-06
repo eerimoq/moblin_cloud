@@ -359,7 +359,7 @@ class DevicesControls(DevicesTestCase):
             lambda: self.dashboard.control_device(self.page_id, "K1", mute),
             "Moblin did not answer. Try again.",
         )
-        self.assert_true(4 <= time.monotonic() - started < 15, "waited about 5 seconds")
+        self.assert_true(2 <= time.monotonic() - started < 6, "waited about 2 seconds")
         device.answer = lambda data: ({"error": {}}, None)
         self.assert_backend_error(
             502,

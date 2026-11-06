@@ -230,7 +230,7 @@ pub(super) async fn handle_device_control(
     let name = control.name();
     let data = api
         .remote_control
-        .control((&id, &device), control.clone())
+        .control((&id, &device), control.clone(), api.timing.moblin_answer)
         .await
         .map_err(|error| control_failure(&control, error))?;
     info!(

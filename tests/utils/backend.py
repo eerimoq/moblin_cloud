@@ -177,6 +177,7 @@ class Backend:
             ["--allow-unattested"],
             ["--delivery-retry-interval", "1"],
             ["--access-recheck-interval", "1"],
+            ["--moblin-answer-timeout", "2"],
             ["--twitch-sign-in-url", self.fake_twitch.url],
             ["--kick-sign-in-url", self.fake_kick.url],
             ["--paypal-url", self.fake_paypal.url],

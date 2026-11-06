@@ -77,6 +77,7 @@ pub struct Timing {
     pub delivery_retry: Duration,
     pub access_recheck: Duration,
     pub settle: Duration,
+    pub moblin_answer: Duration,
 }
 
 impl Default for Timing {
@@ -85,6 +86,7 @@ impl Default for Timing {
             delivery_retry: Duration::from_secs(10),
             access_recheck: Duration::from_secs(60),
             settle: Duration::from_secs(60),
+            moblin_answer: Duration::from_secs(5),
         }
     }
 }

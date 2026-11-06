@@ -173,6 +173,8 @@ struct Cli {
     delivery_retry_interval: u64,
     #[arg(long, hide = true, value_name = "SECONDS", default_value_t = Timing::default().access_recheck.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
     access_recheck_interval: u64,
+    #[arg(long, hide = true, value_name = "SECONDS", default_value_t = Timing::default().moblin_answer.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
+    moblin_answer_timeout: u64,
 }
 
 fn http_client() -> Client {
@@ -372,6 +374,7 @@ async fn main() -> Result<()> {
             delivery_retry: Duration::from_secs(cli.delivery_retry_interval),
             access_recheck: Duration::from_secs(cli.access_recheck_interval),
             settle: Duration::from_secs(cli.settle_interval),
+            moblin_answer: Duration::from_secs(cli.moblin_answer_timeout),
         },
     });
     tokio::spawn({
