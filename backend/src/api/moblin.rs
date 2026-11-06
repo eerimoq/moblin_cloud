@@ -435,10 +435,9 @@ mod tests {
             if !api.remote_control.is_connected(&id) {
                 return;
             }
-            socket
+            let _ = socket
                 .send(Message::text(json!({"ping": {}}).to_string()))
-                .await
-                .unwrap();
+                .await;
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         panic!("still connected");
