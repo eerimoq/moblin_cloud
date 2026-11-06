@@ -5,7 +5,6 @@ import shutil
 import signal
 import socket
 import subprocess
-import sys
 import threading
 from collections.abc import Iterable
 
@@ -48,21 +47,17 @@ def build_backend(coverage: bool):
             "-C",
             "instrument-coverage",
         ]
-        if sys.platform == "darwin":
-            for section in ["cnts", "bits", "data"]:
-                command += ["-C", f"link-arg=-Wl,-sectalign,__DATA,__llvm_prf_{section},0x4000"]
-        else:
-            command += ["-C", "llvm-args=-runtime-counter-relocation"]
     subprocess.run(command, cwd=BACKEND_DIR, check=True)
 
 
 class Backend:
     def __init__(self, config: Config, coverage: bool):
         self.config = config
+        self.coverage = coverage
         self.binary = COVERAGE_BINARY if coverage else BINARY
         self.environment = {**os.environ, "RUST_LOG": "info"}
         if coverage:
-            self.environment["LLVM_PROFILE_FILE"] = str(COVERAGE_DIR / "%p%c.profraw")
+            self.environment["LLVM_PROFILE_FILE"] = str(COVERAGE_DIR / "%p.profraw")
         self.port = config.backend_port()
         self.url = f"http://localhost:{self.port}"
         self.files_dir = FILES_DIR / "backend"
@@ -106,11 +101,11 @@ class Backend:
         self._process.start()
 
     def stop(self, graceful: bool = False):
-        """Kills the backend, or asks it to stop like a deploy does when graceful."""
+        """Kills the backend, or asks it to stop like a deploy does when graceful or measuring coverage."""
         if self._process is not None:
             process = self._process
             pid = process.pid()
-            if graceful and pid is not None:
+            if (graceful or self.coverage) and pid is not None:
                 os.kill(pid, signal.SIGTERM)
                 wait_until(lambda: not process.is_running(), "the backend to stop", timeout=30)
             process.stop()

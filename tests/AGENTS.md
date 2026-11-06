@@ -12,5 +12,5 @@
 - The fakes only misbehave when a test tells them to, through the fake itself (`down`, `plan_capture`, the seller switches). They are shared by every test and outlive backend restarts, so a test that changes one calls `reset()` in its teardown.
 - The backend is a black box: a test only reaches it like the frontend, Moblin and the providers do, never through its database or files. What can't be reached that way, like the 30 minute payment deadline, is left to the backend's unit tests.
 - A test that starts the backend with other options (`restart(without=..., extra=...)`) restarts it without any in its teardown, or every later test runs with them.
-- Only `stop(graceful=True)` sends SIGTERM, so only the tests using it run the backend's shutdown.
-- The backend is stopped with SIGKILL otherwise, which loses a coverage profile written at exit, so `--coverage` has the backend write its profile continuously (`%c` in `LLVM_PROFILE_FILE`). That needs the counter sections page aligned on macOS and relocatable counters elsewhere, the latter never tried. Only the backend's own crate is instrumented, not its dependencies.
+- The backend is killed with SIGKILL unless a test stops it with `stop(graceful=True)`, so only those tests run the backend's shutdown.
+- A killed backend writes no coverage profile, so with `--coverage` every stop is graceful: a test of the backend being killed only tests a clean restart there, and the shutdown code shows as run by every restart. Only the backend's own crate is instrumented, not its dependencies.
