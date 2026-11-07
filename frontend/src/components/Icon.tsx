@@ -47,6 +47,8 @@ export type IconName =
   | "mic-off"
   | "music-mic"
   | "search"
+  | "hand-pinch"
+  | "tornado"
   | "server"
   | "megaphone"
   | "speedometer"
@@ -342,6 +344,14 @@ export default function Icon(props: Props) {
         <Match when={props.name === "search"}>
           <circle cx="11" cy="11" r="6" />
           <path d="m20 20-4.5-4.5" />
+        </Match>
+        <Match when={props.name === "hand-pinch"}>
+          <path d="M16.5 21.5v-3c1.7-1.4 2.7-3.6 2.7-6.2V10a1.8 1.8 0 0 0-3.6 0" />
+          <path d="M15.6 10.5V7.5C15.6 4.5 13.5 2.8 11 2.8 8 2.8 5.5 5 4.8 8.2c-.3 1.6.1 3.6 1.2 5.4l2.4 3.6c.6.9 1.6 1.4 1.6 2.3v2" />
+          <path d="M8.2 8.8c.6-1.8 2-2.6 3.3-2.3 1.3.4 1.6 2 .8 3.5-.8 1.4-2.3 1.9-3.4 1.4-.8-.4-1-1.5-.7-2.6Z" />
+        </Match>
+        <Match when={props.name === "tornado"}>
+          <path d="M3 4h18M4.5 8h13M7.5 12h11M9 16h6M11 20h3" />
         </Match>
         <Match when={props.name === "server"}>
           <rect x="4" y="4" width="16" height="7" rx="1.5" />
