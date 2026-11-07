@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
-use crate::accounts::{Access, Account, Accounts, Page, Permission, Platform, Rights};
+use crate::accounts::{Access, Account, Accounts, Permission, Platform, Rights};
 use crate::app_attest::AppAttest;
 use crate::auth::Auth;
 use crate::changes::Change;
@@ -291,10 +291,6 @@ pub fn router(api: Arc<Api>) -> Router {
         .with_state(api)
 }
 
-pub(super) fn page_of(api: &Api, id: &str) -> Option<Page> {
-    Some(api.accounts.of_page(id)?.page)
-}
-
 pub(super) fn not_signed_in() -> (StatusCode, String) {
     (StatusCode::UNAUTHORIZED, "not signed in".to_string())
 }
@@ -336,7 +332,7 @@ pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (Sta
 
 pub(super) fn account_changed(api: &Api, id: &str, change: Change) {
     if let Some(account) = api.accounts.get(id) {
-        api.remote_control.changes.notify(&account.page.id, change);
+        api.remote_control.changes.notify(&account.page, change);
     }
 }
 
@@ -442,7 +438,7 @@ fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failu
             "Only the streamer and the assistants they turned on can do this.",
         )
     };
-    if signed_in.account.page.id == id {
+    if signed_in.account.page == id {
         let streamer = signed_in.account.clone();
         return Ok(PageUser {
             signed_in,
@@ -469,8 +465,8 @@ fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failu
 }
 
 fn active(api: &Api, user: &PageUser, remote_control: bool) {
-    let page = &user.streamer.page.id;
-    if user.signed_in.account.page.id != *page
+    let page = &user.streamer.page;
+    if user.signed_in.account.page != *page
         && api
             .accounts
             .active(&user.signed_in.id, page, remote_control)

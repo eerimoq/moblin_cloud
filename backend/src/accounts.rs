@@ -101,7 +101,8 @@ pub fn admin_key_of(value: &str) -> Result<String, String> {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Account {
     pub identities: Vec<Identity>,
-    pub page: Page,
+    pub page: String,
+    pub key: String,
     pub sessions: u64,
     pub merchant_id: Option<String>,
     pub paypal_tracking_id: Option<String>,
@@ -143,12 +144,6 @@ impl Account {
     pub fn kick_id(&self) -> Option<&str> {
         self.kick().map(|kick| kick.user_id.as_str())
     }
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Page {
-    pub id: String,
-    pub key: String,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize)]
@@ -320,10 +315,8 @@ fn account(row: &Row) -> rusqlite::Result<Account> {
     })?;
     Ok(Account {
         identities,
-        page: Page {
-            id: row.get(0)?,
-            key: row.get(1)?,
-        },
+        page: row.get(0)?,
+        key: row.get(1)?,
         sessions: row.get(2)?,
         merchant_id: row.get(3)?,
         paypal_tracking_id: row.get(4)?,
@@ -431,7 +424,9 @@ impl Accounts {
     pub fn signed_in(
         &self,
         identity: &Identity,
-        new_account: (String, Page),
+        new_id: String,
+        page: String,
+        key: String,
     ) -> Result<(String, Account), AccountError> {
         let mut database = self.database.lock();
         let transaction = database.transaction().map_err(not_saved)?;
@@ -440,20 +435,20 @@ impl Accounts {
         let id = match existing {
             Some(id) => id,
             None => {
-                let (id, page) = new_account;
+                let id = new_id;
                 if count(&transaction).map_err(not_saved)? >= 10000 {
                     return Err(AccountError::Full);
                 }
                 transaction
                     .execute(
                         &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, 0, NULL, NULL, NULL, 0)"),
-                        params![id, page.id, page.key],
+                        params![id, page, key],
                     )
                     .map_err(not_saved)?;
                 transaction
                     .execute(
                         "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{}')",
-                        [&page.id],
+                        [&page],
                     )
                     .map_err(not_saved)?;
                 id
@@ -601,7 +596,7 @@ impl Accounts {
 
     pub fn replace_key(&self, id: &str, key: String) -> Result<Account, AccountError> {
         self.change(id, |account| {
-            account.page.key = key;
+            account.key = key;
             Ok(())
         })
     }
@@ -1205,7 +1200,7 @@ impl Accounts {
         let account = read(&transaction, id)
             .map_err(not_saved)?
             .ok_or(AccountError::Unknown)?;
-        let page = account.page.id.as_str();
+        let page = account.page.as_str();
         let statements = [
             ("DELETE FROM accounts WHERE id = ?1", id),
             ("DELETE FROM identities WHERE account = ?1", id),
@@ -1299,8 +1294,8 @@ impl Accounts {
                 &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
                 params![
                     id,
-                    account.page.id,
-                    account.page.key,
+                    account.page,
+                    account.key,
                     account.sessions,
                     account.merchant_id,
                     account.paypal_tracking_id,
@@ -1323,22 +1318,21 @@ mod tests {
     use super::*;
     use crate::database;
 
-    fn page(id: &str, key: &str) -> Page {
-        Page {
-            id: id.to_string(),
-            key: key.to_string(),
-        }
-    }
-
     fn sign_in(
         accounts: &Accounts,
         id: &str,
         name: &str,
         login: &str,
-        page: Page,
+        page: &str,
+        key: &str,
     ) -> Result<Account, AccountError> {
         accounts
-            .signed_in(&Identity::twitch(id, name, login), (id.to_string(), page))
+            .signed_in(
+                &Identity::twitch(id, name, login),
+                id.to_string(),
+                page.to_string(),
+                key.to_string(),
+            )
             .map(|(_, account)| account)
     }
 
@@ -1347,21 +1341,25 @@ mod tests {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.get("1"), None);
         assert_eq!(
-            sign_in(&accounts, "1", "Erik", "erik", page("p", "k")),
+            sign_in(&accounts, "1", "Erik", "erik", "p", "k"),
             Ok(Account {
                 identities: vec![Identity::twitch("1", "Erik", "erik")],
-                page: page("p", "k"),
+                page: "p".to_string(),
+                key: "k".to_string(),
                 ..Account::default()
             })
         );
         let (id, account) = accounts
             .signed_in(
                 &Identity::twitch("1", "Eerimoq", "eerimoq"),
-                ("other".to_string(), page("q", "o")),
+                "other".to_string(),
+                "q".to_string(),
+                "o".to_string(),
             )
             .unwrap();
         assert_eq!(id, "1");
-        assert_eq!(account.page, page("p", "k"));
+        assert_eq!(account.page, "p");
+        assert_eq!(account.key, "k");
         assert_eq!(accounts.get("1").unwrap().name(), "Eerimoq");
         assert_eq!(accounts.get("other"), None);
         assert_eq!(accounts.page_of_login(Platform::Twitch, "erik"), None);
@@ -1380,11 +1378,13 @@ mod tests {
             accounts.link("1", &Identity::kick("7", "Erik", "erik")),
             Err(AccountError::Unknown)
         );
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         let (other, _) = accounts
             .signed_in(
                 &Identity::kick("8", "Other", "other"),
-                ("random".to_string(), page("q", "l")),
+                "random".to_string(),
+                "q".to_string(),
+                "l".to_string(),
             )
             .unwrap();
         assert_eq!(other, "random");
@@ -1419,7 +1419,9 @@ mod tests {
         let (id, account) = accounts
             .signed_in(
                 &Identity::kick("7", "Kick Erik", "kickerik"),
-                ("unused".to_string(), page("r", "m")),
+                "unused".to_string(),
+                "r".to_string(),
+                "m".to_string(),
             )
             .unwrap();
         assert_eq!(id, "1");
@@ -1442,7 +1444,9 @@ mod tests {
         let (id, _) = accounts
             .signed_in(
                 &Identity::twitch("1", "Erik", "erik"),
-                ("fresh".to_string(), page("s", "n")),
+                "fresh".to_string(),
+                "s".to_string(),
+                "n".to_string(),
             )
             .unwrap();
         assert_eq!(id, "fresh");
@@ -1467,10 +1471,12 @@ mod tests {
         let (streamer, _) = accounts
             .signed_in(
                 &Identity::twitch("42", "Streamer", "streamer"),
-                ("s".to_string(), page("p", "k")),
+                "s".to_string(),
+                "p".to_string(),
+                "k".to_string(),
             )
             .unwrap();
-        sign_in(&accounts, "1", "Mod", "mod", page("q", "l")).unwrap();
+        sign_in(&accounts, "1", "Mod", "mod", "q", "l").unwrap();
         let assistant = Assistant {
             id: "1".to_string(),
             login: "mod".to_string(),
@@ -1486,7 +1492,7 @@ mod tests {
         accounts
             .add_assistant(Platform::Twitch, "42", &assistant)
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page.id, "p");
+        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page, "p");
         assert!(accounts.assists(Platform::Twitch, "1", "42"));
         assert!(!accounts.assists(Platform::Kick, "1", "42"));
         assert!(accounts.assisted(Platform::Kick, "1").is_empty());
@@ -1505,7 +1511,7 @@ mod tests {
         accounts
             .link("s", &Identity::twitch("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page.id, "p");
+        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page, "p");
         accounts
             .remove_assistant(Platform::Twitch, "42", "1")
             .unwrap();
@@ -1707,7 +1713,9 @@ mod tests {
         let (streamer, _) = accounts
             .signed_in(
                 &Identity::kick("42", "Streamer", "streamer"),
-                ("s".to_string(), page("p", "k")),
+                "s".to_string(),
+                "p".to_string(),
+                "k".to_string(),
             )
             .unwrap();
         accounts
@@ -1728,16 +1736,18 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page.id, "p");
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page, "p");
         assert!(accounts.assists(Platform::Kick, "1", "42"));
         accounts
             .signed_in(
                 &Identity::kick("1", "Robert", "robert"),
-                ("m".to_string(), page("q", "l")),
+                "m".to_string(),
+                "q".to_string(),
+                "l".to_string(),
             )
             .unwrap();
         assert!(accounts.assists(Platform::Kick, "1", "42"));
-        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page.id, "p");
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page, "p");
         assert_eq!(
             accounts.assistants(Platform::Kick, "42"),
             [Assistant {
@@ -1763,7 +1773,7 @@ mod tests {
         accounts
             .link("s", &Identity::kick("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page.id, "p");
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page, "p");
         accounts.delete("m").unwrap();
         assert!(accounts.assistants(Platform::Kick, "42").is_empty());
         accounts
@@ -1798,7 +1808,9 @@ mod tests {
                     avatar: Some("https://example.com/a.png".to_string()),
                     ..Identity::twitch("1", "Erik", "erik")
                 },
-                ("1".to_string(), page("p", "k")),
+                "1".to_string(),
+                "p".to_string(),
+                "k".to_string(),
             )
             .unwrap();
         assert_eq!(accounts.of_page("q"), None);
@@ -1808,23 +1820,22 @@ mod tests {
             account.twitch().unwrap().avatar.as_deref(),
             Some("https://example.com/a.png")
         );
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         assert_eq!(accounts.of_page("p").unwrap().avatar(), None);
     }
 
     #[test]
     fn keys_are_replaced() {
         let accounts = Accounts::new(Database::memory());
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         assert_eq!(accounts.page_of_key("k").as_deref(), Some("p"));
         assert_eq!(
             accounts.replace_key("2", "n".to_string()),
             Err(AccountError::Unknown)
         );
-        assert_eq!(
-            accounts.replace_key("1", "n".to_string()).unwrap().page,
-            page("p", "n")
-        );
+        let account = accounts.replace_key("1", "n".to_string()).unwrap();
+        assert_eq!(account.page, "p");
+        assert_eq!(account.key, "n");
         assert_eq!(accounts.page_of_key("k"), None);
         assert_eq!(accounts.page_of_key("n").as_deref(), Some("p"));
     }
@@ -1832,7 +1843,7 @@ mod tests {
     #[test]
     fn at_most_20_devices_are_kept_per_account() {
         let accounts = Accounts::new(Database::memory());
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         for device in 0..25 {
             accounts.seen_device("p", &device.to_string()).unwrap();
         }
@@ -1851,7 +1862,7 @@ mod tests {
     #[test]
     fn known_devices_are_listed_last_seen_first() {
         let accounts = Accounts::new(Database::memory());
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         accounts.seen_device("p", "a").unwrap();
         accounts.seen_device("p", "b").unwrap();
         accounts.left_device("q", "a");
@@ -1877,8 +1888,8 @@ mod tests {
     #[test]
     fn devices_get_a_name_when_first_seen() {
         let accounts = Accounts::new(Database::memory());
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
-        sign_in(&accounts, "2", "Other", "other", page("q", "l")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
+        sign_in(&accounts, "2", "Other", "other", "q", "l").unwrap();
         assert_eq!(accounts.seen_device("r", "a"), None);
         let seen = |page: &str, device: &str| accounts.seen_device(page, device).unwrap();
         assert_eq!(seen("p", "a"), "Moblin 1");
@@ -1927,10 +1938,10 @@ mod tests {
     fn signing_out_ends_sessions() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.sign_out("1"), Err(AccountError::Unknown));
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         assert_eq!(accounts.sign_out("1").unwrap().sessions, 1);
         assert_eq!(
-            sign_in(&accounts, "1", "Erik", "erik", page("q", "o"))
+            sign_in(&accounts, "1", "Erik", "erik", "q", "o")
                 .unwrap()
                 .sessions,
             1
@@ -1944,7 +1955,7 @@ mod tests {
             accounts.start_paypal("1", "a".to_string()),
             Err(AccountError::Unknown)
         );
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         accounts.start_paypal("1", "a".to_string()).unwrap();
         accounts.start_paypal("1", "b".to_string()).unwrap();
         let account = accounts
@@ -1984,7 +1995,7 @@ mod tests {
             accounts.start_stripe("1", "acct_1".to_string()),
             Err(AccountError::Unknown)
         );
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         accounts.start_stripe("1", "acct_1".to_string()).unwrap();
         assert!(
             !accounts
@@ -2017,7 +2028,7 @@ mod tests {
     fn logins_find_pages() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.page_of_login(Platform::Twitch, "erik"), None);
-        sign_in(&accounts, "1", "Erik", "erik", page("a", "k")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "a", "k").unwrap();
         assert_eq!(
             accounts.page_of_login(Platform::Twitch, "ERIK").as_deref(),
             Some("a")
@@ -2025,7 +2036,7 @@ mod tests {
         assert_eq!(accounts.page_of_login(Platform::Kick, "erik"), None);
         assert_eq!(accounts.page_of_login(Platform::Twitch, "other"), None);
         assert_eq!(accounts.page_of_login(Platform::Twitch, ""), None);
-        sign_in(&accounts, "2", "Erik", "erik", page("c", "l")).unwrap();
+        sign_in(&accounts, "2", "Erik", "erik", "c", "l").unwrap();
         assert_eq!(
             accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
             Some("c")
@@ -2034,7 +2045,9 @@ mod tests {
         accounts
             .signed_in(
                 &Identity::kick("5", "Erik", "erik"),
-                ("3".to_string(), page("d", "m")),
+                "3".to_string(),
+                "d".to_string(),
+                "m".to_string(),
             )
             .unwrap();
         assert_eq!(
@@ -2051,12 +2064,14 @@ mod tests {
     fn premium_accounts_are_counted() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.stats(&["twitch:1"]).premium, 0);
-        sign_in(&accounts, "1", "Erik", "erik", page("p", "k")).unwrap();
-        sign_in(&accounts, "2", "Other", "other", page("q", "l")).unwrap();
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
+        sign_in(&accounts, "2", "Other", "other", "q", "l").unwrap();
         accounts
             .signed_in(
                 &Identity::kick("7", "Kicker", "kicker"),
-                ("random".to_string(), page("r", "m")),
+                "random".to_string(),
+                "r".to_string(),
+                "m".to_string(),
             )
             .unwrap();
         let stats = accounts.stats(&["twitch:1", "twitch:1", "twitch:3"]);
@@ -2099,7 +2114,9 @@ mod tests {
         accounts
             .signed_in(
                 &Identity::twitch("3", "erik", "erik"),
-                (id.to_string(), page("p", "k")),
+                id.to_string(),
+                "p".to_string(),
+                "k".to_string(),
             )
             .unwrap();
         let accounts = Accounts::new(Database::open(Some(&path)).unwrap());
@@ -2107,7 +2124,8 @@ mod tests {
             accounts.get(id),
             Some(Account {
                 identities: vec![Identity::twitch("3", "erik", "erik")],
-                page: page("p", "k"),
+                page: "p".to_string(),
+                key: "k".to_string(),
                 ..Account::default()
             })
         );

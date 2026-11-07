@@ -9,7 +9,7 @@ use axum::response::Redirect;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
-use crate::accounts::{AccountError, Page, Platform};
+use crate::accounts::{AccountError, Platform};
 use crate::auth::{ConnectPoll, STATE_COOKIE, SignIn, StateError, Terminal};
 
 use super::*;
@@ -204,10 +204,7 @@ async fn signed_in_redirect(
         );
         return failed(false, port);
     };
-    let (id, account) = match api
-        .accounts
-        .signed_in(identity, (new_id, Page { id: page, key }))
-    {
+    let (id, account) = match api.accounts.signed_in(identity, new_id, page, key) {
         Ok(signed_in) => signed_in,
         Err(error) => {
             warn!(
@@ -448,7 +445,7 @@ pub(super) async fn handle_account_link(
     let account = api.accounts.link(&id, &identity).map_err(account_error)?;
     api.remote_control
         .changes
-        .notify(&account.page.id, Change::Page);
+        .notify(&account.page, Change::Page);
     info!(
         "{id} linked {} user {} ({})",
         identity.platform.title(),
@@ -476,7 +473,7 @@ pub(super) async fn handle_account_unlink(
     let account = api.accounts.unlink(&id, platform).map_err(account_error)?;
     api.remote_control
         .changes
-        .notify(&account.page.id, Change::Page);
+        .notify(&account.page, Change::Page);
     info!("{id} unlinked {}", platform.title());
     Ok(account_response(&api, account))
 }
@@ -810,7 +807,7 @@ mod tests {
         assert_ne!(session_account, "123");
         assert_eq!(session_account.len(), 32);
         assert!(session_account.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(api.accounts.get(&session_account).unwrap().page.id, id);
+        assert_eq!(api.accounts.get(&session_account).unwrap().page, id);
         assert_eq!(api.accounts.get("123"), None);
         let (status, name) = get_json(&address, "/pages/kick/KickErik").await;
         assert_eq!(status, StatusCode::OK);

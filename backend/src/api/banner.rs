@@ -77,7 +77,7 @@ async fn save_image(
             text: "That image could not be read. Use a JPEG, PNG or WebP at least 600 pixels wide and at most 4000 pixels on each side."
                 .to_string(),
         })?;
-    let page = &account.page.id;
+    let page = &account.page;
     let version = api.pages.set_image(page, &image).map_err(|_| Failure {
         reason: "not-saved",
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -115,7 +115,7 @@ fn remove_image(
     id: &str,
     account: &Account,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let page = &account.page.id;
+    let page = &account.page;
     api.pages.remove_image(page).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

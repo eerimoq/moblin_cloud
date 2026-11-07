@@ -66,14 +66,14 @@ pub(super) fn user_ids(account: &Account) -> [Option<&str>; 2] {
 pub(super) fn assisting(api: &Api, account: &Account) -> Vec<AssistingResponse> {
     let mut assisting: Vec<AssistingResponse> = Vec::new();
     for (platform, streamer) in api.accounts.assisted_by(user_ids(account)) {
-        if assisting.iter().any(|known| known.id == streamer.page.id) {
+        if assisting.iter().any(|known| known.id == streamer.page) {
             continue;
         }
         let Some(channel) = streamer.identity(platform) else {
             continue;
         };
         assisting.push(AssistingResponse {
-            id: streamer.page.id.clone(),
+            id: streamer.page.clone(),
             platform,
             name: channel.name.clone(),
             login: channel.login.clone(),
@@ -123,7 +123,7 @@ fn watchers(api: &Api, page: &str) -> HashMap<String, Vec<WatcherResponse>> {
             let mut watchers: Vec<WatcherResponse> = ids
                 .iter()
                 .filter_map(|id| accounts.get(id))
-                .filter(|account| account.page.id != page)
+                .filter(|account| account.page != page)
                 .map(|account| WatcherResponse {
                     name: account.name().to_string(),
                     avatar: account.avatar().map(str::to_string),
@@ -177,16 +177,15 @@ pub(super) fn devices(api: &Api, page: &str, with_watchers: bool) -> Vec<DeviceR
 }
 
 pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountResponse> {
-    let page = &account.page;
-    let look = api.pages.look(&page.id);
+    let look = api.pages.look(&account.page);
     let (twitch_assistants, kick_assistants) = api.accounts.assistants_of(user_ids(&account));
     Json(AccountResponse {
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
-        key: Some(page.key.clone()),
-        devices: devices(api, &page.id, true),
+        key: Some(account.key.clone()),
+        devices: devices(api, &account.page, true),
         settings: settings_response(api, &account, look).0,
         admin: is_admin(api, &account),
         premium: is_premium(api, &account),
@@ -248,7 +247,7 @@ pub(super) async fn handle_account_key(
     let id = signed_in(&api, &headers)?.id;
     let key = api.remote_control.new_key();
     let account = api.accounts.replace_key(&id, key).map_err(account_error)?;
-    api.remote_control.disconnect(&account.page.id);
+    api.remote_control.disconnect(&account.page);
     info!("{id} got a new Moblin Cloud key");
     Ok(account_response(&api, account))
 }
@@ -273,12 +272,12 @@ pub(super) async fn handle_account_device_name(
         ));
     }
     api.accounts
-        .rename_device(&account.page.id, &device, name)
+        .rename_device(&account.page, &device, name)
         .map_err(account_error)?;
     info!("{id} renamed Moblin device {device}");
     api.remote_control
         .changes
-        .notify(&account.page.id, Change::Account);
+        .notify(&account.page, Change::Account);
     Ok(account_response(&api, account))
 }
 
@@ -290,7 +289,7 @@ pub(super) async fn handle_account_device_remove(
     let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
     if api
         .remote_control
-        .devices(&account.page.id)
+        .devices(&account.page)
         .iter()
         .any(|connected| connected.id == device)
     {
@@ -300,13 +299,13 @@ pub(super) async fn handle_account_device_remove(
         ));
     }
     api.accounts
-        .remove_device(&account.page.id, &device)
+        .remove_device(&account.page, &device)
         .map_err(account_error)?;
     api.deliveries.notify();
     info!("{id} removed Moblin device {device}");
     api.remote_control
         .changes
-        .notify(&account.page.id, Change::Account);
+        .notify(&account.page, Change::Account);
     Ok(account_response(&api, account))
 }
 
@@ -326,7 +325,7 @@ pub(super) async fn handle_account_delete(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let id = signed_in(&api, &headers)?.id;
     let account = api.accounts.delete(&id).map_err(account_error)?;
-    api.remote_control.disconnect(&account.page.id);
+    api.remote_control.disconnect(&account.page);
     info!("{id} deleted their account");
     Ok(StatusCode::NO_CONTENT)
 }
@@ -526,10 +525,10 @@ mod tests {
             .is_err()
         );
         let again = create_account(&api, "1", "Erik", "erik");
-        assert_ne!(again.page.id, id);
+        assert_ne!(again.page, id);
         assert_eq!(
             api.accounts.page_of_login(Platform::Twitch, "erik"),
-            Some(again.page.id)
+            Some(again.page)
         );
     }
 

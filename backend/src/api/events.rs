@@ -86,7 +86,7 @@ pub(super) async fn handle_public_page_events(
     State(api): State<Arc<Api>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
-    page_of(&api, &id).ok_or(StatusCode::NOT_FOUND)?;
+    api.accounts.of_page(&id).ok_or(StatusCode::NOT_FOUND)?;
     let changes = api.remote_control.changes.subscribe(&id);
     let stream = unfold(changes, |mut changes| async move {
         loop {
@@ -232,10 +232,7 @@ mod tests {
         let mut assisted = Events::open(&client, &url, &assistant_session).await;
         let mut own = Events::open(
             &client,
-            &format!(
-                "http://{address}/account/pages/{}/events",
-                assistant.page.id
-            ),
+            &format!("http://{address}/account/pages/{}/events", assistant.page),
             &assistant_session,
         )
         .await;

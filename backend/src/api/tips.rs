@@ -244,7 +244,7 @@ mod tests {
             assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
             settle(&api, Duration::ZERO).await;
             assert_eq!(api.deliveries.pending().len(), 1, "{fault:?}");
-            let key = api.accounts.get("1").unwrap().page.key.clone();
+            let key = api.accounts.get("1").unwrap().key.clone();
             let socket = connect(&address, &key).await;
             tip_delivered_once(socket, &address, &key, &api, currency).await;
             let recent: Value = client

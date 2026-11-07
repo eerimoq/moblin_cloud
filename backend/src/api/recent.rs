@@ -8,7 +8,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::accounts::{KnownDevice, Page};
+use crate::accounts::KnownDevice;
 use crate::deliveries;
 use crate::payments::{Item, Order, Payee, Stage};
 
@@ -74,26 +74,26 @@ pub(super) async fn handle_account_recent(
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    recent(&api, account.page, query, true)
+    recent(&api, &account.page, query, true)
 }
 
 pub(super) fn recent(
     api: &Api,
-    page: Page,
+    page: &str,
     query: RecentQuery,
     owner: bool,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
-    let known = api.accounts.known_devices(&page.id);
+    let known = api.accounts.known_devices(page);
     match query.kind.as_deref() {
         Some(kind @ ("tip" | "spin" | "effect")) => {
             let orders = api
                 .orders
-                .recent(&page.id, kind, query.before.as_deref(), limit + 1);
+                .recent(page, kind, query.before.as_deref(), limit + 1);
             let mut deliveries = deliveries_of(api, &orders);
             Ok(Json(RecentResponse::One(recent_list(
                 api,
-                &page,
+                page,
                 &known,
                 orders,
                 &mut deliveries,
@@ -107,7 +107,7 @@ pub(super) fn recent(
             "Give a kind to page through.".to_string(),
         )),
         None => {
-            let mut by_kind = api.orders.recent_of_every_kind(&page.id, limit + 1);
+            let mut by_kind = api.orders.recent_of_every_kind(page, limit + 1);
             let mut deliveries = deliveries_of(
                 api,
                 &by_kind.values().flatten().cloned().collect::<Vec<_>>(),
@@ -115,7 +115,7 @@ pub(super) fn recent(
             let mut list = |kind: &str| {
                 recent_list(
                     api,
-                    &page,
+                    page,
                     &known,
                     by_kind.remove(kind).unwrap_or_default(),
                     &mut deliveries,
@@ -142,7 +142,7 @@ fn deliveries_of(
 
 fn recent_list(
     api: &Api,
-    page: &Page,
+    page: &str,
     known: &[KnownDevice],
     mut orders: Vec<(String, u64, Order)>,
     deliveries: &mut HashMap<String, deliveries::Delivery>,
@@ -198,7 +198,7 @@ fn recent_list(
 
 fn recent_devices(
     api: &Api,
-    page: &Page,
+    page: &str,
     known: &[KnownDevice],
     item: &Item,
     delivery: &deliveries::Delivery,
@@ -210,14 +210,10 @@ fn recent_devices(
         .collect();
     if !delivery.finished {
         let waiting: Vec<String> = match item {
-            Item::Spin { .. } => api
-                .remote_control
-                .wheel_device(&page.id)
-                .into_iter()
-                .collect(),
+            Item::Spin { .. } => api.remote_control.wheel_device(page).into_iter().collect(),
             Item::Tip { .. } | Item::Effect { .. } => api
                 .remote_control
-                .devices(&page.id)
+                .devices(page)
                 .into_iter()
                 .map(|device| device.id)
                 .chain(known.iter().map(|device| device.id.clone()))
@@ -249,7 +245,7 @@ pub(super) async fn handle_assistant_recent(
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, Failure> {
     let page = assistant(&api, &headers, &id)?.streamer.page;
-    recent(&api, page, query, false).map_err(|(status, text)| Failure {
+    recent(&api, &page, query, false).map_err(|(status, text)| Failure {
         reason: "invalid-kind",
         status,
         text,
@@ -262,7 +258,7 @@ pub(super) async fn handle_account_resend(
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    resend(&api, &account.page.id, &order_id)
+    resend(&api, &account.page, &order_id)
 }
 
 pub(super) async fn handle_assistant_resend(
@@ -345,7 +341,7 @@ mod tests {
         assert_eq!(tip["status"], "waiting");
         assert!(tip["at"].as_u64().unwrap() > 0);
         assert!(tip.get("message").is_none());
-        let id = api.accounts.get("1").unwrap().page.id;
+        let id = api.accounts.get("1").unwrap().page;
         let assisted: Value = client
             .get(format!(
                 "http://{address}/account/pages/{id}/recent?kind=tip"
@@ -360,7 +356,7 @@ mod tests {
         assert_eq!(assisted["items"][0]["id"], "ORDER1");
         assert!(assisted["items"][0].get("provider").is_none());
         assert_eq!(recent().await["items"][0]["devices"], json!([]));
-        let key = api.accounts.get("1").unwrap().page.key.clone();
+        let key = api.accounts.get("1").unwrap().key.clone();
         let mut socket = connect(&address, &key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], "ORDER1");
@@ -399,7 +395,7 @@ mod tests {
         };
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let key = api.accounts.get("1").unwrap().page.key.clone();
+        let key = api.accounts.get("1").unwrap().key.clone();
         let mut socket = connect(&address, &key).await;
         let acknowledge = async |socket: &mut Socket, request_id: &str| {
             let request = receive(socket).await;
@@ -415,7 +411,7 @@ mod tests {
         };
         acknowledge(&mut socket, "ORDER1").await;
         assert_eq!(status().await, "delivered");
-        let id = api.accounts.get("1").unwrap().page.id;
+        let id = api.accounts.get("1").unwrap().page;
         for (n, url) in [
             format!("http://{address}/account/recent/ORDER1/resend"),
             format!("http://{address}/account/pages/{id}/recent/ORDER1/resend"),

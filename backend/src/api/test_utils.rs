@@ -10,7 +10,7 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::*;
-use crate::accounts::{Account, Accounts, Assistant, Identity, Page};
+use crate::accounts::{Account, Accounts, Assistant, Identity};
 use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::counters::Counters;
 use crate::database::Database;
@@ -257,7 +257,9 @@ pub(crate) fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Ac
     api.accounts
         .signed_in(
             &Identity::twitch(id, name, login),
-            (id.to_string(), Page { id: page, key }),
+            id.to_string(),
+            page,
+            key,
         )
         .unwrap()
         .1
@@ -269,11 +271,7 @@ pub(crate) fn twitch_assistant(id: &str, login: &str, name: &str) -> Assistant {
 
 pub(crate) fn streamer(api: &Api) -> (String, String, String) {
     let account = create_account(api, "1", "Erik", "erik");
-    (
-        api.auth.session("1", 0),
-        account.page.key.clone(),
-        account.page.id,
-    )
+    (api.auth.session("1", 0), account.key.clone(), account.page)
 }
 
 pub(crate) fn counter(api: &Api, name: &str) -> u64 {
