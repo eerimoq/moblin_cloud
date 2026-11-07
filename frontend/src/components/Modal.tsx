@@ -1,11 +1,13 @@
 import { For, type JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { links } from "../data/links";
 import { t } from "../i18n";
 import { ghostButtonClass } from "./PageParts";
 
 export default function Modal(props: {
   ref: (dialog: HTMLDialogElement) => void;
   onClose?: () => void;
+  class?: string;
   children: JSX.Element;
 }) {
   let dialog: HTMLDialogElement | undefined;
@@ -15,7 +17,9 @@ export default function Modal(props: {
         dialog = element;
         props.ref(element);
       }}
-      class="m-auto w-[calc(100%-2rem)] max-w-md rounded-3xl border-[1.5px] border-line bg-card p-6 text-ink backdrop:bg-black/60 sm:p-8"
+      class={`m-auto w-[calc(100%-2rem)] rounded-3xl border-[1.5px] border-line bg-card text-ink backdrop:bg-black/60 ${
+        props.class ?? "max-w-md p-6 sm:p-8"
+      }`}
       onClick={(event) => {
         if (event.target === dialog) {
           dialog?.close();
@@ -114,4 +118,32 @@ export function choose(title: string, actions: string[]): Promise<number | null>
     );
     dialog?.showModal();
   });
+}
+
+export function rickRoll() {
+  const container = document.createElement("div");
+  document.body.append(container);
+  let dialog: HTMLDialogElement | undefined;
+  const dispose = render(
+    () => (
+      <Modal
+        ref={(element) => (dialog = element)}
+        class="max-w-3xl overflow-hidden p-0"
+        onClose={() => {
+          dispose();
+          container.remove();
+        }}
+      >
+        <iframe
+          src={links.rickRoll}
+          title="Rick Astley - Never Gonna Give You Up"
+          class="aspect-video w-full"
+          allow="autoplay; fullscreen"
+          referrerpolicy="strict-origin-when-cross-origin"
+        />
+      </Modal>
+    ),
+    container,
+  );
+  dialog?.showModal();
 }
