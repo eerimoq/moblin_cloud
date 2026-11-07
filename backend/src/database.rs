@@ -30,7 +30,7 @@ impl Database {
                      stripe_account_id TEXT,
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
-                 CREATE INDEX IF NOT EXISTS accounts_page_id ON accounts (page_id);
+                 CREATE UNIQUE INDEX IF NOT EXISTS accounts_page_id_unique ON accounts (page_id);
                  CREATE UNIQUE INDEX IF NOT EXISTS accounts_moblin_key ON accounts (moblin_key);
                  CREATE TABLE IF NOT EXISTS devices (
                      account TEXT NOT NULL,

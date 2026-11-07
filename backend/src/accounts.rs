@@ -1345,6 +1345,18 @@ mod tests {
     }
 
     #[test]
+    fn page_ids_are_unique() {
+        let accounts = Accounts::new(Database::memory());
+        sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
+        assert_eq!(
+            sign_in(&accounts, "2", "Other", "other", "p", "l"),
+            Err(AccountError::NotSaved)
+        );
+        assert_eq!(accounts.get("2"), None);
+        assert_eq!(accounts.of_page("p").unwrap().id, "1");
+    }
+
+    #[test]
     fn pages_are_kept() {
         let accounts = Accounts::new(Database::memory());
         assert_eq!(accounts.get("1"), None);
