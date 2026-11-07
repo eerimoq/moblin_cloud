@@ -372,14 +372,14 @@ mod tests {
         );
         assert_eq!(api.accounts.get("42"), None);
         assert_eq!(api.auth.session_of(session), None);
-        let other = create_account(&api, "2", "Other", "other").page;
+        let other = create_account(&api, "2", "Other", "other").public_id;
         let other = other.as_str();
         let page = sign_in(other).await;
         let session = page
             .strip_prefix("https://cloud.moblin.app/twitch/other#viewer=")
             .unwrap();
         assert_eq!(api.auth.viewer_of(session).unwrap().tier, None);
-        let third = create_account(&api, "3", "Third", "third").page;
+        let third = create_account(&api, "3", "Third", "third").public_id;
         let third = third.as_str();
         assert_eq!(
             sign_in(third).await,
@@ -669,7 +669,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let twitch_only = create_account(&api, "2", "Other", "other").page;
+        let twitch_only = create_account(&api, "2", "Other", "other").public_id;
         for page in ["unknown", twitch_only.as_str()] {
             let response = client
                 .get(format!("http://{address}/auth/kick/login?page={page}"))

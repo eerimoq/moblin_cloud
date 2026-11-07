@@ -332,7 +332,9 @@ pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (Sta
 
 pub(super) fn account_changed(api: &Api, id: &str, change: Change) {
     if let Some(account) = api.accounts.get(id) {
-        api.remote_control.changes.notify(&account.page, change);
+        api.remote_control
+            .changes
+            .notify(&account.public_id, change);
     }
 }
 
@@ -438,7 +440,7 @@ fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failu
             "Only the streamer and the assistants they turned on can do this.",
         )
     };
-    if signed_in.account.page == id {
+    if signed_in.account.public_id == id {
         let streamer = signed_in.account.clone();
         return Ok(PageUser {
             signed_in,
@@ -465,8 +467,8 @@ fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failu
 }
 
 fn active(api: &Api, user: &PageUser, remote_control: bool) {
-    let page = &user.streamer.page;
-    if user.signed_in.account.page != *page
+    let page = &user.streamer.public_id;
+    if user.signed_in.account.public_id != *page
         && api
             .accounts
             .active(&user.signed_in.id, page, remote_control)

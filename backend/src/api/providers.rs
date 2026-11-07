@@ -52,7 +52,7 @@ pub(super) async fn handle_account_paypal_connect(
     );
     api.remote_control
         .changes
-        .notify(&signed_in.account.page, Change::Account);
+        .notify(&signed_in.account.public_id, Change::Account);
     Ok(Json(SignUpResponse { url }))
 }
 
@@ -81,7 +81,7 @@ fn disconnect(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let SignedIn { id, .. } = signed_in(api, headers)?;
     let account = forget(&api.accounts, &id).map_err(account_error)?;
-    let page = &account.page;
+    let page = &account.public_id;
     info!("{id} disconnected {provider}");
     api.remote_control.changes.notify(page, Change::Page);
     Ok(settings_response(api, &account, api.pages.look(page)))
@@ -106,7 +106,7 @@ pub(super) async fn handle_account_paypal_check(
         ))?;
         account = finish_onboarding(&api, &id, &tracking_id, seller)?;
     }
-    let look = api.pages.look(&account.page);
+    let look = api.pages.look(&account.public_id);
     Ok(settings_response(&api, &account, look))
 }
 
@@ -150,7 +150,7 @@ fn finish_onboarding(
     info!("{id} connected PayPal merchant {}", seller.merchant_id);
     api.remote_control
         .changes
-        .notify(&account.page, Change::Page);
+        .notify(&account.public_id, Change::Page);
     Ok(account)
 }
 
@@ -269,7 +269,7 @@ pub(super) async fn handle_account_stripe_connect(
             info!("{id} got Stripe account {stripe_account_id}");
             api.remote_control
                 .changes
-                .notify(&account.page, Change::Account);
+                .notify(&account.public_id, Change::Account);
             stripe_account_id
         }
     };
@@ -312,7 +312,7 @@ pub(super) async fn handle_account_stripe_check(
             info!("Stripe account {stripe_account_id} of {id} takes payments: {ready}");
             api.remote_control
                 .changes
-                .notify(&account.page, Change::Page);
+                .notify(&account.public_id, Change::Page);
         }
         if !ready {
             return Err((
@@ -321,7 +321,7 @@ pub(super) async fn handle_account_stripe_check(
             ));
         }
     }
-    let look = api.pages.look(&account.page);
+    let look = api.pages.look(&account.public_id);
     Ok(settings_response(&api, &account, look))
 }
 

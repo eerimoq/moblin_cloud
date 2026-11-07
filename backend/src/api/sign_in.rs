@@ -192,7 +192,7 @@ async fn signed_in_redirect(
             api.auth.link_token(sign_in.identity)
         ));
     }
-    let key = api.remote_control.new_key();
+    let key = api.remote_control.new_moblin_cloud_key();
     let (Some(page), Some(new_id)) = (
         api.remote_control.new_page_id(),
         api.remote_control.new_account_id(),
@@ -445,7 +445,7 @@ pub(super) async fn handle_account_link(
     let account = api.accounts.link(&id, &identity).map_err(account_error)?;
     api.remote_control
         .changes
-        .notify(&account.page, Change::Page);
+        .notify(&account.public_id, Change::Page);
     info!(
         "{id} linked {} user {} ({})",
         identity.platform.title(),
@@ -473,7 +473,7 @@ pub(super) async fn handle_account_unlink(
     let account = api.accounts.unlink(&id, platform).map_err(account_error)?;
     api.remote_control
         .changes
-        .notify(&account.page, Change::Page);
+        .notify(&account.public_id, Change::Page);
     info!("{id} unlinked {}", platform.title());
     Ok(account_response(&api, account))
 }
@@ -807,7 +807,7 @@ mod tests {
         assert_ne!(session_account, "123");
         assert_eq!(session_account.len(), 32);
         assert!(session_account.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(api.accounts.get(&session_account).unwrap().page, id);
+        assert_eq!(api.accounts.get(&session_account).unwrap().public_id, id);
         assert_eq!(api.accounts.get("123"), None);
         let (status, name) = get_json(&address, "/pages/kick/KickErik").await;
         assert_eq!(status, StatusCode::OK);

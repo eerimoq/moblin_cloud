@@ -14,7 +14,7 @@ pub(super) async fn handle_remote_control_streamer(
     Path(key): Path<String>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    let Some(page) = api.accounts.page_of_key(&key) else {
+    let Some(page) = api.accounts.page_of_moblin_cloud_key(&key) else {
         return Err(StatusCode::NOT_FOUND);
     };
     Ok(upgrade.on_upgrade(move |socket| async move {

@@ -101,8 +101,8 @@ pub fn admin_key_of(value: &str) -> Result<String, String> {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Account {
     pub identities: Vec<Identity>,
-    pub page: String,
-    pub key: String,
+    pub public_id: String,
+    pub moblin_cloud_key: String,
     pub sessions: u64,
     pub merchant_id: Option<String>,
     pub paypal_tracking_id: Option<String>,
@@ -315,8 +315,8 @@ fn account(row: &Row) -> rusqlite::Result<Account> {
     })?;
     Ok(Account {
         identities,
-        page: row.get(0)?,
-        key: row.get(1)?,
+        public_id: row.get(0)?,
+        moblin_cloud_key: row.get(1)?,
         sessions: row.get(2)?,
         merchant_id: row.get(3)?,
         paypal_tracking_id: row.get(4)?,
@@ -425,8 +425,8 @@ impl Accounts {
         &self,
         identity: &Identity,
         new_id: String,
-        page: String,
-        key: String,
+        public_id: String,
+        moblin_cloud_key: String,
     ) -> Result<(String, Account), AccountError> {
         let mut database = self.database.lock();
         let transaction = database.transaction().map_err(not_saved)?;
@@ -442,13 +442,13 @@ impl Accounts {
                 transaction
                     .execute(
                         &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, 0, NULL, NULL, NULL, 0)"),
-                        params![id, page, key],
+                        params![id, public_id, moblin_cloud_key],
                     )
                     .map_err(not_saved)?;
                 transaction
                     .execute(
                         "INSERT OR IGNORE INTO pages (id, settings) VALUES (?1, '{}')",
-                        [&page],
+                        [&public_id],
                     )
                     .map_err(not_saved)?;
                 id
@@ -579,7 +579,7 @@ impl Accounts {
         })
     }
 
-    pub fn page_of_key(&self, key: &str) -> Option<String> {
+    pub fn page_of_moblin_cloud_key(&self, key: &str) -> Option<String> {
         self.database
             .lock()
             .query_row(
@@ -594,9 +594,13 @@ impl Accounts {
             })
     }
 
-    pub fn replace_key(&self, id: &str, key: String) -> Result<Account, AccountError> {
+    pub fn replace_moblin_cloud_key(
+        &self,
+        id: &str,
+        moblin_cloud_key: String,
+    ) -> Result<Account, AccountError> {
         self.change(id, |account| {
-            account.key = key;
+            account.moblin_cloud_key = moblin_cloud_key;
             Ok(())
         })
     }
@@ -1200,7 +1204,7 @@ impl Accounts {
         let account = read(&transaction, id)
             .map_err(not_saved)?
             .ok_or(AccountError::Unknown)?;
-        let page = account.page.as_str();
+        let page = account.public_id.as_str();
         let statements = [
             ("DELETE FROM accounts WHERE id = ?1", id),
             ("DELETE FROM identities WHERE account = ?1", id),
@@ -1294,8 +1298,8 @@ impl Accounts {
                 &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
                 params![
                     id,
-                    account.page,
-                    account.key,
+                    account.public_id,
+                    account.moblin_cloud_key,
                     account.sessions,
                     account.merchant_id,
                     account.paypal_tracking_id,
@@ -1344,8 +1348,8 @@ mod tests {
             sign_in(&accounts, "1", "Erik", "erik", "p", "k"),
             Ok(Account {
                 identities: vec![Identity::twitch("1", "Erik", "erik")],
-                page: "p".to_string(),
-                key: "k".to_string(),
+                public_id: "p".to_string(),
+                moblin_cloud_key: "k".to_string(),
                 ..Account::default()
             })
         );
@@ -1358,8 +1362,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(id, "1");
-        assert_eq!(account.page, "p");
-        assert_eq!(account.key, "k");
+        assert_eq!(account.public_id, "p");
+        assert_eq!(account.moblin_cloud_key, "k");
         assert_eq!(accounts.get("1").unwrap().name(), "Eerimoq");
         assert_eq!(accounts.get("other"), None);
         assert_eq!(accounts.page_of_login(Platform::Twitch, "erik"), None);
@@ -1492,7 +1496,7 @@ mod tests {
         accounts
             .add_assistant(Platform::Twitch, "42", &assistant)
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page, "p");
+        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].public_id, "p");
         assert!(accounts.assists(Platform::Twitch, "1", "42"));
         assert!(!accounts.assists(Platform::Kick, "1", "42"));
         assert!(accounts.assisted(Platform::Kick, "1").is_empty());
@@ -1511,7 +1515,7 @@ mod tests {
         accounts
             .link("s", &Identity::twitch("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].page, "p");
+        assert_eq!(accounts.assisted(Platform::Twitch, "1")[0].public_id, "p");
         accounts
             .remove_assistant(Platform::Twitch, "42", "1")
             .unwrap();
@@ -1736,7 +1740,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page, "p");
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].public_id, "p");
         assert!(accounts.assists(Platform::Kick, "1", "42"));
         accounts
             .signed_in(
@@ -1747,7 +1751,7 @@ mod tests {
             )
             .unwrap();
         assert!(accounts.assists(Platform::Kick, "1", "42"));
-        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page, "p");
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].public_id, "p");
         assert_eq!(
             accounts.assistants(Platform::Kick, "42"),
             [Assistant {
@@ -1773,7 +1777,7 @@ mod tests {
         accounts
             .link("s", &Identity::kick("42", "Streamer", "streamer"))
             .unwrap();
-        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].page, "p");
+        assert_eq!(accounts.assisted(Platform::Kick, "1")[0].public_id, "p");
         accounts.delete("m").unwrap();
         assert!(accounts.assistants(Platform::Kick, "42").is_empty());
         accounts
@@ -1828,16 +1832,18 @@ mod tests {
     fn keys_are_replaced() {
         let accounts = Accounts::new(Database::memory());
         sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
-        assert_eq!(accounts.page_of_key("k").as_deref(), Some("p"));
+        assert_eq!(accounts.page_of_moblin_cloud_key("k").as_deref(), Some("p"));
         assert_eq!(
-            accounts.replace_key("2", "n".to_string()),
+            accounts.replace_moblin_cloud_key("2", "n".to_string()),
             Err(AccountError::Unknown)
         );
-        let account = accounts.replace_key("1", "n".to_string()).unwrap();
-        assert_eq!(account.page, "p");
-        assert_eq!(account.key, "n");
-        assert_eq!(accounts.page_of_key("k"), None);
-        assert_eq!(accounts.page_of_key("n").as_deref(), Some("p"));
+        let account = accounts
+            .replace_moblin_cloud_key("1", "n".to_string())
+            .unwrap();
+        assert_eq!(account.public_id, "p");
+        assert_eq!(account.moblin_cloud_key, "n");
+        assert_eq!(accounts.page_of_moblin_cloud_key("k"), None);
+        assert_eq!(accounts.page_of_moblin_cloud_key("n").as_deref(), Some("p"));
     }
 
     #[test]
@@ -2124,8 +2130,8 @@ mod tests {
             accounts.get(id),
             Some(Account {
                 identities: vec![Identity::twitch("3", "erik", "erik")],
-                page: "p".to_string(),
-                key: "k".to_string(),
+                public_id: "p".to_string(),
+                moblin_cloud_key: "k".to_string(),
                 ..Account::default()
             })
         );

@@ -82,7 +82,7 @@ mod tests {
     async fn layouts_are_saved_per_page() {
         let (address, api) = start_api(None).await;
         let (session, _, page) = streamer(&api);
-        let other = create_account(&api, "2", "Other", "other").page;
+        let other = create_account(&api, "2", "Other", "other").public_id;
         api.accounts
             .add_assistant(
                 Platform::Twitch,
@@ -123,7 +123,7 @@ mod tests {
     async fn invalid_layouts_are_refused() {
         let (address, api) = start_api(None).await;
         let (session, _, page) = streamer(&api);
-        let stranger = create_account(&api, "2", "Other", "other").page;
+        let stranger = create_account(&api, "2", "Other", "other").public_id;
         assert_eq!(
             save(&address, Some(&session), &page, &json!({"layout": [1, 2]})).await,
             StatusCode::UNPROCESSABLE_ENTITY

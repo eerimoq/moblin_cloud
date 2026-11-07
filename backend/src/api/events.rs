@@ -232,7 +232,10 @@ mod tests {
         let mut assisted = Events::open(&client, &url, &assistant_session).await;
         let mut own = Events::open(
             &client,
-            &format!("http://{address}/account/pages/{}/events", assistant.page),
+            &format!(
+                "http://{address}/account/pages/{}/events",
+                assistant.public_id
+            ),
             &assistant_session,
         )
         .await;

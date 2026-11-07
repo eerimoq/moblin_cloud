@@ -252,7 +252,7 @@ pub(crate) fn key_of(account: &Value) -> String {
 }
 
 pub(crate) fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Account {
-    let key = api.remote_control.new_key();
+    let key = api.remote_control.new_moblin_cloud_key();
     let page = api.remote_control.new_page_id().unwrap();
     api.accounts
         .signed_in(
@@ -271,7 +271,11 @@ pub(crate) fn twitch_assistant(id: &str, login: &str, name: &str) -> Assistant {
 
 pub(crate) fn streamer(api: &Api) -> (String, String, String) {
     let account = create_account(api, "1", "Erik", "erik");
-    (api.auth.session("1", 0), account.key.clone(), account.page)
+    (
+        api.auth.session("1", 0),
+        account.moblin_cloud_key.clone(),
+        account.public_id,
+    )
 }
 
 pub(crate) fn counter(api: &Api, name: &str) -> u64 {

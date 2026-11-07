@@ -920,7 +920,7 @@ impl Streamers {
         Some(bytes)
     }
 
-    pub fn new_key(&self) -> String {
+    pub fn new_moblin_cloud_key(&self) -> String {
         Uuid::new_v4().to_string()
     }
 
@@ -2211,7 +2211,7 @@ mod tests {
     #[test]
     fn keys_and_page_ids_are_random() {
         let streamers = Streamers::new(Duration::ZERO);
-        let key = streamers.new_key();
+        let key = streamers.new_moblin_cloud_key();
         assert_eq!(key.len(), 36);
         assert_eq!(
             key.split('-').map(str::len).collect::<Vec<_>>(),
@@ -2223,7 +2223,7 @@ mod tests {
             key.chars()
                 .all(|c| c == '-' || c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
         );
-        assert_ne!(streamers.new_key(), key);
+        assert_ne!(streamers.new_moblin_cloud_key(), key);
         let id = streamers.new_page_id().unwrap();
         assert_eq!(id.len(), 16);
         assert_ne!(streamers.new_page_id().unwrap(), id);
