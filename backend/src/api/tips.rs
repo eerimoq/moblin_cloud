@@ -20,10 +20,10 @@ pub(super) struct TipRequest {
 
 pub(super) async fn handle_tip_order(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     Json(request): Json<TipRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    place_order(&api, "tip", tip_order(&api, id, request)).await
+    place_order(&api, "tip", tip_order(&api, page_id, request)).await
 }
 
 fn tip_order(api: &Api, id: String, request: TipRequest) -> Result<Order, Failure> {
@@ -263,24 +263,24 @@ mod tests {
     #[tokio::test]
     async fn tips_reach_every_known_device_also_after_reconnecting() {
         let (address, api) = start_api(None).await;
-        let (_, moblin_cloud_key, id) = streamer(&api);
+        let (_, moblin_cloud_key, page_id) = streamer(&api);
         let mut main = connect_as(&address, &moblin_cloud_key, "main").await;
         let backup = connect_as(&address, &moblin_cloud_key, "backup").await;
         for _ in 0..100 {
-            if api.remote_control.devices(&id).len() == 2 {
+            if api.remote_control.devices(&page_id).len() == 2 {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         drop(backup);
         for _ in 0..100 {
-            if api.remote_control.devices(&id).len() == 1 {
+            if api.remote_control.devices(&page_id).len() == 1 {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         api.deliveries.add_test(
-            id.clone(),
+            page_id.clone(),
             "TIP1".to_string(),
             deliveries::Item::Tip {
                 user: "Viewer".to_string(),
@@ -325,9 +325,9 @@ mod tests {
     async fn tips_are_sent_to_the_streamer() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         connect_paypal(&api);
-        let tips_url = format!("http://{address}/pages/{id}/tips");
+        let tips_url = format!("http://{address}/pages/{page_id}/tips");
         let public: Value = client
             .get(&tips_url)
             .send()
@@ -420,7 +420,7 @@ mod tests {
         );
         let response = client
             .post(format!(
-                "http://{address}/pages/{id}/spin/orders/ORDER1/capture"
+                "http://{address}/pages/{page_id}/spin/orders/ORDER1/capture"
             ))
             .send()
             .await

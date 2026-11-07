@@ -52,12 +52,12 @@ pub(super) fn settings_response(
     account: &Account,
     look: Look,
 ) -> Json<SettingsResponse> {
-    let id = account.page_id.clone();
+    let page_id = account.page_id.clone();
     let settings = look.settings;
     let (merchant_id, stripe_account_id) = payment_targets(api, account);
     let payable = merchant_id.is_some() || stripe_account_id.is_some();
     Json(SettingsResponse {
-        connected: api.remote_control.is_connected(&id),
+        connected: api.remote_control.is_connected(&page_id),
         currency: settings.currency().to_string(),
         tips: settings.tips,
         spin: settings.spin,
@@ -83,7 +83,7 @@ pub(super) fn settings_response(
         accent: settings.accent,
         font: settings.font,
         image: look.image,
-        id,
+        id: page_id,
     })
 }
 
@@ -155,8 +155,8 @@ async fn update_settings(
     premium: bool,
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let id = account.page_id.as_str();
-    let look = api.pages.look(id);
+    let page_id = account.page_id.as_str();
+    let look = api.pages.look(page_id);
     let current = &look.settings;
     let accent = request.accent.map(|accent| accent.to_lowercase());
     if !premium && accent.as_deref().is_some_and(is_color) && accent != current.accent {
@@ -222,7 +222,7 @@ async fn update_settings(
     let settings = api
         .pages
         .set(
-            id,
+            page_id,
             Settings {
                 currency: Some(currency),
                 tips,
@@ -259,7 +259,7 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {id} set currency {}, tips {:?}, spin {:?}, effects {:?}, sub spins {:?}, sub effects {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {page_id} set currency {}, tips {:?}, spin {:?}, effects {:?}, sub spins {:?}, sub effects {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.tips,
         settings.spin,
@@ -270,7 +270,7 @@ async fn update_settings(
         settings.accent,
         settings.font
     );
-    api.remote_control.changes.notify(id, Change::Page);
+    api.remote_control.changes.notify(page_id, Change::Page);
     Ok(settings_response(api, account, Look { settings, ..look }))
 }
 
@@ -286,11 +286,11 @@ pub(super) async fn handle_account_settings(
 
 pub(super) async fn handle_assistant_settings(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let user = editor(&api, &headers, &id)?;
+    let user = editor(&api, &headers, &page_id)?;
     let request = SettingsRequest {
         currency: None,
         ..request
@@ -376,7 +376,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        let page = account["settings"]["id"].as_str().unwrap().to_string();
+        let page_id = account["settings"]["id"].as_str().unwrap().to_string();
         let settings: Value = save(premium.clone(), "#123ABC")
             .await
             .unwrap()
@@ -385,7 +385,7 @@ mod tests {
             .unwrap();
         assert_eq!(settings["accent"], "#123abc");
         let profile: Value = client
-            .get(format!("http://{address}/pages/{page}"))
+            .get(format!("http://{address}/pages/{page_id}"))
             .send()
             .await
             .unwrap()
@@ -458,11 +458,11 @@ mod tests {
     #[tokio::test]
     async fn a_paypal_merchant_is_not_payable_without_paypal() {
         let (address, api, _) = start_stripe_api().await;
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         connect_paypal(&api);
         api.pages
             .set(
-                &id,
+                &page_id,
                 Settings {
                     tips: Some(Feature::on(Tips { amounts: vec![500] })),
                     ..Default::default()
@@ -472,7 +472,9 @@ mod tests {
         let account = account_of(&address, &session).await;
         assert_eq!(account["settings"]["payable"], false);
         assert_eq!(
-            get_json(&address, &format!("/pages/{id}/tips")).await.1["tips"],
+            get_json(&address, &format!("/pages/{page_id}/tips"))
+                .await
+                .1["tips"],
             Value::Null
         );
         let response = reqwest::Client::new()

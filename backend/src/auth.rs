@@ -114,7 +114,7 @@ pub struct SignIn {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SignInState {
-    pub page: Option<String>,
+    pub page_id: Option<String>,
     pub link: bool,
     pub verifier: Option<String>,
     pub terminal: Option<Terminal>,
@@ -189,7 +189,7 @@ pub fn challenge_of(verifier: &str) -> String {
 
 #[derive(Debug)]
 pub struct StateError {
-    pub page: Option<String>,
+    pub page_id: Option<String>,
     pub error: anyhow::Error,
 }
 
@@ -198,7 +198,8 @@ pub struct Viewer {
     pub platform: Platform,
     pub id: String,
     pub name: String,
-    pub page: String,
+    #[serde(rename = "page")]
+    pub page_id: String,
     pub tier: Option<u8>,
     pub issued: u64,
 }
@@ -272,30 +273,30 @@ impl Auth {
     pub fn login_url(
         &self,
         platform: Platform,
-        page: Option<&str>,
+        page_id: Option<&str>,
         link: bool,
         terminal: Option<Terminal>,
     ) -> Option<(String, String)> {
         match platform {
-            Platform::Twitch => self.twitch_login_url(page, link, terminal),
-            Platform::Kick => self.kick_login_url(page, link, terminal),
+            Platform::Twitch => self.twitch_login_url(page_id, link, terminal),
+            Platform::Kick => self.kick_login_url(page_id, link, terminal),
         }
     }
 
     fn twitch_login_url(
         &self,
-        page: Option<&str>,
+        page_id: Option<&str>,
         link: bool,
         terminal: Option<Terminal>,
     ) -> Option<(String, String)> {
         let app = self.twitch.as_ref()?;
         let state = self.new_state(SignInState {
-            page: page.map(str::to_string),
+            page_id: page_id.map(str::to_string),
             link,
             verifier: None,
             terminal,
         })?;
-        let scope = if page.is_some() {
+        let scope = if page_id.is_some() {
             "user:read:subscriptions"
         } else {
             "openid"
@@ -316,7 +317,7 @@ impl Auth {
 
     fn kick_login_url(
         &self,
-        page: Option<&str>,
+        page_id: Option<&str>,
         link: bool,
         terminal: Option<Terminal>,
     ) -> Option<(String, String)> {
@@ -324,7 +325,7 @@ impl Auth {
         let verifier = self.random_token()?;
         let challenge = challenge_of(&verifier);
         let state = self.new_state(SignInState {
-            page: page.map(str::to_string),
+            page_id: page_id.map(str::to_string),
             link,
             verifier: Some(verifier),
             terminal,
@@ -503,19 +504,19 @@ impl Auth {
     ) -> Result<SignInState, StateError> {
         let Some((created, pending)) = self.pending.lock().unwrap().remove(state) else {
             return Err(StateError {
-                page: None,
+                page_id: None,
                 error: anyhow!("unknown state"),
             });
         };
         if created.elapsed() >= STATE_LIFETIME {
             return Err(StateError {
-                page: pending.page,
+                page_id: pending.page_id,
                 error: anyhow!("expired state"),
             });
         }
         if browser_state != Some(state) {
             return Err(StateError {
-                page: pending.page,
+                page_id: pending.page_id,
                 error: anyhow!("the state is from another browser"),
             });
         }
@@ -912,14 +913,14 @@ impl Auth {
         platform: Platform,
         id: String,
         name: String,
-        page: String,
+        page_id: String,
         tier: Option<u8>,
     ) -> String {
         let viewer = Viewer {
             platform,
             id,
             name,
-            page,
+            page_id,
             tier,
             issued: now(),
         };
@@ -1135,7 +1136,7 @@ mod tests {
         assert_eq!(
             auth.consume_state(&state, Some("other"))
                 .unwrap_err()
-                .page
+                .page_id
                 .as_deref(),
             Some("page")
         );
@@ -1143,7 +1144,7 @@ mod tests {
         assert_eq!(
             auth.consume_state(&state, Some(&state))
                 .unwrap()
-                .page
+                .page_id
                 .as_deref(),
             Some("page")
         );
@@ -1170,7 +1171,7 @@ mod tests {
         assert_eq!(query["state"], state);
         let pending = auth.consume_state(&state, Some(&state)).unwrap();
         assert!(pending.link);
-        assert_eq!(pending.page, None);
+        assert_eq!(pending.page_id, None);
         let verifier = pending.verifier.unwrap();
         assert!(verifier.len() >= 43);
         assert_eq!(
@@ -1181,7 +1182,7 @@ mod tests {
         assert_ne!(query_of(&other)["code_challenge"], query["code_challenge"]);
         let (_, state) = auth.kick_login_url(Some("page"), false, None).unwrap();
         let pending = auth.consume_state(&state, Some(&state)).unwrap();
-        assert_eq!(pending.page.as_deref(), Some("page"));
+        assert_eq!(pending.page_id.as_deref(), Some("page"));
         assert!(!pending.link);
         let without = Auth::new(
             Client::new(),
@@ -1212,7 +1213,7 @@ mod tests {
                 viewer.platform,
                 viewer.id.as_str(),
                 viewer.name.as_str(),
-                viewer.page.as_str(),
+                viewer.page_id.as_str(),
                 viewer.tier
             ),
             (Platform::Twitch, "7", "Viewer", "page", Some(2))

@@ -10,11 +10,11 @@ pub struct Allowances {
     database: Arc<Database>,
 }
 
-fn used(connection: &Connection, page: &str, viewer: &str, kind: &str) -> rusqlite::Result<u32> {
+fn used(connection: &Connection, page_id: &str, viewer: &str, kind: &str) -> rusqlite::Result<u32> {
     Ok(connection
         .query_row(
             "SELECT count FROM subscriber_allowances WHERE page = ?1 AND viewer = ?2 AND kind = ?3 AND month = strftime('%Y-%m', 'now')",
-            [page, viewer, kind],
+            [page_id, viewer, kind],
             |row| row.get(0),
         )
         .optional()?
@@ -26,17 +26,17 @@ impl Allowances {
         Self { database }
     }
 
-    pub fn left(&self, page: &str, viewer: &str, kind: &str, allowance: u32) -> Result<u32> {
+    pub fn left(&self, page_id: &str, viewer: &str, kind: &str, allowance: u32) -> Result<u32> {
         let database = self.database.lock();
-        let used = used(&database, page, viewer, kind).with_context(|| {
-            format!("failed to read the {kind} allowance of {viewer} on page {page}")
+        let used = used(&database, page_id, viewer, kind).with_context(|| {
+            format!("failed to read the {kind} allowance of {viewer} on page {page_id}")
         })?;
         Ok(allowance.saturating_sub(used))
     }
 
     pub fn take(
         &self,
-        page: &str,
+        page_id: &str,
         viewer: &str,
         kind: &str,
         allowance: u32,
@@ -47,7 +47,7 @@ impl Allowances {
         let count: u32 = transaction.query_row(
             "INSERT INTO subscriber_allowances (page, viewer, kind, month, count) VALUES (?1, ?2, ?3, strftime('%Y-%m', 'now'), 1)
              ON CONFLICT (page, viewer, kind, month) DO UPDATE SET count = count + 1 RETURNING count",
-            params![page, viewer, kind],
+            params![page_id, viewer, kind],
             |row| row.get(0),
         )?;
         if count > allowance {
@@ -56,7 +56,7 @@ impl Allowances {
         then(&transaction)?;
         transaction
             .commit()
-            .with_context(|| format!("failed to save the {kind} of {viewer} on page {page}"))?;
+            .with_context(|| format!("failed to save the {kind} of {viewer} on page {page_id}"))?;
         Ok(Some(allowance - count))
     }
 

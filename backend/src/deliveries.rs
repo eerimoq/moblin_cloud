@@ -181,13 +181,13 @@ impl Deliveries {
         )
     }
 
-    pub fn tip_devices(&self, streamers: &Streamers, page: &str) -> Vec<String> {
+    pub fn tip_devices(&self, streamers: &Streamers, page_id: &str) -> Vec<String> {
         let mut devices: Vec<String> = streamers
-            .devices(page)
+            .devices(page_id)
             .into_iter()
             .map(|device| device.id)
             .collect();
-        for device in accounts::device_ids(&self.database.lock(), page) {
+        for device in accounts::device_ids(&self.database.lock(), page_id) {
             if !devices.contains(&device) {
                 devices.push(device);
             }
@@ -267,24 +267,24 @@ impl Deliveries {
             let mut by_device: Vec<((String, String), Vec<Targeted>)> = Vec::new();
             let mut known: HashMap<String, Vec<String>> = HashMap::new();
             for delivery in self.pending() {
-                let page = &delivery.streamer;
+                let page_id = &delivery.streamer;
                 let (devices, connected): (Vec<String>, Vec<String>) = match &delivery.item {
                     Item::Spin { .. } => {
                         let devices: Vec<String> =
-                            streamers.wheel_device(page).into_iter().collect();
+                            streamers.wheel_device(page_id).into_iter().collect();
                         (devices.clone(), devices)
                     }
                     Item::Tip { .. } | Item::Effect { .. } => {
                         let connected: Vec<String> = streamers
-                            .devices(page)
+                            .devices(page_id)
                             .into_iter()
                             .filter(|device| !device.reconnecting)
                             .map(|device| device.id)
                             .filter(|device| !delivery.delivered.contains(device))
                             .collect();
                         let devices = known
-                            .entry(page.clone())
-                            .or_insert_with(|| self.tip_devices(streamers, page))
+                            .entry(page_id.clone())
+                            .or_insert_with(|| self.tip_devices(streamers, page_id))
                             .iter()
                             .filter(|device| !delivery.delivered.contains(device))
                             .cloned()
@@ -294,11 +294,11 @@ impl Deliveries {
                 };
                 if devices.is_empty() && !delivery.delivered.is_empty() {
                     finish(&self.database.lock(), &delivery.request_id);
-                    streamers.changes.notify(page, Change::Recent);
+                    streamers.changes.notify(page_id, Change::Recent);
                     continue;
                 }
                 for device in &connected {
-                    let target = (page.clone(), device.clone());
+                    let target = (page_id.clone(), device.clone());
                     let delivery = (delivery.clone(), devices.clone());
                     match by_device.iter_mut().find(|(other, _)| *other == target) {
                         Some((_, deliveries)) => deliveries.push(delivery),
@@ -306,9 +306,13 @@ impl Deliveries {
                     }
                 }
             }
-            join_all(by_device.into_iter().map(|((page, device), deliveries)| {
-                self.deliver_all(streamers, page, device, deliveries)
-            }))
+            join_all(
+                by_device
+                    .into_iter()
+                    .map(|((page_id, device), deliveries)| {
+                        self.deliver_all(streamers, page_id, device, deliveries)
+                    }),
+            )
             .await;
             tokio::select! {
                 _ = self.added.notified() => {}
@@ -320,15 +324,15 @@ impl Deliveries {
     async fn deliver_all(
         &self,
         streamers: &Streamers,
-        page: String,
+        page_id: String,
         device: String,
         deliveries: Vec<Targeted>,
     ) {
         for (delivery, devices) in deliveries {
-            let counter = match deliver(streamers, &page, &device, &delivery).await {
+            let counter = match deliver(streamers, &page_id, &device, &delivery).await {
                 Ok(()) => {
                     info!(
-                        "delivered {:?} in request {} to remote control streamer {page} device {device}",
+                        "delivered {:?} in request {} to remote control streamer {page_id} device {device}",
                         delivery.item, delivery.request_id
                     );
                     Some(delivery.counter("Deliveries"))
@@ -337,7 +341,7 @@ impl Deliveries {
                 Err(error) => {
                     if self.failed(&delivery, "moblin-error") {
                         info!(
-                            "delivering request {} to remote control streamer {page} device {device} failed: {error:?}, retrying",
+                            "delivering request {} to remote control streamer {page_id} device {device} failed: {error:?}, retrying",
                             delivery.request_id
                         );
                     }
@@ -345,7 +349,7 @@ impl Deliveries {
                 }
             };
             self.delivered(&delivery.request_id, counter.as_deref(), &device, &devices);
-            streamers.changes.notify(&page, Change::Recent);
+            streamers.changes.notify(&page_id, Change::Recent);
         }
     }
 }
@@ -434,7 +438,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
 
 async fn deliver(
     streamers: &Streamers,
-    page: &str,
+    page_id: &str,
     device: &str,
     delivery: &Delivery,
 ) -> Result<(), RequestError> {
@@ -472,7 +476,7 @@ async fn deliver(
     };
     streamers
         .tip(
-            (page, device),
+            (page_id, device),
             user.clone(),
             message.clone(),
             kind,

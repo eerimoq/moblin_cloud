@@ -25,19 +25,19 @@ pub(super) struct TestRequest {
 fn test_page(
     api: &Api,
     headers: &HeaderMap,
-    page: Option<&str>,
+    page_id: Option<&str>,
 ) -> Result<(String, Account, String), Failure> {
-    let (id, account) = match page {
-        Some(page) => (
-            page.to_string(),
-            assistant(api, headers, page)?.signed_in.account,
+    let (page_id, account) = match page_id {
+        Some(page_id) => (
+            page_id.to_string(),
+            assistant(api, headers, page_id)?.signed_in.account,
         ),
         None => {
             let account = signed_in(api, headers)?.account;
             (account.page_id.clone(), account)
         }
     };
-    if !within_limit(&api.tests, &id, 10) {
+    if !within_limit(&api.tests, &page_id, 10) {
         return Err(failure(
             "too-many-tests",
             StatusCode::TOO_MANY_REQUESTS,
@@ -49,7 +49,7 @@ fn test_page(
         StatusCode::SERVICE_UNAVAILABLE,
         "The test could not be sent. Try again.",
     ))?;
-    Ok((id, account, request_id))
+    Ok((page_id, account, request_id))
 }
 
 fn moblin_not_connected() -> Failure {
@@ -58,30 +58,30 @@ fn moblin_not_connected() -> Failure {
 
 pub(super) async fn handle_test_tip(
     State(api): State<Arc<Api>>,
-    page: Option<Path<String>>,
+    page_id: Option<Path<String>>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let page = page.map(|Path(page)| page);
-    let result = test_tip(&api, &headers, page.as_deref(), request).await;
+    let page_id = page_id.map(|Path(page_id)| page_id);
+    let result = test_tip(&api, &headers, page_id.as_deref(), request).await;
     counted(&api, "tipTests", result)
 }
 
 async fn test_tip(
     api: &Api,
     headers: &HeaderMap,
-    page: Option<&str>,
+    page_id: Option<&str>,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(api, headers, page)?;
-    let settings = api.pages.get(&id);
+    let (page_id, account, request_id) = test_page(api, headers, page_id)?;
+    let settings = api.pages.get(&page_id);
     let amount = settings
         .tips()
         .and_then(|tips| tips.amounts.first().copied())
         .unwrap_or(500);
-    info!("queued a test tip in request {request_id} for remote control streamer {id}");
+    info!("queued a test tip in request {request_id} for remote control streamer {page_id}");
     api.deliveries.add_test(
-        id,
+        page_id,
         request_id,
         deliveries::Item::Tip {
             user: account.name().to_string(),
@@ -95,24 +95,24 @@ async fn test_tip(
 
 pub(super) async fn handle_test_spin(
     State(api): State<Arc<Api>>,
-    page: Option<Path<String>>,
+    page_id: Option<Path<String>>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let page = page.map(|Path(page)| page);
-    let result = test_spin(&api, &headers, page.as_deref(), request).await;
+    let page_id = page_id.map(|Path(page_id)| page_id);
+    let result = test_spin(&api, &headers, page_id.as_deref(), request).await;
     counted(&api, "spinTests", result)
 }
 
 async fn test_spin(
     api: &Api,
     headers: &HeaderMap,
-    page: Option<&str>,
+    page_id: Option<&str>,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(api, headers, page)?;
-    if api.remote_control.wheel(&id).is_none() {
-        return Err(if api.remote_control.is_connected(&id) {
+    let (page_id, account, request_id) = test_page(api, headers, page_id)?;
+    if api.remote_control.wheel(&page_id).is_none() {
+        return Err(if api.remote_control.is_connected(&page_id) {
             failure(
                 "no-wheel",
                 StatusCode::CONFLICT,
@@ -124,13 +124,13 @@ async fn test_spin(
     }
     let spins = api
         .pages
-        .get(&id)
+        .get(&page_id)
         .spin()
         .and_then(|spin| spin.options.first().map(|option| option.spins))
         .unwrap_or(1);
-    info!("queued a test spin in request {request_id} for remote control streamer {id}");
+    info!("queued a test spin in request {request_id} for remote control streamer {page_id}");
     api.deliveries.add_test(
-        id,
+        page_id,
         request_id,
         deliveries::Item::Spin {
             user: account.name().to_string(),
@@ -143,27 +143,27 @@ async fn test_spin(
 
 pub(super) async fn handle_test_effect(
     State(api): State<Arc<Api>>,
-    page: Option<Path<String>>,
+    page_id: Option<Path<String>>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let page = page.map(|Path(page)| page);
-    let result = test_effect(&api, &headers, page.as_deref(), request).await;
+    let page_id = page_id.map(|Path(page_id)| page_id);
+    let result = test_effect(&api, &headers, page_id.as_deref(), request).await;
     counted(&api, "effectTests", result)
 }
 
 async fn test_effect(
     api: &Api,
     headers: &HeaderMap,
-    page: Option<&str>,
+    page_id: Option<&str>,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let (id, account, request_id) = test_page(api, headers, page)?;
+    let (page_id, account, request_id) = test_page(api, headers, page_id)?;
     let effect = viewer_effect(request.effect.as_deref().unwrap_or(EFFECTS[0].id))?;
     let message = viewer_message(request.message)?.unwrap_or_default();
-    info!("queued a test effect in request {request_id} for remote control streamer {id}");
+    info!("queued a test effect in request {request_id} for remote control streamer {page_id}");
     api.deliveries.add_test(
-        id,
+        page_id,
         request_id,
         deliveries::Item::Effect {
             user: account.name().to_string(),

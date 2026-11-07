@@ -81,10 +81,10 @@ fn disconnect(
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
     let signed_in = signed_in(api, headers)?;
     let account = forget(&api.accounts, &signed_in.account.id).map_err(account_error)?;
-    let page = &account.page_id;
+    let page_id = &account.page_id;
     info!("{} disconnected {provider}", account.id);
-    api.remote_control.changes.notify(page, Change::Page);
-    Ok(settings_response(api, &account, api.pages.look(page)))
+    api.remote_control.changes.notify(page_id, Change::Page);
+    Ok(settings_response(api, &account, api.pages.look(page_id)))
 }
 
 pub(super) async fn handle_account_paypal_check(
@@ -354,7 +354,7 @@ mod tests {
     async fn stripe_connects_and_takes_tips() {
         let (address, api, fake) = start_stripe_api().await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         let post = |path: &str| {
             client
                 .post(format!("http://{address}{path}"))
@@ -430,7 +430,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let tips_url = format!("http://{address}/pages/{id}/tips");
+        let tips_url = format!("http://{address}/pages/{page_id}/tips");
         let public: Value = client
             .get(&tips_url)
             .send()
@@ -527,7 +527,7 @@ mod tests {
     async fn paypal_is_connected_through_onboarding() {
         let (paypal_url, fake) = start_paypal().await;
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         let old = api.auth.session_at("1", 0, crate::deliveries::now() - 601);
         let client = reqwest::Client::new();
         let paypal_url = format!("http://{address}/account/paypal");
@@ -634,7 +634,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let public: Value = client
-            .get(format!("http://{address}/pages/{id}/tips"))
+            .get(format!("http://{address}/pages/{page_id}/tips"))
             .send()
             .await
             .unwrap()
@@ -657,7 +657,7 @@ mod tests {
         assert_eq!(settings["merchantId"], Value::Null);
         assert_eq!(settings["paypalPending"], false);
         let public: Value = client
-            .get(format!("http://{address}/pages/{id}/tips"))
+            .get(format!("http://{address}/pages/{page_id}/tips"))
             .send()
             .await
             .unwrap()
@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let (paypal_url, fake) = start_paypal().await;
         let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         let response = client
             .post(format!("http://{address}/account/paypal/connect"))
             .bearer_auth(&session)
@@ -762,7 +762,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(api.accounts.get("1").unwrap().merchant_id, None);
         let public: Value = client
-            .get(format!("http://{address}/pages/{id}/tips"))
+            .get(format!("http://{address}/pages/{page_id}/tips"))
             .send()
             .await
             .unwrap()

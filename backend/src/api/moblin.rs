@@ -14,7 +14,7 @@ pub(super) async fn handle_remote_control_streamer(
     Path(moblin_cloud_key): Path<String>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    let Some(page) = api.accounts.page_of_moblin_cloud_key(&moblin_cloud_key) else {
+    let Some(page_id) = api.accounts.page_of_moblin_cloud_key(&moblin_cloud_key) else {
         return Err(StatusCode::NOT_FOUND);
     };
     Ok(upgrade.on_upgrade(move |socket| async move {
@@ -22,7 +22,7 @@ pub(super) async fn handle_remote_control_streamer(
         let identity = match api.remote_control.identify(&mut socket).await {
             Ok(identity) => identity,
             Err(error) => {
-                info!("remote control streamer {page} failed to identify: {error:#}");
+                info!("remote control streamer {page_id} failed to identify: {error:#}");
                 return;
             }
         };
@@ -38,27 +38,32 @@ pub(super) async fn handle_remote_control_streamer(
                 None => Err(anyhow!("no app attest in identify")),
             };
             if let Err(error) = attested {
-                info!("remote control streamer {page} device {device} is not attested: {error:#}");
+                info!(
+                    "remote control streamer {page_id} device {device} is not attested: {error:#}"
+                );
                 if api.require_attested_moblin {
                     api.remote_control.refuse(socket).await;
                     return;
                 }
             }
         }
-        let Some(connection) = api.remote_control.connect(&page, &device, socket.traffic()) else {
-            info!("remote control streamer {page} device {device} rejected, too many devices");
+        let Some(connection) = api
+            .remote_control
+            .connect(&page_id, &device, socket.traffic())
+        else {
+            info!("remote control streamer {page_id} device {device} rejected, too many devices");
             api.remote_control.refuse(socket).await;
             return;
         };
-        api.accounts.seen_device(&page, &device);
+        api.accounts.seen_device(&page_id, &device);
         api.deliveries.notify();
         api.remote_control
             .serve(connection, socket, |icon| {
-                api.pages.set_icon(&page, icon.id)
+                api.pages.set_icon(&page_id, icon.id)
             })
             .await;
-        api.accounts.left_device(&page, &device);
-        api.remote_control.changes.notify(&page, Change::Page);
+        api.accounts.left_device(&page_id, &device);
+        api.remote_control.changes.notify(&page_id, Change::Page);
     }))
 }
 
@@ -148,9 +153,9 @@ mod tests {
     #[tokio::test]
     async fn moblins_icon_is_shown_on_the_page_and_in_its_address() {
         let (address, api) = start_api(None).await;
-        let (_, moblin_cloud_key, id) = streamer(&api);
+        let (_, moblin_cloud_key, page_id) = streamer(&api);
         let icon = async || {
-            let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
+            let (_, profile) = get_json(&address, &format!("/pages/{page_id}")).await;
             let (_, addresses) = get_json(&address, "/pages/addresses?logins=twitch:erik").await;
             assert_eq!(
                 addresses["twitch:erik"]["icon"],
@@ -247,7 +252,7 @@ mod tests {
     async fn up_to_5_devices_connect_with_one_key() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut sockets = Vec::new();
         for device in ["a", "b", "c", "d", "e"] {
             sockets.push(connect_as(&address, &moblin_cloud_key, device).await);
@@ -318,7 +323,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let account: Value = response.json().await.unwrap();
         assert_ne!(account["key"], moblin_cloud_key);
-        assert!(!api.remote_control.is_connected(&id));
+        assert!(!api.remote_control.is_connected(&page_id));
         let devices = account["devices"].as_array().unwrap();
         assert_eq!(devices.len(), 5);
         assert!(
@@ -376,7 +381,7 @@ mod tests {
     #[tokio::test]
     async fn unattested_moblins_are_accepted_until_required() {
         let (address, api) = start_attested(false).await;
-        let (_, moblin_cloud_key, id) = streamer(&api);
+        let (_, moblin_cloud_key, page_id) = streamer(&api);
         let _plain = connect_as(&address, &moblin_cloud_key, "a").await;
         let _bogus = connect_with(&address, &moblin_cloud_key, bogus_identify("b")).await;
         let _malformed = connect_with(
@@ -385,13 +390,13 @@ mod tests {
             json!({"identify": {"streamerId": "c", "authentication": "x", "appAttest": {"keyId": 1}}}),
         )
         .await;
-        assert_eq!(api.remote_control.devices(&id).len(), 3);
+        assert_eq!(api.remote_control.devices(&page_id).len(), 3);
     }
 
     #[tokio::test]
     async fn unattested_moblins_are_refused_when_required() {
         let (address, api) = start_attested(true).await;
-        let (_, moblin_cloud_key, id) = streamer(&api);
+        let (_, moblin_cloud_key, page_id) = streamer(&api);
         refused(
             &address,
             &moblin_cloud_key,
@@ -399,7 +404,7 @@ mod tests {
         )
         .await;
         refused(&address, &moblin_cloud_key, bogus_identify("a")).await;
-        assert!(!api.remote_control.is_connected(&id));
+        assert!(!api.remote_control.is_connected(&page_id));
     }
 
     async fn send_event(socket: &mut Socket, event: Value) {
@@ -414,19 +419,19 @@ mod tests {
     #[tokio::test]
     async fn a_moblin_that_stops_reading_is_disconnected() {
         let (address, api) = start_api(None).await;
-        let (_, moblin_cloud_key, id) = streamer(&api);
+        let (_, moblin_cloud_key, page_id) = streamer(&api);
         let mut socket = connect(&address, &moblin_cloud_key).await;
         let api_tips = api.clone();
-        let page = id.clone();
+        let tipped = page_id.clone();
         tokio::spawn(async move {
             for number in 0..50 {
                 let api = api_tips.clone();
-                let page = page.clone();
+                let page_id = tipped.clone();
                 tokio::spawn(async move {
                     let _ = api
                         .remote_control
                         .tip(
-                            (&page, "A"),
+                            (&page_id, "A"),
                             "Erik".to_string(),
                             "x".repeat(1_000_000),
                             crate::remote_control::TipKind::WheelOfLuck { count: 1 },
@@ -437,7 +442,7 @@ mod tests {
             }
         });
         for _ in 0..30 {
-            if !api.remote_control.is_connected(&id) {
+            if !api.remote_control.is_connected(&page_id) {
                 return;
             }
             let _ = socket
@@ -452,7 +457,7 @@ mod tests {
     async fn spins_go_to_the_first_device_with_a_wheel_and_tips_to_all() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut main = connect_as(&address, &moblin_cloud_key, "main").await;
         let mut other = connect_as(&address, &moblin_cloud_key, "other").await;
         send_event(
@@ -476,7 +481,7 @@ mod tests {
                 {"id": "other", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": true, "lastSeen": null, "watchers": []},
             ])
         );
-        let spin_url = format!("http://{address}/pages/{id}/spin");
+        let spin_url = format!("http://{address}/pages/{page_id}/spin");
         let spin: Value = client
             .get(&spin_url)
             .send()
@@ -487,7 +492,7 @@ mod tests {
             .unwrap();
         assert_eq!(spin["wheel"]["options"][0]["text"], "A");
         api.deliveries.add_test(
-            id.clone(),
+            page_id.clone(),
             "TIP1".to_string(),
             deliveries::Item::Tip {
                 user: "Viewer".to_string(),
@@ -504,7 +509,7 @@ mod tests {
         wait_until_added(&api).await;
         other.close(None).await.unwrap();
         for _ in 0..100 {
-            if api.remote_control.devices(&id).len() == 1 {
+            if api.remote_control.devices(&page_id).len() == 1 {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;

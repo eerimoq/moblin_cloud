@@ -24,10 +24,10 @@ pub(super) struct EffectRequest {
 
 pub(super) async fn handle_effect_order(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     Json(request): Json<EffectRequest>,
 ) -> Result<Json<OrderResponse>, Failure> {
-    place_order(&api, "effect", effect_order(&api, id, request)).await
+    place_order(&api, "effect", effect_order(&api, page_id, request)).await
 }
 
 fn effect_order(api: &Api, id: String, request: EffectRequest) -> Result<Order, Failure> {
@@ -90,9 +90,9 @@ mod tests {
     async fn effects_are_played_by_moblin() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         connect_paypal(&api);
-        let effects_url = format!("http://{address}/pages/{id}/effects");
+        let effects_url = format!("http://{address}/pages/{page_id}/effects");
         let orders_url = format!("{effects_url}/orders");
         let public = || async {
             client
@@ -166,7 +166,7 @@ mod tests {
         );
         let response = client
             .post(format!(
-                "http://{address}/pages/{id}/tips/orders/ORDER1/capture"
+                "http://{address}/pages/{page_id}/tips/orders/ORDER1/capture"
             ))
             .send()
             .await
@@ -252,19 +252,21 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {
             api.auth.viewer_session(
                 Platform::Twitch,
                 viewer.to_string(),
                 format!("Viewer {viewer}"),
-                id.clone(),
+                page_id.clone(),
                 tier,
             )
         };
         let play = async |session: &str, effect: &str| {
             client
-                .post(format!("http://{address}/pages/{id}/effects/subscriber"))
+                .post(format!(
+                    "http://{address}/pages/{page_id}/effects/subscriber"
+                ))
                 .bearer_auth(session)
                 .json(&json!({"effect": effect, "message": " Pfff "}))
                 .send()
@@ -273,7 +275,9 @@ mod tests {
         };
         let left = async |session: &str| {
             client
-                .get(format!("http://{address}/pages/{id}/effects/subscriber"))
+                .get(format!(
+                    "http://{address}/pages/{page_id}/effects/subscriber"
+                ))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -300,7 +304,7 @@ mod tests {
             json!({"enabled": true, "tier1": 1, "tier2": 0, "tier3": 3})
         );
         let public: Value = client
-            .get(format!("http://{address}/pages/{id}/effects"))
+            .get(format!("http://{address}/pages/{page_id}/effects"))
             .send()
             .await
             .unwrap()
@@ -334,7 +338,7 @@ mod tests {
             "You have used all your effects this month."
         );
         let spins: Value = client
-            .get(format!("http://{address}/pages/{id}/spin/subscriber"))
+            .get(format!("http://{address}/pages/{page_id}/spin/subscriber"))
             .bearer_auth(&tier1)
             .send()
             .await

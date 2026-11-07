@@ -290,18 +290,18 @@ pub struct KnownDevice {
 
 const ACCOUNT_OF_PAGE: &str = "(SELECT id FROM accounts WHERE page_id = ?1)";
 
-pub fn device_ids(connection: &Connection, page: &str) -> Vec<String> {
+pub fn device_ids(connection: &Connection, page_id: &str) -> Vec<String> {
     let result = connection
         .prepare_cached(&format!(
             "SELECT id FROM devices WHERE account = {ACCOUNT_OF_PAGE} ORDER BY last_seen DESC, rowid DESC"
         ))
         .and_then(|mut statement| {
             statement
-                .query_map([page], |row| row.get(0))?
+                .query_map([page_id], |row| row.get(0))?
                 .collect::<rusqlite::Result<_>>()
         });
     result.unwrap_or_else(|error| {
-        warn!("failed to read the devices of {page}: {error:#}");
+        warn!("failed to read the devices of {page_id}: {error:#}");
         Vec::new()
     })
 }
@@ -389,10 +389,10 @@ impl Accounts {
         }
     }
 
-    pub fn active(&self, account: &str, page: &str, remote_control: bool) -> bool {
+    pub fn active(&self, account: &str, page_id: &str, remote_control: bool) -> bool {
         {
             let mut active = self.active.lock().unwrap();
-            let key = |remote_control| (account.to_string(), page.to_string(), remote_control);
+            let key = |remote_control| (account.to_string(), page_id.to_string(), remote_control);
             if active
                 .get(&key(remote_control))
                 .is_some_and(|at| at.elapsed() < Duration::from_secs(30))
@@ -411,10 +411,10 @@ impl Accounts {
                 "INSERT INTO assistant_activity (account, page, at) VALUES (?1, ?2, ?3)
                  ON CONFLICT (account, page) DO UPDATE SET at = excluded.at"
             },
-            params![account, page, now()],
+            params![account, page_id, now()],
         );
         if let Err(error) = result {
-            warn!("failed to save the activity of {account} on {page}: {error:#}");
+            warn!("failed to save the activity of {account} on {page_id}: {error:#}");
             return false;
         }
         true
@@ -533,11 +533,11 @@ impl Accounts {
             })
     }
 
-    pub fn of_page(&self, page: &str) -> Option<Account> {
-        self.find("page_id = ?1", page)
+    pub fn of_page(&self, page_id: &str) -> Option<Account> {
+        self.find("page_id = ?1", page_id)
     }
 
-    pub fn page(&self, page: &str) -> Option<(Account, Look)> {
+    pub fn page(&self, page_id: &str) -> Option<(Account, Look)> {
         self.database
             .lock()
             .prepare_cached(&format!(
@@ -549,10 +549,10 @@ impl Accounts {
             ))
             .and_then(|mut statement| {
                 statement
-                    .query_row([page], |row| {
+                    .query_row([page_id], |row| {
                         Ok((
                             account(row)?,
-                            Look::new(page, row.get(9)?, row.get(10)?, row.get(11)?),
+                            Look::new(page_id, row.get(9)?, row.get(10)?, row.get(11)?),
                         ))
                     })
                     .optional()
@@ -611,18 +611,18 @@ impl Accounts {
         })
     }
 
-    pub fn seen_device(&self, page: &str, device: &str) -> Option<String> {
+    pub fn seen_device(&self, page_id: &str, device: &str) -> Option<String> {
         let mut database = self.database.lock();
         let result = database.transaction().and_then(|transaction| {
             let now = now();
             transaction.execute(
                 &format!("DELETE FROM devices WHERE account = {ACCOUNT_OF_PAGE} AND id != ?2 AND last_seen < ?3"),
-                params![page, device, now.saturating_sub(30 * 24 * 60 * 60)],
+                params![page_id, device, now.saturating_sub(30 * 24 * 60 * 60)],
             )?;
             let known = transaction
                 .query_row(
                     &format!("UPDATE devices SET last_seen = ?3 WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2 RETURNING name"),
-                    params![page, device, now],
+                    params![page_id, device, now],
                     |row| row.get(0),
                 )
                 .optional()?;
@@ -634,11 +634,11 @@ impl Accounts {
                             "DELETE FROM devices WHERE account = {ACCOUNT_OF_PAGE} AND rowid NOT IN
                              (SELECT rowid FROM devices WHERE account = {ACCOUNT_OF_PAGE} ORDER BY last_seen DESC, rowid DESC LIMIT 19)"
                         ),
-                        [page],
+                        [page_id],
                     )?;
                     let names = transaction
                         .prepare(&format!("SELECT name FROM devices WHERE account = {ACCOUNT_OF_PAGE}"))?
-                        .query_map([page], |row| row.get(0))?
+                        .query_map([page_id], |row| row.get(0))?
                         .collect::<rusqlite::Result<Vec<String>>>()?;
                     let name = (1..)
                         .map(|number| format!("Moblin {number}"))
@@ -646,7 +646,7 @@ impl Accounts {
                         .unwrap();
                     transaction.execute(
                         &format!("INSERT INTO devices (account, id, name, last_seen) VALUES ({ACCOUNT_OF_PAGE}, ?2, ?3, ?4)"),
-                        params![page, device, name, now],
+                        params![page_id, device, name, now],
                     )?;
                     name
                 }
@@ -655,11 +655,16 @@ impl Accounts {
             Ok(name)
         });
         result
-            .inspect_err(|error| warn!("failed to save device {device} of {page}: {error:#}"))
+            .inspect_err(|error| warn!("failed to save device {device} of {page_id}: {error:#}"))
             .ok()
     }
 
-    pub fn rename_device(&self, page: &str, device: &str, name: &str) -> Result<(), AccountError> {
+    pub fn rename_device(
+        &self,
+        page_id: &str,
+        device: &str,
+        name: &str,
+    ) -> Result<(), AccountError> {
         let renamed = self
             .database
             .lock()
@@ -667,7 +672,7 @@ impl Accounts {
                 &format!(
                     "UPDATE devices SET name = ?3 WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2"
                 ),
-                params![page, device, name],
+                params![page_id, device, name],
             )
             .map_err(not_saved)?;
         if renamed == 0 {
@@ -676,13 +681,13 @@ impl Accounts {
         Ok(())
     }
 
-    pub fn remove_device(&self, page: &str, device: &str) -> Result<(), AccountError> {
+    pub fn remove_device(&self, page_id: &str, device: &str) -> Result<(), AccountError> {
         let removed = self
             .database
             .lock()
             .execute(
                 &format!("DELETE FROM devices WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2"),
-                params![page, device],
+                params![page_id, device],
             )
             .map_err(not_saved)?;
         if removed == 0 {
@@ -691,13 +696,13 @@ impl Accounts {
         Ok(())
     }
 
-    pub fn monitor_layout(&self, id: &str, page: &str) -> Option<String> {
+    pub fn monitor_layout(&self, id: &str, page_id: &str) -> Option<String> {
         self.database
             .lock()
             .query_row(
                 "SELECT layout FROM monitor_layouts WHERE account = ?1
                  ORDER BY page = ?2 DESC, updated_at DESC, rowid DESC LIMIT 1",
-                [id, page],
+                [id, page_id],
                 |row| row.get(0),
             )
             .optional()
@@ -710,7 +715,7 @@ impl Accounts {
     pub fn set_monitor_layout(
         &self,
         id: &str,
-        page: &str,
+        page_id: &str,
         layout: &str,
     ) -> Result<(), AccountError> {
         self.database
@@ -720,25 +725,25 @@ impl Accounts {
                  VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (account, page) DO UPDATE
                  SET layout = excluded.layout, updated_at = excluded.updated_at",
-                params![id, page, layout, now()],
+                params![id, page_id, layout, now()],
             )
             .map_err(not_saved)?;
         Ok(())
     }
 
-    pub fn left_device(&self, page: &str, device: &str) {
+    pub fn left_device(&self, page_id: &str, device: &str) {
         let result = self.database.lock().execute(
             &format!(
                 "UPDATE devices SET last_seen = ?3 WHERE account = {ACCOUNT_OF_PAGE} AND id = ?2"
             ),
-            params![page, device, now()],
+            params![page_id, device, now()],
         );
         if let Err(error) = result {
-            warn!("failed to save device {device} of {page}: {error:#}");
+            warn!("failed to save device {device} of {page_id}: {error:#}");
         }
     }
 
-    pub fn known_devices(&self, page: &str) -> Vec<KnownDevice> {
+    pub fn known_devices(&self, page_id: &str) -> Vec<KnownDevice> {
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
@@ -747,7 +752,7 @@ impl Accounts {
             ))
             .and_then(|mut statement| {
                 statement
-                    .query_map([page], |row| {
+                    .query_map([page_id], |row| {
                         Ok(KnownDevice {
                             id: row.get(0)?,
                             name: row.get(1)?,
@@ -757,7 +762,7 @@ impl Accounts {
                     .collect::<rusqlite::Result<_>>()
             });
         result.unwrap_or_else(|error| {
-            warn!("failed to read the devices of {page}: {error:#}");
+            warn!("failed to read the devices of {page_id}: {error:#}");
             Vec::new()
         })
     }
@@ -1193,7 +1198,9 @@ impl Accounts {
                 Vec::new()
             })
             .into_iter()
-            .filter_map(|(platform, login, page)| Some((Platform::parse(&platform)?, login, page)))
+            .filter_map(|(platform, login, page_id)| {
+                Some((Platform::parse(&platform)?, login, page_id))
+            })
             .collect()
     }
 
@@ -1210,21 +1217,21 @@ impl Accounts {
         let account = read(&transaction, id)
             .map_err(not_saved)?
             .ok_or(AccountError::Unknown)?;
-        let page = account.page_id.as_str();
+        let page_id = account.page_id.as_str();
         let statements = [
             ("DELETE FROM accounts WHERE id = ?1", id),
             ("DELETE FROM identities WHERE account = ?1", id),
             ("DELETE FROM devices WHERE account = ?1", id),
             ("DELETE FROM monitor_layouts WHERE account = ?1", id),
-            ("DELETE FROM monitor_layouts WHERE page = ?1", page),
+            ("DELETE FROM monitor_layouts WHERE page = ?1", page_id),
             ("DELETE FROM assistant_activity WHERE account = ?1", id),
-            ("DELETE FROM assistant_activity WHERE page = ?1", page),
-            ("DELETE FROM pages WHERE id = ?1", page),
-            ("DELETE FROM page_images WHERE id = ?1", page),
-            ("DELETE FROM page_icons WHERE id = ?1", page),
-            ("DELETE FROM orders WHERE streamer = ?1", page),
-            ("DELETE FROM deliveries WHERE streamer = ?1", page),
-            ("DELETE FROM subscriber_allowances WHERE page = ?1", page),
+            ("DELETE FROM assistant_activity WHERE page = ?1", page_id),
+            ("DELETE FROM pages WHERE id = ?1", page_id),
+            ("DELETE FROM page_images WHERE id = ?1", page_id),
+            ("DELETE FROM page_icons WHERE id = ?1", page_id),
+            ("DELETE FROM orders WHERE streamer = ?1", page_id),
+            ("DELETE FROM deliveries WHERE streamer = ?1", page_id),
+            ("DELETE FROM subscriber_allowances WHERE page = ?1", page_id),
         ];
         for (statement, key) in statements {
             transaction.execute(statement, [key]).map_err(not_saved)?;
@@ -1333,13 +1340,13 @@ mod tests {
         id: &str,
         name: &str,
         login: &str,
-        page: &str,
+        page_id: &str,
         moblin_cloud_key: &str,
     ) -> Result<Account, AccountError> {
         accounts.signed_in(
             &Identity::twitch(id, name, login),
             id.to_string(),
-            page.to_string(),
+            page_id.to_string(),
             moblin_cloud_key.to_string(),
         )
     }
@@ -1914,7 +1921,7 @@ mod tests {
         sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
         sign_in(&accounts, "2", "Other", "other", "q", "l").unwrap();
         assert_eq!(accounts.seen_device("r", "a"), None);
-        let seen = |page: &str, device: &str| accounts.seen_device(page, device).unwrap();
+        let seen = |page_id: &str, device: &str| accounts.seen_device(page_id, device).unwrap();
         assert_eq!(seen("p", "a"), "Moblin 1");
         assert_eq!(seen("p", "b"), "Moblin 2");
         assert_eq!(seen("q", "a"), "Moblin 1");

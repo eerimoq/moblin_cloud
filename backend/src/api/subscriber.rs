@@ -23,7 +23,7 @@ pub(super) fn viewer(
 ) -> Result<Viewer, Failure> {
     bearer(headers)
         .and_then(|session| api.auth.viewer_of(session))
-        .filter(|viewer| viewer.page == id)
+        .filter(|viewer| viewer.page_id == id)
         .filter(|viewer| account.is_some_and(|account| account.identity(viewer.platform).is_some()))
         .ok_or(failure(
             "not-signed-in",
@@ -103,18 +103,24 @@ fn allowance_response(
 
 pub(super) async fn handle_subscriber_spin_allowance(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AllowanceResponse>, Failure> {
-    allowance_response(&api, &headers, &id, Perk::Spin, Settings::sub_spins)
+    allowance_response(&api, &headers, &page_id, Perk::Spin, Settings::sub_spins)
 }
 
 pub(super) async fn handle_subscriber_effect_allowance(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AllowanceResponse>, Failure> {
-    allowance_response(&api, &headers, &id, Perk::Effect, Settings::sub_effects)
+    allowance_response(
+        &api,
+        &headers,
+        &page_id,
+        Perk::Effect,
+        Settings::sub_effects,
+    )
 }
 
 #[derive(Deserialize)]
@@ -130,11 +136,11 @@ pub(super) struct LeftResponse {
 
 pub(super) async fn handle_subscriber_spin(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<SubscriberSpinRequest>,
 ) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
-    let result = subscriber_spin(&api, id, &headers, request);
+    let result = subscriber_spin(&api, page_id, &headers, request);
     counted(&api, "subSpins", result)
 }
 
@@ -147,11 +153,11 @@ pub(super) struct SubscriberEffectRequest {
 
 pub(super) async fn handle_subscriber_effect(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<SubscriberEffectRequest>,
 ) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
-    let result = subscriber_effect(&api, id, &headers, request);
+    let result = subscriber_effect(&api, page_id, &headers, request);
     counted(&api, "subEffects", result)
 }
 
@@ -328,16 +334,16 @@ mod tests {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap();
-        let (_, _, id) = streamer(&api);
+        let (_, _, page_id) = streamer(&api);
         let response = client
             .get(format!("http://{address}/auth/twitch/login?page=unknown"))
             .send()
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let sign_in = async |page: &str| {
+        let sign_in = async |page_id: &str| {
             let response = client
-                .get(format!("http://{address}/auth/twitch/login?page={page}"))
+                .get(format!("http://{address}/auth/twitch/login?page={page_id}"))
                 .send()
                 .await
                 .unwrap();
@@ -356,7 +362,7 @@ mod tests {
                     .unwrap(),
             )
         };
-        let page = sign_in(&id).await;
+        let page = sign_in(&page_id).await;
         let session = page
             .strip_prefix("https://cloud.moblin.app/twitch/erik#viewer=")
             .unwrap();
@@ -365,10 +371,10 @@ mod tests {
             (
                 viewer.id.as_str(),
                 viewer.name.as_str(),
-                viewer.page.as_str(),
+                viewer.page_id.as_str(),
                 viewer.tier
             ),
-            ("42", "Erik", id.as_str(), Some(2))
+            ("42", "Erik", page_id.as_str(), Some(2))
         );
         assert_eq!(api.accounts.get("42"), None);
         assert_eq!(api.auth.session_of(session), None);
@@ -386,7 +392,7 @@ mod tests {
             "https://cloud.moblin.app/twitch/third#viewerSignInFailed=twitch"
         );
         let response = client
-            .get(format!("http://{address}/auth/twitch/login?page={id}"))
+            .get(format!("http://{address}/auth/twitch/login?page={page_id}"))
             .send()
             .await
             .unwrap();
@@ -411,7 +417,7 @@ mod tests {
             "https://cloud.moblin.app/twitch/erik#viewerSignInFailed=twitch"
         );
         let response = client
-            .get(format!("http://{address}/auth/twitch/login?page={id}"))
+            .get(format!("http://{address}/auth/twitch/login?page={page_id}"))
             .send()
             .await
             .unwrap();
@@ -455,19 +461,19 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {
             api.auth.viewer_session(
                 Platform::Twitch,
                 viewer.to_string(),
                 format!("Viewer {viewer}"),
-                id.clone(),
+                page_id.clone(),
                 tier,
             )
         };
         let spin = async |session: &str| {
             client
-                .post(format!("http://{address}/pages/{id}/spin/subscriber"))
+                .post(format!("http://{address}/pages/{page_id}/spin/subscriber"))
                 .bearer_auth(session)
                 .json(&json!({"message": " Big one "}))
                 .send()
@@ -500,7 +506,7 @@ mod tests {
         );
         let status = async |session: &str| {
             client
-                .get(format!("http://{address}/pages/{id}/spin/subscriber"))
+                .get(format!("http://{address}/pages/{page_id}/spin/subscriber"))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -513,7 +519,7 @@ mod tests {
             StatusCode::UNAUTHORIZED
         );
         let public: Value = client
-            .get(format!("http://{address}/pages/{id}/spin"))
+            .get(format!("http://{address}/pages/{page_id}/spin"))
             .send()
             .await
             .unwrap()
@@ -566,7 +572,7 @@ mod tests {
             "You have used all your spins this month."
         );
         let upgraded: Value = client
-            .get(format!("http://{address}/pages/{id}/spin/subscriber"))
+            .get(format!("http://{address}/pages/{page_id}/spin/subscriber"))
             .bearer_auth(viewer("11", Some(3)))
             .send()
             .await
@@ -579,7 +585,7 @@ mod tests {
             json!({"platform": "twitch", "name": "Viewer 11", "tier": 3, "allowance": 2, "left": 1})
         );
         let status: Value = client
-            .get(format!("http://{address}/pages/{id}/spin/subscriber"))
+            .get(format!("http://{address}/pages/{page_id}/spin/subscriber"))
             .bearer_auth(viewer("31", Some(3)))
             .send()
             .await
@@ -670,9 +676,9 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let twitch_only = create_account(&api, "2", "Other", "other").page_id;
-        for page in ["unknown", twitch_only.as_str()] {
+        for page_id in ["unknown", twitch_only.as_str()] {
             let response = client
-                .get(format!("http://{address}/auth/kick/login?page={page}"))
+                .get(format!("http://{address}/auth/kick/login?page={page_id}"))
                 .send()
                 .await
                 .unwrap();
@@ -689,9 +695,10 @@ mod tests {
             assert_eq!(query["scope"], "user:read channel:read");
             flow.finish("kick", code, &query["state"], &cookie).await
         };
-        let viewer_of = |page: &str| {
-            page.strip_prefix("https://cloud.moblin.app/kick/kickerik#viewer=")
-                .unwrap_or_else(|| panic!("{page}"))
+        let viewer_of = |page_id: &str| {
+            page_id
+                .strip_prefix("https://cloud.moblin.app/kick/kickerik#viewer=")
+                .unwrap_or_else(|| panic!("{page_id}"))
                 .to_string()
         };
         let subscriber = viewer_of(&viewer_sign_in("kick-sub").await);
@@ -701,7 +708,7 @@ mod tests {
                 viewer.platform,
                 viewer.id.as_str(),
                 viewer.name.as_str(),
-                viewer.page.as_str(),
+                viewer.page_id.as_str(),
                 viewer.tier
             ),
             (Platform::Kick, "777", "Sub", id.as_str(), Some(1))

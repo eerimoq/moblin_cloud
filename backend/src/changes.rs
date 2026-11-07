@@ -16,17 +16,17 @@ pub struct Changes {
 }
 
 impl Changes {
-    pub fn subscribe(&self, page: &str) -> broadcast::Receiver<Change> {
+    pub fn subscribe(&self, page_id: &str) -> broadcast::Receiver<Change> {
         let mut pages = self.pages.lock().unwrap();
         pages.retain(|_, sender| sender.receiver_count() > 0);
         pages
-            .entry(page.to_string())
+            .entry(page_id.to_string())
             .or_insert_with(|| broadcast::channel(16).0)
             .subscribe()
     }
 
-    pub fn notify(&self, page: &str, change: Change) {
-        if let Some(sender) = self.pages.lock().unwrap().get(page) {
+    pub fn notify(&self, page_id: &str, change: Change) {
+        if let Some(sender) = self.pages.lock().unwrap().get(page_id) {
             let _ = sender.send(change);
         }
     }

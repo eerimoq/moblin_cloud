@@ -32,21 +32,21 @@ async fn account_image(
 
 pub(super) async fn handle_assistant_image(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let result = assistant_image(&api, &id, &headers, body).await;
+    let result = assistant_image(&api, &page_id, &headers, body).await;
     counted(&api, "imageUploads", result)
 }
 
 async fn assistant_image(
     api: &Api,
-    page: &str,
+    page_id: &str,
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let user = editor(api, headers, page)?;
+    let user = editor(api, headers, page_id)?;
     let premium = is_premium(api, &user.streamer);
     save_image(
         api,
@@ -83,18 +83,18 @@ async fn save_image(
             text: "That image could not be read. Use a JPEG, PNG or WebP at least 600 pixels wide and at most 4000 pixels on each side."
                 .to_string(),
         })?;
-    let page = &account.page_id;
-    let version = api.pages.set_image(page, &image).map_err(|_| Failure {
+    let page_id = &account.page_id;
+    let version = api.pages.set_image(page_id, &image).map_err(|_| Failure {
         reason: "not-saved",
         status: StatusCode::INTERNAL_SERVER_ERROR,
         text: "The image could not be saved. Try again.".to_string(),
     })?;
     info!(
-        "{id} uploaded banner image {version} of {} bytes for page {page}",
+        "{id} uploaded banner image {version} of {} bytes for page {page_id}",
         image.len()
     );
-    api.remote_control.changes.notify(page, Change::Page);
-    Ok(settings_response(api, account, api.pages.look(page)))
+    api.remote_control.changes.notify(page_id, Change::Page);
+    Ok(settings_response(api, account, api.pages.look(page_id)))
 }
 
 pub(super) async fn handle_account_image_remove(
@@ -107,10 +107,10 @@ pub(super) async fn handle_account_image_remove(
 
 pub(super) async fn handle_assistant_image_remove(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let user = editor(&api, &headers, &id)?;
+    let user = editor(&api, &headers, &page_id)?;
     remove_image(&api, &user.signed_in.account.id, &user.streamer)
         .map(without_payments)
         .map_err(Failure::from)
@@ -121,16 +121,16 @@ fn remove_image(
     id: &str,
     account: &Account,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let page = &account.page_id;
-    api.pages.remove_image(page).map_err(|_| {
+    let page_id = &account.page_id;
+    api.pages.remove_image(page_id).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "the image could not be removed".to_string(),
         )
     })?;
-    info!("{id} removed the banner image of page {page}");
-    api.remote_control.changes.notify(page, Change::Page);
-    Ok(settings_response(api, account, api.pages.look(page)))
+    info!("{id} removed the banner image of page {page_id}");
+    api.remote_control.changes.notify(page_id, Change::Page);
+    Ok(settings_response(api, account, api.pages.look(page_id)))
 }
 
 #[cfg(test)]
@@ -153,7 +153,7 @@ mod tests {
                 .body(body)
                 .send()
         };
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         let response = upload(session, images::tests::png(1200, 400))
             .await
             .unwrap();
@@ -171,8 +171,8 @@ mod tests {
             .unwrap();
         assert_eq!(account["premium"], true);
         assert_eq!(account["settings"]["image"], Value::Null);
-        let page = account["settings"]["id"].as_str().unwrap().to_string();
-        let image_url = format!("http://{address}/pages/{page}/image");
+        let premium_page_id = account["settings"]["id"].as_str().unwrap().to_string();
+        let image_url = format!("http://{address}/pages/{premium_page_id}/image");
         assert_eq!(
             client.get(&image_url).send().await.unwrap().status(),
             StatusCode::NOT_FOUND
@@ -193,7 +193,7 @@ mod tests {
             .unwrap();
         let first = settings["image"].as_str().unwrap().to_string();
         let profile: Value = client
-            .get(format!("http://{address}/pages/{page}"))
+            .get(format!("http://{address}/pages/{premium_page_id}"))
             .send()
             .await
             .unwrap()
@@ -213,7 +213,7 @@ mod tests {
             .unwrap();
         assert_ne!(settings["image"], first);
         let other: Value = client
-            .get(format!("http://{address}/pages/{id}"))
+            .get(format!("http://{address}/pages/{page_id}"))
             .send()
             .await
             .unwrap()

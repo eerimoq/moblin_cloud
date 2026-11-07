@@ -31,7 +31,7 @@ fn until_stopping<S: Stream<Item = Event> + Send + 'static>(
 struct Watching {
     api: Arc<Api>,
     headers: HeaderMap,
-    page: String,
+    page_id: String,
     changes: Receiver<Change>,
     lagged: bool,
     check_at: Instant,
@@ -39,15 +39,15 @@ struct Watching {
 
 pub(super) async fn handle_page_events(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    assistant(&api, &headers, &id)?;
+    assistant(&api, &headers, &page_id)?;
     let watching = Watching {
         api: api.clone(),
         headers,
-        changes: api.remote_control.changes.subscribe(&id),
-        page: id,
+        changes: api.remote_control.changes.subscribe(&page_id),
+        page_id,
         lagged: false,
         check_at: Instant::now() + api.timing.access_recheck,
     };
@@ -71,7 +71,7 @@ pub(super) async fn handle_page_events(
                     return Some((signal(name), watching));
                 }
                 _ = sleep_until(watching.check_at) => {
-                    if assistant(&watching.api, &watching.headers, &watching.page).is_err() {
+                    if assistant(&watching.api, &watching.headers, &watching.page_id).is_err() {
                         return None;
                     }
                     watching.check_at = Instant::now() + watching.api.timing.access_recheck;
@@ -84,10 +84,12 @@ pub(super) async fn handle_page_events(
 
 pub(super) async fn handle_public_page_events(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
-    api.accounts.of_page(&id).ok_or(StatusCode::NOT_FOUND)?;
-    let changes = api.remote_control.changes.subscribe(&id);
+    api.accounts
+        .of_page(&page_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let changes = api.remote_control.changes.subscribe(&page_id);
     let stream = unfold(changes, |mut changes| async move {
         loop {
             match changes.recv().await {
@@ -146,9 +148,9 @@ mod tests {
         );
     }
 
-    fn captured_tip(api: &crate::api::Api, page: &str) {
+    fn captured_tip(api: &crate::api::Api, page_id: &str) {
         let order = Order {
-            streamer: page.to_string(),
+            streamer: page_id.to_string(),
             item: Item::Tip {
                 message: Some("Hi".to_string()),
             },
@@ -165,8 +167,8 @@ mod tests {
     async fn dashboards_hear_about_changes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
-        let url = format!("http://{address}/account/pages/{page}/events");
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
+        let url = format!("http://{address}/account/pages/{page_id}/events");
         let mut events = Events::open(&client, &url, &session).await;
         let mut socket = connect(&address, &moblin_cloud_key).await;
         assert_eq!(events.next().await, ("account".to_string(), json!({})));
@@ -188,7 +190,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(events.next().await.0, "account");
-        captured_tip(&api, &page);
+        captured_tip(&api, &page_id);
         let response = client
             .post(format!("http://{address}/account/recent/TIP1/resend"))
             .bearer_auth(&session)
@@ -209,10 +211,10 @@ mod tests {
     async fn assistants_hear_about_their_channels() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, _, page) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         let assistant = create_account(&api, "21", "Mod 21", "mod21");
         let assistant_session = api.auth.session("21", 0);
-        let url = format!("http://{address}/account/pages/{page}/events");
+        let url = format!("http://{address}/account/pages/{page_id}/events");
         let response = client
             .get(&url)
             .bearer_auth(&assistant_session)
@@ -256,10 +258,10 @@ mod tests {
     async fn tip_pages_hear_about_changes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut events = Events::open(
             &client,
-            &format!("http://{address}/pages/{page}/events"),
+            &format!("http://{address}/pages/{page_id}/events"),
             "",
         )
         .await;
@@ -280,7 +282,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        captured_tip(&api, &page);
+        captured_tip(&api, &page_id);
         let response = client
             .post(format!("http://{address}/account/recent/TIP1/resend"))
             .bearer_auth(&session)

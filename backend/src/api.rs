@@ -463,13 +463,13 @@ fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failu
 }
 
 fn active(api: &Api, user: &PageUser, remote_control: bool) {
-    let page = &user.streamer.page_id;
-    if user.signed_in.account.page_id != *page
+    let page_id = &user.streamer.page_id;
+    if user.signed_in.account.page_id != *page_id
         && api
             .accounts
-            .active(&user.signed_in.account.id, page, remote_control)
+            .active(&user.signed_in.account.id, page_id, remote_control)
     {
-        api.remote_control.changes.notify(page, Change::Account);
+        api.remote_control.changes.notify(page_id, Change::Account);
     }
 }
 

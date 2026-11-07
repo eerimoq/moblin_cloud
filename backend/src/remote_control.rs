@@ -648,14 +648,14 @@ pub struct PreviewWatch {
 
 struct PreviewGuard {
     sessions: Arc<Mutex<Sessions>>,
-    page: String,
+    page_id: String,
     device: String,
 }
 
 impl Drop for PreviewGuard {
     fn drop(&mut self) {
         let mut sessions = self.sessions.lock().unwrap();
-        let key = (self.page.clone(), self.device.clone());
+        let key = (self.page_id.clone(), self.device.clone());
         let Some(preview) = sessions.previews.get_mut(&key) else {
             return;
         };
@@ -664,7 +664,7 @@ impl Drop for PreviewGuard {
             return;
         }
         sessions.previews.remove(&key);
-        if let Some(session) = sessions.get_mut(&self.page, &self.device, None)
+        if let Some(session) = sessions.get_mut(&self.page_id, &self.device, None)
             && session.preview_requested
         {
             session.preview_requested = false;
@@ -682,7 +682,7 @@ pub struct Watch {
 struct WatchGuard {
     sessions: Arc<Mutex<Sessions>>,
     changes: Arc<Changes>,
-    page: String,
+    page_id: String,
     device: String,
     watcher: String,
 }
@@ -690,14 +690,14 @@ struct WatchGuard {
 impl Drop for WatchGuard {
     fn drop(&mut self) {
         let mut sessions = self.sessions.lock().unwrap();
-        let Some(monitor) = sessions.monitor_mut(&self.page, &self.device) else {
+        let Some(monitor) = sessions.monitor_mut(&self.page_id, &self.device) else {
             return;
         };
         if let Some(count) = monitor.watchers.get_mut(&self.watcher) {
             *count -= 1;
             if *count == 0 {
                 monitor.watchers.remove(&self.watcher);
-                self.changes.notify(&self.page, Change::Account);
+                self.changes.notify(&self.page_id, Change::Account);
             }
         }
         if !monitor.watchers.is_empty() {
@@ -705,12 +705,12 @@ impl Drop for WatchGuard {
         }
         if let Some(poll) = sessions
             .monitors
-            .remove(&(self.page.clone(), self.device.clone()))
+            .remove(&(self.page_id.clone(), self.device.clone()))
             .and_then(|monitor| monitor.poll)
         {
             poll.abort();
         }
-        if let Some(session) = sessions.get_mut(&self.page, &self.device, None)
+        if let Some(session) = sessions.get_mut(&self.page_id, &self.device, None)
             && session.status_requested
         {
             session.status_requested = false;
@@ -790,40 +790,45 @@ struct Sessions {
 }
 
 impl Sessions {
-    fn get_mut(&mut self, page: &str, device: &str, number: Option<u64>) -> Option<&mut Session> {
-        self.by_page.get_mut(page)?.iter_mut().find(|session| {
+    fn get_mut(
+        &mut self,
+        page_id: &str,
+        device: &str,
+        number: Option<u64>,
+    ) -> Option<&mut Session> {
+        self.by_page.get_mut(page_id)?.iter_mut().find(|session| {
             session.device == device && number.is_none_or(|number| session.number == number)
         })
     }
 
-    fn monitor_mut(&mut self, page: &str, device: &str) -> Option<&mut Monitor> {
+    fn monitor_mut(&mut self, page_id: &str, device: &str) -> Option<&mut Monitor> {
         self.monitors
-            .get_mut(&(page.to_string(), device.to_string()))
+            .get_mut(&(page_id.to_string(), device.to_string()))
     }
 
     fn monitor_of(
         &mut self,
-        page: &str,
+        page_id: &str,
         device: &str,
         number: u64,
     ) -> Option<(Totals, &mut Monitor)> {
         let traffic = self
-            .get_mut(page, device, Some(number))?
+            .get_mut(page_id, device, Some(number))?
             .socket_traffic
             .totals();
-        Some((traffic, self.monitor_mut(page, device)?))
+        Some((traffic, self.monitor_mut(page_id, device)?))
     }
 
-    fn ended(&mut self, page: &str, session: &Session) {
+    fn ended(&mut self, page_id: &str, session: &Session) {
         if !session.reconnecting
-            && let Some(monitor) = self.monitor_mut(page, &session.device)
+            && let Some(monitor) = self.monitor_mut(page_id, &session.device)
         {
             monitor.disconnected();
         }
     }
 
-    fn wheel(&self, page: &str) -> Option<&Session> {
-        let sessions = self.by_page.get(page)?;
+    fn wheel(&self, page_id: &str) -> Option<&Session> {
+        let sessions = self.by_page.get(page_id)?;
         sessions
             .iter()
             .find(|session| session.wheel.is_some())
@@ -845,7 +850,7 @@ pub struct Identity {
 }
 
 pub struct Connection {
-    page: String,
+    page_id: String,
     device: String,
     number: u64,
     receiver: mpsc::UnboundedReceiver<MessageToStreamer>,
@@ -891,11 +896,11 @@ async fn send(
     Ok(())
 }
 
-async fn poll_status(sessions: Arc<Mutex<Sessions>>, page: String, device: String) {
+async fn poll_status(sessions: Arc<Mutex<Sessions>>, page_id: String, device: String) {
     loop {
         sleep(Duration::from_secs(5)).await;
         let mut sessions = sessions.lock().unwrap();
-        if let Some(session) = sessions.get_mut(&page, &device, None)
+        if let Some(session) = sessions.get_mut(&page_id, &device, None)
             && !session.reconnecting
         {
             session.send(Request::GetStatus {});
@@ -953,15 +958,15 @@ impl Streamers {
         }
     }
 
-    pub fn disconnect(&self, page: &str) {
+    pub fn disconnect(&self, page_id: &str) {
         let mut sessions = self.sessions.lock().unwrap();
-        for session in sessions.by_page.remove(page).into_iter().flatten() {
-            sessions.ended(page, &session);
+        for session in sessions.by_page.remove(page_id).into_iter().flatten() {
+            sessions.ended(page_id, &session);
         }
     }
 
-    pub fn is_connected(&self, page: &str) -> bool {
-        self.sessions.lock().unwrap().by_page.contains_key(page)
+    pub fn is_connected(&self, page_id: &str) -> bool {
+        self.sessions.lock().unwrap().by_page.contains_key(page_id)
     }
 
     pub fn connected_count(&self) -> usize {
@@ -975,15 +980,15 @@ impl Streamers {
             .count()
     }
 
-    pub fn devices(&self, page: &str) -> Vec<Device> {
+    pub fn devices(&self, page_id: &str) -> Vec<Device> {
         let sessions = self.sessions.lock().unwrap();
         let wheel = sessions
-            .wheel(page)
+            .wheel(page_id)
             .filter(|session| session.wheel.is_some())
             .map(|session| session.number);
         sessions
             .by_page
-            .get(page)
+            .get(page_id)
             .into_iter()
             .flatten()
             .map(|session| Device {
@@ -994,21 +999,23 @@ impl Streamers {
             .collect()
     }
 
-    pub fn watchers(&self, page: &str) -> HashMap<String, Vec<String>> {
+    pub fn watchers(&self, page_id: &str) -> HashMap<String, Vec<String>> {
         let sessions = self.sessions.lock().unwrap();
         sessions
             .monitors
             .iter()
-            .filter(|((monitored, _), _)| monitored == page)
+            .filter(|((monitored, _), _)| monitored == page_id)
             .map(|((_, device), monitor)| {
                 (device.clone(), monitor.watchers.keys().cloned().collect())
             })
             .collect()
     }
 
-    pub fn wheel_device(&self, page: &str) -> Option<String> {
+    pub fn wheel_device(&self, page_id: &str) -> Option<String> {
         let sessions = self.sessions.lock().unwrap();
-        sessions.wheel(page).map(|session| session.device.clone())
+        sessions
+            .wheel(page_id)
+            .map(|session| session.device.clone())
     }
 
     pub async fn identify(&self, socket: &mut Socket) -> Result<Identity> {
@@ -1045,7 +1052,7 @@ impl Streamers {
 
     pub fn connect(
         &self,
-        page: &str,
+        page_id: &str,
         device: &str,
         socket_traffic: Arc<SocketTraffic>,
     ) -> Option<Connection> {
@@ -1053,7 +1060,7 @@ impl Streamers {
         let total: usize = sessions.by_page.values().map(Vec::len).sum();
         let others = sessions
             .by_page
-            .get(page)
+            .get(page_id)
             .into_iter()
             .flatten()
             .filter(|session| session.device != device)
@@ -1077,7 +1084,7 @@ impl Streamers {
             preview_requested: false,
             socket_traffic,
         };
-        let page_sessions = sessions.by_page.entry(page.to_string()).or_default();
+        let page_sessions = sessions.by_page.entry(page_id.to_string()).or_default();
         match page_sessions.iter_mut().find(|old| old.device == device) {
             Some(old) => {
                 session.wheel = old.wheel.take();
@@ -1086,7 +1093,7 @@ impl Streamers {
             None => page_sessions.push(session),
         }
         Some(Connection {
-            page: page.to_string(),
+            page_id: page_id.to_string(),
             device: device.to_string(),
             number,
             receiver,
@@ -1101,7 +1108,7 @@ impl Streamers {
         on_icon: impl Fn(&'static Icon),
     ) {
         let Connection {
-            page,
+            page_id,
             device,
             number,
             mut receiver,
@@ -1117,9 +1124,9 @@ impl Streamers {
             .await
             .is_ok()
         {
-            info!("remote control streamer {page} device {device} connected");
-            self.changes.notify(&page, Change::Page);
-            self.resume_watching(&page, &device, number);
+            info!("remote control streamer {page_id} device {device} connected");
+            self.changes.notify(&page_id, Change::Page);
+            self.resume_watching(&page_id, &device, number);
             let writer = async {
                 while let Some(message) = receiver.recv().await {
                     let sent = send(&mut sink, &message, &self.traffic, socket_traffic);
@@ -1136,7 +1143,7 @@ impl Streamers {
                         Message::Text(text) => {
                             if let Some(message) = self.receive(text.as_str(), socket_traffic)
                                 && let Some(reply) =
-                                    self.handle(&page, &device, number, message, &on_icon)
+                                    self.handle(&page_id, &device, number, message, &on_icon)
                                 && let Some(replies) = replies.upgrade()
                             {
                                 let _ = replies.send(reply);
@@ -1159,12 +1166,12 @@ impl Streamers {
         let _ = timeout(Duration::from_secs(1), sink.close()).await;
         drop(sink);
         drop(stream);
-        if !stopped && self.left(&page, &device, number) {
-            info!("remote control streamer {page} device {device} reconnecting");
+        if !stopped && self.left(&page_id, &device, number) {
+            info!("remote control streamer {page_id} device {device} reconnecting");
             sleep(self.linger).await;
         }
-        self.remove(&page, &device, number);
-        info!("remote control streamer {page} device {device} disconnected");
+        self.remove(&page_id, &device, number);
+        info!("remote control streamer {page_id} device {device} disconnected");
     }
 
     fn receive(&self, text: &str, socket_traffic: &SocketTraffic) -> Option<MessageToAssistant> {
@@ -1179,7 +1186,7 @@ impl Streamers {
 
     fn handle(
         &self,
-        page: &str,
+        page_id: &str,
         device: &str,
         number: u64,
         message: MessageToAssistant,
@@ -1193,7 +1200,7 @@ impl Streamers {
                 data,
             } => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some((traffic, monitor)) = sessions.monitor_of(page, device, number) {
+                if let Some((traffic, monitor)) = sessions.monitor_of(page_id, device, number) {
                     if let Some(settings) = data
                         .as_ref()
                         .and_then(|data| data.get("getSettings"))
@@ -1219,7 +1226,7 @@ impl Streamers {
                         );
                     }
                 }
-                if let Some(session) = sessions.get_mut(page, device, Some(number))
+                if let Some(session) = sessions.get_mut(page_id, device, Some(number))
                     && let Some(pending) = session.pending.remove(&request_id)
                 {
                     let _ = pending.send((result, data));
@@ -1234,7 +1241,7 @@ impl Streamers {
                     },
             } => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some((traffic, monitor)) = sessions.monitor_of(page, device, number) {
+                if let Some((traffic, monitor)) = sessions.monitor_of(page_id, device, number) {
                     monitor.merge_status(general, top_left, top_right, true, traffic);
                 }
             }
@@ -1242,7 +1249,7 @@ impl Streamers {
                 data: Event::State { data },
             } => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some((_, monitor)) = sessions.monitor_of(page, device, number)
+                if let Some((_, monitor)) = sessions.monitor_of(page_id, device, number)
                     && let Some(changes) = data.as_object()
                 {
                     if let Some(state) = monitor.state.as_object_mut() {
@@ -1256,10 +1263,10 @@ impl Streamers {
             MessageToAssistant::Preview { preview } => {
                 let mut sessions = self.sessions.lock().unwrap();
                 if preview.len() <= 2_000_000
-                    && sessions.get_mut(page, device, Some(number)).is_some()
+                    && sessions.get_mut(page_id, device, Some(number)).is_some()
                     && let Some(watched) = sessions
                         .previews
-                        .get_mut(&(page.to_string(), device.to_string()))
+                        .get_mut(&(page_id.to_string(), device.to_string()))
                 {
                     let frame: Arc<str> = preview.into();
                     watched.frame = Some(frame.clone());
@@ -1270,9 +1277,9 @@ impl Streamers {
                 data: Event::WheelOfLuck { wheel },
             } => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
+                if let Some(session) = sessions.get_mut(page_id, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
-                    self.changes.notify(page, Change::Page);
+                    self.changes.notify(page_id, Change::Page);
                 }
             }
             MessageToAssistant::Event {
@@ -1280,7 +1287,7 @@ impl Streamers {
             } => {
                 if let Some(icon) = icons::of_moblin(&id) {
                     on_icon(icon);
-                    self.changes.notify(page, Change::Page);
+                    self.changes.notify(page_id, Change::Page);
                 }
             }
             MessageToAssistant::Identify { .. } => {}
@@ -1288,45 +1295,45 @@ impl Streamers {
         None
     }
 
-    fn left(&self, page: &str, device: &str, number: u64) -> bool {
+    fn left(&self, page_id: &str, device: &str, number: u64) -> bool {
         let mut sessions = self.sessions.lock().unwrap();
-        let Some(session) = sessions.get_mut(page, device, Some(number)) else {
+        let Some(session) = sessions.get_mut(page_id, device, Some(number)) else {
             return false;
         };
         session.reconnecting = true;
         session.status_requested = false;
         session.preview_requested = false;
         session.pending.clear();
-        if let Some(monitor) = sessions.monitor_mut(page, device) {
+        if let Some(monitor) = sessions.monitor_mut(page_id, device) {
             monitor.disconnected();
         }
-        self.changes.notify(page, Change::Page);
+        self.changes.notify(page_id, Change::Page);
         true
     }
 
-    fn resume_watching(&self, page: &str, device: &str, number: u64) {
+    fn resume_watching(&self, page_id: &str, device: &str, number: u64) {
         let mut sessions = self.sessions.lock().unwrap();
         if sessions
             .previews
-            .contains_key(&(page.to_string(), device.to_string()))
-            && let Some(session) = sessions.get_mut(page, device, Some(number))
+            .contains_key(&(page_id.to_string(), device.to_string()))
+            && let Some(session) = sessions.get_mut(page_id, device, Some(number))
         {
             session.start_preview();
         }
-        if sessions.monitor_mut(page, device).is_none() {
+        if sessions.monitor_mut(page_id, device).is_none() {
             return;
         }
-        if let Some(session) = sessions.get_mut(page, device, Some(number)) {
+        if let Some(session) = sessions.get_mut(page_id, device, Some(number)) {
             session.start_status();
         }
-        if let Some(monitor) = sessions.monitor_mut(page, device) {
+        if let Some(monitor) = sessions.monitor_mut(page_id, device) {
             monitor.publish(Update::Connection { connected: true });
         }
     }
 
-    pub fn watch(&self, (page, device): (&str, &str), watcher: &str) -> Watch {
+    pub fn watch(&self, (page_id, device): (&str, &str), watcher: &str) -> Watch {
         let mut sessions = self.sessions.lock().unwrap();
-        let traffic = match sessions.get_mut(page, device, None) {
+        let traffic = match sessions.get_mut(page_id, device, None) {
             Some(session) => {
                 session.start_status();
                 (!session.reconnecting).then(|| session.socket_traffic.totals())
@@ -1335,12 +1342,12 @@ impl Streamers {
         };
         let monitor = sessions
             .monitors
-            .entry((page.to_string(), device.to_string()))
+            .entry((page_id.to_string(), device.to_string()))
             .or_insert_with(|| Monitor {
                 poll: Some(
                     tokio::spawn(poll_status(
                         self.sessions.clone(),
-                        page.to_string(),
+                        page_id.to_string(),
                         device.to_string(),
                     ))
                     .abort_handle(),
@@ -1350,7 +1357,7 @@ impl Streamers {
         let count = monitor.watchers.entry(watcher.to_string()).or_default();
         *count += 1;
         if *count == 1 {
-            self.changes.notify(page, Change::Account);
+            self.changes.notify(page_id, Change::Account);
         }
         Watch {
             snapshot: monitor.snapshot(traffic),
@@ -1358,21 +1365,21 @@ impl Streamers {
             _guard: WatchGuard {
                 sessions: self.sessions.clone(),
                 changes: self.changes.clone(),
-                page: page.to_string(),
+                page_id: page_id.to_string(),
                 device: device.to_string(),
                 watcher: watcher.to_string(),
             },
         }
     }
 
-    pub fn watch_preview(&self, (page, device): (&str, &str)) -> PreviewWatch {
+    pub fn watch_preview(&self, (page_id, device): (&str, &str)) -> PreviewWatch {
         let mut sessions = self.sessions.lock().unwrap();
-        if let Some(session) = sessions.get_mut(page, device, None) {
+        if let Some(session) = sessions.get_mut(page_id, device, None) {
             session.start_preview();
         }
         let preview = sessions
             .previews
-            .entry((page.to_string(), device.to_string()))
+            .entry((page_id.to_string(), device.to_string()))
             .or_insert_with(|| PreviewMonitor {
                 watchers: 0,
                 frame: None,
@@ -1384,7 +1391,7 @@ impl Streamers {
             frames: preview.frames.subscribe(),
             _guard: PreviewGuard {
                 sessions: self.sessions.clone(),
-                page: page.to_string(),
+                page_id: page_id.to_string(),
                 device: device.to_string(),
             },
         }
@@ -1392,28 +1399,28 @@ impl Streamers {
 
     pub async fn control(
         &self,
-        (page, device): (&str, &str),
+        (page_id, device): (&str, &str),
         control: Control,
         answer: Duration,
     ) -> Result<Option<Value>, RequestError> {
         let changes_settings = control.changes_settings();
         let wait = control.wait(answer);
         let data = self
-            .request((page, device), Request::Control(control), wait)
+            .request((page_id, device), Request::Control(control), wait)
             .await?;
         let mut sessions = self.sessions.lock().unwrap();
         if changes_settings
-            && sessions.monitor_mut(page, device).is_some()
-            && let Some(session) = sessions.get_mut(page, device, None)
+            && sessions.monitor_mut(page_id, device).is_some()
+            && let Some(session) = sessions.get_mut(page_id, device, None)
         {
             session.send(Request::GetSettings {});
         }
         Ok(data)
     }
 
-    fn remove(&self, page: &str, device: &str, number: u64) {
+    fn remove(&self, page_id: &str, device: &str, number: u64) {
         let mut sessions = self.sessions.lock().unwrap();
-        let Some(page_sessions) = sessions.by_page.get_mut(page) else {
+        let Some(page_sessions) = sessions.by_page.get_mut(page_id) else {
             return;
         };
         let Some(index) = page_sessions
@@ -1424,29 +1431,29 @@ impl Streamers {
         };
         let session = page_sessions.remove(index);
         if page_sessions.is_empty() {
-            sessions.by_page.remove(page);
+            sessions.by_page.remove(page_id);
         }
-        sessions.ended(page, &session);
+        sessions.ended(page_id, &session);
     }
 
-    pub fn wheel(&self, page: &str) -> Option<Wheel> {
+    pub fn wheel(&self, page_id: &str) -> Option<Wheel> {
         self.sessions
             .lock()
             .unwrap()
-            .wheel(page)
+            .wheel(page_id)
             .and_then(|session| session.wheel.clone())
     }
 
     pub async fn tip(
         &self,
-        (page, device): (&str, &str),
+        (page_id, device): (&str, &str),
         name: String,
         message: String,
         kind: TipKind,
         request_id: String,
     ) -> Result<(), RequestError> {
         self.request(
-            (page, device),
+            (page_id, device),
             Request::Tip {
                 name,
                 message,
@@ -1461,14 +1468,14 @@ impl Streamers {
 
     async fn request(
         &self,
-        (page, device): (&str, &str),
+        (page_id, device): (&str, &str),
         data: Request,
         wait: Duration,
     ) -> Result<Option<Value>, RequestError> {
         let (number, request_id, receiver) = {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions
-                .get_mut(page, device, None)
+                .get_mut(page_id, device, None)
                 .filter(|session| !session.reconnecting)
                 .ok_or(RequestError::Offline)?;
             if session.sender.is_closed() {
@@ -1484,7 +1491,7 @@ impl Streamers {
             Ok(Err(_)) => return Err(RequestError::Offline),
             Err(_) => {
                 let mut sessions = self.sessions.lock().unwrap();
-                if let Some(session) = sessions.get_mut(page, device, Some(number)) {
+                if let Some(session) = sessions.get_mut(page_id, device, Some(number)) {
                     session.pending.remove(&request_id);
                 }
                 return Err(RequestError::Timeout);
@@ -2228,8 +2235,8 @@ mod tests {
                 .all(|c| c == '-' || c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
         );
         assert_ne!(streamers.new_moblin_cloud_key(), moblin_cloud_key);
-        let id = streamers.new_page_id().unwrap();
-        assert_eq!(id.len(), 16);
-        assert_ne!(streamers.new_page_id().unwrap(), id);
+        let page_id = streamers.new_page_id().unwrap();
+        assert_eq!(page_id.len(), 16);
+        assert_ne!(streamers.new_page_id().unwrap(), page_id);
     }
 }

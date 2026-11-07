@@ -27,8 +27,8 @@ struct SnapshotResponse {
     snapshot: Snapshot,
 }
 
-fn known_device(api: &Api, page: &str, device: &str) -> Result<DeviceResponse, Failure> {
-    devices(api, page, false)
+fn known_device(api: &Api, page_id: &str, device: &str) -> Result<DeviceResponse, Failure> {
+    devices(api, page_id, false)
         .into_iter()
         .find(|known| known.id == device)
         .ok_or(failure(
@@ -72,7 +72,7 @@ fn request_failure(error: RequestError) -> Failure {
 struct Streaming {
     api: Arc<Api>,
     headers: HeaderMap,
-    page: String,
+    page_id: String,
     watch: Watch,
     check_at: Instant,
     stopping: watch::Receiver<bool>,
@@ -80,14 +80,14 @@ struct Streaming {
 
 pub(super) async fn handle_device_events(
     State(api): State<Arc<Api>>,
-    Path((id, device)): Path<(String, String)>,
+    Path((page_id, device)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    let user = watcher(&api, &headers, &id)?;
-    let known = known_device(&api, &id, &device)?;
+    let user = watcher(&api, &headers, &page_id)?;
+    let known = known_device(&api, &page_id, &device)?;
     let watch = api
         .remote_control
-        .watch((&id, &device), &user.signed_in.account.id);
+        .watch((&page_id, &device), &user.signed_in.account.id);
     let first = Event::default()
         .event("snapshot")
         .json_data(SnapshotResponse {
@@ -100,7 +100,7 @@ pub(super) async fn handle_device_events(
     let streaming = Streaming {
         api,
         headers,
-        page: id,
+        page_id,
         watch,
         check_at,
         stopping,
@@ -119,7 +119,7 @@ pub(super) async fn handle_device_events(
                 }
                 _ = stopping.wait_for(|stopping| *stopping) => return None,
                 _ = sleep_until(streaming.check_at) => {
-                    if watcher(&streaming.api, &streaming.headers, &streaming.page).is_err() {
+                    if watcher(&streaming.api, &streaming.headers, &streaming.page_id).is_err() {
                         return None;
                     }
                     streaming.check_at = Instant::now() + streaming.api.timing.access_recheck;
@@ -145,7 +145,7 @@ fn frame_event(image: &str) -> Option<Event> {
 struct Previewing {
     api: Arc<Api>,
     headers: HeaderMap,
-    page: String,
+    page_id: String,
     watch: PreviewWatch,
     check_at: Instant,
     stopping: watch::Receiver<bool>,
@@ -153,19 +153,19 @@ struct Previewing {
 
 pub(super) async fn handle_device_preview(
     State(api): State<Arc<Api>>,
-    Path((id, device)): Path<(String, String)>,
+    Path((page_id, device)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
-    previewer(&api, &headers, &id)?;
-    known_device(&api, &id, &device)?;
-    let watch = api.remote_control.watch_preview((&id, &device));
+    previewer(&api, &headers, &page_id)?;
+    known_device(&api, &page_id, &device)?;
+    let watch = api.remote_control.watch_preview((&page_id, &device));
     let first = watch.frame.as_deref().and_then(frame_event);
     let stopping = api.stopping.subscribe();
     let check_at = Instant::now() + api.timing.access_recheck;
     let previewing = Previewing {
         api,
         headers,
-        page: id,
+        page_id,
         watch,
         check_at,
         stopping,
@@ -183,7 +183,7 @@ pub(super) async fn handle_device_preview(
                 }
                 _ = stopping.wait_for(|stopping| *stopping) => return None,
                 _ = sleep_until(previewing.check_at) => {
-                    if previewer(&previewing.api, &previewing.headers, &previewing.page).is_err() {
+                    if previewer(&previewing.api, &previewing.headers, &previewing.page_id).is_err() {
                         return None;
                     }
                     previewing.check_at = Instant::now() + previewing.api.timing.access_recheck;
@@ -196,11 +196,11 @@ pub(super) async fn handle_device_preview(
 
 pub(super) async fn handle_device_control(
     State(api): State<Arc<Api>>,
-    Path((id, device)): Path<(String, String)>,
+    Path((page_id, device)): Path<(String, String)>,
     headers: HeaderMap,
     control: Result<Json<Control>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let user = watcher(&api, &headers, &id)?;
+    let user = watcher(&api, &headers, &page_id)?;
     if !matches!(control, Ok(Json(Control::SendMessage { .. })))
         && user.rights.remote_control < Access::Control
     {
@@ -228,15 +228,19 @@ pub(super) async fn handle_device_control(
     if let Control::SendMessage { name, .. } = &mut control {
         *name = Some(user.signed_in.account.name().to_string()).filter(|name| !name.is_empty());
     }
-    known_device(&api, &id, &device)?;
+    known_device(&api, &page_id, &device)?;
     let name = control.name();
     let data = api
         .remote_control
-        .control((&id, &device), control.clone(), api.timing.moblin_answer)
+        .control(
+            (&page_id, &device),
+            control.clone(),
+            api.timing.moblin_answer,
+        )
         .await
         .map_err(|error| control_failure(&control, error))?;
     info!(
-        "{} sent {name} to device {device} of page {id}",
+        "{} sent {name} to device {device} of page {page_id}",
         user.signed_in.account.id
     );
     let Some(key) = control.answers() else {
@@ -302,8 +306,8 @@ mod tests {
     async fn watchers_get_the_status_moblin_pushes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
-        let url = format!("http://{address}/account/pages/{page}/devices/A/events");
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/events");
         let mut socket = connect(&address, &moblin_cloud_key).await;
         let mut events = Events::open(&client, &url, &session).await;
         answer_monitoring(&mut socket, true).await;
@@ -437,7 +441,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let response = client
             .get(format!(
-                "http://{address}/account/pages/{page}/devices/B/events"
+                "http://{address}/account/pages/{page_id}/devices/B/events"
             ))
             .bearer_auth(&session)
             .send()
@@ -454,9 +458,9 @@ mod tests {
     async fn watchers_of_an_offline_device_wait_for_it() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
-        api.accounts.seen_device(&page, "B");
-        let url = format!("http://{address}/account/pages/{page}/devices/B/events");
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
+        api.accounts.seen_device(&page_id, "B");
+        let url = format!("http://{address}/account/pages/{page_id}/devices/B/events");
         let mut events = Events::open(&client, &url, &session).await;
         let (name, snapshot) = events.next().await;
         assert_eq!(name, "snapshot");
@@ -499,8 +503,8 @@ mod tests {
     async fn controls_are_sent_to_moblin() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
-        let url = format!("http://{address}/account/pages/{page}/devices/A/control");
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/control");
         let mut socket = connect(&address, &moblin_cloud_key).await;
         let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
         let call = tokio::spawn(control(
@@ -572,7 +576,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let mut events = Events::open(
             &client,
-            &format!("http://{address}/account/pages/{page}/devices/A/events"),
+            &format!("http://{address}/account/pages/{page_id}/devices/A/events"),
             &session,
         )
         .await;
@@ -608,8 +612,8 @@ mod tests {
     async fn scene_editor_requests_answer_moblins_data() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
-        let url = format!("http://{address}/account/pages/{page}/devices/A/control");
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/control");
         let mut socket = connect(&address, &moblin_cloud_key).await;
         let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
         let call = tokio::spawn(control(json!({"getScenes": {}})));
@@ -690,7 +694,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let mut events = Events::open(
             &client,
-            &format!("http://{address}/account/pages/{page}/devices/A/events"),
+            &format!("http://{address}/account/pages/{page_id}/devices/A/events"),
             &session,
         )
         .await;
@@ -730,9 +734,9 @@ mod tests {
     async fn watchers_get_the_preview() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut socket = connect(&address, &moblin_cloud_key).await;
-        let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/preview");
         let mut preview = Events::open(&client, &url, &session).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], json!({"startPreview": {}}));
@@ -762,7 +766,7 @@ mod tests {
     async fn assistants_view_and_send_messages_but_control_the_device_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut socket = connect(&address, &moblin_cloud_key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
@@ -773,11 +777,11 @@ mod tests {
             )
             .unwrap();
         let assistant = api.auth.session("21", 0);
-        let events = format!("http://{address}/account/pages/{page}/devices/A/events");
-        let url = format!("http://{address}/account/pages/{page}/devices/A/control");
+        let events = format!("http://{address}/account/pages/{page_id}/devices/A/events");
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/control");
         let granted = async |session: &str| {
             client
-                .get(format!("http://{address}/account/pages/{page}"))
+                .get(format!("http://{address}/account/pages/{page_id}"))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -890,7 +894,7 @@ mod tests {
     async fn assistants_go_live_only_when_allowed_but_always_end_the_stream() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut socket = connect(&address, &moblin_cloud_key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
@@ -904,10 +908,10 @@ mod tests {
             .set_assistant_access(Platform::Twitch, "1", "21", Access::Control)
             .unwrap();
         let assistant = api.auth.session("21", 0);
-        let url = format!("http://{address}/account/pages/{page}/devices/A/control");
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/control");
         let allowed = async |session: &str| {
             client
-                .get(format!("http://{address}/account/pages/{page}"))
+                .get(format!("http://{address}/account/pages/{page_id}"))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -977,7 +981,7 @@ mod tests {
     async fn assistants_get_the_preview_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut socket = connect(&address, &moblin_cloud_key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
@@ -991,10 +995,10 @@ mod tests {
             .set_assistant_access(Platform::Twitch, "1", "21", Access::View)
             .unwrap();
         let assistant = api.auth.session("21", 0);
-        let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/preview");
         let allowed = async |session: &str| {
             client
-                .get(format!("http://{address}/account/pages/{page}"))
+                .get(format!("http://{address}/account/pages/{page_id}"))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -1078,8 +1082,8 @@ mod tests {
     async fn streams_end_when_the_backend_stops() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
-        let url = format!("http://{address}/account/pages/{page}/devices/A/events");
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/events");
         let mut socket = connect(&address, &moblin_cloud_key).await;
         let mut events = Events::open(&client, &url, &session).await;
         answer_monitoring(&mut socket, true).await;
@@ -1101,8 +1105,8 @@ mod tests {
     async fn watching_follows_a_reconnecting_device() {
         let (address, api) = start_api_lingering(Duration::from_secs(5)).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
-        let url = format!("http://{address}/account/pages/{page}/devices/A/events");
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/events");
         let socket = connect(&address, &moblin_cloud_key).await;
         let mut events = Events::open(&client, &url, &session).await;
         let mut socket = socket;
@@ -1133,7 +1137,7 @@ mod tests {
     async fn the_streamer_sees_which_assistants_watch_their_devices() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -1148,7 +1152,7 @@ mod tests {
         let assistant = api.auth.session("21", 0);
         let mut changes = Events::open(
             &client,
-            &format!("http://{address}/account/pages/{page}/events"),
+            &format!("http://{address}/account/pages/{page_id}/events"),
             &session,
         )
         .await;
@@ -1166,7 +1170,7 @@ mod tests {
                 .unwrap()["devices"][0]["watchers"]
                 .clone()
         };
-        let url = format!("http://{address}/account/pages/{page}/devices/A/events");
+        let url = format!("http://{address}/account/pages/{page_id}/devices/A/events");
         let mut own = Events::open(&client, &url, &session).await;
         assert_eq!(own.next().await.0, "snapshot");
         assert_eq!(changes.next().await.0, "account");
@@ -1185,7 +1189,7 @@ mod tests {
             json!([{"name": "Mod 21", "avatar": null}])
         );
         assert_eq!(
-            watchers(&format!("/account/pages/{page}"), &assistant).await,
+            watchers(&format!("/account/pages/{page_id}"), &assistant).await,
             json!([])
         );
         drop(again);
@@ -1199,7 +1203,7 @@ mod tests {
     async fn the_streamer_sees_when_assistants_were_last_active() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -1211,7 +1215,7 @@ mod tests {
         let assistant = api.auth.session("21", 0);
         let mut changes = Events::open(
             &client,
-            &format!("http://{address}/account/pages/{page}/events"),
+            &format!("http://{address}/account/pages/{page_id}/events"),
             &session,
         )
         .await;
@@ -1221,7 +1225,7 @@ mod tests {
         assert_eq!(last_active().await, Value::Null);
         let page_of = async |session: &str| {
             client
-                .get(format!("http://{address}/account/pages/{page}"))
+                .get(format!("http://{address}/account/pages/{page_id}"))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -1251,7 +1255,7 @@ mod tests {
         assert_eq!(changes.next().await.0, "account");
         let mut events = Events::open(
             &client,
-            &format!("http://{address}/account/pages/{page}/devices/A/events"),
+            &format!("http://{address}/account/pages/{page_id}/devices/A/events"),
             &assistant,
         )
         .await;

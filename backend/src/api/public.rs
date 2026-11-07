@@ -67,9 +67,9 @@ pub(super) async fn handle_config(State(api): State<Arc<Api>>) -> Json<ConfigRes
 
 pub(super) async fn handle_page(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
 ) -> Result<Json<ProfileResponse>, StatusCode> {
-    let (account, look) = api.accounts.page(&id).ok_or(StatusCode::NOT_FOUND)?;
+    let (account, look) = api.accounts.page(&page_id).ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(ProfileResponse {
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
@@ -96,9 +96,9 @@ pub(super) async fn handle_icon(Path(id): Path<String>) -> Result<Response, Stat
 
 pub(super) async fn handle_page_image(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
 ) -> Result<Response, StatusCode> {
-    let (_, image) = api.pages.image(&id).ok_or(StatusCode::NOT_FOUND)?;
+    let (_, image) = api.pages.image(&page_id).ok_or(StatusCode::NOT_FOUND)?;
     Ok((
         [
             (CONTENT_TYPE, "image/jpeg"),
@@ -178,13 +178,13 @@ pub(super) async fn handle_page_addresses(
             .into_iter()
             .zip(logins)
             .filter_map(|((address, platform, login), key)| {
-                let id = pages.get(&key)?;
+                let page_id = pages.get(&key)?;
                 Some((
                     address.to_string(),
                     PageAddress {
                         url: format!("{}/{}/{login}", api.auth.frontend_url, platform.name()),
                         icon: icons
-                            .get(id)
+                            .get(page_id)
                             .map(|icon| format!("{}/icons/{icon}", api.auth.backend_url)),
                     },
                 ))
@@ -276,9 +276,9 @@ pub(super) struct TipsResponse {
 
 pub(super) async fn handle_tips(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
 ) -> Json<TipsResponse> {
-    let (account, settings) = page_settings(&api, &id);
+    let (account, settings) = page_settings(&api, &page_id);
     let payment = public_payment(&api, account.as_ref(), &settings);
     Json(TipsResponse {
         tips: settings
@@ -314,9 +314,9 @@ pub(super) struct EffectsResponse {
 
 pub(super) async fn handle_effects(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
 ) -> Json<EffectsResponse> {
-    let (account, settings) = page_settings(&api, &id);
+    let (account, settings) = page_settings(&api, &page_id);
     let payment = public_payment(&api, account.as_ref(), &settings);
     Json(EffectsResponse {
         effects: settings
@@ -355,9 +355,9 @@ pub(super) struct SpinResponse {
 
 pub(super) async fn handle_spin(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
 ) -> Json<SpinResponse> {
-    let (account, settings) = page_settings(&api, &id);
+    let (account, settings) = page_settings(&api, &page_id);
     let payment = public_payment(&api, account.as_ref(), &settings);
     Json(SpinResponse {
         spin: settings
@@ -368,7 +368,7 @@ pub(super) async fn handle_spin(
                 payment,
             }),
         sub_spins: linked_tiers(&api, account.as_ref(), settings.sub_spins()),
-        wheel: api.remote_control.wheel(&id),
-        connected: api.remote_control.is_connected(&id),
+        wheel: api.remote_control.wheel(&page_id),
+        connected: api.remote_control.is_connected(&page_id),
     })
 }

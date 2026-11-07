@@ -203,8 +203,8 @@ pub(super) async fn place_order(
 
 pub(super) fn capture(kind: &'static str) -> MethodRouter<Arc<Api>> {
     post(
-        move |State(api): State<Arc<Api>>, Path((id, order_id)): Path<(String, String)>| async move {
-            tokio::spawn(capture_paid(api, id, order_id, kind))
+        move |State(api): State<Arc<Api>>, Path((page_id, order_id)): Path<(String, String)>| async move {
+            tokio::spawn(capture_paid(api, page_id, order_id, kind))
                 .await
                 .unwrap_or_else(|_| {
                     Err(failure(
@@ -594,7 +594,7 @@ mod tests {
     async fn stripe_holds_are_released_when_the_wheel_is_gone() {
         let (address, api, fake) = start_stripe_api().await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         connect_stripe(&api);
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -617,7 +617,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
-        let orders_url = format!("http://{address}/pages/{id}/spin/orders");
+        let orders_url = format!("http://{address}/pages/{page_id}/spin/orders");
         let created: Value = client
             .post(&orders_url)
             .json(&json!({"user": "Viewer", "spins": 1, "provider": "stripe"}))
@@ -633,7 +633,7 @@ mod tests {
         assert_eq!(payment["form"]["currency"], "sek");
         socket.close(None).await.unwrap();
         for _ in 0..100 {
-            if !api.remote_control.is_connected(&id) {
+            if !api.remote_control.is_connected(&page_id) {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -948,7 +948,7 @@ mod tests {
     #[tokio::test]
     async fn processing_stripe_captures_are_settled_once_succeeded() {
         let (address, api, fake) = start_stripe_api().await;
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         connect_stripe(&api);
         let client = reqwest::Client::new();
         let response = client
@@ -959,7 +959,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+        let orders_url = format!("http://{address}/pages/{page_id}/tips/orders");
         let order: Value = client
             .post(&orders_url)
             .json(&json!({"amount": 700, "user": "Viewer", "provider": "stripe"}))
@@ -991,7 +991,7 @@ mod tests {
     #[tokio::test]
     async fn late_stripe_payments_are_refunded() {
         let (address, api, fake) = start_stripe_api().await;
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         connect_stripe(&api);
         let client = reqwest::Client::new();
         let response = client
@@ -1002,7 +1002,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+        let orders_url = format!("http://{address}/pages/{page_id}/tips/orders");
         let response = client
             .post(&orders_url)
             .json(&json!({"amount": 700, "user": "Viewer", "provider": "stripe"}))
@@ -1047,7 +1047,7 @@ mod tests {
     #[tokio::test]
     async fn lost_stripe_capture_answers_are_settled() {
         let (address, api, fake) = start_stripe_api().await;
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         connect_stripe(&api);
         let client = reqwest::Client::new();
         let response = client
@@ -1058,7 +1058,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+        let orders_url = format!("http://{address}/pages/{page_id}/tips/orders");
         let order: Value = client
             .post(&orders_url)
             .json(&json!({"amount": 700, "user": "Viewer", "provider": "stripe"}))

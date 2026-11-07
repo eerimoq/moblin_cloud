@@ -79,21 +79,21 @@ pub(super) async fn handle_account_recent(
 
 pub(super) fn recent(
     api: &Api,
-    page: &str,
+    page_id: &str,
     query: RecentQuery,
     owner: bool,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
-    let known = api.accounts.known_devices(page);
+    let known = api.accounts.known_devices(page_id);
     match query.kind.as_deref() {
         Some(kind @ ("tip" | "spin" | "effect")) => {
             let orders = api
                 .orders
-                .recent(page, kind, query.before.as_deref(), limit + 1);
+                .recent(page_id, kind, query.before.as_deref(), limit + 1);
             let mut deliveries = deliveries_of(api, &orders);
             Ok(Json(RecentResponse::One(recent_list(
                 api,
-                page,
+                page_id,
                 &known,
                 orders,
                 &mut deliveries,
@@ -107,7 +107,7 @@ pub(super) fn recent(
             "Give a kind to page through.".to_string(),
         )),
         None => {
-            let mut by_kind = api.orders.recent_of_every_kind(page, limit + 1);
+            let mut by_kind = api.orders.recent_of_every_kind(page_id, limit + 1);
             let mut deliveries = deliveries_of(
                 api,
                 &by_kind.values().flatten().cloned().collect::<Vec<_>>(),
@@ -115,7 +115,7 @@ pub(super) fn recent(
             let mut list = |kind: &str| {
                 recent_list(
                     api,
-                    page,
+                    page_id,
                     &known,
                     by_kind.remove(kind).unwrap_or_default(),
                     &mut deliveries,
@@ -142,7 +142,7 @@ fn deliveries_of(
 
 fn recent_list(
     api: &Api,
-    page: &str,
+    page_id: &str,
     known: &[KnownDevice],
     mut orders: Vec<(String, u64, Order)>,
     deliveries: &mut HashMap<String, deliveries::Delivery>,
@@ -157,7 +157,7 @@ fn recent_list(
             let delivery = deliveries.remove(&id);
             let devices = delivery
                 .as_ref()
-                .map(|delivery| recent_devices(api, page, known, &order.item, delivery));
+                .map(|delivery| recent_devices(api, page_id, known, &order.item, delivery));
             let tier = match order.payee {
                 Payee::Twitch(tier) => Some(tier),
                 _ => None,
@@ -198,7 +198,7 @@ fn recent_list(
 
 fn recent_devices(
     api: &Api,
-    page: &str,
+    page_id: &str,
     known: &[KnownDevice],
     item: &Item,
     delivery: &deliveries::Delivery,
@@ -210,10 +210,14 @@ fn recent_devices(
         .collect();
     if !delivery.finished {
         let waiting: Vec<String> = match item {
-            Item::Spin { .. } => api.remote_control.wheel_device(page).into_iter().collect(),
+            Item::Spin { .. } => api
+                .remote_control
+                .wheel_device(page_id)
+                .into_iter()
+                .collect(),
             Item::Tip { .. } | Item::Effect { .. } => api
                 .remote_control
-                .devices(page)
+                .devices(page_id)
                 .into_iter()
                 .map(|device| device.id)
                 .chain(known.iter().map(|device| device.id.clone()))
@@ -240,12 +244,12 @@ fn recent_devices(
 
 pub(super) async fn handle_assistant_recent(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, Failure> {
-    let page = assistant(&api, &headers, &id)?.streamer.page_id;
-    recent(&api, &page, query, false).map_err(|(status, text)| Failure {
+    let page_id = assistant(&api, &headers, &page_id)?.streamer.page_id;
+    recent(&api, &page_id, query, false).map_err(|(status, text)| Failure {
         reason: "invalid-kind",
         status,
         text,
@@ -263,20 +267,20 @@ pub(super) async fn handle_account_resend(
 
 pub(super) async fn handle_assistant_resend(
     State(api): State<Arc<Api>>,
-    Path((id, order_id)): Path<(String, String)>,
+    Path((page_id, order_id)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    assistant(&api, &headers, &id)?;
-    resend(&api, &id, &order_id)
+    assistant(&api, &headers, &page_id)?;
+    resend(&api, &page_id, &order_id)
 }
 
 pub(super) fn resend(
     api: &Api,
-    page: &str,
+    page_id: &str,
     order_id: &str,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let order = match api.orders.get(order_id) {
-        Some(saved) if saved.stage == Stage::Captured && saved.order.streamer == page => {
+        Some(saved) if saved.stage == Stage::Captured && saved.order.streamer == page_id => {
             saved.order
         }
         _ => {
@@ -295,7 +299,7 @@ pub(super) fn resend(
         order.description(),
         order.streamer
     );
-    api.remote_control.changes.notify(page, Change::Recent);
+    api.remote_control.changes.notify(page_id, Change::Recent);
     Ok(accepted())
 }
 
@@ -341,10 +345,10 @@ mod tests {
         assert_eq!(tip["status"], "waiting");
         assert!(tip["at"].as_u64().unwrap() > 0);
         assert!(tip.get("message").is_none());
-        let id = api.accounts.get("1").unwrap().page_id;
+        let page_id = api.accounts.get("1").unwrap().page_id;
         let assisted: Value = client
             .get(format!(
-                "http://{address}/account/pages/{id}/recent?kind=tip"
+                "http://{address}/account/pages/{page_id}/recent?kind=tip"
             ))
             .bearer_auth(&session)
             .send()
@@ -411,10 +415,10 @@ mod tests {
         };
         acknowledge(&mut socket, "ORDER1").await;
         assert_eq!(status().await, "delivered");
-        let id = api.accounts.get("1").unwrap().page_id;
+        let page_id = api.accounts.get("1").unwrap().page_id;
         for (n, url) in [
             format!("http://{address}/account/recent/ORDER1/resend"),
-            format!("http://{address}/account/pages/{id}/recent/ORDER1/resend"),
+            format!("http://{address}/account/pages/{page_id}/recent/ORDER1/resend"),
         ]
         .into_iter()
         .enumerate()
@@ -456,9 +460,9 @@ mod tests {
     #[tokio::test]
     async fn recent_lists_are_paged_per_kind() {
         let (address, api) = start_api(None).await;
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         let order = |item: Item, price: u32| Order {
-            streamer: id.clone(),
+            streamer: page_id.clone(),
             item,
             user: "Viewer".to_string(),
             payee: Payee::PayPal("MERCHANT00001".to_string()),
@@ -496,7 +500,7 @@ mod tests {
             .captured("SPIN1", |connection| {
                 deliveries::insert(
                     connection,
-                    &id,
+                    &page_id,
                     "SPIN1",
                     &deliveries::Item::Spin {
                         user: "Viewer".to_string(),

@@ -216,7 +216,7 @@ pub(crate) async fn paypal_tip_order_in(
     api: &Api,
     currency: &str,
 ) -> (String, String) {
-    let (session, _, id) = streamer(api);
+    let (session, _, page_id) = streamer(api);
     connect_paypal(api);
     let client = reqwest::Client::new();
     let response = client
@@ -227,7 +227,7 @@ pub(crate) async fn paypal_tip_order_in(
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let orders_url = format!("http://{address}/pages/{id}/tips/orders");
+    let orders_url = format!("http://{address}/pages/{page_id}/tips/orders");
     let order: Value = client
         .post(&orders_url)
         .json(&json!({"amount": 700, "user": "Viewer"}))
@@ -254,12 +254,12 @@ pub(crate) fn moblin_cloud_key_of(account: &Value) -> String {
 
 pub(crate) fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Account {
     let moblin_cloud_key = api.remote_control.new_moblin_cloud_key();
-    let page = api.remote_control.new_page_id().unwrap();
+    let page_id = api.remote_control.new_page_id().unwrap();
     api.accounts
         .signed_in(
             &Identity::twitch(id, name, login),
             id.to_string(),
-            page,
+            page_id,
             moblin_cloud_key,
         )
         .unwrap()

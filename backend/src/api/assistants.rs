@@ -195,8 +195,8 @@ fn set_assistant(
     Ok(account_response(api, account))
 }
 
-fn assistants_changed(api: &Api, page: &str, platform: Platform, assistant: &str) {
-    api.remote_control.changes.notify(page, Change::Account);
+fn assistants_changed(api: &Api, page_id: &str, platform: Platform, assistant: &str) {
+    api.remote_control.changes.notify(page_id, Change::Account);
     if let Some(own) = api.accounts.page_of_identity(platform, assistant) {
         api.remote_control.changes.notify(&own, Change::Account);
     }
@@ -204,19 +204,19 @@ fn assistants_changed(api: &Api, page: &str, platform: Platform, assistant: &str
 
 pub(super) async fn handle_assistant_account(
     State(api): State<Arc<Api>>,
-    Path(id): Path<String>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, Failure> {
-    let user = assistant(&api, &headers, &id)?;
+    let user = assistant(&api, &headers, &page_id)?;
     let account = user.streamer;
-    let look = api.pages.look(&id);
+    let look = api.pages.look(&page_id);
     Ok(Json(AccountResponse {
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         moblin_cloud_key: None,
-        devices: devices(&api, &id, false),
+        devices: devices(&api, &page_id, false),
         settings: without_payments(settings_response(&api, &account, look)).0,
         admin: false,
         premium: is_premium(&api, &account),
@@ -426,7 +426,7 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         let add = async |username: &str| {
             client
                 .post(format!("http://{address}/account/assistants/twitch"))
@@ -473,14 +473,14 @@ mod tests {
         create_account(&api, "9", "Robert", "robert");
         let assistant = api.auth.session("9", 0);
         let account = account_of(&address, &assistant).await;
-        assert_eq!(account["assisting"][0]["id"], id);
+        assert_eq!(account["assisting"][0]["id"], page_id);
         assert_eq!(account["assisting"][0]["platform"], "twitch");
         assert_eq!(
             account_of(&address, &session).await["twitchAssistants"],
             json!([{"id": "9", "login": "robert", "name": "Robert", "avatar": null, "preview": false, "goLive": false, "editTips": false, "remoteControl": "none", "lastActive": null, "lastRemoteControl": null}])
         );
         let response = client
-            .get(format!("http://{address}/account/pages/{id}"))
+            .get(format!("http://{address}/account/pages/{page_id}"))
             .bearer_auth(&assistant)
             .send()
             .await
@@ -513,7 +513,7 @@ mod tests {
             json!([])
         );
         let response = client
-            .get(format!("http://{address}/account/pages/{id}"))
+            .get(format!("http://{address}/account/pages/{page_id}"))
             .bearer_auth(&assistant)
             .send()
             .await
@@ -527,7 +527,7 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, _, id) = streamer(&api);
+        let (session, _, page_id) = streamer(&api);
         create_account(&api, "21", "Mod 21", "mod21");
         create_account(&api, "22", "Viewer 22", "viewer22");
         api.accounts
@@ -552,7 +552,7 @@ mod tests {
         };
         let dashboard = async |session: &str| {
             client
-                .get(format!("http://{address}/account/pages/{id}"))
+                .get(format!("http://{address}/account/pages/{page_id}"))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -596,7 +596,7 @@ mod tests {
         assert_eq!(
             assisting(&mod1).await,
             json!([{
-                "id": id,
+                "id": page_id,
                 "platform": "twitch",
                 "name": "Erik",
                 "login": "erik",
@@ -612,7 +612,7 @@ mod tests {
         let recent = async |session: &str, query: &str| {
             client
                 .get(format!(
-                    "http://{address}/account/pages/{id}/recent?{query}"
+                    "http://{address}/account/pages/{page_id}/recent?{query}"
                 ))
                 .bearer_auth(session)
                 .send()
@@ -648,11 +648,11 @@ mod tests {
     async fn assistants_use_the_streamers_dashboard() {
         let (address, api, _fake) = start_paid_fake().await;
         let client = reqwest::Client::new();
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         connect_paypal(&api);
         api.pages
             .set(
-                &id,
+                &page_id,
                 Settings {
                     currency: Some("SEK".to_string()),
                     tips: Some(Feature::on(Tips { amounts: vec![500] })),
@@ -665,7 +665,7 @@ mod tests {
         let (mod1, viewer1) = (api.auth.session("21", 0), api.auth.session("22", 0));
         let get = async |session: &str, path: &str| {
             client
-                .get(format!("http://{address}/account/pages/{id}{path}"))
+                .get(format!("http://{address}/account/pages/{page_id}{path}"))
                 .bearer_auth(session)
                 .send()
                 .await
@@ -673,7 +673,7 @@ mod tests {
         };
         let post = async |session: &str, path: &str, body: Value| {
             client
-                .post(format!("http://{address}/account/pages/{id}{path}"))
+                .post(format!("http://{address}/account/pages/{page_id}{path}"))
                 .bearer_auth(session)
                 .json(&body)
                 .send()
@@ -731,7 +731,7 @@ mod tests {
         assert_eq!(account["twitchAssistants"], json!([]));
         assert_eq!(account["editTips"], false);
         let settings = &account["settings"];
-        assert_eq!(settings["id"], id);
+        assert_eq!(settings["id"], page_id);
         assert_eq!(settings["currency"], "SEK");
         assert_eq!(settings["tips"], json!({"enabled": true, "amounts": [500]}));
         assert_eq!(settings["paypal"], false);
@@ -754,7 +754,7 @@ mod tests {
             );
         }
         let response = client
-            .post(format!("http://{address}/account/pages/{id}/image"))
+            .post(format!("http://{address}/account/pages/{page_id}/image"))
             .bearer_auth(&mod1)
             .header("content-type", "image/png")
             .body(images::tests::png(1200, 400))
@@ -762,7 +762,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        assert_eq!(api.pages.get(&id).message, None);
+        assert_eq!(api.pages.get(&page_id).message, None);
         let response = client
             .post(format!(
                 "http://{address}/account/assistants/twitch/21/edit-tips"
@@ -812,7 +812,7 @@ mod tests {
         assert_eq!(settings["merchantId"], Value::Null);
         assert_eq!(settings["paypal"], false);
         assert_eq!(settings["payable"], true);
-        let saved = api.pages.get(&id);
+        let saved = api.pages.get(&page_id);
         assert_eq!(saved.message.as_deref(), Some("Hi"));
         assert_eq!(saved.currency(), "SEK");
         assert_eq!(
@@ -833,7 +833,7 @@ mod tests {
         let response = post(&mod1, "/settings", json!({"tips": {"amounts": [100]}})).await;
         assert_eq!(response.status(), StatusCode::OK);
         let tips = |amounts: Vec<u32>| Tips { amounts };
-        assert_eq!(api.pages.get(&id).tips(), Some(&tips(vec![100])));
+        assert_eq!(api.pages.get(&page_id).tips(), Some(&tips(vec![100])));
         api.accounts.forget_paypal("1").unwrap();
         let account: Value = get(&mod1, "").await.json().await.unwrap();
         assert_eq!(account["settings"]["payable"], false);
@@ -843,7 +843,7 @@ mod tests {
             response.text().await.unwrap(),
             "connect PayPal or Stripe first"
         );
-        assert_eq!(api.pages.get(&id).tips(), Some(&tips(vec![100])));
+        assert_eq!(api.pages.get(&page_id).tips(), Some(&tips(vec![100])));
         let response = post(&mod1, "/settings", json!({"tips": {"amounts": [100]}})).await;
         assert_eq!(response.status(), StatusCode::OK);
         let off = json!({"tips": {"enabled": false, "amounts": [150]}});
@@ -851,17 +851,17 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let settings: Value = response.json().await.unwrap();
         assert_eq!(settings["tips"], off["tips"]);
-        assert_eq!(api.pages.get(&id).tips(), None);
+        assert_eq!(api.pages.get(&page_id).tips(), None);
         let response = post(&mod1, "/settings", json!({"tips": {"amounts": [150]}})).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let response = post(&mod1, "/settings", json!({"message": "Hi"})).await;
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(api.pages.get(&id).tips, None);
+        assert_eq!(api.pages.get(&page_id).tips, None);
         connect_paypal(&api);
         let response = post(&mod1, "/settings", json!({"font": "Poppins"})).await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let response = client
-            .post(format!("http://{address}/account/pages/{id}/image"))
+            .post(format!("http://{address}/account/pages/{page_id}/image"))
             .bearer_auth(&mod1)
             .header("content-type", "image/png")
             .body(images::tests::png(1200, 400))

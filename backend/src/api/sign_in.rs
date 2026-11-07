@@ -16,7 +16,8 @@ use super::*;
 
 #[derive(Deserialize)]
 pub(super) struct LoginQuery {
-    page: Option<String>,
+    #[serde(rename = "page")]
+    page_id: Option<String>,
     link: Option<String>,
     port: Option<u16>,
     challenge: Option<String>,
@@ -41,16 +42,16 @@ fn login(
     platform: Platform,
     query: LoginQuery,
 ) -> Result<([(HeaderName, String); 1], Redirect), StatusCode> {
-    if let Some(page) = &query.page
+    if let Some(page_id) = &query.page_id
         && api
             .accounts
-            .of_page(page)
+            .of_page(page_id)
             .is_none_or(|account| account.identity(platform).is_none())
     {
         return Err(StatusCode::NOT_FOUND);
     }
     let terminal = match (query.port, query.challenge) {
-        (Some(_), _) | (_, Some(_)) if query.page.is_some() || query.link.is_some() => {
+        (Some(_), _) | (_, Some(_)) if query.page_id.is_some() || query.link.is_some() => {
             return Err(StatusCode::BAD_REQUEST);
         }
         (Some(port), Some(challenge)) => {
@@ -63,7 +64,7 @@ fn login(
         .auth
         .login_url(
             platform,
-            query.page.as_deref(),
+            query.page_id.as_deref(),
             query.link.is_some(),
             terminal,
         )
@@ -141,9 +142,9 @@ async fn signed_in_redirect(
     let state = match api.auth.consume_state(&state, browser_state) {
         Ok(state) => state,
         Err(StateError {
-            page: Some(page),
+            page_id: Some(page_id),
             error,
-        }) => return viewer_redirect(api, platform, &page, Err(error)).await,
+        }) => return viewer_redirect(api, platform, &page_id, Err(error)).await,
         Err(StateError { error, .. }) => {
             warn!("signing in with {} failed: {error:#}", platform.title());
             return failed(false, None);
@@ -164,8 +165,8 @@ async fn signed_in_redirect(
             query.error.as_deref().unwrap_or("no code")
         )),
     };
-    if let Some(page) = state.page {
-        return viewer_redirect(api, platform, &page, sign_in).await;
+    if let Some(page_id) = state.page_id {
+        return viewer_redirect(api, platform, &page_id, sign_in).await;
     }
     let port = state.terminal.as_ref().map(|terminal| terminal.port);
     let sign_in = match sign_in {
@@ -193,7 +194,7 @@ async fn signed_in_redirect(
         ));
     }
     let moblin_cloud_key = api.remote_control.new_moblin_cloud_key();
-    let (Some(page), Some(new_id)) = (
+    let (Some(page_id), Some(new_id)) = (
         api.remote_control.new_page_id(),
         api.remote_control.new_account_id(),
     ) else {
@@ -206,7 +207,7 @@ async fn signed_in_redirect(
     };
     let account = match api
         .accounts
-        .signed_in(identity, new_id, page, moblin_cloud_key)
+        .signed_in(identity, new_id, page_id, moblin_cloud_key)
     {
         Ok(signed_in) => signed_in,
         Err(error) => {
@@ -358,10 +359,10 @@ pub(super) enum ViewerSignInError {
 async fn viewer_redirect(
     api: &Api,
     platform: Platform,
-    page: &str,
+    page_id: &str,
     sign_in: Result<SignIn>,
 ) -> Redirect {
-    let account = api.accounts.of_page(page);
+    let account = api.accounts.of_page(page_id);
     let streamer = account
         .as_ref()
         .and_then(|account| account.identity(platform).cloned());
@@ -382,7 +383,7 @@ async fn viewer_redirect(
             platform.name(),
             identity.login
         ),
-        None => format!("{}/page/?streamer={page}", api.auth.frontend_url),
+        None => format!("{}/page/?streamer={page_id}", api.auth.frontend_url),
     };
     let tier = async {
         let sign_in = sign_in.map_err(ViewerSignInError::Failed)?;
@@ -407,24 +408,29 @@ async fn viewer_redirect(
     match tier.await {
         Ok((user, tier)) => {
             info!(
-                "{} user {} ({}) signed in as a viewer of page {page} with subscription tier {tier:?}",
+                "{} user {} ({}) signed in as a viewer of page {page_id} with subscription tier {tier:?}",
                 platform.title(),
                 user.user_id,
                 user.login
             );
             Redirect::to(&format!(
                 "{url}#viewer={}",
-                api.auth
-                    .viewer_session(platform, user.user_id, user.name, page.to_string(), tier)
+                api.auth.viewer_session(
+                    platform,
+                    user.user_id,
+                    user.name,
+                    page_id.to_string(),
+                    tier
+                )
             ))
         }
         Err(ViewerSignInError::Unchecked(error)) => {
-            warn!("checking the Kick subscription of a viewer of page {page} failed: {error:#}");
+            warn!("checking the Kick subscription of a viewer of page {page_id} failed: {error:#}");
             Redirect::to(&format!("{url}#viewerCheckFailed"))
         }
         Err(ViewerSignInError::Failed(error)) => {
             warn!(
-                "signing in with {} as a viewer of page {page} failed: {error:#}",
+                "signing in with {} as a viewer of page {page_id} failed: {error:#}",
                 platform.title()
             );
             Redirect::to(&format!("{url}#viewerSignInFailed={}", platform.name()))
@@ -913,7 +919,7 @@ mod tests {
                 .await,
         );
         let account = account_of(&address, &session).await;
-        let page = account["settings"]["id"].as_str().unwrap().to_string();
+        let page_id = account["settings"]["id"].as_str().unwrap().to_string();
         let id = api.auth.session_of(&session).unwrap().account;
         api.accounts
             .link(&id, &Identity::twitch("9", "Nine", "nine"))
@@ -928,7 +934,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let sub_spins = || async {
             let spin: Value = client
-                .get(format!("http://{address}/pages/{page}/spin"))
+                .get(format!("http://{address}/pages/{page_id}/spin"))
                 .send()
                 .await
                 .unwrap()

@@ -104,8 +104,8 @@ pub(super) struct WatcherResponse {
     avatar: Option<String>,
 }
 
-fn watchers(api: &Api, page: &str) -> HashMap<String, Vec<WatcherResponse>> {
-    let watching = api.remote_control.watchers(page);
+fn watchers(api: &Api, page_id: &str) -> HashMap<String, Vec<WatcherResponse>> {
+    let watching = api.remote_control.watchers(page_id);
     let ids: Vec<&str> = watching
         .values()
         .flatten()
@@ -124,7 +124,7 @@ fn watchers(api: &Api, page: &str) -> HashMap<String, Vec<WatcherResponse>> {
             let mut watchers: Vec<WatcherResponse> = ids
                 .iter()
                 .filter_map(|id| accounts.get(id))
-                .filter(|account| account.page_id != page)
+                .filter(|account| account.page_id != page_id)
                 .map(|account| WatcherResponse {
                     name: account.name().to_string(),
                     avatar: account.avatar().map(str::to_string),
@@ -136,11 +136,11 @@ fn watchers(api: &Api, page: &str) -> HashMap<String, Vec<WatcherResponse>> {
         .collect()
 }
 
-pub(super) fn devices(api: &Api, page: &str, with_watchers: bool) -> Vec<DeviceResponse> {
-    let known = api.accounts.known_devices(page);
-    let connected = api.remote_control.devices(page);
+pub(super) fn devices(api: &Api, page_id: &str, with_watchers: bool) -> Vec<DeviceResponse> {
+    let known = api.accounts.known_devices(page_id);
+    let connected = api.remote_control.devices(page_id);
     let mut watching = if with_watchers {
-        watchers(api, page)
+        watchers(api, page_id)
     } else {
         HashMap::new()
     };
@@ -347,9 +347,9 @@ mod tests {
     #[tokio::test]
     async fn new_moblin_cloud_keys_keep_the_page() {
         let (address, api) = start_api(None).await;
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let mut socket = connect(&address, &moblin_cloud_key).await;
-        assert!(api.remote_control.is_connected(&id));
+        assert!(api.remote_control.is_connected(&page_id));
         let account: Value = reqwest::Client::new()
             .post(format!("http://{address}/account/key"))
             .bearer_auth(&session)
@@ -361,8 +361,8 @@ mod tests {
             .unwrap();
         let new_moblin_cloud_key = moblin_cloud_key_of(&account);
         assert_ne!(new_moblin_cloud_key, moblin_cloud_key);
-        assert_eq!(account["settings"]["id"], id);
-        assert!(!api.remote_control.is_connected(&id));
+        assert_eq!(account["settings"]["id"], page_id);
+        assert!(!api.remote_control.is_connected(&page_id));
         loop {
             match socket.next().await {
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
@@ -377,7 +377,7 @@ mod tests {
             .is_err()
         );
         let _socket = connect(&address, &new_moblin_cloud_key).await;
-        assert!(api.remote_control.is_connected(&id));
+        assert!(api.remote_control.is_connected(&page_id));
         let name: Value = reqwest::Client::new()
             .get(format!("http://{address}/pages/twitch/erik"))
             .send()
@@ -386,7 +386,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(name["id"], id);
+        assert_eq!(name["id"], page_id);
     }
 
     #[tokio::test]
@@ -423,7 +423,7 @@ mod tests {
     #[tokio::test]
     async fn deleting_an_account_removes_everything_it_owns() {
         let (address, api) = start_api(None).await;
-        let (session, moblin_cloud_key, id) = streamer(&api);
+        let (session, moblin_cloud_key, page_id) = streamer(&api);
         let assistant = create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -449,7 +449,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         api.deliveries.add_test(
-            id.clone(),
+            page_id.clone(),
             "r".to_string(),
             crate::deliveries::Item::Tip {
                 user: "Erik".to_string(),
@@ -459,7 +459,7 @@ mod tests {
             },
         );
         let socket = connect(&address, &moblin_cloud_key).await;
-        assert!(api.remote_control.is_connected(&id));
+        assert!(api.remote_control.is_connected(&page_id));
         assert_eq!(api.deliveries.count(), 1);
         let response = client
             .post(format!("http://{address}/account/delete"))
@@ -469,7 +469,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
         drop(socket);
-        assert!(!api.remote_control.is_connected(&id));
+        assert!(!api.remote_control.is_connected(&page_id));
         assert_eq!(api.deliveries.count(), 0);
         assert!(api.accounts.get("1").is_none());
         assert!(
@@ -486,7 +486,7 @@ mod tests {
         assert!(api.accounts.assisted(Platform::Twitch, "21").is_empty());
         assert_eq!(api.accounts.get("21").unwrap(), assistant);
         for (table, column, value) in [
-            ("pages", "id", id.as_str()),
+            ("pages", "id", page_id.as_str()),
             ("twitch_assistants", "broadcaster", "1"),
             ("twitch_assistants", "assistant", "1"),
         ] {
@@ -517,7 +517,10 @@ mod tests {
                 .unwrap();
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         }
-        for path in ["/pages/twitch/erik".to_string(), format!("/pages/{id}")] {
+        for path in [
+            "/pages/twitch/erik".to_string(),
+            format!("/pages/{page_id}"),
+        ] {
             let response = client
                 .get(format!("http://{address}{path}"))
                 .send()
@@ -533,7 +536,7 @@ mod tests {
             .is_err()
         );
         let again = create_account(&api, "1", "Erik", "erik");
-        assert_ne!(again.page_id, id);
+        assert_ne!(again.page_id, page_id);
         assert_eq!(
             api.accounts.page_of_login(Platform::Twitch, "erik"),
             Some(again.page_id)
