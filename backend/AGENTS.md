@@ -2,7 +2,7 @@
 
 One binary, `src/main.rs`. The routes and who may call them are in `src/api/AGENTS.md`.
 
-Run a single test: `cargo test payments::tests::orders_survive_restarts`. Tests are inline `#[cfg(test)]` modules per file. The API's share `start_api_with`, the socket helpers and the fake PayPal, Stripe, Twitch and Kick servers in `src/api/test_utils.rs` and `src/api/test_utils/`.
+Run a single test: `cargo test payments::tests::orders_survive_restarts`. The API's share `start_api_with`, the socket helpers and the fake PayPal, Stripe, Twitch and Kick servers in `src/api/tests/test_utils.rs` and the `fake_*.rs` beside it.
 
 ## General
 

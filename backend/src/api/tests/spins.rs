@@ -1,0 +1,407 @@
+use std::time::Duration;
+
+use axum::http::StatusCode;
+use futures_util::SinkExt;
+use serde_json::{Value, json};
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+
+use crate::api::test_utils::*;
+use crate::payments::Stage;
+
+#[tokio::test]
+async fn spin_captures_need_the_wheel() {
+    let (address, api, _) = start_paid().await;
+    let client = reqwest::Client::new();
+    let (session, moblin_cloud_key, page_id) = streamer(&api);
+    connect_paypal(&api);
+    let response = client
+        .post(format!("http://{address}/account/settings"))
+        .bearer_auth(&session)
+        .json(&json!({"currency": "usd", "spin": {
+            "options": [{"spins": 2, "price": 800}],
+        }}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let wheel = json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [
+        {"text": "Yes", "weight": 1},
+    ]}}}}});
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    socket.send(Message::text(wheel.to_string())).await.unwrap();
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+    let orders_url = format!("http://{address}/pages/{page_id}/spin/orders");
+    let order: Value = client
+        .post(&orders_url)
+        .json(&json!({"user": "Viewer", "spins": 2}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(order, json!({"orderId": "ORDER1"}));
+    socket.close(None).await.unwrap();
+    for _ in 0..100 {
+        if !api.remote_control.is_connected(&page_id) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let capture_url = format!("{orders_url}/ORDER1/capture");
+    let response = client.post(&capture_url).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response.text().await.unwrap(),
+        "The streamer's wheel is gone, so your tip was not taken."
+    );
+    assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Created);
+    assert!(api.deliveries.pending().is_empty());
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    socket.send(Message::text(wheel.to_string())).await.unwrap();
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+    let response = client.post(&capture_url).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let request = receive(&mut socket).await;
+    assert_eq!(request["request"]["data"]["tip"]["requestId"], "ORDER1");
+}
+
+#[tokio::test]
+async fn wheels_are_pushed_by_the_streamer() {
+    let (address, api) = start_api(None).await;
+    let (_, moblin_cloud_key, page_id) = streamer(&api);
+    let spin_url = format!("http://{address}/pages/{page_id}/spin");
+    let wheel = || async {
+        reqwest::get(&spin_url)
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap()["wheel"]
+            .clone()
+    };
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    assert_eq!(wheel().await, Value::Null);
+    let options = json!([{"text": "Yes", "weight": 1}, {"text": "No", "weight": 3}]);
+    socket
+        .send(Message::text(
+            json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": options}}}}})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+    assert_eq!(wheel().await, json!({"options": options}));
+    socket
+        .send(Message::text(
+            json!({"event": {"data": {"wheelOfLuck": {}}}}).to_string(),
+        ))
+        .await
+        .unwrap();
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+    assert_eq!(wheel().await, Value::Null);
+    socket
+        .send(Message::text(
+            json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": options}}}}})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+    drop(socket);
+    for _ in 0..100 {
+        if !api.remote_control.is_connected(&page_id) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(wheel().await, Value::Null);
+}
+
+#[tokio::test]
+async fn sessions_wait_for_the_device_to_reconnect() {
+    let (address, api) = start_api_lingering(Duration::from_secs(60)).await;
+    let client = reqwest::Client::new();
+    let (session, moblin_cloud_key, page_id) = streamer(&api);
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    let options = json!([{"text": "Yes", "weight": 1}]);
+    socket
+        .send(Message::text(
+            json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": options}}}}})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+    drop(socket);
+    for _ in 0..100 {
+        if api.remote_control.connected_count() == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(api.remote_control.connected_count(), 0);
+    let account = account_of(&address, &session).await;
+    assert_eq!(account["devices"][0]["connected"], false);
+    assert_eq!(account["devices"][0]["reconnecting"], true);
+    assert_eq!(account["devices"][0]["wheel"], true);
+    let public: Value = reqwest::get(format!("http://{address}/pages/{page_id}/spin"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(public["wheel"], json!({"options": options}));
+    assert_eq!(public["connected"], true);
+    let response = client
+        .post(format!("http://{address}/account/test/spin"))
+        .bearer_auth(&session)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let response = client
+        .post(format!("http://{address}/account/devices/A/remove"))
+        .bearer_auth(&session)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    let request = receive(&mut socket).await;
+    assert_eq!(
+        request["request"]["data"]["tip"]["kind"]["wheelOfLuck"]["count"],
+        1
+    );
+    let account = account_of(&address, &session).await;
+    assert_eq!(account["devices"][0]["connected"], true);
+    assert_eq!(account["devices"][0]["reconnecting"], false);
+    assert_eq!(account["devices"][0]["wheel"], true);
+    socket
+        .close(Some(CloseFrame {
+            code: CloseCode::Away,
+            reason: "".into(),
+        }))
+        .await
+        .unwrap();
+    for _ in 0..100 {
+        if api.remote_control.connected_count() == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(api.remote_control.connected_count(), 0);
+    assert!(api.remote_control.is_connected(&page_id));
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    socket
+        .close(Some(CloseFrame {
+            code: CloseCode::Normal,
+            reason: "".into(),
+        }))
+        .await
+        .unwrap();
+    for _ in 0..100 {
+        if !api.remote_control.is_connected(&page_id) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(!api.remote_control.is_connected(&page_id));
+}
+
+#[tokio::test]
+async fn spins_are_sent_to_the_streamer() {
+    let (address, api, paypal_order) = start_paid().await;
+    let client = reqwest::Client::new();
+    let (session, moblin_cloud_key, page_id) = streamer(&api);
+    connect_paypal(&api);
+    let spin_url = format!("http://{address}/pages/{page_id}/spin");
+    let public: Value = client
+        .get(&spin_url)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        public,
+        json!({"spin": null, "subSpins": null, "wheel": null, "connected": false})
+    );
+    let settings_url = format!("http://{address}/account/settings");
+    let response = client
+        .post(&settings_url)
+        .bearer_auth(&session)
+        .json(&json!({"currency": "jpy", "spin": {
+            "options": [{"spins": 1, "price": 500}],
+        }}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let settings: Value = client
+        .post(&settings_url)
+        .bearer_auth(&session)
+        .json(&json!({"currency": "usd", "spin": {
+            "options": [{"spins": 2, "price": 800}, {"spins": 1, "price": 500}],
+        }}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        settings["spin"],
+        json!({"enabled": true, "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}]})
+    );
+    let public: Value = client
+        .get(&spin_url)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        public,
+        json!({"spin": {
+            "options": [{"spins": 1, "price": 500}, {"spins": 2, "price": 800}],
+            "currency": "USD",
+            "clientId": "id",
+            "merchantId": "MERCHANT00001",
+            "environment": "sandbox",
+            "stripe": null,
+        }, "subSpins": null, "wheel": null, "connected": false})
+    );
+    let orders_url = format!("{spin_url}/orders");
+    let response = client
+        .post(&orders_url)
+        .json(&json!({"user": "Viewer", "spins": 2}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+    let public: Value = client
+        .get(&spin_url)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(public["wheel"], Value::Null);
+    assert_eq!(public["connected"], true);
+    let response = client
+        .post(&orders_url)
+        .json(&json!({"user": "Viewer", "spins": 2}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response.text().await.unwrap(),
+        "The streamer is not taking wheel spins right now."
+    );
+    socket
+        .send(Message::text(
+            json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [
+                {"text": "Yes", "weight": 1},
+            ]}}}}})
+            .to_string(),
+        ))
+        .await
+        .unwrap();
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(&mut socket).await, json!({"pong": {}}));
+    for request in [
+        json!({"user": "Viewer", "spins": 3}),
+        json!({"user": "Viewer", "spins": 2, "message": "a".repeat(201)}),
+    ] {
+        let response = client
+            .post(&orders_url)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    let order: Value = client
+        .post(&orders_url)
+        .json(&json!({"user": "Viewer", "spins": 2, "message": " Go big! "}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(order, json!({"orderId": "ORDER1"}));
+    let sent = paypal_order.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        sent["purchase_units"][0]["amount"],
+        json!({"currency_code": "USD", "value": "8.00"})
+    );
+    assert_eq!(
+        sent["purchase_units"][0]["description"],
+        "2 wheel spins by Viewer: Go big!"
+    );
+    let response = client
+        .post(format!(
+            "http://{address}/pages/{page_id}/tips/orders/ORDER1/capture"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::GONE);
+    let response = client
+        .post(format!("{orders_url}/ORDER1/capture"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let request = receive(&mut socket).await;
+    let spin = json!({"tip": {
+        "name": "Viewer",
+        "message": "Go big!",
+        "kind": {"wheelOfLuck": {"count": 2}},
+        "requestId": "ORDER1",
+    }});
+    assert_eq!(request["request"]["data"], spin);
+    socket.close(None).await.unwrap();
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    let request = receive(&mut socket).await;
+    assert_eq!(request["request"]["data"], spin);
+    answer(&mut socket, &request, Value::Null).await;
+    wait_until_added(&api).await;
+}

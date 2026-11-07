@@ -48,6 +48,7 @@ mod spins;
 mod subscriber;
 mod test_sends;
 #[cfg(test)]
+#[path = "api/tests/test_utils.rs"]
 mod test_utils;
 mod tips;
 

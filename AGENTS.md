@@ -65,6 +65,7 @@ just dev-frontend   # vite dev server; proxies /api -> localhost:8080
 - Do not write comments or docstrings.
 - Magic numbers are fine, and often preferred, when used in a single place. Only name a literal when the same value is used in more than one place.
 - Rust edition 2024 (let-chains are used). Clippy warnings are errors in CI.
+- Rust unit tests are never inline: a module's `tests` module is `tests/<module>.rs` in the module's directory, declared with `#[path]` (relative to the declaring file's directory, so `api.rs` writes `api/tests/...`), and a type's test-only helpers are an `impl` block in there, not `#[cfg(test)]` items in the module. A file loaded through `#[path]` owns its directory, so its own submodules are its siblings.
 - Only write in the `AGENTS.md` files what the code can't tell: rules, contracts, pitfalls and the reasons behind them, not routes, layouts or how a feature behaves.
 
 ## Reporting
