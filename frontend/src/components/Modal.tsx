@@ -121,6 +121,14 @@ export function choose(title: string, actions: string[]): Promise<number | null>
 }
 
 export function rickRoll() {
+  if (
+    "ontouchend" in document &&
+    /AppleWebKit/.test(navigator.userAgent) &&
+    !/Android/.test(navigator.userAgent)
+  ) {
+    window.open(links.rickRoll, "_blank", "noopener");
+    return;
+  }
   const container = document.createElement("div");
   document.body.append(container);
   let dialog: HTMLDialogElement | undefined;
@@ -135,7 +143,7 @@ export function rickRoll() {
         }}
       >
         <iframe
-          src={links.rickRoll}
+          src={links.rickRollEmbed}
           title="Rick Astley - Never Gonna Give You Up"
           class="aspect-video w-full"
           allow="autoplay; fullscreen"
