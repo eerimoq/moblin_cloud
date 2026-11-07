@@ -178,7 +178,8 @@ fn assistants_table(platform: Platform) -> &'static str {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Assistant {
-    pub id: String,
+    #[serde(rename = "id")]
+    pub user_id: String,
     pub login: String,
     pub name: String,
     pub avatar: Option<String>,
@@ -191,9 +192,9 @@ pub struct Assistant {
 }
 
 impl Assistant {
-    pub fn new(id: String, login: String, name: String) -> Self {
+    pub fn new(user_id: String, login: String, name: String) -> Self {
         Self {
-            id,
+            user_id,
             login,
             name,
             avatar: None,
@@ -862,7 +863,7 @@ impl Accounts {
         let listed: u32 = transaction
             .query_row(
                 &format!("SELECT count(*) FROM {table} WHERE broadcaster = ?1 AND assistant != ?2"),
-                [broadcaster, &assistant.id],
+                [broadcaster, &assistant.user_id],
                 |row| row.get(0),
             )
             .map_err(not_saved)?;
@@ -875,7 +876,7 @@ impl Accounts {
                     "INSERT INTO {table} (broadcaster, assistant, login, name) VALUES (?1, ?2, ?3, ?4)
                      ON CONFLICT (broadcaster, assistant) DO UPDATE SET login = excluded.login, name = excluded.name"
                 ),
-                [broadcaster, &assistant.id, &assistant.login, &assistant.name],
+                [broadcaster, &assistant.user_id, &assistant.login, &assistant.name],
             )
             .map_err(not_saved)?;
         transaction.commit().map_err(not_saved)
@@ -1005,7 +1006,7 @@ impl Accounts {
                         Ok((
                             row.get::<_, String>(0)?,
                             Assistant {
-                                id: row.get(1)?,
+                                user_id: row.get(1)?,
                                 login: row.get(2)?,
                                 name: row.get(3)?,
                                 avatar: row.get(4)?,
@@ -1482,7 +1483,7 @@ mod tests {
             .unwrap();
         sign_in(&accounts, "1", "Mod", "mod", "q", "l").unwrap();
         let assistant = Assistant {
-            id: "1".to_string(),
+            user_id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
             avatar: None,
@@ -1527,7 +1528,7 @@ mod tests {
     fn assistants_are_an_allow_list() {
         let accounts = Accounts::new(Database::memory());
         let assistant = |id: &str, login: &str| Assistant {
-            id: id.to_string(),
+            user_id: id.to_string(),
             login: login.to_string(),
             name: login.to_string(),
             avatar: None,
@@ -1597,7 +1598,7 @@ mod tests {
     fn assistants_have_permissions_only_when_allowed() {
         let accounts = Accounts::new(Database::memory());
         let assistant = Assistant {
-            id: "1".to_string(),
+            user_id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
             avatar: None,
@@ -1666,7 +1667,7 @@ mod tests {
     fn assistants_get_remote_control_access_only_when_allowed() {
         let accounts = Accounts::new(Database::memory());
         let assistant = Assistant {
-            id: "1".to_string(),
+            user_id: "1".to_string(),
             login: "mod".to_string(),
             name: "Mod".to_string(),
             avatar: None,
@@ -1727,7 +1728,7 @@ mod tests {
                 Platform::Kick,
                 "42",
                 &Assistant {
-                    id: "1".to_string(),
+                    user_id: "1".to_string(),
                     login: "bob".to_string(),
                     name: "bob".to_string(),
                     avatar: None,
@@ -1755,7 +1756,7 @@ mod tests {
         assert_eq!(
             accounts.assistants(Platform::Kick, "42"),
             [Assistant {
-                id: "1".to_string(),
+                user_id: "1".to_string(),
                 login: "robert".to_string(),
                 name: "Robert".to_string(),
                 avatar: None,
@@ -1785,7 +1786,7 @@ mod tests {
                 Platform::Kick,
                 "42",
                 &Assistant {
-                    id: "1".to_string(),
+                    user_id: "1".to_string(),
                     login: "robert".to_string(),
                     name: "Robert".to_string(),
                     avatar: None,

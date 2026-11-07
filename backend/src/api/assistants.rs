@@ -90,7 +90,7 @@ pub(super) async fn handle_account_assistant_add(
             ));
         }
     };
-    if assistant.id == broadcaster {
+    if assistant.user_id == broadcaster {
         return Err((
             StatusCode::CONFLICT,
             format!("That is your own {} account.", platform.title()),
@@ -102,10 +102,10 @@ pub(super) async fn handle_account_assistant_add(
     info!(
         "{id} added {} assistant {} ({})",
         platform.title(),
-        assistant.id,
+        assistant.user_id,
         assistant.login
     );
-    assistants_changed(&api, &account.page_id, platform, &assistant.id);
+    assistants_changed(&api, &account.page_id, platform, &assistant.user_id);
     Ok(account_response(&api, account))
 }
 
