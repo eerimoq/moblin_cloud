@@ -138,7 +138,7 @@ class FakeMoblin:
             "bitrate": self.ids["B1"],
             "zoom": 1.0,
             "zoomPreset": self.ids["Z1"],
-            "zoomCamera": "back",
+            "zoomCamera": {"position": "back", "minX": 0.5, "maxX": 15.0},
             "debugLogging": False,
             "streaming": True,
             "recording": False,
@@ -436,7 +436,7 @@ class FakeMoblin:
             },
             "zoomPresets": {
                 camera: [
-                    {"id": preset["id"], "name": preset["name"]}
+                    {"id": preset["id"], "name": preset["name"], "x": float(preset["x"])}
                     for preset in self.database["zoom"].get(camera, [])
                 ]
                 for camera in ("front", "back")

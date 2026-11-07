@@ -123,9 +123,21 @@ impl Feed {
             .as_str()
     }
 
-    pub fn zoom_presets(&self) -> Option<&Value> {
-        let camera = self.state.get("zoomCamera")?.as_str()?;
-        self.settings.as_ref()?.get("zoomPresets")?.get(camera)
+    pub fn zoom_presets(&self) -> Option<Value> {
+        let camera = self.state.get("zoomCamera")?;
+        let x = |value: &Value, key: &str| value.get(key).and_then(Value::as_f64);
+        let (min, max) = (x(camera, "minX")?, x(camera, "maxX")?);
+        let presets = self
+            .settings
+            .as_ref()?
+            .get("zoomPresets")?
+            .get(camera.get("position")?.as_str()?)?
+            .as_array()?
+            .iter()
+            .filter(|preset| x(preset, "x").is_some_and(|x| (min..=max).contains(&x)))
+            .cloned()
+            .collect();
+        Some(Value::Array(presets))
     }
 }
 

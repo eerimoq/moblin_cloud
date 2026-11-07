@@ -588,9 +588,12 @@ export default function MoblinScreen(props: {
   const scenes = () => props.settings?.scenes ?? [];
   const zoomPresets = () => {
     const camera = props.state.zoomCamera;
-    return camera === "front" || camera === "back"
-      ? (props.settings?.zoomPresets?.[camera] ?? [])
-      : [];
+    if (camera?.position !== "front" && camera?.position !== "back") {
+      return [];
+    }
+    return (props.settings?.zoomPresets?.[camera.position] ?? []).filter(
+      (preset) => preset.x >= camera.minX && preset.x <= camera.maxX,
+    );
   };
   const previewSource = () =>
     props.preview

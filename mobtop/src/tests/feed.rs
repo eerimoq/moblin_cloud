@@ -57,14 +57,28 @@ fn zoom_presets_are_the_active_cameras() {
         &json!({
             "connected": true,
             "status": {},
-            "state": {"zoomCamera": "back"},
-            "settings": {"zoomPresets": {"front": [{"id": "f", "name": "1x"}], "back": [{"id": "b", "name": "2x"}]}},
+            "state": {"zoomCamera": {"position": "back", "minX": 0.5, "maxX": 15.0}},
+            "settings": {"zoomPresets": {
+                "front": [{"id": "f", "name": "1x", "x": 1.0}],
+                "back": [{"id": "b1", "name": "0.5x", "x": 0.5}, {"id": "b2", "name": "2x", "x": 2.0}, {"id": "b3", "name": "20x", "x": 20.0}],
+            }},
         }),
     );
     assert_eq!(
         feed.zoom_presets(),
-        Some(&json!([{"id": "b", "name": "2x"}]))
+        Some(json!([{"id": "b1", "name": "0.5x", "x": 0.5}, {"id": "b2", "name": "2x", "x": 2.0}]))
     );
-    feed.apply("state", &json!({"data": {"zoomCamera": "other"}}));
+    feed.apply(
+        "state",
+        &json!({"data": {"zoomCamera": {"position": "back", "minX": 1.0, "maxX": 15.0}}}),
+    );
+    assert_eq!(
+        feed.zoom_presets(),
+        Some(json!([{"id": "b2", "name": "2x", "x": 2.0}]))
+    );
+    feed.apply(
+        "state",
+        &json!({"data": {"zoomCamera": {"position": "other", "minX": 1.0, "maxX": 15.0}}}),
+    );
     assert_eq!(feed.zoom_presets(), None);
 }

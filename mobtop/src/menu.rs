@@ -480,7 +480,7 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
         MenuKind::Zooms => (
             "Zoom preset",
             pick(
-                named(feed.and_then(Feed::zoom_presets))
+                named(feed.and_then(Feed::zoom_presets).as_ref())
                     .into_iter()
                     .map(|(id, name)| (id, name.to_string()))
                     .collect(),
@@ -665,10 +665,10 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
                 );
             }
             let zoom_presets = feed.and_then(Feed::zoom_presets);
-            if !named(zoom_presets).is_empty() {
+            if !named(zoom_presets.as_ref()).is_empty() {
                 items.push(
                     Item::new("Zoom preset", Action::Open(MenuKind::Zooms))
-                        .detail(name_of(zoom_presets, current("zoomPreset")))
+                        .detail(name_of(zoom_presets.as_ref(), current("zoomPreset")))
                         .mark(Mark::Open),
                 );
             }
