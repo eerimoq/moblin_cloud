@@ -20,7 +20,7 @@ the checks.
 ## Develop
 
 ```
-cd frontend && npm install
+(cd frontend && npm install)
 just dev
 ```
 
