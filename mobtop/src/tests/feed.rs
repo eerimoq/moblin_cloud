@@ -47,3 +47,24 @@ fn events_are_merged_like_the_web_monitor() {
     assert!(feed.settings.is_some());
     assert_eq!(feed.samples.len(), 60);
 }
+
+#[test]
+fn zoom_presets_are_the_active_cameras() {
+    let mut feed = Feed::default();
+    assert_eq!(feed.zoom_presets(), None);
+    feed.apply(
+        "snapshot",
+        &json!({
+            "connected": true,
+            "status": {},
+            "state": {"zoomCamera": "back"},
+            "settings": {"zoomPresets": {"front": [{"id": "f", "name": "1x"}], "back": [{"id": "b", "name": "2x"}]}},
+        }),
+    );
+    assert_eq!(
+        feed.zoom_presets(),
+        Some(&json!([{"id": "b", "name": "2x"}]))
+    );
+    feed.apply("state", &json!({"data": {"zoomCamera": "other"}}));
+    assert_eq!(feed.zoom_presets(), None);
+}

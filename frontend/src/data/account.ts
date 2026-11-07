@@ -136,6 +136,7 @@ export type DeviceSettings = {
     alertsWidgetId?: string;
     wheelOfLuckWidgetId?: string;
   };
+  zoomPresets?: { front: Named[]; back: Named[] };
 };
 
 export type DeviceState = {
@@ -144,8 +145,8 @@ export type DeviceState = {
   mic?: string;
   bitrate?: string;
   zoom?: number;
-  zoomPresets?: Named[];
   zoomPreset?: string;
+  zoomCamera?: "front" | "back" | "other";
   streaming?: boolean;
   recording?: boolean;
   previewStream?: boolean;

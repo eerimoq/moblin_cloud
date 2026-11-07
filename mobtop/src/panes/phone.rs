@@ -83,8 +83,8 @@ fn state_lines(feed: &Feed) -> Vec<Line<'static>> {
         lines.push(row("Scene", scene.to_string()));
     }
     if let Some(zoom) = state.get("zoom").and_then(Value::as_f64) {
-        let preset = state
-            .get("zoomPresets")
+        let preset = feed
+            .zoom_presets()
             .and_then(Value::as_array)
             .and_then(|presets| {
                 presets

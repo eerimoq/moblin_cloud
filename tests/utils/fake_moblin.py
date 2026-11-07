@@ -137,8 +137,8 @@ class FakeMoblin:
             "mic": "built-in",
             "bitrate": self.ids["B1"],
             "zoom": 1.0,
-            "zoomPresets": [{"id": self.ids["Z1"], "name": "1x"}, {"id": self.ids["Z2"], "name": "2x"}],
             "zoomPreset": self.ids["Z1"],
+            "zoomCamera": "back",
             "debugLogging": False,
             "streaming": True,
             "recording": False,
@@ -294,8 +294,9 @@ class FakeMoblin:
         self.send_cloud({"event": {"data": data}})
 
     def change_state(self, **changes):
+        changes = {key: value for key, value in changes.items() if self.state.get(key) != value}
         self.state.update(changes)
-        if self._status_requested.is_set():
+        if changes and self._status_requested.is_set():
             self.send_event({"state": {"data": changes}})
 
     def enabled_stream(self) -> dict:
@@ -432,6 +433,13 @@ class FakeMoblin:
             },
             "moblinCloud": {
                 key: value for key, value in self.database["moblinCloud"].items() if value is not None
+            },
+            "zoomPresets": {
+                camera: [
+                    {"id": preset["id"], "name": preset["name"]}
+                    for preset in self.database["zoom"].get(camera, [])
+                ]
+                for camera in ("front", "back")
             },
         }
 

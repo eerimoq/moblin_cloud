@@ -122,6 +122,11 @@ impl Feed {
             .find(|item| item.get("id") == Some(id))?["name"]
             .as_str()
     }
+
+    pub fn zoom_presets(&self) -> Option<&Value> {
+        let camera = self.state.get("zoomCamera")?.as_str()?;
+        self.settings.as_ref()?.get("zoomPresets")?.get(camera)
+    }
 }
 
 #[cfg(test)]
