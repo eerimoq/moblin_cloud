@@ -18,6 +18,7 @@ import {
   type TopRightItem,
 } from "../data/account";
 import { moblinIconUrl } from "../data/backend";
+import { links } from "../data/links";
 import { filtersOf } from "../data/moblin";
 import { streamerProfile } from "../data/remoteControl";
 import { t } from "../i18n";
@@ -762,11 +763,13 @@ export default function MoblinScreen(props: {
                         <div class="flex h-full w-full shrink-0 snap-start snap-always flex-col">
                           <Show when={number === 1}>
                             <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
-                              <img
-                                src={moblinIconUrl(icon() ?? "plain")}
-                                alt=""
-                                class="size-[40px] object-contain"
-                              />
+                              <a href={links.rickRoll} target="_blank" rel="noopener">
+                                <img
+                                  src={moblinIconUrl(icon() ?? "plain")}
+                                  alt="Moblin"
+                                  class="size-[40px] object-contain"
+                                />
+                              </a>
                               <button
                                 type="button"
                                 aria-label={t("Settings")}

@@ -28,6 +28,7 @@ export const links = {
   github: "https://github.com/eerimoq/moblin",
   cloudGithub: "https://github.com/eerimoq/moblin_cloud",
   privacyPolicy: "https://eerimoq.github.io/moblin/privacy-policy/en.html",
+  rickRoll: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
 } as const;
 
 /** Pages, relative to the site root. */
