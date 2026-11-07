@@ -99,30 +99,30 @@ const buttonIcons: Record<string, IconName> = {
   Record: "record",
   "Black screen": "stealth",
   Bitrate: "speedometer",
-  "Connection priorities": "connection",
+  "Connection priorities": "phone-connection",
   "Reload browser widgets": "reload",
   "Scene editor": "rectangle-group",
-  "Instant replay": "play",
+  "Instant replay": "memories",
   Movie: "film",
   "Gray scale": "moon",
-  Sepia: "moon",
+  Sepia: "moonphase",
   Triple: "person-3",
   Twin: "person-2",
-  Pixellate: "grid",
-  CRT: "screen",
+  Pixellate: "split-2x2",
+  CRT: "tv",
   "4:3": "square",
-  "Blur faces": "user",
-  Privacy: "eye-off",
-  "Beauty filter": "sparkles",
-  Poll: "chart",
+  "Blur faces": "face-dashed",
+  Privacy: "privacy",
+  "Beauty filter": "wand-stars",
+  Poll: "chart-bar",
   Pinch: "hand-pinch",
   Whirlpool: "tornado",
-  "Auto scene switcher": "shuffle",
-  Macros: "list",
-  "Gimbal tracking": "target",
-  "Preview stream": "video",
+  "Auto scene switcher": "autostartstop",
+  Macros: "increase-indent",
+  "Gimbal tracking": "gimbal",
+  "Preview stream": "video-circle",
   "Camera man": "video",
-  "Moblin in mouth": "sparkles",
+  "Moblin in mouth": "mouth",
 };
 
 const filters: Record<string, MoblinFilter> = {
@@ -341,7 +341,7 @@ function QuickButtonView(props: {
         class="relative grid size-[40px] shrink-0 place-items-center rounded-full bg-phone-button text-white"
         onClick={() => props.onPress()}
       >
-        <Icon name={icon()} class="size-[19px]" />
+        <Icon name={icon()} class="size-[21px] [stroke-width:1.7]" />
         <Show when={props.on || props.selected}>
           <span class="pointer-events-none absolute inset-[0.5px] rounded-full border border-white" />
         </Show>

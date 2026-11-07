@@ -50,6 +50,20 @@ export type IconName =
   | "music-mic"
   | "search"
   | "hand-pinch"
+  | "phone-connection"
+  | "chart-bar"
+  | "face-dashed"
+  | "privacy"
+  | "tv"
+  | "split-2x2"
+  | "moonphase"
+  | "mouth"
+  | "wand-stars"
+  | "memories"
+  | "autostartstop"
+  | "increase-indent"
+  | "gimbal"
+  | "video-circle"
   | "tornado"
   | "server"
   | "megaphone"
@@ -186,22 +200,17 @@ export default function Icon(props: Props) {
           <path d="M15 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c2.4.6 4 2.3 4 5.2" />
         </Match>
         <Match when={props.name === "person-2"}>
-          <g stroke-width="1.3">
-            <circle cx="16.2" cy="8.4" r="2.7" />
-            <circle cx="7.2" cy="8.8" r="2.3" />
-            <path d="M10.1 18.6C10.2 18.3 10 17.3 10.2 16.7C10.4 16.1 10.8 15.5 11.3 15C11.8 14.6 12.5 14.1 13.4 13.9C14.2 13.6 15.3 13.4 16.2 13.4C17.2 13.4 18.3 13.6 19.1 13.9C19.9 14.1 20.6 14.6 21.1 15C21.7 15.5 22 16.1 22.2 16.7C22.4 17.3 22.3 18.3 22.3 18.6Z" />
-            <path d="M7.7 18.6C6.7 18.6 2.7 18.9 1.7 18.6C0.8 18.3 1.7 17.3 1.8 16.7C2 16.2 2.3 15.7 2.7 15.2C3.1 14.8 3.7 14.3 4.4 14C5.1 13.7 6.4 13.5 7.1 13.4C7.8 13.4 8.3 13.6 8.5 13.7" />
-          </g>
+          <circle cx="15.5" cy="7.5" r="3.3" />
+          <path d="M9 19.5a6.5 6.5 0 0 1 13 0Z" />
+          <circle cx="7" cy="8.5" r="2.6" />
+          <path d="M6.5 19.5H2c0-3.5 2.2-5.8 5-5.8 1.2 0 2.2.3 3 .9" />
         </Match>
         <Match when={props.name === "person-3"}>
-          <g stroke-width="1.1">
-            <circle cx="12.1" cy="9.4" r="2" />
-            <circle cx="5.5" cy="9.7" r="1.7" />
-            <circle cx="18.6" cy="9.7" r="1.7" />
-            <path d="M7.7 16.8C7.7 16.6 7.6 15.9 7.7 15.5C7.9 15 8.2 14.6 8.5 14.2C8.9 13.9 9.4 13.6 10 13.4C10.6 13.2 11.4 13 12.1 13C12.8 13 13.6 13.2 14.2 13.4C14.8 13.6 15.3 13.9 15.7 14.2C16.1 14.6 16.4 15 16.5 15.5C16.6 15.9 16.6 16.6 16.6 16.8Z" />
-            <path d="M5.9 16.8C5.2 16.8 2.3 17 1.5 16.8C0.8 16.6 1.5 15.9 1.6 15.5C1.7 15 1.9 14.7 2.2 14.3C2.5 14 2.9 13.7 3.5 13.4C4 13.2 4.9 13.1 5.4 13C6 13 6.3 13.2 6.5 13.2" />
-            <path d="M18.2 16.8C19 16.8 21.9 17 22.6 16.8C23.3 16.6 22.6 15.9 22.5 15.5C22.4 15 22.2 14.7 21.9 14.3C21.6 14 21.2 13.7 20.7 13.4C20.1 13.2 19.2 13.1 18.7 13C18.2 13 17.8 13.2 17.6 13.2" />
-          </g>
+          <circle cx="12" cy="8" r="3" />
+          <path d="M6.5 19.5a5.5 5.5 0 0 1 11 0Z" />
+          <circle cx="5" cy="9.5" r="2" />
+          <circle cx="19" cy="9.5" r="2" />
+          <path d="M4.5 19.5h-3c0-2.6 1.5-4.3 3.5-4.3M19.5 19.5h3c0-2.6-1.5-4.3-3.5-4.3" />
         </Match>
         <Match when={props.name === "failed"}>
           <circle cx="12" cy="12" r="9" />
@@ -365,18 +374,82 @@ export default function Icon(props: Props) {
           <circle cx="11" cy="11" r="6" />
           <path d="m20 20-4.5-4.5" />
         </Match>
-        <Match when={props.name === "hand-pinch"}>
-          <g stroke-width="1.7">
-            <path d="M6.6 6.2C7.2 5.8 8.7 5 10 4.8C11.3 4.6 13 4.8 14.3 4.9C15.7 5 17.1 5.1 18.2 5.3C19.3 5.6 20.5 5.9 21.2 6.6C21.9 7.4 22.4 8.8 22.6 10.1C22.9 11.4 22.8 13.1 22.6 14.4C22.4 15.7 22.2 17.1 21.4 18C20.6 19 19 19.8 17.8 20.2C16.5 20.5 15.1 20.4 13.9 20.1C12.7 19.8 11.5 19.1 10.5 18.4C9.4 17.6 8.3 16.7 7.5 15.7C6.6 14.7 5.5 13.2 5.3 12.4C5.1 11.7 5.8 11.2 6.4 11.2C6.9 11.2 7.8 12.1 8.7 12.7C9.7 13.2 11.3 14.4 12.2 14.4C13.1 14.4 13.8 13.4 14.2 12.7C14.5 11.9 14.5 10.4 14.2 9.7C13.9 8.9 13.2 8.5 12.4 8.4C11.6 8.2 10.1 8.6 9.2 8.6C8.3 8.6 7.4 8.7 6.9 8.5C6.4 8.3 6.3 7.7 6.2 7.3C6.2 6.9 6 6.6 6.6 6.2Z" />
-            <path d="M14.5 5.4C14.8 5.6 15.5 6.1 15.8 6.6C16.2 7.2 16.4 8.3 16.5 8.6M17.8 5.9C18 6.1 18.6 6.5 18.9 6.9C19.2 7.2 19.4 7.8 19.5 7.9" />
-            <path d="M4.2 3.8C3.9 4.2 2.9 5.1 2.5 5.9C2.1 6.6 1.8 7.9 1.7 8.4M1.6 13C1.7 13.4 2 15.1 2.4 15.9C2.8 16.7 3.7 17.5 4 17.8" />
+        <Match when={props.name === "phone-connection"}>
+          <path d="M4 6h2.5l1.5 4-2 1.5a10 10 0 0 0 5 5l1.5-2 4 1.5v2.5a2 2 0 0 1-2 2A14 14 0 0 1 2 8a2 2 0 0 1 2-2Z" />
+          <path d="M13 11h.01M16 8h.01M18.5 5.5 21 3" />
+        </Match>
+        <Match when={props.name === "chart-bar"}>
+          <g fill="currentColor" stroke="none">
+            <rect x="3.5" y="10" width="3.5" height="8" rx="1" />
+            <rect x="8" y="4.5" width="3.5" height="13.5" rx="1" />
+            <rect x="12.5" y="6.5" width="3.5" height="11.5" rx="1" />
+            <rect x="17" y="11" width="3.5" height="7" rx="1" />
+          </g>
+          <path d="M3 21h18" />
+        </Match>
+        <Match when={props.name === "face-dashed"}>
+          <circle cx="12" cy="12" r="9" stroke-dasharray="4.1 2.97" />
+          <path d="M9 10h.01M15 10h.01" stroke-width="2.6" />
+          <path d="M8.5 14.5a4 4 0 0 0 7 0" />
+        </Match>
+        <Match when={props.name === "privacy"}>
+          <path d="M3 8.5V6a1 1 0 0 1 1-1h2.5M17.5 5H20a1 1 0 0 1 1 1v2.5M21 15.5V18a1 1 0 0 1-1 1h-2.5M6.5 19H4a1 1 0 0 1-1-1v-2.5M10 5h4M10 19h4M3 11v2M21 11v2" />
+          <circle cx="12" cy="12" r="3.5" />
+        </Match>
+        <Match when={props.name === "tv"}>
+          <rect x="2" y="3.5" width="20" height="14" rx="2" />
+          <path d="M7 21h10" />
+        </Match>
+        <Match when={props.name === "split-2x2"}>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M12 3v18M3 12h18" />
+        </Match>
+        <Match when={props.name === "moonphase"}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 3a9 9 0 0 0 0 18 3.5 9 0 0 1 0-18Z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "mouth"}>
+          <path d="M2 12c2-2.5 4.5-5 7-5 1.3 0 2.2.7 3 1.5.8-.8 1.7-1.5 3-1.5 2.5 0 5 2.5 7 5-2.5 3.5-6 6-10 6S4.5 15.5 2 12Z" />
+          <path d="M2 12c3 1.2 6.5 1.8 10 1.8s7-.6 10-1.8" />
+        </Match>
+        <Match when={props.name === "wand-stars"}>
+          <path d="M12.8 10.8 20.5 20M10.3 7.8l.9 1.1" />
+          <g fill="currentColor" stroke="none">
+            <path d="M16 1.5Q16 5 19.5 5 16 5 16 8.5 16 5 12.5 5 16 5 16 1.5Z" />
+            <path d="M6 8Q6 10.5 8.5 10.5 6 10.5 6 13 6 10.5 3.5 10.5 6 10.5 6 8Z" />
+            <path d="M4.5 15Q4.5 17 6.5 17 4.5 17 4.5 19 4.5 17 2.5 17 4.5 17 4.5 15Z" />
           </g>
         </Match>
+        <Match when={props.name === "memories"}>
+          <path d="M5.6 6.4A8.5 8.5 0 1 1 3.5 12M1.5 9.8 3.5 12l2.2-2" />
+          <path d="M10 8.5v7l5.5-3.5Z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "autostartstop"}>
+          <path d="M19.8 16.5A9 9 0 1 0 13.5 20.9M11.2 18.6l2.3 2.3-2.3 2" />
+          <path d="M8.5 16 12 7l3.5 9M9.7 13h4.6" />
+        </Match>
+        <Match when={props.name === "increase-indent"}>
+          <path d="M9 5h12M13 9.7h8M13 14.3h8M9 19h12" />
+          <path d="M3.5 9.5v5l4-2.5Z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "gimbal"}>
+          <path d="M3 7V5a1.5 1.5 0 0 1 1.5-1.5h2M17.5 3.5h2A1.5 1.5 0 0 1 21 5v2M21 12v2a1.5 1.5 0 0 1-1.5 1.5h-2M6.5 15.5h-2A1.5 1.5 0 0 1 3 14v-2" />
+          <circle cx="12" cy="9" r="3" />
+          <path d="M12 12v6" />
+          <rect x="8.5" y="18" width="7" height="3.5" rx="1" />
+        </Match>
+        <Match when={props.name === "video-circle"}>
+          <circle cx="12" cy="12" r="9.5" />
+          <rect x="6.5" y="9" width="7.5" height="6" rx="1.2" fill="currentColor" />
+          <path d="M14 11.5 17.5 9.5v5L14 12.5Z" fill="currentColor" />
+        </Match>
+        <Match when={props.name === "hand-pinch"}>
+          <path d="M8 7.2c1.6-1.6 4-2.3 6.8-2.1 3 .2 5.3 1 6.3 2.7.8 1.4 1 3.4 1 5.3 0 4.4-3 7.4-7 7.4-3 0-5.4-1.9-7.4-4.4L6.3 14a1.3 1.3 0 0 1 2-1.6l2.4 2.1c1.5 1.3 3.4 1 3.9-.9.4-1.5-.1-3.4-1.6-3.9-1.4-.4-3.2 0-4.7.2A1.5 1.5 0 0 1 8 7.2Z" />
+          <path d="M15.7 5.4c.6.6 1 1.4 1.1 2.4M18.8 6.3c.4.4.6.9.7 1.5M4.8 4.6A10 10 0 0 0 2.4 8.7M2.4 14a10 10 0 0 0 2.4 4.4" />
+        </Match>
         <Match when={props.name === "tornado"}>
-          <g stroke-width="1.7">
-            <path d="M8 2.6C7.7 2.7 6.6 3.1 6 3.4C5.4 3.8 4.7 4.3 4.4 4.7C4.1 5.2 3.9 5.7 4 6.2C4 6.8 4.1 7.4 4.5 7.8C4.9 8.3 5.3 8.6 6.2 8.8C7.1 9 8.4 9.2 9.6 9.3C10.8 9.4 12.3 9.4 13.6 9.3C14.9 9.2 16.2 8.9 17.2 8.6C18.2 8.4 18.9 8 19.4 7.6C19.9 7.2 20 6.8 20 6.4C20 6 19.7 5.6 19.2 5.3C18.7 5 17.7 4.7 16.8 4.6C15.9 4.4 14.7 4.5 13.6 4.6C12.5 4.7 11.2 4.8 10.4 5C9.6 5.2 8.8 5.7 8.5 5.8" />
-            <path d="M5.8 11.8C6.7 11.9 9.4 12.4 11.2 12.4C13 12.4 15.4 12.3 16.8 12.1C18.2 12 19.1 11.6 19.6 11.5M10 15.6C10.8 15.6 13.5 15.6 14.8 15.5C16.1 15.4 17.2 15.2 18 15C18.8 14.9 19.3 14.5 19.6 14.4M12 18.4C12.5 18.4 13.9 18.5 14.8 18.4C15.7 18.3 16.8 18.1 17.2 18M11.2 21.6C11.6 21.6 13.2 21.6 13.6 21.6" />
-          </g>
+          <path d="M8.5 3.3C5.9 3.8 4 4.8 4 6c0 1.7 3.6 3 8 3s8-1.3 8-3c0-1.5-2.7-2.7-6.4-3-2.4-.2-4.5.2-5.3.8" />
+          <path d="M5.5 12.5c4.5.6 9.5.5 14-.7M9.5 15.8c3 .2 6.5 0 9.5-.8M11.5 18.8h5.5M11 21.6h2.5" />
         </Match>
         <Match when={props.name === "server"}>
           <rect x="4" y="4" width="16" height="7" rx="1.5" />
@@ -388,9 +461,9 @@ export default function Icon(props: Props) {
           <path d="M18.5 9a4 4 0 0 1 0 6" />
         </Match>
         <Match when={props.name === "speedometer"}>
-          <path d="M4.5 18a8.5 8.5 0 1 1 15 0" />
-          <path d="m12 14 4-5" />
-          <circle cx="12" cy="14" r="1" />
+          <circle cx="12" cy="12" r="9.5" />
+          <path d="M12 12 9 8M12 5.5v1.3M16.6 7.4l-.9.9M18.5 12h-1.3M5.5 12h1.3M7.4 7.4l.9.9" />
+          <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
         </Match>
         <Match when={props.name === "connection"}>
           <path d="M5 19v-3M10 19v-6M15 19V9M20 19V5" />
@@ -417,11 +490,12 @@ export default function Icon(props: Props) {
           <path d="M8.5 10v7.5H10" />
         </Match>
         <Match when={props.name === "flashlight"}>
-          <path d="M7 3h10v4l-2.5 3.5V21h-5V10.5L7 7V3ZM7 7h10" />
-          <path d="M12 13v2.5" />
+          <path d="M8 2.5h8v3l-1.5 3.5v11.5a1.5 1.5 0 0 1-1.5 1.5h-2a1.5 1.5 0 0 1-1.5-1.5V9L8 5.5Z" />
+          <path d="M8.5 6h7" />
+          <circle cx="12" cy="13" r="1" fill="currentColor" stroke="none" />
         </Match>
         <Match when={props.name === "stealth"}>
-          <path d="M3 17h18M6.5 17a5.5 5.5 0 0 1 11 0M12 5v3M5.6 9.6l1.4 1.4M18.4 9.6 17 11M8 21h8" />
+          <path d="M2 19h20M7 19a5 5 0 0 1 10 0M3 15.5h2M19 15.5h2M5.5 10.5l1.3 1.3M18.5 10.5l-1.3 1.3M12 3v6M9.5 6.5 12 9l2.5-2.5" />
         </Match>
         <Match when={props.name === "reload"}>
           <path d="M20 12a8 8 0 1 1-2.3-5.7M20 3.5V8h-4.5" />
@@ -446,11 +520,11 @@ export default function Icon(props: Props) {
           <path d="m9 5 7 7-7 7" />
         </Match>
         <Match when={props.name === "film"}>
-          <rect x="4" y="3" width="16" height="18" rx="2" />
-          <path d="M8 3v18M16 3v18M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4" />
+          <rect x="2" y="4.5" width="20" height="15" rx="2" />
+          <path d="M6.5 4.5v15M17.5 4.5v15M2 9.5h4.5M2 14.5h4.5M17.5 9.5H22M17.5 14.5H22M6.5 12h11" />
         </Match>
         <Match when={props.name === "moon"}>
-          <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
+          <path d="M20 15A8.5 8.5 0 1 1 9 4a8.5 8.5 0 0 0 11 11Z" />
         </Match>
         <Match when={props.name === "layout"}>
           <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -490,9 +564,9 @@ export default function Icon(props: Props) {
           <path d="m16 10.5 5-3v9l-5-3" />
         </Match>
         <Match when={props.name === "rectangle-group"}>
-          <rect x="3" y="4" width="8" height="7" rx="1.5" />
-          <rect x="13" y="4" width="8" height="11" rx="1.5" />
-          <rect x="3" y="13" width="8" height="7" rx="1.5" />
+          <rect x="2" y="5" width="10" height="6" rx="1.5" />
+          <rect x="3.5" y="13" width="8.5" height="6" rx="1.5" />
+          <rect x="14" y="5" width="8" height="14" rx="1.5" />
         </Match>
         <Match when={props.name === "plus"}>
           <path d="M12 5v14M5 12h14" />
