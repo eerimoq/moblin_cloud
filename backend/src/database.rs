@@ -30,6 +30,7 @@ impl Database {
                      stripe_account_id TEXT,
                      stripe_ready INTEGER NOT NULL DEFAULT 0
                  );
+                 DROP INDEX IF EXISTS accounts_page_id;
                  CREATE UNIQUE INDEX IF NOT EXISTS accounts_page_id_unique ON accounts (page_id);
                  CREATE UNIQUE INDEX IF NOT EXISTS accounts_moblin_key ON accounts (moblin_key);
                  CREATE TABLE IF NOT EXISTS devices (
@@ -217,6 +218,42 @@ mod tests {
         assert!(expected.len() > 1);
         assert_eq!(database.files(), expected);
         drop(database);
+        remove(&path);
+    }
+
+    #[test]
+    fn the_old_page_id_index_is_dropped() {
+        let path = temporary_path("index");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE accounts (id TEXT PRIMARY KEY, page_id TEXT, moblin_key TEXT, sessions INTEGER NOT NULL DEFAULT 0, merchant_id TEXT, paypal_tracking_id TEXT, stripe_account_id TEXT, stripe_ready INTEGER NOT NULL DEFAULT 0);
+                 CREATE INDEX accounts_page_id ON accounts (page_id);
+                 INSERT INTO accounts (id, page_id) VALUES ('1', 'p'), ('2', 'p');",
+            )
+            .unwrap();
+        assert!(Database::open(Some(&path)).is_err());
+        Connection::open(&path)
+            .unwrap()
+            .execute("DELETE FROM accounts WHERE id = '2'", [])
+            .unwrap();
+        let database = Database::open(Some(&path)).unwrap();
+        let indexes: Vec<String> = database
+            .lock()
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'accounts' ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            indexes,
+            [
+                "accounts_moblin_key",
+                "accounts_page_id_unique",
+                "sqlite_autoindex_accounts_1"
+            ]
+        );
         remove(&path);
     }
 }

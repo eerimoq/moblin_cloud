@@ -11,6 +11,7 @@ Run a single test: `cargo test payments::tests::orders_survive_restarts`. Tests 
 - Everything optional degrades rather than fails: without a platform's credentials its sign in answers 503.
 - `--allow-unattested` disables App Attest for Moblin Cloud. `--twitch-sign-in-url`, `--kick-sign-in-url`, `--paypal-url` and `--stripe-url` are for local development and the system tests only.
 - SQLite in `database.rs` is shared by `Accounts`, `Pages`, `Orders`, `Deliveries` and `Counters` behind one mutex. `counters::bump` takes a connection, for callers already holding the lock.
+- The schema is only ever created, never altered, except the `DROP INDEX IF EXISTS accounts_page_id`: databases from before November 2026 have that non-unique index, and `CREATE INDEX IF NOT EXISTS` only checks the name, which is why the unique one is `accounts_page_id_unique`.
 - Requests and the remote control traffic are counted in memory only, so a restart starts over.
 
 ## Counters
