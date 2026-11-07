@@ -204,7 +204,7 @@ async fn signed_in_redirect(
         );
         return failed(false, port);
     };
-    let (id, account) = match api.accounts.signed_in(identity, new_id, page, key) {
+    let account = match api.accounts.signed_in(identity, new_id, page, key) {
         Ok(signed_in) => signed_in,
         Err(error) => {
             warn!(
@@ -216,12 +216,13 @@ async fn signed_in_redirect(
         }
     };
     info!(
-        "{} user {} ({}) signed in to account {id}",
+        "{} user {} ({}) signed in to account {}",
         platform.title(),
         identity.user_id,
-        identity.login
+        identity.login,
+        account.id
     );
-    let session = api.auth.session(&id, account.sessions);
+    let session = api.auth.session(&account.id, account.sessions);
     let Some(terminal) = state.terminal else {
         return Redirect::to(&format!("{dashboard}#session={session}"));
     };
@@ -318,8 +319,9 @@ pub(super) async fn handle_account_connect(
     headers: HeaderMap,
     Json(request): Json<DecideConnectRequest>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    if !within_limit(&api.connect_tries, &id, 10) {
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
+    let id = account.id.as_str();
+    if !within_limit(&api.connect_tries, id, 10) {
         return Err((
             StatusCode::TOO_MANY_REQUESTS,
             "Too many tries. Try again in a minute.".to_string(),
@@ -327,7 +329,7 @@ pub(super) async fn handle_account_connect(
     }
     let session = request
         .approve
-        .then(|| api.auth.session(&id, account.sessions));
+        .then(|| api.auth.session(id, account.sessions));
     if !api.auth.decide_connect(&request.code, session) {
         return Err((
             StatusCode::NOT_FOUND,
@@ -437,17 +439,21 @@ pub(super) async fn handle_account_link(
     headers: HeaderMap,
     Json(request): Json<LinkRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let SignedIn { id, .. } = signed_in(&api, &headers)?;
+    let signed_in = signed_in(&api, &headers)?;
     let identity = api.auth.link_of(&request.token).ok_or((
         StatusCode::BAD_REQUEST,
         "Linking took too long. Try again.".to_string(),
     ))?;
-    let account = api.accounts.link(&id, &identity).map_err(account_error)?;
+    let account = api
+        .accounts
+        .link(&signed_in.account.id, &identity)
+        .map_err(account_error)?;
     api.remote_control
         .changes
         .notify(&account.page_id, Change::Page);
     info!(
-        "{id} linked {} user {} ({})",
+        "{} linked {} user {} ({})",
+        account.id,
         identity.platform.title(),
         identity.user_id,
         identity.login
@@ -460,7 +466,7 @@ pub(super) async fn handle_account_unlink(
     Path(platform): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
     let platform = platform_of(&platform)?;
     if account.identity(platform).is_some()
         && !account
@@ -470,11 +476,14 @@ pub(super) async fn handle_account_unlink(
     {
         return Err(account_error(AccountError::LastIdentity));
     }
-    let account = api.accounts.unlink(&id, platform).map_err(account_error)?;
+    let account = api
+        .accounts
+        .unlink(&account.id, platform)
+        .map_err(account_error)?;
     api.remote_control
         .changes
         .notify(&account.page_id, Change::Page);
-    info!("{id} unlinked {}", platform.title());
+    info!("{} unlinked {}", account.id, platform.title());
     Ok(account_response(&api, account))
 }
 

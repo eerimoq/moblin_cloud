@@ -25,9 +25,9 @@ async fn account_image(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let SignedIn { id, account, .. } = signed_in(api, headers)?;
+    let SignedIn { account, .. } = signed_in(api, headers)?;
     let premium = is_premium(api, &account);
-    save_image(api, &id, &account, premium, body).await
+    save_image(api, &account.id, &account, premium, body).await
 }
 
 pub(super) async fn handle_assistant_image(
@@ -48,9 +48,15 @@ async fn assistant_image(
 ) -> Result<Json<SettingsResponse>, Failure> {
     let user = editor(api, headers, page)?;
     let premium = is_premium(api, &user.streamer);
-    save_image(api, &user.signed_in.id, &user.streamer, premium, body)
-        .await
-        .map(without_payments)
+    save_image(
+        api,
+        &user.signed_in.account.id,
+        &user.streamer,
+        premium,
+        body,
+    )
+    .await
+    .map(without_payments)
 }
 
 async fn save_image(
@@ -95,8 +101,8 @@ pub(super) async fn handle_account_image_remove(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
-    remove_image(&api, &id, &account)
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
+    remove_image(&api, &account.id, &account)
 }
 
 pub(super) async fn handle_assistant_image_remove(
@@ -105,7 +111,7 @@ pub(super) async fn handle_assistant_image_remove(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, Failure> {
     let user = editor(&api, &headers, &id)?;
-    remove_image(&api, &user.signed_in.id, &user.streamer)
+    remove_image(&api, &user.signed_in.account.id, &user.streamer)
         .map(without_payments)
         .map_err(Failure::from)
 }

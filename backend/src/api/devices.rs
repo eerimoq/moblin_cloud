@@ -85,7 +85,9 @@ pub(super) async fn handle_device_events(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Failure> {
     let user = watcher(&api, &headers, &id)?;
     let known = known_device(&api, &id, &device)?;
-    let watch = api.remote_control.watch((&id, &device), &user.signed_in.id);
+    let watch = api
+        .remote_control
+        .watch((&id, &device), &user.signed_in.account.id);
     let first = Event::default()
         .event("snapshot")
         .json_data(SnapshotResponse {
@@ -235,7 +237,7 @@ pub(super) async fn handle_device_control(
         .map_err(|error| control_failure(&control, error))?;
     info!(
         "{} sent {name} to device {device} of page {id}",
-        user.signed_in.id
+        user.signed_in.account.id
     );
     let Some(key) = control.answers() else {
         return Ok(accepted());

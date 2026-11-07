@@ -39,16 +39,16 @@ pub(super) async fn handle_account_paypal_connect(
         .map_err(|error| {
             warn!(
                 "creating a PayPal referral for {} failed: {error:#}",
-                signed_in.id
+                signed_in.account.id
             );
             unreachable("PayPal")
         })?;
     api.accounts
-        .start_paypal(&signed_in.id, tracking_id.clone())
+        .start_paypal(&signed_in.account.id, tracking_id.clone())
         .map_err(account_error)?;
     info!(
         "{} started connecting PayPal with tracking ID {tracking_id}",
-        signed_in.id
+        signed_in.account.id
     );
     api.remote_control
         .changes
@@ -79,10 +79,10 @@ fn disconnect(
     provider: &str,
     forget: impl FnOnce(&Accounts, &str) -> Result<Account, AccountError>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { id, .. } = signed_in(api, headers)?;
-    let account = forget(&api.accounts, &id).map_err(account_error)?;
+    let signed_in = signed_in(api, headers)?;
+    let account = forget(&api.accounts, &signed_in.account.id).map_err(account_error)?;
     let page = &account.page_id;
-    info!("{id} disconnected {provider}");
+    info!("{} disconnected {provider}", account.id);
     api.remote_control.changes.notify(page, Change::Page);
     Ok(settings_response(api, &account, api.pages.look(page)))
 }
@@ -91,9 +91,8 @@ pub(super) async fn handle_account_paypal_check(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn {
-        id, mut account, ..
-    } = signed_in(&api, &headers)?;
+    let SignedIn { mut account, .. } = signed_in(&api, &headers)?;
+    let id = account.id.clone();
     let paypal = api.paypal.as_ref().ok_or_else(payments_unavailable)?;
     if let Some(tracking_id) = account.paypal_tracking_id.clone() {
         let seller = paypal.seller(&tracking_id).await.map_err(|error| {
@@ -231,7 +230,8 @@ pub(super) async fn handle_account_stripe_connect(
 ) -> Result<Json<SignUpResponse>, (StatusCode, String)> {
     let signed_in = signed_in(&api, &headers)?;
     freshly_signed_in(&signed_in, "Stripe")?;
-    let SignedIn { id, account, .. } = signed_in;
+    let SignedIn { account, .. } = signed_in;
+    let id = account.id.as_str();
     let stripe = api.stripe.as_ref().ok_or_else(payments_unavailable)?;
     let stripe_account_id = match account.stripe_account_id {
         Some(stripe_account_id) => stripe_account_id,
@@ -252,7 +252,7 @@ pub(super) async fn handle_account_stripe_connect(
                         .identity(Platform::Kick)
                         .map(|kick| ("kick_user_id", kick.user_id.as_str()))
                 })
-                .unwrap_or(("account", id.as_str()));
+                .unwrap_or(("account", id));
             let stripe_account_id = stripe
                 .create_account(user, account.name(), &country)
                 .await
@@ -264,7 +264,7 @@ pub(super) async fn handle_account_stripe_connect(
                     )
                 })?;
             api.accounts
-                .start_stripe(&id, stripe_account_id.clone())
+                .start_stripe(id, stripe_account_id.clone())
                 .map_err(account_error)?;
             info!("{id} got Stripe account {stripe_account_id}");
             api.remote_control
@@ -291,9 +291,8 @@ pub(super) async fn handle_account_stripe_check(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn {
-        id, mut account, ..
-    } = signed_in(&api, &headers)?;
+    let SignedIn { mut account, .. } = signed_in(&api, &headers)?;
+    let id = account.id.clone();
     let stripe = api.stripe.as_ref().ok_or_else(payments_unavailable)?;
     if let Some(stripe_account_id) = account.stripe_account_id.clone() {
         let ready = stripe

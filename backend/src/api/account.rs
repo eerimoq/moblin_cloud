@@ -244,7 +244,7 @@ pub(super) async fn handle_account_key(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
+    let id = signed_in(&api, &headers)?.account.id;
     let key = api.remote_control.new_moblin_cloud_key();
     let account = api
         .accounts
@@ -266,7 +266,7 @@ pub(super) async fn handle_account_device_name(
     Path(device): Path<String>,
     Json(request): Json<DeviceNameRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
     let name = request.name.trim();
     if name.is_empty() || name.chars().count() > 30 {
         return Err((
@@ -277,7 +277,7 @@ pub(super) async fn handle_account_device_name(
     api.accounts
         .rename_device(&account.page_id, &device, name)
         .map_err(account_error)?;
-    info!("{id} renamed Moblin device {device}");
+    info!("{} renamed Moblin device {device}", account.id);
     api.remote_control
         .changes
         .notify(&account.page_id, Change::Account);
@@ -289,7 +289,7 @@ pub(super) async fn handle_account_device_remove(
     headers: HeaderMap,
     Path(device): Path<String>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let SignedIn { id, account, .. } = signed_in(&api, &headers)?;
+    let SignedIn { account, .. } = signed_in(&api, &headers)?;
     if api
         .remote_control
         .devices(&account.page_id)
@@ -305,7 +305,7 @@ pub(super) async fn handle_account_device_remove(
         .remove_device(&account.page_id, &device)
         .map_err(account_error)?;
     api.deliveries.notify();
-    info!("{id} removed Moblin device {device}");
+    info!("{} removed Moblin device {device}", account.id);
     api.remote_control
         .changes
         .notify(&account.page_id, Change::Account);
@@ -316,7 +316,7 @@ pub(super) async fn handle_account_sign_out(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
+    let id = signed_in(&api, &headers)?.account.id;
     api.accounts.sign_out(&id).map_err(account_error)?;
     info!("{id} signed out everywhere");
     Ok(StatusCode::NO_CONTENT)
@@ -326,7 +326,7 @@ pub(super) async fn handle_account_delete(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let id = signed_in(&api, &headers)?.id;
+    let id = signed_in(&api, &headers)?.account.id;
     let account = api.accounts.delete(&id).map_err(account_error)?;
     api.remote_control.disconnect(&account.page_id);
     info!("{id} deleted their account");

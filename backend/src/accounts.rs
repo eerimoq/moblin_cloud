@@ -100,6 +100,7 @@ pub fn admin_key_of(value: &str) -> Result<String, String> {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Account {
+    pub id: String,
     pub identities: Vec<Identity>,
     pub page_id: String,
     pub moblin_cloud_key: String,
@@ -305,24 +306,25 @@ pub fn device_ids(connection: &Connection, page: &str) -> Vec<String> {
     })
 }
 
-const COLUMNS: &str = "page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
+const COLUMNS: &str = "id, page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
 
 const IDENTITIES: &str = "(SELECT json_group_array(json_object('platform', platform, 'user_id', user_id, 'login', login, 'name', name, 'avatar', avatar) ORDER BY platform = 'twitch' DESC, platform) FROM identities WHERE account = accounts.id)";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
-    let identities: String = row.get(7)?;
+    let identities: String = row.get(8)?;
     let identities = serde_json::from_str(&identities).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, error.into())
+        rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, error.into())
     })?;
     Ok(Account {
+        id: row.get(0)?,
         identities,
-        page_id: row.get(0)?,
-        moblin_cloud_key: row.get(1)?,
-        sessions: row.get(2)?,
-        merchant_id: row.get(3)?,
-        paypal_tracking_id: row.get(4)?,
-        stripe_account_id: row.get(5)?,
-        stripe_ready: row.get(6)?,
+        page_id: row.get(1)?,
+        moblin_cloud_key: row.get(2)?,
+        sessions: row.get(3)?,
+        merchant_id: row.get(4)?,
+        paypal_tracking_id: row.get(5)?,
+        stripe_account_id: row.get(6)?,
+        stripe_ready: row.get(7)?,
     })
 }
 
@@ -428,7 +430,7 @@ impl Accounts {
         new_id: String,
         page_id: String,
         moblin_cloud_key: String,
-    ) -> Result<(String, Account), AccountError> {
+    ) -> Result<Account, AccountError> {
         let mut database = self.database.lock();
         let transaction = database.transaction().map_err(not_saved)?;
         let existing = account_of_identity(&transaction, identity.platform, &identity.user_id)
@@ -442,7 +444,7 @@ impl Accounts {
                 }
                 transaction
                     .execute(
-                        &format!("INSERT INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, 0, NULL, NULL, NULL, 0)"),
+                        &format!("INSERT INTO accounts ({COLUMNS}) VALUES (?1, ?2, ?3, 0, NULL, NULL, NULL, 0)"),
                         params![id, page_id, moblin_cloud_key],
                     )
                     .map_err(not_saved)?;
@@ -460,7 +462,7 @@ impl Accounts {
             .map_err(not_saved)?
             .ok_or(AccountError::Unknown)?;
         transaction.commit().map_err(not_saved)?;
-        Ok((id, account))
+        Ok(account)
     }
 
     pub fn link(&self, id: &str, identity: &Identity) -> Result<Account, AccountError> {
@@ -550,7 +552,7 @@ impl Accounts {
                     .query_row([page], |row| {
                         Ok((
                             account(row)?,
-                            Look::new(page, row.get(8)?, row.get(9)?, row.get(10)?),
+                            Look::new(page, row.get(9)?, row.get(10)?, row.get(11)?),
                         ))
                     })
                     .optional()
@@ -566,12 +568,15 @@ impl Accounts {
         let database = self.database.lock();
         let result = database
             .prepare_cached(&format!(
-                "SELECT {COLUMNS}, {IDENTITIES}, id FROM accounts
+                "SELECT {COLUMNS}, {IDENTITIES} FROM accounts
                  WHERE id IN (SELECT value FROM json_each(?1))"
             ))
             .and_then(|mut statement| {
                 statement
-                    .query_map([ids], |row| Ok((row.get(8)?, account(row)?)))?
+                    .query_map([ids], |row| {
+                        let account = account(row)?;
+                        Ok((account.id.clone(), account))
+                    })?
                     .collect::<rusqlite::Result<_>>()
             });
         result.unwrap_or_else(|error| {
@@ -1124,7 +1129,7 @@ impl Accounts {
             .and_then(|mut statement| {
                 statement
                     .query_map(assistants, |row| {
-                        Ok((row.get::<_, String>(8)?, account(row)?))
+                        Ok((row.get::<_, String>(9)?, account(row)?))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
             });
@@ -1296,7 +1301,7 @@ impl Accounts {
         }
         transaction
             .execute(
-                &format!("INSERT OR REPLACE INTO accounts (id, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
+                &format!("INSERT OR REPLACE INTO accounts ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
                 params![
                     id,
                     account.page_id,
@@ -1331,14 +1336,12 @@ mod tests {
         page: &str,
         key: &str,
     ) -> Result<Account, AccountError> {
-        accounts
-            .signed_in(
-                &Identity::twitch(id, name, login),
-                id.to_string(),
-                page.to_string(),
-                key.to_string(),
-            )
-            .map(|(_, account)| account)
+        accounts.signed_in(
+            &Identity::twitch(id, name, login),
+            id.to_string(),
+            page.to_string(),
+            key.to_string(),
+        )
     }
 
     #[test]
@@ -1348,13 +1351,14 @@ mod tests {
         assert_eq!(
             sign_in(&accounts, "1", "Erik", "erik", "p", "k"),
             Ok(Account {
+                id: "1".to_string(),
                 identities: vec![Identity::twitch("1", "Erik", "erik")],
                 page_id: "p".to_string(),
                 moblin_cloud_key: "k".to_string(),
                 ..Account::default()
             })
         );
-        let (id, account) = accounts
+        let account = accounts
             .signed_in(
                 &Identity::twitch("1", "Eerimoq", "eerimoq"),
                 "other".to_string(),
@@ -1362,7 +1366,7 @@ mod tests {
                 "o".to_string(),
             )
             .unwrap();
-        assert_eq!(id, "1");
+        assert_eq!(account.id, "1");
         assert_eq!(account.page_id, "p");
         assert_eq!(account.moblin_cloud_key, "k");
         assert_eq!(accounts.get("1").unwrap().name(), "Eerimoq");
@@ -1384,7 +1388,7 @@ mod tests {
             Err(AccountError::Unknown)
         );
         sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
-        let (other, _) = accounts
+        let other = accounts
             .signed_in(
                 &Identity::kick("8", "Other", "other"),
                 "random".to_string(),
@@ -1392,7 +1396,7 @@ mod tests {
                 "l".to_string(),
             )
             .unwrap();
-        assert_eq!(other, "random");
+        assert_eq!(other.id, "random");
         assert_eq!(accounts.get("random").unwrap().name(), "Other");
         assert_eq!(
             accounts.link("1", &Identity::kick("8", "Other", "other")),
@@ -1421,7 +1425,7 @@ mod tests {
             accounts.page_of_login(Platform::Twitch, "other").as_deref(),
             None
         );
-        let (id, account) = accounts
+        let account = accounts
             .signed_in(
                 &Identity::kick("7", "Kick Erik", "kickerik"),
                 "unused".to_string(),
@@ -1429,7 +1433,7 @@ mod tests {
                 "m".to_string(),
             )
             .unwrap();
-        assert_eq!(id, "1");
+        assert_eq!(account.id, "1");
         assert_eq!(account.identities[1].login, "kickerik");
         assert_eq!(accounts.get("unused"), None);
         assert_eq!(
@@ -1446,7 +1450,7 @@ mod tests {
             Err(AccountError::LastIdentity)
         );
         assert_eq!(accounts.page_of_login(Platform::Twitch, "erik"), None);
-        let (id, _) = accounts
+        let account = accounts
             .signed_in(
                 &Identity::twitch("1", "Erik", "erik"),
                 "fresh".to_string(),
@@ -1454,7 +1458,7 @@ mod tests {
                 "n".to_string(),
             )
             .unwrap();
-        assert_eq!(id, "fresh");
+        assert_eq!(account.id, "fresh");
         assert_eq!(
             accounts.page_of_login(Platform::Twitch, "erik").as_deref(),
             Some("s")
@@ -1473,7 +1477,7 @@ mod tests {
     #[test]
     fn assistants_are_kept_per_platform() {
         let accounts = Accounts::new(Database::memory());
-        let (streamer, _) = accounts
+        let streamer = accounts
             .signed_in(
                 &Identity::twitch("42", "Streamer", "streamer"),
                 "s".to_string(),
@@ -1512,7 +1516,7 @@ mod tests {
             .unwrap();
         accounts.unlink("s", Platform::Twitch).unwrap();
         assert!(accounts.assisted(Platform::Twitch, "1").is_empty());
-        assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
+        assert_eq!(accounts.get(&streamer.id).unwrap().identities.len(), 1);
         accounts
             .link("s", &Identity::twitch("42", "Streamer", "streamer"))
             .unwrap();
@@ -1715,7 +1719,7 @@ mod tests {
     #[test]
     fn kick_assistants_keep_access_when_renamed_and_follow_the_kick_identity() {
         let accounts = Accounts::new(Database::memory());
-        let (streamer, _) = accounts
+        let streamer = accounts
             .signed_in(
                 &Identity::kick("42", "Streamer", "streamer"),
                 "s".to_string(),
@@ -1774,7 +1778,7 @@ mod tests {
             .unwrap();
         accounts.unlink("s", Platform::Kick).unwrap();
         assert!(accounts.assisted(Platform::Kick, "1").is_empty());
-        assert_eq!(accounts.get(&streamer).unwrap().identities.len(), 1);
+        assert_eq!(accounts.get(&streamer.id).unwrap().identities.len(), 1);
         accounts
             .link("s", &Identity::kick("42", "Streamer", "streamer"))
             .unwrap();
@@ -2130,6 +2134,7 @@ mod tests {
         assert_eq!(
             accounts.get(id),
             Some(Account {
+                id: id.to_string(),
                 identities: vec![Identity::twitch("3", "erik", "erik")],
                 page_id: "p".to_string(),
                 moblin_cloud_key: "k".to_string(),

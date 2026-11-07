@@ -48,8 +48,7 @@ pub(super) async fn handle_account_assistant_add(
     headers: HeaderMap,
     Json(request): Json<AssistantRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let (platform, SignedIn { id, account, .. }, broadcaster) =
-        broadcaster(&api, &platform, &headers)?;
+    let (platform, SignedIn { account, .. }, broadcaster) = broadcaster(&api, &platform, &headers)?;
     let username = request
         .username
         .trim()
@@ -81,8 +80,9 @@ pub(super) async fn handle_account_assistant_add(
         }
         Err(error) => {
             warn!(
-                "looking up {} user {username} for {id} failed: {error:#}",
-                platform.title()
+                "looking up {} user {username} for {} failed: {error:#}",
+                platform.title(),
+                account.id
             );
             return Err((
                 StatusCode::BAD_GATEWAY,
@@ -100,7 +100,8 @@ pub(super) async fn handle_account_assistant_add(
         .add_assistant(platform, &broadcaster, &assistant)
         .map_err(account_error)?;
     info!(
-        "{id} added {} assistant {} ({})",
+        "{} added {} assistant {} ({})",
+        account.id,
         platform.title(),
         assistant.user_id,
         assistant.login
@@ -114,12 +115,15 @@ pub(super) async fn handle_account_assistant_remove(
     Path((platform, assistant)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let (platform, SignedIn { id, account, .. }, broadcaster) =
-        broadcaster(&api, &platform, &headers)?;
+    let (platform, SignedIn { account, .. }, broadcaster) = broadcaster(&api, &platform, &headers)?;
     api.accounts
         .remove_assistant(platform, &broadcaster, &assistant)
         .map_err(account_error)?;
-    info!("{id} removed {} assistant {assistant}", platform.title());
+    info!(
+        "{} removed {} assistant {assistant}",
+        account.id,
+        platform.title()
+    );
     assistants_changed(&api, &account.page_id, platform, &assistant);
     Ok(account_response(&api, account))
 }
@@ -180,10 +184,13 @@ fn set_assistant(
     set: impl FnOnce(&Accounts, Platform, &str) -> Result<(), AccountError>,
     change: String,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let (platform, SignedIn { id, account, .. }, broadcaster) =
-        broadcaster(api, platform, headers)?;
+    let (platform, SignedIn { account, .. }, broadcaster) = broadcaster(api, platform, headers)?;
     set(&api.accounts, platform, &broadcaster).map_err(account_error)?;
-    info!("{id} {change} {} assistant {assistant}", platform.title());
+    info!(
+        "{} {change} {} assistant {assistant}",
+        account.id,
+        platform.title()
+    );
     assistants_changed(api, &account.page_id, platform, assistant);
     Ok(account_response(api, account))
 }

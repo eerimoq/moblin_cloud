@@ -296,7 +296,6 @@ pub(super) fn not_signed_in() -> (StatusCode, String) {
 }
 
 pub(super) struct SignedIn {
-    id: String,
     account: Account,
     fresh: bool,
 }
@@ -313,21 +312,20 @@ pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (Sta
         .and_then(|session| api.auth.session_of(session))
         .ok_or_else(not_signed_in)?;
     let fresh = session.is_fresh();
-    let (id, account) = match api.accounts.get(&session.account) {
-        Some(account) => (session.account, account),
+    let account = match api.accounts.get(&session.account) {
+        Some(account) => account,
         None => {
             let id = api
                 .accounts
                 .account_of_identity(Platform::Twitch, &session.account)
                 .ok_or_else(not_signed_in)?;
-            let account = api.accounts.get(&id).ok_or_else(not_signed_in)?;
-            (id, account)
+            api.accounts.get(&id).ok_or_else(not_signed_in)?
         }
     };
     if account.sessions != session.generation {
         return Err(not_signed_in());
     }
-    Ok(SignedIn { fresh, id, account })
+    Ok(SignedIn { fresh, account })
 }
 
 pub(super) fn account_changed(api: &Api, id: &str, change: Change) {
@@ -469,7 +467,7 @@ fn active(api: &Api, user: &PageUser, remote_control: bool) {
     if user.signed_in.account.page_id != *page
         && api
             .accounts
-            .active(&user.signed_in.id, page, remote_control)
+            .active(&user.signed_in.account.id, page, remote_control)
     {
         api.remote_control.changes.notify(page, Change::Account);
     }

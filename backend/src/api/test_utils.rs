@@ -262,7 +262,6 @@ pub(crate) fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Ac
             key,
         )
         .unwrap()
-        .1
 }
 
 pub(crate) fn twitch_assistant(id: &str, login: &str, name: &str) -> Assistant {

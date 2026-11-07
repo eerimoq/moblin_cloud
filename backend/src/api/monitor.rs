@@ -18,7 +18,7 @@ pub(super) async fn handle_monitor_layout(
     Path(page): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, Failure> {
-    let id = assistant(&api, &headers, &page)?.signed_in.id;
+    let id = assistant(&api, &headers, &page)?.signed_in.account.id;
     let layout = api
         .accounts
         .monitor_layout(&id, &page)
@@ -33,7 +33,7 @@ pub(super) async fn handle_monitor_layout_save(
     headers: HeaderMap,
     Json(request): Json<MonitorLayoutRequest>,
 ) -> Result<StatusCode, Failure> {
-    let id = assistant(&api, &headers, &page)?.signed_in.id;
+    let id = assistant(&api, &headers, &page)?.signed_in.account.id;
     if !request.layout.is_object() {
         return Err(failure(
             "invalid-layout",
