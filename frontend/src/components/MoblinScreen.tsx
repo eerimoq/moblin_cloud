@@ -32,7 +32,7 @@ const icons = new Map<string, Promise<string | null>>();
 export const topLeftIcons: [TopLeftItem, IconName][] = [
   ["stream", "broadcast"],
   ["camera", "camera"],
-  ["mic", "mic"],
+  ["mic", "music-mic"],
   ["zoom", "search"],
   ["obs", "server"],
   ["events", "megaphone"],
@@ -95,7 +95,7 @@ const quickButtons = (): QuickButton[] => [
 const buttonIcons: Record<string, IconName> = {
   Torch: "flashlight",
   Mute: "mic",
-  Mic: "mic",
+  Mic: "music-mic",
   Record: "record",
   "Black screen": "stealth",
   Bitrate: "speedometer",

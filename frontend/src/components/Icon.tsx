@@ -45,6 +45,7 @@ export type IconName =
   | "camera"
   | "mic"
   | "mic-off"
+  | "music-mic"
   | "search"
   | "server"
   | "megaphone"
@@ -330,6 +331,10 @@ export default function Icon(props: Props) {
         <Match when={props.name === "mic"}>
           <rect x="9" y="3" width="6" height="11" rx="3" />
           <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" />
+        </Match>
+        <Match when={props.name === "music-mic"}>
+          <circle cx="15" cy="9" r="5" />
+          <path d="M10.8 7.6 16.4 13.2M10.5 11.2 4.5 18.3a.9.9 0 0 0 1.2 1.2l7.1-6" />
         </Match>
         <Match when={props.name === "mic-off"}>
           <path d="M15 10V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 4.6 2.5M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M9 21h6M3 3l18 18" />
