@@ -34,7 +34,7 @@ fn test_page(
         ),
         None => {
             let account = signed_in(api, headers)?.account;
-            (account.public_id.clone(), account)
+            (account.page_id.clone(), account)
         }
     };
     if !within_limit(&api.tests, &id, 10) {

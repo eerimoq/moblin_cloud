@@ -234,7 +234,7 @@ mod tests {
             &client,
             &format!(
                 "http://{address}/account/pages/{}/events",
-                assistant.public_id
+                assistant.page_id
             ),
             &assistant_session,
         )

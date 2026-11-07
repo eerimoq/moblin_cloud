@@ -274,7 +274,7 @@ pub(crate) fn streamer(api: &Api) -> (String, String, String) {
     (
         api.auth.session("1", 0),
         account.moblin_cloud_key.clone(),
-        account.public_id,
+        account.page_id,
     )
 }
 

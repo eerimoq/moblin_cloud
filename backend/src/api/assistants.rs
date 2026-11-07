@@ -105,7 +105,7 @@ pub(super) async fn handle_account_assistant_add(
         assistant.id,
         assistant.login
     );
-    assistants_changed(&api, &account.public_id, platform, &assistant.id);
+    assistants_changed(&api, &account.page_id, platform, &assistant.id);
     Ok(account_response(&api, account))
 }
 
@@ -120,7 +120,7 @@ pub(super) async fn handle_account_assistant_remove(
         .remove_assistant(platform, &broadcaster, &assistant)
         .map_err(account_error)?;
     info!("{id} removed {} assistant {assistant}", platform.title());
-    assistants_changed(&api, &account.public_id, platform, &assistant);
+    assistants_changed(&api, &account.page_id, platform, &assistant);
     Ok(account_response(&api, account))
 }
 
@@ -184,7 +184,7 @@ fn set_assistant(
         broadcaster(api, platform, headers)?;
     set(&api.accounts, platform, &broadcaster).map_err(account_error)?;
     info!("{id} {change} {} assistant {assistant}", platform.title());
-    assistants_changed(api, &account.public_id, platform, assistant);
+    assistants_changed(api, &account.page_id, platform, assistant);
     Ok(account_response(api, account))
 }
 

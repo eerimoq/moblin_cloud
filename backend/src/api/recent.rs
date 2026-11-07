@@ -74,7 +74,7 @@ pub(super) async fn handle_account_recent(
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, (StatusCode, String)> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    recent(&api, &account.public_id, query, true)
+    recent(&api, &account.page_id, query, true)
 }
 
 pub(super) fn recent(
@@ -244,7 +244,7 @@ pub(super) async fn handle_assistant_recent(
     headers: HeaderMap,
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, Failure> {
-    let page = assistant(&api, &headers, &id)?.streamer.public_id;
+    let page = assistant(&api, &headers, &id)?.streamer.page_id;
     recent(&api, &page, query, false).map_err(|(status, text)| Failure {
         reason: "invalid-kind",
         status,
@@ -258,7 +258,7 @@ pub(super) async fn handle_account_resend(
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    resend(&api, &account.public_id, &order_id)
+    resend(&api, &account.page_id, &order_id)
 }
 
 pub(super) async fn handle_assistant_resend(
@@ -341,7 +341,7 @@ mod tests {
         assert_eq!(tip["status"], "waiting");
         assert!(tip["at"].as_u64().unwrap() > 0);
         assert!(tip.get("message").is_none());
-        let id = api.accounts.get("1").unwrap().public_id;
+        let id = api.accounts.get("1").unwrap().page_id;
         let assisted: Value = client
             .get(format!(
                 "http://{address}/account/pages/{id}/recent?kind=tip"
@@ -411,7 +411,7 @@ mod tests {
         };
         acknowledge(&mut socket, "ORDER1").await;
         assert_eq!(status().await, "delivered");
-        let id = api.accounts.get("1").unwrap().public_id;
+        let id = api.accounts.get("1").unwrap().page_id;
         for (n, url) in [
             format!("http://{address}/account/recent/ORDER1/resend"),
             format!("http://{address}/account/pages/{id}/recent/ORDER1/resend"),

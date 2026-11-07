@@ -52,7 +52,7 @@ pub(super) fn settings_response(
     account: &Account,
     look: Look,
 ) -> Json<SettingsResponse> {
-    let id = account.public_id.clone();
+    let id = account.page_id.clone();
     let settings = look.settings;
     let (merchant_id, stripe_account_id) = payment_targets(api, account);
     let payable = merchant_id.is_some() || stripe_account_id.is_some();
@@ -155,7 +155,7 @@ async fn update_settings(
     premium: bool,
     request: SettingsRequest,
 ) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let id = account.public_id.as_str();
+    let id = account.page_id.as_str();
     let look = api.pages.look(id);
     let current = &look.settings;
     let accent = request.accent.map(|accent| accent.to_lowercase());
