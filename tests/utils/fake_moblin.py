@@ -610,11 +610,15 @@ class FakeMoblin:
             self.database["autoSceneSwitchers"]["switcherId"] = switcher and switcher.upper()
             self.change_state(autoSceneSwitcher={"id": switcher.upper()} if switcher else {})
         elif kind == "setFilter":
-            self.filters[next(iter(body["filter"]))] = body["on"]
-            pairs: list[Any] = []
-            for name, on in self.filters.items():
-                pairs += [{name: {}}, on]
-            self.change_state(filters=pairs)
+            changed = next(iter(body["filter"]))
+            if self.filters.get(changed) != body["on"]:
+                self.filters[changed] = body["on"]
+                pairs: list[Any] = []
+                for name, on in self.filters.items():
+                    pairs += [{name: {}}, on]
+                self.state["filters"] = pairs
+                if self._status_requested.is_set():
+                    self.send_event({"state": {"data": {"filters": [{changed: {}}, body["on"]]}}})
         elif kind in ("startMacro", "stopMacro"):
             macros = [
                 {

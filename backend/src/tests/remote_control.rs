@@ -724,3 +724,35 @@ fn keys_and_page_ids_are_random() {
     assert_eq!(page_id.len(), 16);
     assert_ne!(streamers.new_page_id().unwrap(), page_id);
 }
+
+#[tokio::test]
+async fn filter_changes_are_merged_into_the_state() {
+    let streamers = Streamers::new(Duration::ZERO);
+    let session = streamers.connect("page", "device", Arc::default()).unwrap();
+    let mut watch = streamers.watch(("page", "device"), "viewer");
+    let on_icon = |_: &'static Icon| {};
+    for filters in [
+        r#"[{"movie":{}},true,{"sepia":{}},false]"#,
+        r#"[{"sepia":{}},true,{"crt":{}},true]"#,
+    ] {
+        streamers.handle(
+            "page",
+            "device",
+            session.number,
+            decode(&format!(
+                r#"{{"event":{{"data":{{"state":{{"data":{{"filters":{filters}}}}}}}}}}}"#
+            )),
+            &on_icon,
+        );
+    }
+    let merged = serde_json::json!([{"movie": {}}, true, {"sepia": {}}, true, {"crt": {}}, true]);
+    watch.events.recv().await.unwrap();
+    assert_eq!(
+        *watch.events.recv().await.unwrap(),
+        Update::State {
+            data: serde_json::json!({"filters": merged}),
+        }
+    );
+    let snapshot = streamers.watch(("page", "device"), "viewer").snapshot;
+    assert_eq!(snapshot.state["filters"], merged);
+}

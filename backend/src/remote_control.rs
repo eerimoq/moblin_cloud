@@ -578,6 +578,31 @@ impl Default for Monitor {
     }
 }
 
+fn merge_filters(filters: Option<&Value>, changes: &Value) -> Value {
+    let mut merged = filters
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for [filter, on] in changes
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .as_chunks::<2>()
+        .0
+    {
+        match merged
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .find(|[existing, _]| existing == filter)
+        {
+            Some([_, existing]) => *existing = on.clone(),
+            None => merged.extend([filter.clone(), on.clone()]),
+        }
+    }
+    Value::Array(merged)
+}
+
 fn empty_status() -> Value {
     serde_json::json!({"general": {}, "topLeft": {}, "topRight": {}})
 }
@@ -1248,12 +1273,16 @@ impl Streamers {
             MessageToAssistant::Event {
                 data: Event::State { data },
             } => {
+                let mut data = data;
                 let mut sessions = self.sessions.lock().unwrap();
                 if let Some((_, monitor)) = sessions.monitor_of(page_id, device, number)
-                    && let Some(changes) = data.as_object()
+                    && let Some(changes) = data.as_object_mut()
                 {
                     if let Some(state) = monitor.state.as_object_mut() {
-                        for (key, value) in changes {
+                        if let Some(filters) = changes.get_mut("filters") {
+                            *filters = merge_filters(state.get("filters"), filters);
+                        }
+                        for (key, value) in changes.iter() {
                             state.insert(key.clone(), value.clone());
                         }
                     }
