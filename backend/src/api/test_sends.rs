@@ -216,7 +216,7 @@ mod tests {
     async fn streamers_send_themselves_free_tests() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, _) = streamer(&api);
+        let (session, moblin_cloud_key, _) = streamer(&api);
         let test = |kind: &str, body: Value| {
             client
                 .post(format!("http://{address}/account/test/{kind}"))
@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(response.text().await.unwrap(), "Connect Moblin first.");
         let response = test("tip", json!({"message": " Testing "})).await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         let tip = &request["request"]["data"]["tip"];
         assert_eq!(tip["name"], "Erik");

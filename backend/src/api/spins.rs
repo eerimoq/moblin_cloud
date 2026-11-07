@@ -96,7 +96,7 @@ mod tests {
     async fn spin_captures_need_the_wheel() {
         let (address, api, _) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         connect_paypal(&api);
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -111,7 +111,7 @@ mod tests {
         let wheel = json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [
             {"text": "Yes", "weight": 1},
         ]}}}}});
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket.send(Message::text(wheel.to_string())).await.unwrap();
         socket
             .send(Message::text(json!({"ping": {}}).to_string()))
@@ -145,7 +145,7 @@ mod tests {
         );
         assert_eq!(api.orders.get("ORDER1").unwrap().stage, Stage::Created);
         assert!(api.deliveries.pending().is_empty());
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket.send(Message::text(wheel.to_string())).await.unwrap();
         socket
             .send(Message::text(json!({"ping": {}}).to_string()))
@@ -161,7 +161,7 @@ mod tests {
     #[tokio::test]
     async fn wheels_are_pushed_by_the_streamer() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&api);
+        let (_, moblin_cloud_key, id) = streamer(&api);
         let spin_url = format!("http://{address}/pages/{id}/spin");
         let wheel = || async {
             reqwest::get(&spin_url)
@@ -172,7 +172,7 @@ mod tests {
                 .unwrap()["wheel"]
                 .clone()
         };
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         assert_eq!(wheel().await, Value::Null);
         let options = json!([{"text": "Yes", "weight": 1}, {"text": "No", "weight": 3}]);
         socket
@@ -221,8 +221,8 @@ mod tests {
     async fn sessions_wait_for_the_device_to_reconnect() {
         let (address, api) = start_api_lingering(Duration::from_secs(60)).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (session, moblin_cloud_key, id) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let options = json!([{"text": "Yes", "weight": 1}]);
         socket
             .send(Message::text(
@@ -271,7 +271,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(
             request["request"]["data"]["tip"]["kind"]["wheelOfLuck"]["count"],
@@ -296,7 +296,7 @@ mod tests {
         }
         assert_eq!(api.remote_control.connected_count(), 0);
         assert!(api.remote_control.is_connected(&id));
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket
             .close(Some(CloseFrame {
                 code: CloseCode::Normal,
@@ -317,7 +317,7 @@ mod tests {
     async fn spins_are_sent_to_the_streamer() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         connect_paypal(&api);
         let spin_url = format!("http://{address}/pages/{id}/spin");
         let public: Value = client
@@ -386,7 +386,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket
             .send(Message::text(json!({"ping": {}}).to_string()))
             .await
@@ -481,7 +481,7 @@ mod tests {
         }});
         assert_eq!(request["request"]["data"], spin);
         socket.close(None).await.unwrap();
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], spin);
         answer(&mut socket, &request, Value::Null).await;

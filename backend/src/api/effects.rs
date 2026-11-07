@@ -90,7 +90,7 @@ mod tests {
     async fn effects_are_played_by_moblin() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         connect_paypal(&api);
         let effects_url = format!("http://{address}/pages/{id}/effects");
         let orders_url = format!("{effects_url}/orders");
@@ -178,7 +178,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(
             request["request"]["data"],
@@ -208,7 +208,7 @@ mod tests {
     async fn streamers_test_their_effects() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, _) = streamer(&api);
+        let (session, moblin_cloud_key, _) = streamer(&api);
         let test = |request: Value| {
             client
                 .post(format!("http://{address}/account/test/effect"))
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let response = test(json!({"effect": "perfect-fart"})).await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(
             request["request"]["data"]["tip"]["kind"]["effect"]["sound"],
@@ -252,7 +252,7 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {
             api.auth.viewer_session(
                 Platform::Twitch,
@@ -343,7 +343,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(spins["left"], 5);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(
             request["request"]["data"],

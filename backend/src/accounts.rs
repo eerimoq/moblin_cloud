@@ -585,12 +585,12 @@ impl Accounts {
         })
     }
 
-    pub fn page_of_moblin_cloud_key(&self, key: &str) -> Option<String> {
+    pub fn page_of_moblin_cloud_key(&self, moblin_cloud_key: &str) -> Option<String> {
         self.database
             .lock()
             .query_row(
                 "SELECT page_id FROM accounts WHERE moblin_key = ?1",
-                [key],
+                [moblin_cloud_key],
                 |row| row.get(0),
             )
             .optional()
@@ -1334,13 +1334,13 @@ mod tests {
         name: &str,
         login: &str,
         page: &str,
-        key: &str,
+        moblin_cloud_key: &str,
     ) -> Result<Account, AccountError> {
         accounts.signed_in(
             &Identity::twitch(id, name, login),
             id.to_string(),
             page.to_string(),
-            key.to_string(),
+            moblin_cloud_key.to_string(),
         )
     }
 

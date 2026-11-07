@@ -11,10 +11,10 @@ use crate::remote_control::Socket;
 
 pub(super) async fn handle_remote_control_streamer(
     State(api): State<Arc<Api>>,
-    Path(key): Path<String>,
+    Path(moblin_cloud_key): Path<String>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, StatusCode> {
-    let Some(page) = api.accounts.page_of_moblin_cloud_key(&key) else {
+    let Some(page) = api.accounts.page_of_moblin_cloud_key(&moblin_cloud_key) else {
         return Err(StatusCode::NOT_FOUND);
     };
     Ok(upgrade.on_upgrade(move |socket| async move {
@@ -79,9 +79,9 @@ mod tests {
     use crate::app_attest::{AppAttest, Environment};
     use crate::deliveries;
 
-    async fn refused(address: &str, key: &str, identify: Value) {
+    async fn refused(address: &str, moblin_cloud_key: &str, identify: Value) {
         let (mut socket, _) = tokio_tungstenite::connect_async(format!(
-            "ws://{address}/remote-control/streamer/{key}"
+            "ws://{address}/remote-control/streamer/{moblin_cloud_key}"
         ))
         .await
         .unwrap();
@@ -123,8 +123,8 @@ mod tests {
     #[tokio::test]
     async fn a_closing_device_is_answered_at_once_while_its_session_lingers() {
         let (address, api) = start_api_lingering(Duration::from_secs(60)).await;
-        let (session, key, _) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (session, moblin_cloud_key, _) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket
             .close(Some(CloseFrame {
                 code: CloseCode::Away,
@@ -148,7 +148,7 @@ mod tests {
     #[tokio::test]
     async fn moblins_icon_is_shown_on_the_page_and_in_its_address() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&api);
+        let (_, moblin_cloud_key, id) = streamer(&api);
         let icon = async || {
             let (_, profile) = get_json(&address, &format!("/pages/{id}")).await;
             let (_, addresses) = get_json(&address, "/pages/addresses?logins=twitch:erik").await;
@@ -162,7 +162,7 @@ mod tests {
             profile["icon"].clone()
         };
         assert_eq!(icon().await, Value::Null);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         for moblin in ["AppIconKing", "AppIconNope"] {
             socket
                 .send(Message::text(
@@ -247,19 +247,24 @@ mod tests {
     async fn up_to_5_devices_connect_with_one_key() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         let mut sockets = Vec::new();
         for device in ["a", "b", "c", "d", "e"] {
-            sockets.push(connect_as(&address, &key, device).await);
+            sockets.push(connect_as(&address, &moblin_cloud_key, device).await);
         }
         refused(
             &address,
-            &key,
+            &moblin_cloud_key,
             json!({"identify": {"streamerId": "f", "authentication": "x"}}),
         )
         .await;
-        refused(&address, &key, json!({"identify": {"authentication": "x"}})).await;
-        sockets.push(connect_as(&address, &key, "a").await);
+        refused(
+            &address,
+            &moblin_cloud_key,
+            json!({"identify": {"authentication": "x"}}),
+        )
+        .await;
+        sockets.push(connect_as(&address, &moblin_cloud_key, "a").await);
         let account: Value = client
             .get(format!("http://{address}/account"))
             .bearer_auth(&session)
@@ -269,7 +274,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(account["key"], key);
+        assert_eq!(account["key"], moblin_cloud_key);
         assert_eq!(
             account["devices"],
             json!([
@@ -312,7 +317,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let account: Value = response.json().await.unwrap();
-        assert_ne!(account["key"], key);
+        assert_ne!(account["key"], moblin_cloud_key);
         assert!(!api.remote_control.is_connected(&id));
         let devices = account["devices"].as_array().unwrap();
         assert_eq!(devices.len(), 5);
@@ -350,9 +355,9 @@ mod tests {
         }}})
     }
 
-    async fn connect_with(address: &str, key: &str, identify: Value) -> Socket {
+    async fn connect_with(address: &str, moblin_cloud_key: &str, identify: Value) -> Socket {
         let (mut socket, _) = tokio_tungstenite::connect_async(format!(
-            "ws://{address}/remote-control/streamer/{key}"
+            "ws://{address}/remote-control/streamer/{moblin_cloud_key}"
         ))
         .await
         .unwrap();
@@ -371,12 +376,12 @@ mod tests {
     #[tokio::test]
     async fn unattested_moblins_are_accepted_until_required() {
         let (address, api) = start_attested(false).await;
-        let (_, key, id) = streamer(&api);
-        let _plain = connect_as(&address, &key, "a").await;
-        let _bogus = connect_with(&address, &key, bogus_identify("b")).await;
+        let (_, moblin_cloud_key, id) = streamer(&api);
+        let _plain = connect_as(&address, &moblin_cloud_key, "a").await;
+        let _bogus = connect_with(&address, &moblin_cloud_key, bogus_identify("b")).await;
         let _malformed = connect_with(
             &address,
-            &key,
+            &moblin_cloud_key,
             json!({"identify": {"streamerId": "c", "authentication": "x", "appAttest": {"keyId": 1}}}),
         )
         .await;
@@ -386,14 +391,14 @@ mod tests {
     #[tokio::test]
     async fn unattested_moblins_are_refused_when_required() {
         let (address, api) = start_attested(true).await;
-        let (_, key, id) = streamer(&api);
+        let (_, moblin_cloud_key, id) = streamer(&api);
         refused(
             &address,
-            &key,
+            &moblin_cloud_key,
             json!({"identify": {"streamerId": "a", "authentication": "x"}}),
         )
         .await;
-        refused(&address, &key, bogus_identify("a")).await;
+        refused(&address, &moblin_cloud_key, bogus_identify("a")).await;
         assert!(!api.remote_control.is_connected(&id));
     }
 
@@ -409,8 +414,8 @@ mod tests {
     #[tokio::test]
     async fn a_moblin_that_stops_reading_is_disconnected() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (_, moblin_cloud_key, id) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let api_tips = api.clone();
         let page = id.clone();
         tokio::spawn(async move {
@@ -447,9 +452,9 @@ mod tests {
     async fn spins_go_to_the_first_device_with_a_wheel_and_tips_to_all() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
-        let mut main = connect_as(&address, &key, "main").await;
-        let mut other = connect_as(&address, &key, "other").await;
+        let (session, moblin_cloud_key, id) = streamer(&api);
+        let mut main = connect_as(&address, &moblin_cloud_key, "main").await;
+        let mut other = connect_as(&address, &moblin_cloud_key, "other").await;
         send_event(
             &mut other,
             json!({"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}),

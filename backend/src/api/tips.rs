@@ -83,7 +83,7 @@ mod tests {
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
         address: &str,
-        key: &str,
+        moblin_cloud_key: &str,
         api: &Api,
         currency: &str,
     ) {
@@ -104,7 +104,7 @@ mod tests {
             .unwrap();
         socket.close(None).await.unwrap();
         assert_eq!(api.deliveries.pending().len(), 1);
-        let mut socket = connect(address, key).await;
+        let mut socket = connect(address, moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], tip);
         answer(&mut socket, &request, Value::Null).await;
@@ -244,9 +244,9 @@ mod tests {
             assert_eq!(capture().await.status(), StatusCode::ACCEPTED, "{fault:?}");
             settle(&api, Duration::ZERO).await;
             assert_eq!(api.deliveries.pending().len(), 1, "{fault:?}");
-            let key = api.accounts.get("1").unwrap().moblin_cloud_key.clone();
-            let socket = connect(&address, &key).await;
-            tip_delivered_once(socket, &address, &key, &api, currency).await;
+            let moblin_cloud_key = api.accounts.get("1").unwrap().moblin_cloud_key.clone();
+            let socket = connect(&address, &moblin_cloud_key).await;
+            tip_delivered_once(socket, &address, &moblin_cloud_key, &api, currency).await;
             let recent: Value = client
                 .get(format!("http://{address}/account/recent?kind=tip"))
                 .bearer_auth(&session)
@@ -263,9 +263,9 @@ mod tests {
     #[tokio::test]
     async fn tips_reach_every_known_device_also_after_reconnecting() {
         let (address, api) = start_api(None).await;
-        let (_, key, id) = streamer(&api);
-        let mut main = connect_as(&address, &key, "main").await;
-        let backup = connect_as(&address, &key, "backup").await;
+        let (_, moblin_cloud_key, id) = streamer(&api);
+        let mut main = connect_as(&address, &moblin_cloud_key, "main").await;
+        let backup = connect_as(&address, &moblin_cloud_key, "backup").await;
         for _ in 0..100 {
             if api.remote_control.devices(&id).len() == 2 {
                 break;
@@ -300,7 +300,7 @@ mod tests {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!api.deliveries.get("TIP1").unwrap().finished);
-        let mut backup = connect_as(&address, &key, "backup").await;
+        let mut backup = connect_as(&address, &moblin_cloud_key, "backup").await;
         let request = receive(&mut backup).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], "TIP1");
         answer(&mut backup, &request, Value::Null).await;
@@ -325,7 +325,7 @@ mod tests {
     async fn tips_are_sent_to_the_streamer() {
         let (address, api, paypal_order) = start_paid().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         connect_paypal(&api);
         let tips_url = format!("http://{address}/pages/{id}/tips");
         let public: Value = client
@@ -445,7 +445,7 @@ mod tests {
             "kind": {"message": {"amount": "7.00", "currency": "USD"}},
             "requestId": "ORDER1",
         }});
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], tip);
         socket
@@ -456,7 +456,7 @@ mod tests {
             .await
             .unwrap();
         socket.close(None).await.unwrap();
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"], tip);
         answer(&mut socket, &request, Value::Null).await;

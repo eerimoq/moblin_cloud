@@ -19,7 +19,8 @@ pub(super) struct AccountResponse {
     pub(super) avatar: Option<String>,
     pub(super) twitch: Option<PublicIdentity>,
     pub(super) kick: Option<PublicIdentity>,
-    pub(super) key: Option<String>,
+    #[serde(rename = "key")]
+    pub(super) moblin_cloud_key: Option<String>,
     pub(super) devices: Vec<DeviceResponse>,
     pub(super) settings: SettingsResponse,
     pub(super) admin: bool,
@@ -184,7 +185,7 @@ pub(super) fn account_response(api: &Api, account: Account) -> Json<AccountRespo
         avatar: account.avatar().map(str::to_string),
         twitch: public_identity(&account, Platform::Twitch),
         kick: public_identity(&account, Platform::Kick),
-        key: Some(account.moblin_cloud_key.clone()),
+        moblin_cloud_key: Some(account.moblin_cloud_key.clone()),
         devices: devices(api, &account.page_id, true),
         settings: settings_response(api, &account, look).0,
         admin: is_admin(api, &account),
@@ -245,10 +246,10 @@ pub(super) async fn handle_account_key(
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let id = signed_in(&api, &headers)?.account.id;
-    let key = api.remote_control.new_moblin_cloud_key();
+    let moblin_cloud_key = api.remote_control.new_moblin_cloud_key();
     let account = api
         .accounts
-        .replace_moblin_cloud_key(&id, key)
+        .replace_moblin_cloud_key(&id, moblin_cloud_key)
         .map_err(account_error)?;
     api.remote_control.disconnect(&account.page_id);
     info!("{id} got a new Moblin Cloud key");
@@ -346,8 +347,8 @@ mod tests {
     #[tokio::test]
     async fn new_moblin_cloud_keys_keep_the_page() {
         let (address, api) = start_api(None).await;
-        let (session, key, id) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (session, moblin_cloud_key, id) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         assert!(api.remote_control.is_connected(&id));
         let account: Value = reqwest::Client::new()
             .post(format!("http://{address}/account/key"))
@@ -358,8 +359,8 @@ mod tests {
             .json()
             .await
             .unwrap();
-        let new_moblin_cloud_key = key_of(&account);
-        assert_ne!(new_moblin_cloud_key, key);
+        let new_moblin_cloud_key = moblin_cloud_key_of(&account);
+        assert_ne!(new_moblin_cloud_key, moblin_cloud_key);
         assert_eq!(account["settings"]["id"], id);
         assert!(!api.remote_control.is_connected(&id));
         loop {
@@ -370,7 +371,7 @@ mod tests {
         }
         assert!(
             tokio_tungstenite::connect_async(format!(
-                "ws://{address}/remote-control/streamer/{key}"
+                "ws://{address}/remote-control/streamer/{moblin_cloud_key}"
             ))
             .await
             .is_err()
@@ -422,7 +423,7 @@ mod tests {
     #[tokio::test]
     async fn deleting_an_account_removes_everything_it_owns() {
         let (address, api) = start_api(None).await;
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         let assistant = create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -457,7 +458,7 @@ mod tests {
                 currency: "USD".to_string(),
             },
         );
-        let socket = connect(&address, &key).await;
+        let socket = connect(&address, &moblin_cloud_key).await;
         assert!(api.remote_control.is_connected(&id));
         assert_eq!(api.deliveries.count(), 1);
         let response = client
@@ -476,7 +477,11 @@ mod tests {
                 .page_of_login(Platform::Twitch, "erik")
                 .is_none()
         );
-        assert!(api.accounts.page_of_moblin_cloud_key(&key).is_none());
+        assert!(
+            api.accounts
+                .page_of_moblin_cloud_key(&moblin_cloud_key)
+                .is_none()
+        );
         assert!(api.accounts.assistants(Platform::Twitch, "21").is_empty());
         assert!(api.accounts.assisted(Platform::Twitch, "21").is_empty());
         assert_eq!(api.accounts.get("21").unwrap(), assistant);
@@ -522,7 +527,7 @@ mod tests {
         }
         assert!(
             tokio_tungstenite::connect_async(format!(
-                "ws://{address}/remote-control/streamer/{key}"
+                "ws://{address}/remote-control/streamer/{moblin_cloud_key}"
             ))
             .await
             .is_err()

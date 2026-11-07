@@ -215,7 +215,7 @@ pub(super) async fn handle_assistant_account(
         kick: public_identity(&account, Platform::Kick),
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
-        key: None,
+        moblin_cloud_key: None,
         devices: devices(&api, &id, false),
         settings: without_payments(settings_response(&api, &account, look)).0,
         admin: false,
@@ -648,7 +648,7 @@ mod tests {
     async fn assistants_use_the_streamers_dashboard() {
         let (address, api, _fake) = start_paid_fake().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         connect_paypal(&api);
         api.pages
             .set(
@@ -876,7 +876,7 @@ mod tests {
         assert_eq!(response.text().await.unwrap(), "Connect Moblin first.");
         let response = post(&mod1, "/test/tip", json!({"message": " From a mod "})).await;
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         let tip = &request["request"]["data"]["tip"];
         assert_eq!(tip["name"], "Mod 21");

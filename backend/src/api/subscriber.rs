@@ -455,7 +455,7 @@ mod tests {
         let (address, api) =
             start_api_with(None, None, Some(twitch_app(&twitch)), None, None).await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         let viewer = |viewer: &str, tier: Option<u8>| {
             api.auth.viewer_session(
                 Platform::Twitch,
@@ -536,7 +536,7 @@ mod tests {
             response.text().await.unwrap(),
             "Tier 2 subscribers can't spin the wheel here."
         );
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket
             .send(Message::text(
                 json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})
@@ -629,7 +629,7 @@ mod tests {
         let request = receive(&mut socket).await;
         let request_id = request["request"]["data"]["tip"]["requestId"].clone();
         drop(socket);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], request_id);
         answer(&mut socket, &request, Value::Null).await;
@@ -660,7 +660,7 @@ mod tests {
         let session = session_of(&flow.sign_in("kick", "kick-a").await);
         let account = account_of(&address, &session).await;
         let id = account["settings"]["id"].as_str().unwrap().to_string();
-        let key = key_of(&account);
+        let moblin_cloud_key = moblin_cloud_key_of(&account);
         let response = client
             .post(format!("http://{address}/account/settings"))
             .bearer_auth(&session)
@@ -782,7 +782,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket
             .send(Message::text(
                 json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})

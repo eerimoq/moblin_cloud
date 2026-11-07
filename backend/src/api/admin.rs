@@ -148,7 +148,7 @@ mod tests {
         let url = format!("http://{address}/admin/stats");
         let response = client.get(&url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        let (session, key, _) = streamer(&api);
+        let (session, moblin_cloud_key, _) = streamer(&api);
         let response = client.get(&url).bearer_auth(&session).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let account: Value = client
@@ -175,7 +175,7 @@ mod tests {
         assert_eq!(account["admin"], true);
         api.counters.bump("tipOrders");
         api.counters.bump("tipOrders");
-        let _socket = connect(&address, &key).await;
+        let _socket = connect(&address, &moblin_cloud_key).await;
         let response = client.get(&url).bearer_auth(&admin).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let mut stats: Value = response.json().await.unwrap();

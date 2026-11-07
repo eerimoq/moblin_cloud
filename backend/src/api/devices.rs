@@ -302,9 +302,9 @@ mod tests {
     async fn watchers_get_the_status_moblin_pushes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/events");
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let mut events = Events::open(&client, &url, &session).await;
         answer_monitoring(&mut socket, true).await;
         let (name, snapshot) = events.next().await;
@@ -454,7 +454,7 @@ mod tests {
     async fn watchers_of_an_offline_device_wait_for_it() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         api.accounts.seen_device(&page, "B");
         let url = format!("http://{address}/account/pages/{page}/devices/B/events");
         let mut events = Events::open(&client, &url, &session).await;
@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(snapshot["connected"], false);
         assert_eq!(snapshot["settings"], Value::Null);
         assert_eq!(snapshot["traffic"], Value::Null);
-        let mut socket = connect_as(&address, &key, "B").await;
+        let mut socket = connect_as(&address, &moblin_cloud_key, "B").await;
         answer_monitoring(&mut socket, true).await;
         assert_eq!(
             events.next().await,
@@ -489,7 +489,7 @@ mod tests {
         assert_eq!(name, "snapshot");
         assert_eq!(snapshot["connected"], false);
         assert_eq!(snapshot["settings"], settings());
-        let mut socket = connect_as(&address, &key, "B").await;
+        let mut socket = connect_as(&address, &moblin_cloud_key, "B").await;
         answer_monitoring(&mut socket, true).await;
         assert_eq!(events.next().await.0, "connection");
         assert_eq!(second.next().await.0, "connection");
@@ -499,9 +499,9 @@ mod tests {
     async fn controls_are_sent_to_moblin() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/control");
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
         let call = tokio::spawn(control(
             json!({"setScene": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}),
@@ -608,9 +608,9 @@ mod tests {
     async fn scene_editor_requests_answer_moblins_data() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/control");
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
         let call = tokio::spawn(control(json!({"getScenes": {}})));
         let request = receive(&mut socket).await;
@@ -730,8 +730,8 @@ mod tests {
     async fn watchers_get_the_preview() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (session, moblin_cloud_key, page) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let url = format!("http://{address}/account/pages/{page}/devices/A/preview");
         let mut preview = Events::open(&client, &url, &session).await;
         let request = receive(&mut socket).await;
@@ -762,8 +762,8 @@ mod tests {
     async fn assistants_view_and_send_messages_but_control_the_device_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (session, moblin_cloud_key, page) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -890,8 +890,8 @@ mod tests {
     async fn assistants_go_live_only_when_allowed_but_always_end_the_stream() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (session, moblin_cloud_key, page) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -977,8 +977,8 @@ mod tests {
     async fn assistants_get_the_preview_only_when_allowed() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
-        let mut socket = connect(&address, &key).await;
+        let (session, moblin_cloud_key, page) = streamer(&api);
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -1078,9 +1078,9 @@ mod tests {
     async fn streams_end_when_the_backend_stops() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/events");
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let mut events = Events::open(&client, &url, &session).await;
         answer_monitoring(&mut socket, true).await;
         assert_eq!(events.next().await.0, "snapshot");
@@ -1101,9 +1101,9 @@ mod tests {
     async fn watching_follows_a_reconnecting_device() {
         let (address, api) = start_api_lingering(Duration::from_secs(5)).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/devices/A/events");
-        let socket = connect(&address, &key).await;
+        let socket = connect(&address, &moblin_cloud_key).await;
         let mut events = Events::open(&client, &url, &session).await;
         let mut socket = socket;
         answer_monitoring(&mut socket, true).await;
@@ -1114,7 +1114,7 @@ mod tests {
             events.next().await,
             ("connection".to_string(), json!({"connected": false}))
         );
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         answer_monitoring(&mut socket, true).await;
         assert_eq!(
             events.next().await,
@@ -1133,7 +1133,7 @@ mod tests {
     async fn the_streamer_sees_which_assistants_watch_their_devices() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -1152,7 +1152,7 @@ mod tests {
             &session,
         )
         .await;
-        let _socket = connect(&address, &key).await;
+        let _socket = connect(&address, &moblin_cloud_key).await;
         assert_eq!(changes.next().await.0, "account");
         let watchers = async |path: &str, session: &str| {
             client
@@ -1199,7 +1199,7 @@ mod tests {
     async fn the_streamer_sees_when_assistants_were_last_active() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         create_account(&api, "21", "Mod 21", "mod21");
         api.accounts
             .add_assistant(
@@ -1247,7 +1247,7 @@ mod tests {
         api.accounts
             .set_assistant_access(Platform::Twitch, "1", "21", Access::View)
             .unwrap();
-        let _socket = connect(&address, &key).await;
+        let _socket = connect(&address, &moblin_cloud_key).await;
         assert_eq!(changes.next().await.0, "account");
         let mut events = Events::open(
             &client,

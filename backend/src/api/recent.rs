@@ -356,8 +356,8 @@ mod tests {
         assert_eq!(assisted["items"][0]["id"], "ORDER1");
         assert!(assisted["items"][0].get("provider").is_none());
         assert_eq!(recent().await["items"][0]["devices"], json!([]));
-        let key = api.accounts.get("1").unwrap().moblin_cloud_key.clone();
-        let mut socket = connect(&address, &key).await;
+        let moblin_cloud_key = api.accounts.get("1").unwrap().moblin_cloud_key.clone();
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let request = receive(&mut socket).await;
         assert_eq!(request["request"]["data"]["tip"]["requestId"], "ORDER1");
         answer(&mut socket, &request, Value::Null).await;
@@ -395,8 +395,8 @@ mod tests {
         };
         let response = client.post(&capture_url).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-        let key = api.accounts.get("1").unwrap().moblin_cloud_key.clone();
-        let mut socket = connect(&address, &key).await;
+        let moblin_cloud_key = api.accounts.get("1").unwrap().moblin_cloud_key.clone();
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         let acknowledge = async |socket: &mut Socket, request_id: &str| {
             let request = receive(socket).await;
             assert_eq!(request["request"]["data"]["tip"]["requestId"], request_id);

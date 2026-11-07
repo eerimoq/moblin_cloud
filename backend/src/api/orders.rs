@@ -594,7 +594,7 @@ mod tests {
     async fn stripe_holds_are_released_when_the_wheel_is_gone() {
         let (address, api, fake) = start_stripe_api().await;
         let client = reqwest::Client::new();
-        let (session, key, id) = streamer(&api);
+        let (session, moblin_cloud_key, id) = streamer(&api);
         connect_stripe(&api);
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -604,7 +604,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         socket
             .send(Message::text(
                 json!({"event": {"data": {"wheelOfLuck": {"wheel": {"options": [{"text": "A", "weight": 1}]}}}}})

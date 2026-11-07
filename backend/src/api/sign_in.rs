@@ -192,7 +192,7 @@ async fn signed_in_redirect(
             api.auth.link_token(sign_in.identity)
         ));
     }
-    let key = api.remote_control.new_moblin_cloud_key();
+    let moblin_cloud_key = api.remote_control.new_moblin_cloud_key();
     let (Some(page), Some(new_id)) = (
         api.remote_control.new_page_id(),
         api.remote_control.new_account_id(),
@@ -204,7 +204,10 @@ async fn signed_in_redirect(
         );
         return failed(false, port);
     };
-    let account = match api.accounts.signed_in(identity, new_id, page, key) {
+    let account = match api
+        .accounts
+        .signed_in(identity, new_id, page, moblin_cloud_key)
+    {
         Ok(signed_in) => signed_in,
         Err(error) => {
             warn!(
@@ -653,7 +656,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        let key = key_of(&account);
+        let moblin_cloud_key = moblin_cloud_key_of(&account);
         assert_eq!(account["settings"]["id"].as_str().unwrap().len(), 16);
         assert_eq!(account["name"], "Erik");
         assert_eq!(account["avatar"], "https://static-cdn.jtvnw.net/erik.png");
@@ -757,7 +760,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(key_of(&again), key);
+        assert_eq!(moblin_cloud_key_of(&again), moblin_cloud_key);
     }
 
     fn link_of(account: &str) -> String {
@@ -974,7 +977,7 @@ mod tests {
         let session = session_of(&flow.sign_in("twitch", "c").await);
         let account = account_of(&address, &session).await;
         let id = account["settings"]["id"].as_str().unwrap().to_string();
-        let key = key_of(&account);
+        let moblin_cloud_key = moblin_cloud_key_of(&account);
         let twitch_account = api.auth.session_of(&session).unwrap().account;
         assert_ne!(twitch_account, "42");
         assert_eq!(account["kick"], Value::Null);
@@ -1020,7 +1023,7 @@ mod tests {
         assert_eq!(account["kick"]["login"], "kickerik");
         assert_eq!(account["name"], "Erik");
         assert_eq!(account["settings"]["id"], id);
-        assert_eq!(key_of(&account), key);
+        assert_eq!(moblin_cloud_key_of(&account), moblin_cloud_key);
         let kick_session = session_of(&flow.sign_in("kick", "kick-a").await);
         assert_eq!(
             api.auth.session_of(&kick_session).unwrap().account,
@@ -1029,7 +1032,7 @@ mod tests {
         let account = account_of(&address, &kick_session).await;
         assert_eq!(account["settings"]["id"], id);
         assert_eq!(account["twitch"]["login"], "erik");
-        assert_eq!(key_of(&account), key);
+        assert_eq!(moblin_cloud_key_of(&account), moblin_cloud_key);
         for path in ["/pages/twitch/erik", "/pages/kick/kickerik"] {
             let (status, name) = get_json(&address, path).await;
             assert_eq!(status, StatusCode::OK, "{path}");
@@ -1188,7 +1191,7 @@ mod tests {
         assert_eq!(account["settings"]["id"], "oldpage");
         assert_eq!(account["settings"]["message"], "Old");
         assert_eq!(account["name"], "Erik");
-        assert_eq!(key_of(&account), "k");
+        assert_eq!(moblin_cloud_key_of(&account), "k");
         assert_eq!(account["admin"], true);
         let (_, name) = get_json(&address, "/pages/twitch/erik").await;
         assert_eq!(name["id"], "oldpage");

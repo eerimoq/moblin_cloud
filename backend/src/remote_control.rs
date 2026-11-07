@@ -2211,19 +2211,23 @@ mod tests {
     #[test]
     fn keys_and_page_ids_are_random() {
         let streamers = Streamers::new(Duration::ZERO);
-        let key = streamers.new_moblin_cloud_key();
-        assert_eq!(key.len(), 36);
+        let moblin_cloud_key = streamers.new_moblin_cloud_key();
+        assert_eq!(moblin_cloud_key.len(), 36);
         assert_eq!(
-            key.split('-').map(str::len).collect::<Vec<_>>(),
+            moblin_cloud_key
+                .split('-')
+                .map(str::len)
+                .collect::<Vec<_>>(),
             [8, 4, 4, 4, 12]
         );
-        assert_eq!(&key[14..15], "4");
-        assert!("89ab".contains(&key[19..20]));
+        assert_eq!(&moblin_cloud_key[14..15], "4");
+        assert!("89ab".contains(&moblin_cloud_key[19..20]));
         assert!(
-            key.chars()
+            moblin_cloud_key
+                .chars()
                 .all(|c| c == '-' || c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
         );
-        assert_ne!(streamers.new_moblin_cloud_key(), key);
+        assert_ne!(streamers.new_moblin_cloud_key(), moblin_cloud_key);
         let id = streamers.new_page_id().unwrap();
         assert_eq!(id.len(), 16);
         assert_ne!(streamers.new_page_id().unwrap(), id);

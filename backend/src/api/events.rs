@@ -165,10 +165,10 @@ mod tests {
     async fn dashboards_hear_about_changes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         let url = format!("http://{address}/account/pages/{page}/events");
         let mut events = Events::open(&client, &url, &session).await;
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         assert_eq!(events.next().await, ("account".to_string(), json!({})));
         let response = client
             .post(format!("http://{address}/account/settings"))
@@ -256,14 +256,14 @@ mod tests {
     async fn tip_pages_hear_about_changes() {
         let (address, api) = start_api(None).await;
         let client = reqwest::Client::new();
-        let (session, key, page) = streamer(&api);
+        let (session, moblin_cloud_key, page) = streamer(&api);
         let mut events = Events::open(
             &client,
             &format!("http://{address}/pages/{page}/events"),
             "",
         )
         .await;
-        let mut socket = connect(&address, &key).await;
+        let mut socket = connect(&address, &moblin_cloud_key).await;
         assert_eq!(events.next().await, ("page".to_string(), json!({})));
         socket
             .send(Message::text(

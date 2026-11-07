@@ -186,15 +186,16 @@ pub(crate) async fn send_event(socket: &mut Socket, event: Value) {
 pub(crate) type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-pub(crate) async fn connect(address: &str, key: &str) -> Socket {
-    connect_as(address, key, "A").await
+pub(crate) async fn connect(address: &str, moblin_cloud_key: &str) -> Socket {
+    connect_as(address, moblin_cloud_key, "A").await
 }
 
-pub(crate) async fn connect_as(address: &str, key: &str, device: &str) -> Socket {
-    let (mut socket, _) =
-        tokio_tungstenite::connect_async(format!("ws://{address}/remote-control/streamer/{key}"))
-            .await
-            .unwrap();
+pub(crate) async fn connect_as(address: &str, moblin_cloud_key: &str, device: &str) -> Socket {
+    let (mut socket, _) = tokio_tungstenite::connect_async(format!(
+        "ws://{address}/remote-control/streamer/{moblin_cloud_key}"
+    ))
+    .await
+    .unwrap();
     identify(&mut socket, device).await;
     socket
 }
@@ -247,19 +248,19 @@ pub(crate) fn connect_paypal(api: &Api) {
         .unwrap();
 }
 
-pub(crate) fn key_of(account: &Value) -> String {
+pub(crate) fn moblin_cloud_key_of(account: &Value) -> String {
     account["key"].as_str().unwrap().to_string()
 }
 
 pub(crate) fn create_account(api: &Api, id: &str, name: &str, login: &str) -> Account {
-    let key = api.remote_control.new_moblin_cloud_key();
+    let moblin_cloud_key = api.remote_control.new_moblin_cloud_key();
     let page = api.remote_control.new_page_id().unwrap();
     api.accounts
         .signed_in(
             &Identity::twitch(id, name, login),
             id.to_string(),
             page,
-            key,
+            moblin_cloud_key,
         )
         .unwrap()
 }
