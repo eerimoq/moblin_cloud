@@ -154,6 +154,33 @@ export function Choices(props: {
   );
 }
 
+export function Toggle(props: {
+  label: string;
+  on: boolean;
+  disabled: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={props.on}
+      aria-label={props.label}
+      disabled={props.disabled}
+      class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+        props.on ? "bg-phone-switch" : "bg-phone-separator"
+      }`}
+      onClick={() => props.onToggle(!props.on)}
+    >
+      <span
+        class={`absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform ${
+          props.on ? "translate-x-[20px]" : ""
+        }`}
+      />
+    </button>
+  );
+}
+
 export function PhoneSwitch(props: {
   label: string;
   icon?: IconName;
@@ -167,23 +194,12 @@ export function PhoneSwitch(props: {
         {(icon) => <Icon name={icon()} class="size-[18px] shrink-0 text-phone-tint" />}
       </Show>
       <span class="min-w-0 flex-1 truncate">{props.label}</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={props.on}
-        aria-label={props.label}
+      <Toggle
+        label={props.label}
+        on={props.on}
         disabled={props.disabled}
-        class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-          props.on ? "bg-phone-switch" : "bg-phone-separator"
-        }`}
-        onClick={() => props.onToggle(!props.on)}
-      >
-        <span
-          class={`absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform ${
-            props.on ? "translate-x-[20px]" : ""
-          }`}
-        />
-      </button>
+        onToggle={props.onToggle}
+      />
     </div>
   );
 }

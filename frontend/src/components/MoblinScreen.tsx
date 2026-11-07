@@ -1,4 +1,13 @@
-import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createResource,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import Icon, { type IconName } from "./Icon";
 import { ask } from "./Modal";
 import { PanelButtons, panelWidth, type Remote } from "./MoblinParts";
@@ -65,8 +74,9 @@ const quickButtons = (): QuickButton[] => [
   { type: "Mute", name: t("Mute"), page: 1 },
   { type: "Mic", name: t("Mic"), page: 1 },
   { type: "Record", name: t("Record"), page: 1 },
-  { type: "Bitrate", name: t("Bitrate"), page: 1 },
+  { type: "Widgets", name: t("Scene widgets"), page: 1 },
   { type: "Scene editor", name: t("Scene editor"), page: 1 },
+  { type: "Bitrate", name: t("Bitrate"), page: 1 },
   { type: "Connection priorities", name: t("Connection priorities"), page: 1 },
   { type: "Reload browser widgets", name: t("Reload browser widgets"), page: 1 },
   { type: "Black screen", name: t("Stealth mode"), page: 1 },
@@ -103,6 +113,7 @@ const buttonIcons: Record<string, IconName> = {
   "Connection priorities": "phone-connection",
   "Reload browser widgets": "reload",
   "Scene editor": "rectangle-group",
+  Widgets: "photo-on-rectangle",
   "Instant replay": "memories",
   Movie: "film",
   "Gray scale": "moon",
@@ -151,6 +162,7 @@ const panels: Record<string, Panel> = {
   "Connection priorities": "priorities",
   "Auto scene switcher": "autoSceneSwitcher",
   Macros: "macros",
+  Widgets: "sceneWidgets",
 };
 
 function Chip(props: { icon: IconName; text?: string; ok?: boolean; before?: boolean }) {
@@ -373,29 +385,31 @@ export default function MoblinScreen(props: {
   onRequest?: <T>(control: Control) => Promise<T>;
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
-  const [sceneEditor, setSceneEditor] = createSignal<Editor | null>(null);
+  const [editor, setEditor] = createSignal<Editor | null>(null);
+  const [sceneEditorOpen, setSceneEditorOpen] = createSignal(false);
+  const [panel, setPanel] = createSignal<Panel | null>(null);
+  createEffect(
+    on(
+      () => sceneEditorOpen() || panel() === "sceneWidgets",
+      (needed) => {
+        const current = editor();
+        if (needed && !current && props.onRequest) {
+          setEditor(createEditor(props.onRequest, props.onControl, () => props.state.scene));
+        } else if (!needed && current) {
+          setEditor(null);
+          void current.flush().finally(() => current.dispose());
+        }
+      },
+    ),
+  );
+  onCleanup(() => editor()?.dispose());
   const openSceneEditor = () => {
-    if (!props.onRequest || sceneEditor()) {
-      return;
-    }
-    setSceneEditor(createEditor(props.onRequest, props.onControl, () => props.state.scene));
-  };
-  const closeSceneEditor = async () => {
-    const editor = sceneEditor();
-    if (!editor) {
-      return;
-    }
-    setSceneEditor(null);
-    try {
-      await editor.flush();
-    } finally {
-      editor.dispose();
+    if (props.onRequest) {
+      setSceneEditorOpen(true);
     }
   };
-  onCleanup(() => sceneEditor()?.dispose());
   const [height, setHeight] = createSignal(screenHeight + 2 * bezel);
   const [verbose, setVerbose] = createSignal(readStored("statusCollapsed") !== "1");
-  const [panel, setPanel] = createSignal<Panel | null>(null);
   const [panelHidden, setPanelHidden] = createSignal(false);
   const [page, setPage] = createSignal(1);
   const [icon] = createResource(
@@ -569,7 +583,8 @@ export default function MoblinScreen(props: {
         disabled={
           !props.connected ||
           (action()?.key ? disabled(action()!.key) : false) ||
-          (button.type === "Scene editor" && (!props.onRequest || !props.remoteControl))
+          ((button.type === "Scene editor" || button.type === "Widgets") &&
+            (!props.onRequest || !props.remoteControl))
         }
         nameWidth={nameWidth}
         onPress={() => action()?.run()}
@@ -658,7 +673,7 @@ export default function MoblinScreen(props: {
               props.window ? "" : "rounded-[50px]"
             }`}
           >
-            <Show when={sceneEditor()}>
+            <Show when={sceneEditorOpen() && editor()}>
               {(editor) => (
                 <SceneEditor
                   editor={editor()}
@@ -667,11 +682,11 @@ export default function MoblinScreen(props: {
                   settings={props.settings}
                   width={shownWidth()}
                   height={shownHeight()}
-                  onClose={() => void closeSceneEditor()}
+                  onClose={() => setSceneEditorOpen(false)}
                 />
               )}
             </Show>
-            <Show when={!sceneEditor()}>
+            <Show when={!sceneEditorOpen()}>
               <div class="relative min-w-0 flex-1 overflow-hidden bg-radial-[at_40%_40%] from-phone-preview to-phone-preview-dark">
                 <Show when={previewSource()}>
                   {(source) => (
@@ -713,7 +728,12 @@ export default function MoblinScreen(props: {
                     style={{ width: `${shownPanelWidth()}px` }}
                   >
                     <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
-                      <Panels panel={shown()} remote={remote} />
+                      <Panels
+                        panel={shown()}
+                        remote={remote}
+                        editor={editor()}
+                        onOpenSceneEditor={openSceneEditor}
+                      />
                     </div>
                     <Show when={!panelHidden()}>{panelButtons()}</Show>
                   </div>

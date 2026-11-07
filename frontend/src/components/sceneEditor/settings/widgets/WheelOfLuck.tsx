@@ -1,4 +1,5 @@
 import { onMount, Show } from "solid-js";
+import Icon from "../../../Icon";
 import {
   ButtonRow,
   LinkRow,
@@ -14,9 +15,36 @@ import {
   newUuid,
   sameId,
   type GimbalMotion,
+  type SettingsWidget,
   type WheelOfLuckOption,
 } from "../../../../data/moblinSettings";
 import { t } from "../../../../i18n";
+
+export function WheelOfLuckQuickControls(props: {
+  edit: (change: (widget: SettingsWidget) => void) => void;
+}) {
+  return (
+    <div class="flex justify-end px-4 py-2">
+      <button
+        type="button"
+        aria-label={t("Shuffle")}
+        title={t("Shuffle")}
+        class="text-phone-tint"
+        onClick={() =>
+          props.edit((draft) => {
+            const options = draft.wheelOfLuck.options;
+            for (let index = options.length - 1; index > 0; index--) {
+              const other = Math.floor(Math.random() * (index + 1));
+              [options[index], options[other]] = [options[other]!, options[index]!];
+            }
+          })
+        }
+      >
+        <Icon name="shuffle" class="size-[28px]" />
+      </button>
+    </div>
+  );
+}
 
 const weights = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 40, 60, 80, 100];
 

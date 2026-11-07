@@ -11,8 +11,10 @@ A copy of Moblin's scene editor (`SceneEditorView.swift` and friends in the Mobl
 - The canvas size comes from the editor options' `canvasSize`. The outlines are never mirrored, since the preview is the stream's own image, not the phone's mirrored front camera view.
 - Per type forms in `settings/widgets/` are one file per widget type, named like its directory in Moblin's `Settings/Scenes/Widgets/Widget/`.
 - The Numeric input toggle is kept in the browser, since the protocol does not carry Moblin's setting. `EditorOptions` carries the phone state Moblin's views read.
+- The Scene widgets quick button's panel (`SceneWidgetsPanel.tsx`, Moblin's `QuickButtonSceneWidgetsView`) shares the scene editor's `Editor` with the full screen editor: `MoblinScreen` keeps one while either is open, so opening the editor from the panel never races the panel's unsent changes, and the draft is flushed when the last of them closes. The panel lists the phone's selected scene, not the editor's `sceneId`, like Moblin.
 
 Left out on purpose:
 
-- Controls that act on the phone's running effects rather than on settings: text widget timers, stopwatches, checkboxes, ratings and lap times, the wheel's spin, shuffle and results, the Pomodoro controls, the alert Test button, the interactive browser widgets toggle, Twitch rewards and TTS Monster and ElevenLabs voices.
+- Controls that act on the phone's running effects rather than on settings, in the forms and in the Scene widgets panel's quick controls: text widget timers, stopwatches, checkboxes, ratings and lap times, the wheel's spin and results, the scoreboard's score and clock, the Pomodoro controls, the alert Test button, the interactive browser widgets toggle, Twitch rewards and TTS Monster and ElevenLabs voices. The wheel's shuffle and the bingo card's marks are settings, so the panel has them.
+- The Scene widgets panel's Scenes shortcut, since Moblin's scenes settings view is not ported; the scene editor covers it.
 - Picking files: the protocol has no file uploads, so images, VTuber and PNGTuber models, gallery media and alert videos are picked on the phone. The forms show what the phone has, and the gallery has no previews or playback.

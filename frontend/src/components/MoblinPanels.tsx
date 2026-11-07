@@ -11,11 +11,20 @@ import {
   type Remote,
   rowClass,
 } from "./MoblinParts";
+import SceneWidgetsPanel from "./sceneEditor/SceneWidgetsPanel";
+import type { Editor } from "./sceneEditor/store";
 import type { Control, Named } from "../data/account";
 import { formatBits } from "../data/moblin";
 import { t } from "../i18n";
 
-export type Panel = "mic" | "bitrate" | "priorities" | "autoSceneSwitcher" | "macros" | "settings";
+export type Panel =
+  | "mic"
+  | "bitrate"
+  | "priorities"
+  | "autoSceneSwitcher"
+  | "macros"
+  | "sceneWidgets"
+  | "settings";
 
 function Mics(props: { remote: Remote; footer?: string }) {
   return (
@@ -358,9 +367,32 @@ function Settings(props: { remote: Remote }) {
   );
 }
 
-export default function Panels(props: { panel: Panel; remote: Remote }) {
+export default function Panels(props: {
+  panel: Panel;
+  remote: Remote;
+  editor: Editor | null;
+  onOpenSceneEditor: () => void;
+}) {
   return (
     <Switch>
+      <Match when={props.panel === "sceneWidgets"}>
+        <Show
+          when={props.editor}
+          fallback={
+            <PanelView title={t("Scene widgets")}>
+              <Loading />
+            </PanelView>
+          }
+        >
+          {(editor) => (
+            <SceneWidgetsPanel
+              editor={editor()}
+              sceneId={props.remote.state.scene}
+              onOpenSceneEditor={props.onOpenSceneEditor}
+            />
+          )}
+        </Show>
+      </Match>
       <Match when={props.panel === "mic"}>
         <PanelView title={t("Mic")}>
           <Mics remote={props.remote} footer={t("Highest priority mic at the top of the list.")} />

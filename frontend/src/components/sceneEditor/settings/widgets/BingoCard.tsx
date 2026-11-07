@@ -1,8 +1,61 @@
+import { For, Show } from "solid-js";
 import Icon from "../../../Icon";
 import { ButtonRow, ColorRow, Section } from "../../Form";
 import { Lines, type WidgetFormProps } from "./shared";
-import { newUuid } from "../../../../data/moblinSettings";
+import { newUuid, type SettingsWidget } from "../../../../data/moblinSettings";
 import { t } from "../../../../i18n";
+
+const bingoCardSide = (count: number) => (count <= 4 ? 2 : count <= 9 ? 3 : count <= 16 ? 4 : 5);
+
+export function BingoCardQuickControls(props: {
+  widget: SettingsWidget;
+  edit: (change: (widget: SettingsWidget) => void) => void;
+}) {
+  const squares = () => props.widget.bingoCard.squares;
+  const side = () => bingoCardSide(squares().length);
+  const indexes = (row: number) =>
+    Array.from({ length: side() }, (_, column) => row * side() + column);
+  return (
+    <div class="flex flex-col items-end gap-[5px] px-4 py-2">
+      <For each={Array.from({ length: side() }, (_, row) => row)}>
+        {(row) => (
+          <div class="flex gap-[3px]">
+            <For each={indexes(row)}>
+              {(index) => (
+                <Show
+                  when={squares()[index]}
+                  fallback={<Icon name="square" class="size-[28px] text-phone-border" />}
+                >
+                  {(square) => (
+                    <button
+                      type="button"
+                      aria-label={square().text}
+                      aria-pressed={square().checked}
+                      class="text-phone-tint"
+                      onClick={() =>
+                        props.edit((draft) => {
+                          const target = draft.bingoCard.squares[index];
+                          if (target) {
+                            target.checked = !target.checked;
+                          }
+                        })
+                      }
+                    >
+                      <Icon
+                        name={square().checked ? "square-split-diagonal" : "square"}
+                        class="size-[28px]"
+                      />
+                    </button>
+                  )}
+                </Show>
+              )}
+            </For>
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
 
 export function BingoCardForm(props: WidgetFormProps) {
   const bingo = () => props.widget.bingoCard;

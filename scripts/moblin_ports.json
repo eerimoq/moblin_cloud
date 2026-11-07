@@ -62,6 +62,15 @@
     },
     {
       "files": [
+        "frontend/src/components/sceneEditor/SceneWidgetsPanel.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/ControlBar/QuickButton/QuickButtonSceneWidgetsView.swift"
+      ],
+      "commit": "c960f2964"
+    },
+    {
+      "files": [
         "frontend/src/components/sceneEditor/store.ts",
         "backend/src/remote_control.rs",
         "tests/utils/fake_moblin.py"
