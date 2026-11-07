@@ -473,10 +473,10 @@ export default function MoblinScreen(props: {
   const filterOn = () => filtersOf(props.state.filters);
   const pages = () =>
     [1, 2, 3].filter((number) => quickButtons().some((button) => button.page === number));
-  const shownPage = () => (pages().includes(page()) ? page() : 1);
-  const onPage = () => quickButtons().filter((button) => button.page === shownPage());
-  const rows = () => {
-    const buttons = onPage();
+  let pager: HTMLDivElement | undefined;
+  const pageStride = (element: HTMLElement) => element.clientWidth + 8;
+  const rows = (page: number) => {
+    const buttons = quickButtons().filter((button) => button.page === page);
     const pairs: (QuickButton | null)[][] = [];
     for (let index = 0; index < buttons.length; index += 2) {
       pairs.push(
@@ -744,84 +744,111 @@ export default function MoblinScreen(props: {
                     </Show>
                     <span class="w-[10px]" />
                   </div>
-                  <Show when={shownPage() === 1}>
-                    <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
-                      <img
-                        src={moblinIconUrl(icon() ?? "plain")}
-                        alt=""
-                        class="size-[40px] object-contain"
-                      />
-                      <button
-                        type="button"
-                        aria-label={t("Settings")}
-                        class={`grid size-[40px] place-items-center rounded-full border ${
-                          panel() === "settings" ? "border-white" : "border-phone-border"
-                        }`}
-                        onClick={() => toggle("settings")}
-                      >
-                        <Icon name="gear" class="size-[20px]" />
-                      </button>
-                    </div>
-                  </Show>
-                  <div class="flex min-h-0 flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]">
-                    <For each={rows()}>
-                      {(row) => (
-                        <div class="flex items-start justify-end gap-[8px]">
-                          <For each={row}>
-                            {(button) =>
-                              button ? (
-                                quickButton(button, 40)
-                              ) : (
-                                <span style={{ width: `${40}px` }} />
-                              )
-                            }
-                          </For>
+                  <div
+                    ref={(element) => (pager = element)}
+                    class="flex min-h-0 flex-1 snap-x snap-mandatory gap-[8px] overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
+                    onScroll={(event) =>
+                      setPage(
+                        pages()[
+                          Math.round(
+                            event.currentTarget.scrollLeft / pageStride(event.currentTarget),
+                          )
+                        ] ?? 1,
+                      )
+                    }
+                  >
+                    <For each={pages()}>
+                      {(number) => (
+                        <div class="flex h-full w-full shrink-0 snap-start snap-always flex-col">
+                          <Show when={number === 1}>
+                            <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
+                              <img
+                                src={moblinIconUrl(icon() ?? "plain")}
+                                alt=""
+                                class="size-[40px] object-contain"
+                              />
+                              <button
+                                type="button"
+                                aria-label={t("Settings")}
+                                class={`grid size-[40px] place-items-center rounded-full border ${
+                                  panel() === "settings" ? "border-white" : "border-phone-border"
+                                }`}
+                                onClick={() => toggle("settings")}
+                              >
+                                <Icon name="gear" class="size-[20px]" />
+                              </button>
+                            </div>
+                          </Show>
+                          <div class="flex min-h-0 flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]">
+                            <For each={rows(number)}>
+                              {(row) => (
+                                <div class="flex items-start justify-end gap-[8px]">
+                                  <For each={row}>
+                                    {(button) =>
+                                      button ? (
+                                        quickButton(button, 40)
+                                      ) : (
+                                        <span style={{ width: `${40}px` }} />
+                                      )
+                                    }
+                                  </For>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                          <Show when={number === 1}>
+                            <div class="flex justify-center pt-[5px] pr-[10px]">
+                              <button
+                                type="button"
+                                disabled={
+                                  (!props.goLive && !props.state.streaming) ||
+                                  disabled("setLive") ||
+                                  props.state.streaming === undefined
+                                }
+                                title={
+                                  props.goLive || props.state.streaming || !props.remoteControl
+                                    ? undefined
+                                    : t("The streamer has not let you go live.")
+                                }
+                                class={`min-w-[60px] rounded-[10px] bg-phone-live p-[5px] text-[17px] leading-tight whitespace-nowrap disabled:opacity-50 ${
+                                  props.state.streaming ? "border border-white" : ""
+                                }`}
+                                onClick={() =>
+                                  void (props.state.streaming
+                                    ? confirmed(
+                                        t("End the stream on this device?"),
+                                        t("End stream"),
+                                        { setLive: { on: false } },
+                                      )
+                                    : confirmed(t("Go live on this device?"), t("Go live"), {
+                                        setLive: { on: true },
+                                      }))
+                                }
+                              >
+                                {props.state.streaming ? t("End") : t("Go Live")}
+                              </button>
+                            </div>
+                          </Show>
                         </div>
                       )}
                     </For>
                   </div>
-                  <Show when={shownPage() === 1}>
-                    <div class="flex justify-center pt-[5px] pr-[10px]">
-                      <button
-                        type="button"
-                        disabled={
-                          (!props.goLive && !props.state.streaming) ||
-                          disabled("setLive") ||
-                          props.state.streaming === undefined
-                        }
-                        title={
-                          props.goLive || props.state.streaming || !props.remoteControl
-                            ? undefined
-                            : t("The streamer has not let you go live.")
-                        }
-                        class={`min-w-[60px] rounded-[10px] bg-phone-live p-[5px] text-[17px] leading-tight whitespace-nowrap disabled:opacity-50 ${
-                          props.state.streaming ? "border border-white" : ""
-                        }`}
-                        onClick={() =>
-                          void (props.state.streaming
-                            ? confirmed(t("End the stream on this device?"), t("End stream"), {
-                                setLive: { on: false },
-                              })
-                            : confirmed(t("Go live on this device?"), t("Go live"), {
-                                setLive: { on: true },
-                              }))
-                        }
-                      >
-                        {props.state.streaming ? t("End") : t("Go Live")}
-                      </button>
-                    </div>
-                  </Show>
                   <Show when={pages().length > 1}>
                     <div class="flex justify-center gap-[3px] pt-[6px] pr-[10px]">
                       <For each={pages()}>
-                        {(number) => (
+                        {(number, index) => (
                           <button
                             type="button"
                             aria-label={t("Page {page}", { page: number })}
                             class={`size-[6px] rounded-full border border-white ${
-                              number === shownPage() ? "bg-white" : ""
+                              number === page() ? "bg-white" : ""
                             }`}
-                            onClick={() => setPage(number)}
+                            onClick={() =>
+                              pager?.scrollTo({
+                                left: index() * pageStride(pager),
+                                behavior: "smooth",
+                              })
+                            }
                           />
                         )}
                       </For>
