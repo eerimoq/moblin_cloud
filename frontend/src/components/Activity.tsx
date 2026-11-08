@@ -99,7 +99,7 @@ function ActivityRow(props: {
 
 export default function Activity(props: {
   session: string;
-  page: string | undefined;
+  page: string;
   kinds: RecentKind[] | undefined;
   recentChanges: number;
   onKinds: (kinds: RecentKind[] | undefined) => void;

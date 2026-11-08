@@ -28,7 +28,7 @@ class ReceivedTestCase(TestCase):
         return order_id
 
     def recent(self, query: str = "") -> dict:
-        return self.dashboard.get(f"/account/recent?kind=tip{query}")
+        return self.dashboard.get(f"{self.dashboard.page_path()}/recent?kind=tip{query}")
 
 
 class ReceivedPages(ReceivedTestCase):
@@ -47,13 +47,13 @@ class ReceivedPages(ReceivedTestCase):
         self.assert_equal([item["id"] for item in rest["items"]], newest_first[20:])
         self.assert_false(rest["more"])
         self.assert_equal([item["id"] for item in self.recent("&limit=50")["items"]], newest_first)
-        every_kind = self.dashboard.get("/account/recent?limit=5")
+        every_kind = self.dashboard.get(f"{self.dashboard.page_path()}/recent?limit=5")
         self.assert_equal([item["id"] for item in every_kind["tip"]["items"]], newest_first[:5])
         self.assert_true(every_kind["tip"]["more"])
         self.assert_equal(every_kind["spin"], {"items": [], "more": False})
         self.assert_equal(every_kind["effect"], {"items": [], "more": False})
         try:
-            self.dashboard.get(f"/account/recent?before={order_ids[0]}")
+            self.dashboard.get(f"{self.dashboard.page_path()}/recent?before={order_ids[0]}")
         except BackendError as error:
             self.assert_equal(error.status, 400)
         self.assert_false(self.recent("&limit=23")["more"])
@@ -100,10 +100,10 @@ class ReceivedByAssistants(ReceivedTestCase):
     def run(self):
         order_id = self.paid_tip(250, "Modview", "Hello")
         assistant = self.sign_in("receivedmod")
-        self.assert_backend_error(403, lambda: assistant.assisted_resend(self.page_id, order_id))
+        self.assert_backend_error(403, lambda: assistant.resend(order_id, page_id=self.page_id))
         self.dashboard.add_assistant("twitch", "receivedmod")
         own = self.recent()["items"]
-        assisted = assistant.assisted_recent(self.page_id, "tip")["items"]
+        assisted = assistant.recent("tip", page_id=self.page_id)["items"]
         self.assert_equal([item["id"] for item in assisted], [order_id])
         self.assert_equal(assisted, [{key: value for key, value in own[0].items() if key != "provider"}])
         device = RawDevice(self.backend.port, self.dashboard.moblin_cloud_key(), "RM1")
@@ -111,15 +111,15 @@ class ReceivedByAssistants(ReceivedTestCase):
             self.wait_until(
                 lambda: self.recent()["items"][0]["status"] == "delivered", "the tip to be delivered"
             )
-            self.assert_equal(assistant.assisted_resend(self.page_id, order_id), {})
+            self.assert_equal(assistant.resend(order_id, page_id=self.page_id), {})
             self.wait_until(
                 lambda: any(tip["requestId"] == f"{order_id}-1" for tip in device.tips()),
                 "the tip sent again",
             )
-            self.assert_backend_error(404, lambda: assistant.assisted_resend(self.page_id, "NOSUCHORDER"))
+            self.assert_backend_error(404, lambda: assistant.resend("NOSUCHORDER", page_id=self.page_id))
             other = self.sign_in("receivedother")
             other_order = other.page_id()
-            self.assert_refused(lambda: assistant.assisted_resend(other_order, order_id))
+            self.assert_refused(lambda: assistant.resend(order_id, page_id=other_order))
         finally:
             device.close()
             self.dashboard.remove_assistant("twitch", user_id_of("receivedmod"))
@@ -202,11 +202,11 @@ class ReceivedTestLimit(TestCase):
         dashboard.add_assistant("twitch", "testlimitmod")
         for number in range(1, 8):
             self.assert_equal(dashboard.test_tip(str(number)), {})
-        self.assert_equal(assistant.assisted_test_tip(page_id, "8"), {})
+        self.assert_equal(assistant.test_tip("8", page_id=page_id), {})
         self.assert_equal(dashboard.test_effect(), {})
-        self.assert_equal(assistant.assisted_test_effect(page_id), {})
+        self.assert_equal(assistant.test_effect(page_id=page_id), {})
         self.assert_backend_error(429, lambda: dashboard.test_tip("11"))
-        self.assert_backend_error(429, lambda: assistant.assisted_test_tip(page_id, "12"))
+        self.assert_backend_error(429, lambda: assistant.test_tip("12", page_id=page_id))
         self.assert_backend_error(429, dashboard.test_effect)
         other = self.sign_in("testlimitother")
         self.assert_equal(other.test_tip(), {})

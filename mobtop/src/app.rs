@@ -206,7 +206,7 @@ impl Monitor {
             .unwrap_or_else(|| self.own.settings.id.clone())
     }
 
-    pub fn base(&self) -> String {
+    pub fn account_path(&self) -> String {
         match &self.channel {
             Some(id) => format!("/account/pages/{id}"),
             None => "/account".to_string(),
@@ -508,7 +508,7 @@ impl App {
             Message::SignedIn(Err(error)) => {
                 self.screen = Screen::SignedOut { error: Some(error) };
             }
-            Message::Account(base, Ok(account)) => self.account(&base, *account),
+            Message::Account(path, Ok(account)) => self.account(&path, *account),
             Message::Account(_, Err(error)) => {
                 if let Screen::Loading { error: shown } = &mut self.screen
                     && !error.signed_out()
@@ -703,23 +703,23 @@ impl App {
         let Some(monitor) = self.monitor() else {
             return;
         };
-        let base = monitor.base();
+        let path = monitor.account_path();
         let backend = self.backend.clone();
         self.spawn(async move {
-            let account = backend.account(&base).await.map(Box::new);
-            Message::Account(base, account)
+            let account = backend.account(&path).await.map(Box::new);
+            Message::Account(path, account)
         });
     }
 
-    fn account(&mut self, base: &str, account: Account) {
+    fn account(&mut self, path: &str, account: Account) {
         let Screen::SignedIn(monitor) = &mut self.screen else {
-            if base == "/account" {
+            if path == "/account" {
                 self.screen = Screen::SignedIn(Box::new(Monitor::new(account)));
                 self.open_page();
             }
             return;
         };
-        if base == "/account" {
+        if path == "/account" {
             monitor.own = account.clone();
             if monitor.channel.is_none() {
                 monitor.page = Some(account);
@@ -727,7 +727,7 @@ impl App {
                 self.switch_channel(None);
                 return;
             }
-        } else if base == monitor.base() {
+        } else if path == monitor.account_path() {
             monitor.page = Some(account);
         }
         self.reconcile();
@@ -971,10 +971,10 @@ impl App {
             .map(|recent| recent.items.len())
             .max()
             .unwrap_or(0);
-        let (page, base) = (monitor.page_id(), monitor.base());
+        let page = monitor.page_id();
         let backend = self.backend.clone();
         self.spawn(async move {
-            let recent = backend.recent(&base, shown.clamp(5, 50)).await;
+            let recent = backend.recent(&page, shown.clamp(5, 50)).await;
             Message::Recent(page, recent)
         });
     }
@@ -1080,9 +1080,9 @@ impl App {
         let index = index.min(EFFECTS.len() - 1);
         monitor.selected.insert(leaf, index);
         monitor.fart = Some(Instant::now());
-        let base = monitor.base();
+        let page = monitor.page_id();
         let backend = self.backend.clone();
-        self.spawn(async move { Message::Farted(backend.fart(&base, EFFECTS[index]).await) });
+        self.spawn(async move { Message::Farted(backend.fart(&page, EFFECTS[index]).await) });
     }
 
     fn start_sign_in(&mut self, platform: Platform) {
@@ -1332,17 +1332,17 @@ impl App {
                 else {
                     return;
                 };
-                let (base, order) = (monitor.base(), item.id.clone());
+                let (page, order) = (monitor.page_id(), item.id.clone());
                 let backend = self.backend.clone();
                 self.set_status("Sending again…".to_string(), false);
                 self.spawn(async move {
-                    let sent = backend.resend(&base, &order).await;
+                    let sent = backend.resend(&page, &order).await;
                     Message::Done(sent.map(|()| "Sent again.".to_string()))
                 });
             }
             (Panel::Activity, KeyCode::Char('m')) => {
                 let kinds = kinds_of(&leaf);
-                let (page, base) = (monitor.page_id(), monitor.base());
+                let page = monitor.page_id();
                 let more: Vec<(Kind, Option<String>)> = Kind::ALL
                     .into_iter()
                     .filter(|kind| kinds[*kind as usize])
@@ -1354,11 +1354,11 @@ impl App {
                     })
                     .collect();
                 for (kind, before) in more {
-                    let (page, base) = (page.clone(), base.clone());
+                    let page = page.clone();
                     let backend = self.backend.clone();
                     self.spawn(async move {
                         let recent = backend
-                            .more_recent(&base, kind, 20, before.as_deref())
+                            .more_recent(&page, kind, 20, before.as_deref())
                             .await;
                         Message::MoreRecent(page, kind, recent)
                     });

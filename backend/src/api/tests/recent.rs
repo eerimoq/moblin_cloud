@@ -3,6 +3,7 @@ use futures_util::SinkExt;
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::accounts::Platform;
 use crate::api::test_utils::*;
 use crate::deliveries;
 use crate::payments::{Item, Order, Payee};
@@ -12,9 +13,12 @@ async fn recent_payments_are_listed_to_the_streamer() {
     let (address, api, _) = start_paid_fake().await;
     let (session, capture_url) = paypal_tip_order_in(&address, &api, "USD").await;
     let client = reqwest::Client::new();
+    let page_id = api.accounts.get("1").unwrap().page_id;
     let recent = || async {
         client
-            .get(format!("http://{address}/account/recent?kind=tip"))
+            .get(format!(
+                "http://{address}/account/pages/{page_id}/recent?kind=tip"
+            ))
             .bearer_auth(&session)
             .send()
             .await
@@ -38,12 +42,19 @@ async fn recent_payments_are_listed_to_the_streamer() {
     assert_eq!(tip["status"], "waiting");
     assert!(tip["at"].as_u64().unwrap() > 0);
     assert!(tip.get("message").is_none());
-    let page_id = api.accounts.get("1").unwrap().page_id;
+    create_account(&api, "21", "Mod 21", "mod21");
+    api.accounts
+        .add_assistant(
+            Platform::Twitch,
+            "1",
+            &twitch_assistant("21", "mod21", "Mod 21"),
+        )
+        .unwrap();
     let assisted: Value = client
         .get(format!(
             "http://{address}/account/pages/{page_id}/recent?kind=tip"
         ))
-        .bearer_auth(&session)
+        .bearer_auth(api.auth.session("21", 0))
         .send()
         .await
         .unwrap()
@@ -66,7 +77,9 @@ async fn recent_payments_are_listed_to_the_streamer() {
         json!([{"name": "Moblin 1", "received": true}])
     );
     let response = client
-        .get(format!("http://{address}/account/recent?kind=tip"))
+        .get(format!(
+            "http://{address}/account/pages/{page_id}/recent?kind=tip"
+        ))
         .send()
         .await
         .unwrap();
@@ -78,9 +91,12 @@ async fn recent_payments_can_be_sent_again() {
     let (address, api, _) = start_paid_fake().await;
     let (session, capture_url) = paypal_tip_order_in(&address, &api, "USD").await;
     let client = reqwest::Client::new();
+    let page_id = api.accounts.get("1").unwrap().page_id;
     let status = || async {
         client
-            .get(format!("http://{address}/account/recent?kind=tip"))
+            .get(format!(
+                "http://{address}/account/pages/{page_id}/recent?kind=tip"
+            ))
             .bearer_auth(&session)
             .send()
             .await
@@ -108,26 +124,18 @@ async fn recent_payments_can_be_sent_again() {
     };
     acknowledge(&mut socket, "ORDER1").await;
     assert_eq!(status().await, "delivered");
-    let page_id = api.accounts.get("1").unwrap().page_id;
-    for (n, url) in [
-        format!("http://{address}/account/recent/ORDER1/resend"),
-        format!("http://{address}/account/pages/{page_id}/recent/ORDER1/resend"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let response = client
-            .post(&url)
-            .bearer_auth(&session)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-        acknowledge(&mut socket, &format!("ORDER1-{}", n + 1)).await;
-        assert_eq!(status().await, "delivered");
-    }
+    let url = format!("http://{address}/account/pages/{page_id}/recent/ORDER1/resend");
+    let response = client
+        .post(&url)
+        .bearer_auth(&session)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    acknowledge(&mut socket, "ORDER1-1").await;
+    assert_eq!(status().await, "delivered");
     for url in [
-        format!("http://{address}/account/recent/ORDER2/resend"),
+        format!("http://{address}/account/pages/{page_id}/recent/ORDER2/resend"),
         format!("http://{address}/account/pages/OTHER/recent/ORDER1/resend"),
     ] {
         let response = client
@@ -141,11 +149,7 @@ async fn recent_payments_can_be_sent_again() {
             "{url}"
         );
     }
-    let response = client
-        .post(format!("http://{address}/account/recent/ORDER1/resend"))
-        .send()
-        .await
-        .unwrap();
+    let response = client.post(&url).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(status().await, "delivered");
 }
@@ -206,7 +210,9 @@ async fn recent_lists_are_paged_per_kind() {
     let client = reqwest::Client::new();
     let recent = |query: String| {
         let request = client
-            .get(format!("http://{address}/account/recent?{query}"))
+            .get(format!(
+                "http://{address}/account/pages/{page_id}/recent?{query}"
+            ))
             .bearer_auth(&session);
         async move { request.send().await.unwrap() }
     };

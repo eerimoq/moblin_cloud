@@ -17,7 +17,7 @@ async fn spin_captures_need_the_wheel() {
     let (session, moblin_cloud_key, page_id) = streamer(&api);
     connect_paypal(&api);
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"currency": "usd", "spin": {
             "options": [{"spins": 2, "price": 800}],
@@ -175,7 +175,9 @@ async fn sessions_wait_for_the_device_to_reconnect() {
     assert_eq!(public["wheel"], json!({"options": options}));
     assert_eq!(public["connected"], true);
     let response = client
-        .post(format!("http://{address}/account/test/spin"))
+        .post(format!(
+            "http://{address}/account/pages/{page_id}/test/spin"
+        ))
         .bearer_auth(&session)
         .json(&json!({}))
         .send()
@@ -250,7 +252,7 @@ async fn spins_are_sent_to_the_streamer() {
         public,
         json!({"spin": null, "subSpins": null, "wheel": null, "connected": false})
     );
-    let settings_url = format!("http://{address}/account/settings");
+    let settings_url = format!("http://{address}/account/pages/{page_id}/settings");
     let response = client
         .post(&settings_url)
         .bearer_auth(&session)

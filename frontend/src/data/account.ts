@@ -439,7 +439,7 @@ export const adminStatsEventsUrl = `${backendUrl}/admin/stats/events`;
 
 export const pageEventsUrl = (page: string) => `${backendUrl}${accountPath(page)}/events`;
 
-export const fetchRecent = (session: string, page: string | undefined, limit: number) =>
+export const fetchRecent = (session: string, page: string, limit: number) =>
   call<Record<RecentKind, RecentList>>(
     `${accountPath(page)}/recent?${new URLSearchParams({ limit: String(limit) })}`,
     session,
@@ -447,7 +447,7 @@ export const fetchRecent = (session: string, page: string | undefined, limit: nu
 
 export const fetchMoreRecent = (
   session: string,
-  page: string | undefined,
+  page: string,
   kind: RecentKind,
   limit: number,
   before?: string,
@@ -457,7 +457,7 @@ export const fetchMoreRecent = (
     session,
   );
 
-export const resendRecent = (session: string, id: string, page?: string) =>
+export const resendRecent = (session: string, id: string, page: string) =>
   call<object>(`${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, session, post());
 
 export const fetchMonitorLayout = (session: string, page: string) =>
@@ -616,14 +616,14 @@ export const checkStripe = (session: string) =>
 export const disconnectStripe = (session: string) =>
   call<Settings>("/account/stripe/disconnect", session, post());
 
-export const uploadImage = (session: string, image: File, page?: string) =>
+export const uploadImage = (session: string, image: File, page: string) =>
   call<Settings>(`${accountPath(page)}/image`, session, {
     method: "POST",
     headers: { "content-type": image.type || "application/octet-stream" },
     body: image,
   });
 
-export const removeImage = (session: string, page?: string) =>
+export const removeImage = (session: string, page: string) =>
   call<Settings>(`${accountPath(page)}/image/remove`, session, post());
 
 export type SettingsChanges = Page &
@@ -633,10 +633,10 @@ export const sendTest = (
   session: string,
   kind: RecentKind,
   body: { message?: string; effect?: string },
-  page?: string,
+  page: string,
 ) => call<object>(`${accountPath(page)}/test/${kind}`, session, post(body));
 
-export const saveAccountSettings = (session: string, settings: SettingsChanges, page?: string) =>
+export const saveAccountSettings = (session: string, settings: SettingsChanges, page: string) =>
   call<Settings>(
     `${accountPath(page)}/settings`,
     session,

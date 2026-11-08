@@ -155,12 +155,6 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/devices/{device}/remove",
             post(handle_account_device_remove),
         )
-        .route("/account/settings", post(handle_account_settings))
-        .route(
-            "/account/image",
-            post(handle_account_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
-        )
-        .route("/account/image/remove", post(handle_account_image_remove))
         .route(
             "/account/paypal/connect",
             post(handle_account_paypal_connect),
@@ -182,14 +176,6 @@ pub fn router(api: Arc<Api>) -> Router {
         )
         .route("/account/sign-out", post(handle_account_sign_out))
         .route("/account/delete", post(handle_account_delete))
-        .route("/account/recent", get(handle_account_recent))
-        .route(
-            "/account/recent/{order}/resend",
-            post(handle_account_resend),
-        )
-        .route("/account/test/tip", post(handle_test_tip))
-        .route("/account/test/spin", post(handle_test_spin))
-        .route("/account/test/effect", post(handle_test_effect))
         .route(
             "/account/assistants/{platform}",
             post(handle_account_assistant_add),
@@ -214,10 +200,10 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/assistants/{platform}/{assistant}/remote-control",
             post(handle_account_assistant_remote_control),
         )
-        .route("/account/pages/{id}/recent", get(handle_assistant_recent))
+        .route("/account/pages/{id}/recent", get(handle_recent))
         .route(
             "/account/pages/{id}/recent/{order}/resend",
-            post(handle_assistant_resend),
+            post(handle_resend),
         )
         .route("/account/pages/{id}", get(handle_assistant_account))
         .route("/account/pages/{id}/events", get(handle_page_events))
@@ -239,17 +225,14 @@ pub fn router(api: Arc<Api>) -> Router {
             "/account/pages/{id}/devices/{device}/control",
             post(handle_device_control),
         )
-        .route(
-            "/account/pages/{id}/settings",
-            post(handle_assistant_settings),
-        )
+        .route("/account/pages/{id}/settings", post(handle_settings))
         .route(
             "/account/pages/{id}/image",
-            post(handle_assistant_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+            post(handle_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
         )
         .route(
             "/account/pages/{id}/image/remove",
-            post(handle_assistant_image_remove),
+            post(handle_image_remove),
         )
         .route("/account/pages/{id}/test/tip", post(handle_test_tip))
         .route("/account/pages/{id}/test/spin", post(handle_test_spin))
@@ -429,6 +412,12 @@ pub(super) struct PageUser {
     rights: Rights,
 }
 
+impl PageUser {
+    pub(super) fn owner(&self) -> bool {
+        self.signed_in.account.page_id == self.streamer.page_id
+    }
+}
+
 fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failure> {
     let signed_in = signed_in(api, headers)?;
     let not_assistant = || {
@@ -466,7 +455,7 @@ fn page_user(api: &Api, headers: &HeaderMap, id: &str) -> Result<PageUser, Failu
 
 fn active(api: &Api, user: &PageUser, remote_control: bool) {
     let page_id = &user.streamer.page_id;
-    if user.signed_in.account.page_id != *page_id
+    if !user.owner()
         && api
             .accounts
             .active(&user.signed_in.account.id, page_id, remote_control)

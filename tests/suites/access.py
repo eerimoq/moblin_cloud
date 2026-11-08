@@ -223,7 +223,7 @@ class AccessRightsOnBothPlatforms(TestCase):
             )
             with EventStream(assistant, f"/account/pages/{page_id}/devices/BP1/preview") as frames:
                 frames.wait_for("frame", 10)
-            self.assert_equal(assistant.assisted_settings(page_id, message="Both")["message"], "Both")
+            self.assert_equal(assistant.update_settings(page_id=page_id, message="Both")["message"], "Both")
             streamer.remove_assistant("kick", kick_id)
             self.assert_equal(
                 rights(), {"preview": True, "goLive": False, "editTips": False, "remoteControl": "view"}
@@ -232,7 +232,7 @@ class AccessRightsOnBothPlatforms(TestCase):
                 403, lambda: assistant.control_device(page_id, "BP1", {"setTorch": {"on": False}}), NO_CONTROL
             )
             self.assert_backend_error(
-                403, lambda: assistant.assisted_settings(page_id, message="Mine"), NO_EDIT_TIPS
+                403, lambda: assistant.update_settings(page_id=page_id, message="Mine"), NO_EDIT_TIPS
             )
             with EventStream(assistant, f"/account/pages/{page_id}/devices/BP1/events") as events:
                 self.assert_equal(events.next()[0], "snapshot")
@@ -303,7 +303,7 @@ class AccessAssistantLimits(TestCase):
                 lambda: EventStream(assistant, f"/account/pages/{page_id}/devices/LO1/events")
             )
             self.assert_equal(device.controls, [])
-        self.assert_backend_error(403, lambda: assistant.assisted_settings(page_id, font="serif"))
+        self.assert_backend_error(403, lambda: assistant.update_settings(page_id=page_id, font="serif"))
         self.assert_equal(assistant.assisted_account(page_id)["key"], None)
         self.assert_backend_error(403, lambda: assistant.assisted_account("AAAAAAAAAAAAAAAA"), NOT_ASSISTANT)
         for path in ["/account/key", "/account/paypal/connect", "/account/delete", "/account/sign-out"]:
@@ -360,7 +360,7 @@ class AccessCors(TestCase):
 
     def run(self):
         response = requests.options(
-            f"{self.backend.url}/account/settings",
+            f"{self.backend.url}/account/pages/AAAAAAAAAAAAAAAA/settings",
             headers={
                 "origin": FRONTEND_URL,
                 "access-control-request-method": "POST",

@@ -162,7 +162,8 @@ async fn streamers_sign_in_and_manage_their_page() {
         .await
         .unwrap();
     let moblin_cloud_key = moblin_cloud_key_of(&account);
-    assert_eq!(account["settings"]["id"].as_str().unwrap().len(), 16);
+    let page_id = account["settings"]["id"].as_str().unwrap().to_string();
+    assert_eq!(page_id.len(), 16);
     assert_eq!(account["name"], "Erik");
     assert_eq!(account["avatar"], "https://static-cdn.jtvnw.net/erik.png");
     assert_eq!(
@@ -174,7 +175,7 @@ async fn streamers_sign_in_and_manage_their_page() {
     assert_eq!(account["admin"], false);
     assert_eq!(account["premium"], false);
     let settings: Value = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({}))
         .send()
@@ -185,7 +186,7 @@ async fn streamers_sign_in_and_manage_their_page() {
         .unwrap();
     assert_eq!(settings, account["settings"]);
     let settings: Value = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({
             "message": "Thanks for hanging out!",
@@ -201,7 +202,7 @@ async fn streamers_sign_in_and_manage_their_page() {
     assert_eq!(settings["accent"], "pink");
     assert_eq!(settings["font"], Value::Null);
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"accent": "teal"}))
         .send()
@@ -336,7 +337,7 @@ async fn kick_streamers_sign_in_with_pkce() {
     assert_eq!(profile["kick"]["login"], "kickerik");
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"subSpins": {"tier1": 1, "tier2": 2, "tier3": 3}}))
         .send()
@@ -424,7 +425,7 @@ async fn only_configured_platforms_are_offered() {
         .link(&id, &Identity::twitch("9", "Nine", "nine"))
         .unwrap();
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"subSpins": {"tier1": 1, "tier2": 2, "tier3": 3}}))
         .send()
@@ -553,7 +554,7 @@ async fn linked_platforms_share_one_account() {
         json!({"login": "kickerik", "name": "KickErik", "avatar": "https://files.kick.com/erik.png"})
     );
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"subSpins": {"tier1": 1, "tier2": 2, "tier3": 3}}))
         .send()

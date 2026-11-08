@@ -895,7 +895,7 @@ function FartButton(props: { effect: string; onSend: (effect: string) => Promise
   );
 }
 
-function ToyboxPanel(props: { session: string; page?: string; onSignOut: () => void }) {
+function ToyboxPanel(props: { session: string; page: string; onSignOut: () => void }) {
   const [error, setError] = createSignal<string | null>(null);
 
   const send = async (effect: string) => {
@@ -987,7 +987,6 @@ export default function Monitor(props: {
   session: string;
   page: string;
   account: Account;
-  assisted: boolean;
   copyTargets: CopyTarget[];
   recentChanges: number;
   onSignOut: () => void;
@@ -1055,18 +1054,14 @@ export default function Monitor(props: {
           panel === "activity" ? (
             <Activity
               session={props.session}
-              page={props.assisted ? props.page : undefined}
+              page={props.page}
               kinds={leaf().kinds}
               recentChanges={props.recentChanges}
               onKinds={(kinds) => actions.change({ ...leaf(), kinds })}
               onSignOut={props.onSignOut}
             />
           ) : panel === "toybox" ? (
-            <ToyboxPanel
-              session={props.session}
-              page={props.assisted ? props.page : undefined}
-              onSignOut={props.onSignOut}
-            />
+            <ToyboxPanel session={props.session} page={props.page} onSignOut={props.onSignOut} />
           ) : panel === "web" ? (
             <WebPanel leaf={leaf()} account={props.account} actions={actions} />
           ) : props.account.remoteControl === "none" ? (

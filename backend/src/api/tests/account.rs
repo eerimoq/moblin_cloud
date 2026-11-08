@@ -103,7 +103,7 @@ async fn deleting_an_account_removes_everything_it_owns() {
         .unwrap();
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"message": "Hi"}))
         .send()
@@ -218,7 +218,6 @@ async fn account_routes_need_a_session() {
         ("GET", "/account"),
         ("POST", "/account/key"),
         ("POST", "/account/devices/d/name"),
-        ("POST", "/account/settings"),
         ("POST", "/account/paypal/connect"),
         ("POST", "/account/paypal/check"),
         ("POST", "/account/sign-out"),

@@ -73,7 +73,7 @@ async fn stripe_connects_and_takes_tips() {
     let response = post("/account/stripe/check").send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let settings_request = json!({"currency": "eur", "tips": {"amounts": [500]}});
-    let response = post("/account/settings")
+    let response = post(&format!("/account/pages/{page_id}/settings"))
         .json(&settings_request)
         .send()
         .await
@@ -89,7 +89,7 @@ async fn stripe_connects_and_takes_tips() {
         .unwrap();
     assert_eq!(settings["stripeAccountId"], "acct_1");
     assert_eq!(settings["stripePending"], false);
-    let response = post("/account/settings")
+    let response = post(&format!("/account/pages/{page_id}/settings"))
         .json(&settings_request)
         .send()
         .await
@@ -196,7 +196,7 @@ async fn paypal_is_connected_through_onboarding() {
     let old = api.auth.session_at("1", 0, crate::deliveries::now() - 601);
     let client = reqwest::Client::new();
     let paypal_url = format!("http://{address}/account/paypal");
-    let settings_url = format!("http://{address}/account/settings");
+    let settings_url = format!("http://{address}/account/pages/{page_id}/settings");
     let tips = json!({"currency": "SEK", "tips": {"amounts": [250]}});
     let response = client
         .post(&settings_url)

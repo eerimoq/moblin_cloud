@@ -1926,7 +1926,7 @@ const testTexts: Record<RecentKind, { description: string; label: string }> = {
 function TestSend(props: {
   kind: RecentKind;
   session: string;
-  page?: string;
+  page: string;
   onSignOut: () => void;
 }) {
   return (
@@ -1962,6 +1962,7 @@ function Admin(props: {
 }) {
   const account = () => props.account;
   const settings = () => props.account.settings;
+  const page = () => props.page ?? settings().id;
   const setAccount = (account: Account) => props.onAccount(account);
   const setSettings = (settings: Account["settings"]) =>
     props.onAccount({ ...props.account, settings });
@@ -1970,8 +1971,8 @@ function Admin(props: {
   const subscriberSignIn = (platform: Platform) =>
     account()[platform] !== null && signInPlatforms().includes(platform);
   const { recent, loadRecent, loadMore } = createRecent(
-    (limit) => fetchRecent(props.session, props.page, limit),
-    (kind, limit, before) => fetchMoreRecent(props.session, props.page, kind, limit, before),
+    (limit) => fetchRecent(props.session, page(), limit),
+    (kind, limit, before) => fetchMoreRecent(props.session, page(), kind, limit, before),
     (error) => {
       if (isSignedOut(error)) {
         props.onSignOut();
@@ -2000,15 +2001,13 @@ function Admin(props: {
   };
 
   const resend = async (item: Recent) => {
-    await guard(resendRecent(props.session, item.id, props.page));
+    await guard(resendRecent(props.session, item.id, page()));
   };
 
   const changeImage = (image: File | null) =>
     busyWith(
       () =>
-        image
-          ? uploadImage(props.session, image, props.page)
-          : removeImage(props.session, props.page),
+        image ? uploadImage(props.session, image, page()) : removeImage(props.session, page()),
       setSettings,
     );
 
@@ -2023,7 +2022,7 @@ function Admin(props: {
 
   const save = (changes: Partial<SettingsChanges>) =>
     busyWith(
-      () => saveAccountSettings(props.session, { ...settings(), ...changes }, props.page),
+      () => saveAccountSettings(props.session, { ...settings(), ...changes }, page()),
       setSettings,
     );
 
@@ -2143,12 +2142,7 @@ function Admin(props: {
               />
             </Editable>
           </Show>
-          <TestSend
-            kind="tip"
-            session={props.session}
-            page={props.page}
-            onSignOut={props.onSignOut}
-          />
+          <TestSend kind="tip" session={props.session} page={page()} onSignOut={props.onSignOut} />
           <Latest
             kind="tip"
             list={recent()?.tip}
@@ -2209,12 +2203,7 @@ function Admin(props: {
               />
             </Editable>
           </Show>
-          <TestSend
-            kind="spin"
-            session={props.session}
-            page={props.page}
-            onSignOut={props.onSignOut}
-          />
+          <TestSend kind="spin" session={props.session} page={page()} onSignOut={props.onSignOut} />
           <Latest
             kind="spin"
             list={recent()?.spin}
@@ -2258,7 +2247,7 @@ function Admin(props: {
           <TestSend
             kind="effect"
             session={props.session}
-            page={props.page}
+            page={page()}
             onSignOut={props.onSignOut}
           />
           <Latest
@@ -3100,7 +3089,6 @@ function SignedIn(props: {
                         session={props.session}
                         page={id}
                         account={account()}
-                        assisted={channel() !== null}
                         copyTargets={copyTargets()}
                         recentChanges={recentChanges()}
                         onSignOut={props.onSignOut}

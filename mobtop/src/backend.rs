@@ -126,39 +126,43 @@ impl Backend {
         Ok(Some(response.json::<Session>().await?.session))
     }
 
-    pub async fn account(&self, base: &str) -> Result<Account, BackendError> {
-        self.get(base).await
+    pub async fn account(&self, path: &str) -> Result<Account, BackendError> {
+        self.get(path).await
     }
 
-    pub async fn recent(&self, base: &str, limit: usize) -> Result<AllRecent, BackendError> {
-        self.get(&format!("{base}/recent?limit={limit}")).await
+    pub async fn recent(&self, page: &str, limit: usize) -> Result<AllRecent, BackendError> {
+        self.get(&format!("/account/pages/{page}/recent?limit={limit}"))
+            .await
     }
 
     pub async fn more_recent(
         &self,
-        base: &str,
+        page: &str,
         kind: Kind,
         limit: usize,
         before: Option<&str>,
     ) -> Result<Recent, BackendError> {
-        let mut path = format!("{base}/recent?kind={}&limit={limit}", kind.name());
+        let mut path = format!(
+            "/account/pages/{page}/recent?kind={}&limit={limit}",
+            kind.name()
+        );
         if let Some(before) = before {
             path.push_str(&format!("&before={before}"));
         }
         self.get(&path).await
     }
 
-    pub async fn resend(&self, base: &str, order: &str) -> Result<(), BackendError> {
+    pub async fn resend(&self, page: &str, order: &str) -> Result<(), BackendError> {
         self.post(
-            &format!("{base}/recent/{order}/resend"),
+            &format!("/account/pages/{page}/recent/{order}/resend"),
             serde_json::json!({}),
         )
         .await
     }
 
-    pub async fn fart(&self, base: &str, effect: &str) -> Result<(), BackendError> {
+    pub async fn fart(&self, page: &str, effect: &str) -> Result<(), BackendError> {
         self.post(
-            &format!("{base}/test/effect"),
+            &format!("/account/pages/{page}/test/effect"),
             serde_json::json!({ "effect": effect }),
         )
         .await

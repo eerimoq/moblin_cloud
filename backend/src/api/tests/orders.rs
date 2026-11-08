@@ -50,7 +50,7 @@ async fn stripe_holds_are_released_when_the_wheel_is_gone() {
     let (session, moblin_cloud_key, page_id) = streamer(&api);
     connect_stripe(&api);
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"currency": "SEK", "spin": {"options": [{"spins": 1, "price": 250}]}}))
         .send()
@@ -405,7 +405,7 @@ async fn processing_stripe_captures_are_settled_once_succeeded() {
     connect_stripe(&api);
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"currency": "eur", "tips": {"amounts": [500]}}))
         .send()
@@ -448,7 +448,7 @@ async fn late_stripe_payments_are_refunded() {
     connect_stripe(&api);
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"currency": "eur", "tips": {"amounts": [500]}}))
         .send()
@@ -504,7 +504,7 @@ async fn lost_stripe_capture_answers_are_settled() {
     connect_stripe(&api);
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"currency": "eur", "tips": {"amounts": [500]}}))
         .send()

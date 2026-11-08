@@ -36,7 +36,7 @@ async fn effects_are_played_by_moblin() {
     let response = order(json!({"effect": "fart"})).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let settings: Value = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"effects": {"price": 300}}))
         .send()
@@ -111,7 +111,9 @@ async fn effects_are_played_by_moblin() {
     wait_until_added(&api).await;
     let recent = |kind: &str| {
         client
-            .get(format!("http://{address}/account/recent?kind={kind}"))
+            .get(format!(
+                "http://{address}/account/pages/{page_id}/recent?kind={kind}"
+            ))
             .bearer_auth(&session)
             .send()
     };
@@ -126,10 +128,12 @@ async fn effects_are_played_by_moblin() {
 async fn streamers_test_their_effects() {
     let (address, api) = start_api(None).await;
     let client = reqwest::Client::new();
-    let (session, moblin_cloud_key, _) = streamer(&api);
+    let (session, moblin_cloud_key, page_id) = streamer(&api);
     let test = |request: Value| {
         client
-            .post(format!("http://{address}/account/test/effect"))
+            .post(format!(
+                "http://{address}/account/pages/{page_id}/test/effect"
+            ))
             .bearer_auth(&session)
             .json(&request)
             .send()
@@ -206,7 +210,7 @@ async fn subscribers_play_effects_every_month() {
     let tier1 = viewer("11", Some(1));
     assert_eq!(play(&tier1, "fart").await.status(), StatusCode::BAD_REQUEST);
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({
             "subSpins": {"tier1": 5, "tier2": 5, "tier3": 5},
@@ -277,7 +281,9 @@ async fn subscribers_play_effects_every_month() {
     );
     answer(&mut socket, &request, Value::Null).await;
     let recent: Value = client
-        .get(format!("http://{address}/account/recent?kind=effect"))
+        .get(format!(
+            "http://{address}/account/pages/{page_id}/recent?kind=effect"
+        ))
         .bearer_auth(&session)
         .send()
         .await

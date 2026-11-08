@@ -208,18 +208,18 @@ pub(super) async fn handle_assistant_account(
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, Failure> {
     let user = assistant(&api, &headers, &page_id)?;
-    let account = user.streamer;
+    let account = &user.streamer;
     let look = api.pages.look(&page_id);
     Ok(Json(AccountResponse {
-        twitch: public_identity(&account, Platform::Twitch),
-        kick: public_identity(&account, Platform::Kick),
+        twitch: public_identity(account, Platform::Twitch),
+        kick: public_identity(account, Platform::Kick),
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         moblin_cloud_key: None,
         devices: devices(&api, &page_id, false),
-        settings: without_payments(settings_response(&api, &account, look)).0,
+        settings: settings_for(&user, settings_response(&api, account, look)).0,
         admin: false,
-        premium: is_premium(&api, &account),
+        premium: is_premium(&api, account),
         preview: user.rights.preview,
         go_live: user.rights.go_live,
         edit_tips: user.rights.edit_tips,

@@ -217,7 +217,7 @@ class LifecycleAssistantOfMany(TestCase):
         self.assert_equal(sorted(set(ids)), sorted({twitch.page_id(), kick.page_id(), both.page_id()}))
         self.assert_equal(len(ids), len(set(ids)), f"each channel once {assisting}")
         for page in [twitch, kick, both]:
-            self.assert_equal(assistant.assisted_test_tip(page.page_id()), {})
+            self.assert_equal(assistant.test_tip(page_id=page.page_id()), {})
         both.remove_assistant("twitch", user_id_of("manychannels"))
         self.assert_in(both.page_id(), [channel["id"] for channel in assistant.account()["assisting"]])
         both.remove_assistant("kick", kick_user_id_of("manychannelskick"))

@@ -164,7 +164,7 @@ async fn twitch_subscribers_spin_the_wheel_every_month() {
     };
     let settings = |body: Value| {
         client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/pages/{page_id}/settings"))
             .bearer_auth(&session)
             .json(&body)
             .send()
@@ -280,7 +280,9 @@ async fn twitch_subscribers_spin_the_wheel_every_month() {
         json!({"platform": "twitch", "name": "Viewer 31", "tier": 3, "allowance": 2, "left": 2})
     );
     let recent: Value = client
-        .get(format!("http://{address}/account/recent?kind=spin"))
+        .get(format!(
+            "http://{address}/account/pages/{page_id}/recent?kind=spin"
+        ))
         .bearer_auth(&session)
         .send()
         .await
@@ -328,7 +330,9 @@ async fn twitch_subscribers_spin_the_wheel_every_month() {
             .is_err()
     );
     let recent: Value = client
-        .get(format!("http://{address}/account/recent?kind=spin"))
+        .get(format!(
+            "http://{address}/account/pages/{page_id}/recent?kind=spin"
+        ))
         .bearer_auth(&session)
         .send()
         .await
@@ -350,7 +354,7 @@ async fn kick_subscribers_get_the_tier_1_allowance() {
     let id = account["settings"]["id"].as_str().unwrap().to_string();
     let moblin_cloud_key = moblin_cloud_key_of(&account);
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"subSpins": {"tier1": 0, "tier2": 1, "tier3": 1}}))
         .send()
@@ -464,7 +468,7 @@ async fn kick_subscribers_get_the_tier_1_allowance() {
         "Kick subscribers can't spin the wheel here."
     );
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"subSpins": {"tier1": 2, "tier2": 5, "tier3": 5}}))
         .send()
@@ -493,7 +497,9 @@ async fn kick_subscribers_get_the_tier_1_allowance() {
     wait_until_added(&api).await;
     assert_eq!(allowance(&subscriber).await.1["left"], 1);
     let recent: Value = client
-        .get(format!("http://{address}/account/recent?kind=spin"))
+        .get(format!(
+            "http://{address}/account/pages/{id}/recent?kind=spin"
+        ))
         .bearer_auth(&session)
         .send()
         .await

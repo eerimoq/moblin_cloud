@@ -111,13 +111,11 @@ class ImagesByAssistants(ImagesTestCase):
             self.assert_backend_error(
                 403, lambda: assistant.upload_image(image(1500, 500), self.page_id), NO_EDIT_TIPS
             )
-            self.assert_backend_error(
-                403, lambda: assistant.assisted_remove_image(self.page_id), NO_EDIT_TIPS
-            )
+            self.assert_backend_error(403, lambda: assistant.remove_image(page_id=self.page_id), NO_EDIT_TIPS)
             self.premium.set_assistant_edit_tips("twitch", user_id_of("imagemod"), True)
             settings = assistant.upload_image(image(1500, 500), self.page_id)
             self.assert_equal(self.viewer.profile()["image"], settings["image"])
-            self.assert_equal(assistant.assisted_remove_image(self.page_id)["image"], None)
+            self.assert_equal(assistant.remove_image(page_id=self.page_id)["image"], None)
         finally:
             self.premium.remove_assistant("twitch", user_id_of("imagemod"))
         self.assert_backend_error(403, lambda: assistant.upload_image(image(1500, 500), self.page_id))

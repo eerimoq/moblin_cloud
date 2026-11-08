@@ -81,6 +81,7 @@ async fn paid_tips_always_reach_the_queue_exactly_once() {
         };
         let (session, capture_url) = paypal_tip_order_in(&address, &api, currency).await;
         let client = reqwest::Client::new();
+        let page_id = api.accounts.get("1").unwrap().page_id;
         let capture = || async { client.post(&capture_url).send().await.unwrap() };
         let not_paid = |api: &Api, fake: &FakePayPal| {
             assert!(!*fake.captured.lock().unwrap(), "{fault:?}");
@@ -193,7 +194,9 @@ async fn paid_tips_always_reach_the_queue_exactly_once() {
         let socket = connect(&address, &moblin_cloud_key).await;
         tip_delivered_once(socket, &address, &moblin_cloud_key, &api, currency).await;
         let recent: Value = client
-            .get(format!("http://{address}/account/recent?kind=tip"))
+            .get(format!(
+                "http://{address}/account/pages/{page_id}/recent?kind=tip"
+            ))
             .bearer_auth(&session)
             .send()
             .await
@@ -291,7 +294,7 @@ async fn tips_are_sent_to_the_streamer() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let settings: Value = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"currency": "usd", "tips": {
             "amounts": [1000, 200, 500],

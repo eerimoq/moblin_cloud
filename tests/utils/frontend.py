@@ -203,8 +203,17 @@ def follow_onboarding(url: str) -> str:
 class Dashboard(Client):
     """A streamer signed in at https://cloud.moblin.app/dashboard/."""
 
+    _page_id: str | None = None
+
     def account(self) -> dict:
         return self.get("/account")
+
+    def page_path(self, page_id: str | None = None) -> str:
+        if page_id is None:
+            if self._page_id is None:
+                self._page_id = self.page_id()
+            page_id = self._page_id
+        return f"/account/pages/{quote(page_id, safe='')}"
 
     def new_moblin_cloud_key(self) -> dict:
         return self.post("/account/key")
@@ -238,9 +247,10 @@ class Dashboard(Client):
         accent: str | None = None,
         font: str | None = None,
         sub_spins: dict | None = None,
+        page_id: str | None = None,
     ) -> dict:
         return self.post(
-            "/account/settings",
+            f"{self.page_path(page_id)}/settings",
             {
                 "currency": currency,
                 "tips": tips,
@@ -252,9 +262,10 @@ class Dashboard(Client):
             },
         )
 
-    def update_settings(self, **changes) -> dict:
-        """Saves the current settings with some changed, like editing one field in the dashboard."""
-        settings = self.account()["settings"]
+    def update_settings(self, page_id: str | None = None, **changes) -> dict:
+        """Saves the current settings with some changed, like editing one field in the dashboard, of
+        the streamer's own page or of one they assist."""
+        settings = (self.account() if page_id is None else self.assisted_account(page_id))["settings"]
         fields = [
             "currency",
             "tips",
@@ -266,7 +277,7 @@ class Dashboard(Client):
         ]
         names = {"subSpins": "sub_spins"}
         current = {names.get(field, field): settings[field] for field in fields}
-        return self.save_settings(**{**current, **changes})
+        return self.save_settings(**{**current, **changes}, page_id=page_id)
 
     def connect_paypal(self) -> str:
         return self.post("/account/paypal/connect")["url"]
@@ -286,17 +297,17 @@ class Dashboard(Client):
     def disconnect_stripe(self) -> dict:
         return self.post("/account/stripe/disconnect")
 
-    def recent(self, kind: str) -> dict:
-        return self.get(f"/account/recent?kind={kind}")
+    def recent(self, kind: str, page_id: str | None = None) -> dict:
+        return self.get(f"{self.page_path(page_id)}/recent?kind={kind}")
 
-    def resend(self, order_id: str) -> dict:
-        return self.post(f"/account/recent/{quote(order_id, safe='')}/resend")
+    def resend(self, order_id: str, page_id: str | None = None) -> dict:
+        return self.post(f"{self.page_path(page_id)}/recent/{quote(order_id, safe='')}/resend")
 
-    def test_tip(self, message: str | None = None) -> dict:
-        return self.post("/account/test/tip", {"message": message})
+    def test_tip(self, message: str | None = None, page_id: str | None = None) -> dict:
+        return self.post(f"{self.page_path(page_id)}/test/tip", {"message": message})
 
-    def test_spin(self, message: str | None = None) -> dict:
-        return self.post("/account/test/spin", {"message": message})
+    def test_spin(self, message: str | None = None, page_id: str | None = None) -> dict:
+        return self.post(f"{self.page_path(page_id)}/test/spin", {"message": message})
 
     def admin_stats(self) -> dict:
         return self.get("/admin/stats")
@@ -311,9 +322,6 @@ class Dashboard(Client):
 
     def remove_assistant(self, platform: str, assistant: str) -> dict:
         return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/remove")
-
-    def assisted_recent(self, page_id: str, kind: str) -> dict:
-        return self.get(f"/account/pages/{quote(page_id, safe='')}/recent?kind={kind}")
 
     def assisted_account(self, page_id: str) -> dict:
         return self.get(f"/account/pages/{quote(page_id, safe='')}")
@@ -337,36 +345,6 @@ class Dashboard(Client):
             f"/account/pages/{quote(page_id, safe='')}/devices/{quote(device, safe='')}/control", control
         )
 
-    def assisted_settings(self, page_id: str, **changes) -> dict:
-        """Saves the assisted page's settings with some changed, like the assistant's dashboard does."""
-        settings = self.assisted_account(page_id)["settings"]
-        names = {"subSpins": "sub_spins"}
-        body = {
-            field: settings[field]
-            for field in [
-                "currency",
-                "tips",
-                "spin",
-                "message",
-                "accent",
-                "font",
-                "subSpins",
-            ]
-        }
-        for field in body:
-            if names.get(field, field) in changes:
-                body[field] = changes[names.get(field, field)]
-        return self.post(f"/account/pages/{quote(page_id, safe='')}/settings", body)
-
-    def assisted_test_tip(self, page_id: str, message: str | None = None) -> dict:
-        return self.post(f"/account/pages/{quote(page_id, safe='')}/test/tip", {"message": message})
-
-    def assisted_test_spin(self, page_id: str, message: str | None = None) -> dict:
-        return self.post(f"/account/pages/{quote(page_id, safe='')}/test/spin", {"message": message})
-
-    def assisted_remove_image(self, page_id: str) -> dict:
-        return self.post(f"/account/pages/{quote(page_id, safe='')}/image/remove")
-
     def sign_out_everywhere(self):
         response = self.request("POST", "/account/sign-out")
         if not response.ok:
@@ -386,10 +364,12 @@ class Dashboard(Client):
     def change_settings(self, **changes) -> dict:
         """Saves the current settings, effects included, with some changed, by their names in the API."""
         settings = self.account()["settings"]
-        return self.post("/account/settings", {**settings_body(settings), **changes})
+        return self.post(f"{self.page_path()}/settings", {**settings_body(settings), **changes})
 
-    def test_effect(self, effect: str | None = None, message: str | None = None) -> dict:
-        return self.post("/account/test/effect", {"effect": effect, "message": message})
+    def test_effect(
+        self, effect: str | None = None, message: str | None = None, page_id: str | None = None
+    ) -> dict:
+        return self.post(f"{self.page_path(page_id)}/test/effect", {"effect": effect, "message": message})
 
     def set_assistant_preview(self, platform: str, assistant: str, on: bool) -> dict:
         return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/preview", {"on": on})
@@ -406,20 +386,14 @@ class Dashboard(Client):
         return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/edit-tips", {"on": on})
 
     def upload_image(self, data: bytes, page_id: str | None = None) -> dict:
-        path = "/account/image" if page_id is None else f"/account/pages/{quote(page_id, safe='')}/image"
+        path = f"{self.page_path(page_id)}/image"
         response = self.request("POST", path, data=data, headers={"content-type": "application/octet-stream"})
         if not response.ok:
             raise BackendError(response.status_code, response.text)
         return response.json()
 
-    def remove_image(self) -> dict:
-        return self.post("/account/image/remove")
-
-    def assisted_resend(self, page_id: str, order_id: str) -> dict:
-        return self.post(f"/account/pages/{quote(page_id, safe='')}/recent/{quote(order_id, safe='')}/resend")
-
-    def assisted_test_effect(self, page_id: str, effect: str | None = None) -> dict:
-        return self.post(f"/account/pages/{quote(page_id, safe='')}/test/effect", {"effect": effect})
+    def remove_image(self, page_id: str | None = None) -> dict:
+        return self.post(f"{self.page_path(page_id)}/image/remove")
 
     def page_id(self) -> str:
         return self.account()["settings"]["id"]

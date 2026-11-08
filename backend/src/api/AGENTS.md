@@ -34,7 +34,7 @@ The router, `Api`, `Failure` and the session checks are in `../api.rs`; the hand
 - Viewer order routes take `provider`, PayPal by default.
 - Test sends skip payment but run the same Moblin checks as paid ones, and are limited per page in memory (`Api::tests`). Test deliveries are not listed in recent.
 - A captured order is kept 30 days, so that is the whole history of `recent`.
-- `GET /account/recent` without `kind` answers every kind in one request, which the dashboard, the Activity panel and mobtop use on every `recent` event; `before` is only for paging one kind.
+- `GET /account/pages/{id}/recent` without `kind` answers every kind in one request, which the dashboard, the Activity panel and mobtop use on every `recent` event; `before` is only for paging one kind.
 - The body of `POST /account/pages/{id}/monitor` is stored as it is, so the backend does not follow the layout format.
 
 ## Admin

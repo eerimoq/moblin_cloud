@@ -68,15 +68,6 @@ pub(super) struct RecentDevice {
     received: bool,
 }
 
-pub(super) async fn handle_account_recent(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    Query(query): Query<RecentQuery>,
-) -> Result<Json<RecentResponse>, (StatusCode, String)> {
-    let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    recent(&api, &account.page_id, query, true)
-}
-
 pub(super) fn recent(
     api: &Api,
     page_id: &str,
@@ -242,30 +233,21 @@ fn recent_devices(
         .collect()
 }
 
-pub(super) async fn handle_assistant_recent(
+pub(super) async fn handle_recent(
     State(api): State<Arc<Api>>,
     Path(page_id): Path<String>,
     headers: HeaderMap,
     Query(query): Query<RecentQuery>,
 ) -> Result<Json<RecentResponse>, Failure> {
-    let page_id = assistant(&api, &headers, &page_id)?.streamer.page_id;
-    recent(&api, &page_id, query, false).map_err(|(status, text)| Failure {
+    let user = assistant(&api, &headers, &page_id)?;
+    recent(&api, &page_id, query, user.owner()).map_err(|(status, text)| Failure {
         reason: "invalid-kind",
         status,
         text,
     })
 }
 
-pub(super) async fn handle_account_resend(
-    State(api): State<Arc<Api>>,
-    Path(order_id): Path<String>,
-    headers: HeaderMap,
-) -> Result<(StatusCode, Json<Value>), Failure> {
-    let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    resend(&api, &account.page_id, &order_id)
-}
-
-pub(super) async fn handle_assistant_resend(
+pub(super) async fn handle_resend(
     State(api): State<Arc<Api>>,
     Path((page_id, order_id)): Path<(String, String)>,
     headers: HeaderMap,

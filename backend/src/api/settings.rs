@@ -87,7 +87,13 @@ pub(super) fn settings_response(
     })
 }
 
-pub(super) fn without_payments(mut response: Json<SettingsResponse>) -> Json<SettingsResponse> {
+pub(super) fn settings_for(
+    user: &PageUser,
+    mut response: Json<SettingsResponse>,
+) -> Json<SettingsResponse> {
+    if user.owner() {
+        return response;
+    }
     response.paypal = false;
     response.merchant_id = None;
     response.paypal_pending = false;
@@ -274,32 +280,24 @@ async fn update_settings(
     Ok(settings_response(api, account, Look { settings, ..look }))
 }
 
-pub(super) async fn handle_account_settings(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    Json(request): Json<SettingsRequest>,
-) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    let premium = is_premium(&api, &account);
-    update_settings(&api, &account, premium, request).await
-}
-
-pub(super) async fn handle_assistant_settings(
+pub(super) async fn handle_settings(
     State(api): State<Arc<Api>>,
     Path(page_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<SettingsRequest>,
 ) -> Result<Json<SettingsResponse>, Failure> {
     let user = editor(&api, &headers, &page_id)?;
-    let request = SettingsRequest {
-        currency: None,
-        ..request
+    let request = if user.owner() {
+        request
+    } else {
+        SettingsRequest {
+            currency: None,
+            ..request
+        }
     };
     let premium = is_premium(&api, &user.streamer);
-    update_settings(&api, &user.streamer, premium, request)
-        .await
-        .map(without_payments)
-        .map_err(Failure::from)
+    let response = update_settings(&api, &user.streamer, premium, request).await?;
+    Ok(settings_for(&user, response))
 }
 
 fn invalid_spin() -> (StatusCode, String) {

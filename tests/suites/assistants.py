@@ -60,9 +60,9 @@ class AssistantsAdded(AssistantsTestCase):
     def run(self):
         self.assert_equal(self.listed_assistants(), [])
         self.assert_equal(self.assisting(), [])
-        self.assert_backend_error(403, lambda: self.assistant.assisted_test_tip(self.page_id), NOT_ASSISTANT)
+        self.assert_backend_error(403, lambda: self.assistant.test_tip(page_id=self.page_id), NOT_ASSISTANT)
         self.assert_backend_error(
-            403, lambda: self.assistant.assisted_recent(self.page_id, "tip"), NOT_ASSISTANT
+            403, lambda: self.assistant.recent("tip", page_id=self.page_id), NOT_ASSISTANT
         )
         self.assert_backend_error(
             404,
@@ -117,21 +117,21 @@ class AssistantsAdded(AssistantsTestCase):
             ],
         )
         for kind in ["tip", "spin"]:
-            self.assert_equal(self.assistant.assisted_recent(self.page_id, kind)["more"], False)
+            self.assert_equal(self.assistant.recent(kind, page_id=self.page_id)["more"], False)
         self.assert_backend_error(
-            400, lambda: self.assistant.assisted_recent(self.page_id, "bogus"), "Unknown kind."
+            400, lambda: self.assistant.recent("bogus", page_id=self.page_id), "Unknown kind."
         )
         self.assert_backend_error(
-            401, lambda: Dashboard(self.frontend.url, "garbage").assisted_recent(self.page_id, "tip")
+            401, lambda: Dashboard(self.frontend.url, "garbage").recent("tip", page_id=self.page_id)
         )
         other = self.sign_in("otherstreamer")
-        self.assert_backend_error(403, lambda: other.assisted_test_tip(self.page_id), NOT_ASSISTANT)
-        self.assert_backend_error(403, lambda: other.assisted_recent(self.page_id, "tip"), NOT_ASSISTANT)
+        self.assert_backend_error(403, lambda: other.test_tip(page_id=self.page_id), NOT_ASSISTANT)
+        self.assert_backend_error(403, lambda: other.recent("tip", page_id=self.page_id), NOT_ASSISTANT)
         account = self.dashboard.remove_assistant("twitch", self.assistant_id)
         self.assert_equal(account["twitchAssistants"], [])
         self.assert_equal(self.listed_assistants(), [])
         self.assert_equal(self.assisting(), [])
-        self.assert_backend_error(403, lambda: self.assistant.assisted_test_tip(self.page_id), NOT_ASSISTANT)
+        self.assert_backend_error(403, lambda: self.assistant.test_tip(page_id=self.page_id), NOT_ASSISTANT)
 
 
 class AssistantsUseTheStreamersDashboard(AssistantsTestCase):
@@ -146,10 +146,10 @@ class AssistantsUseTheStreamersDashboard(AssistantsTestCase):
         self.dashboard.update_settings(message="Mine", sub_spins=None)
         for call in [
             lambda: self.assistant.assisted_account(self.page_id),
-            lambda: self.assistant.assisted_settings(self.page_id, message="Theirs"),
-            lambda: self.assistant.assisted_test_tip(self.page_id),
-            lambda: self.assistant.assisted_test_spin(self.page_id),
-            lambda: self.assistant.assisted_remove_image(self.page_id),
+            lambda: self.assistant.update_settings(page_id=self.page_id, message="Theirs"),
+            lambda: self.assistant.test_tip(page_id=self.page_id),
+            lambda: self.assistant.test_spin(page_id=self.page_id),
+            lambda: self.assistant.remove_image(page_id=self.page_id),
         ]:
             self.assert_backend_error(403, call, NOT_ASSISTANT)
         self.add_assistant()
@@ -185,8 +185,8 @@ class AssistantsUseTheStreamersDashboard(AssistantsTestCase):
         self.assert_equal(settings["payable"], False)
         self.assert_equal(account["editTips"], False)
         for call in [
-            lambda: self.assistant.assisted_settings(self.page_id, message="Theirs"),
-            lambda: self.assistant.assisted_remove_image(self.page_id),
+            lambda: self.assistant.update_settings(page_id=self.page_id, message="Theirs"),
+            lambda: self.assistant.remove_image(page_id=self.page_id),
         ]:
             self.assert_backend_error(403, call, NO_EDIT_TIPS)
         self.assert_equal(self.dashboard.account()["settings"]["message"], "Mine")
@@ -199,11 +199,13 @@ class AssistantsUseTheStreamersDashboard(AssistantsTestCase):
         ]:
             self.assert_backend_error(
                 409,
-                lambda paid=paid: self.assistant.assisted_settings(self.page_id, message="Theirs", **paid),
+                lambda paid=paid: self.assistant.update_settings(
+                    page_id=self.page_id, message="Theirs", **paid
+                ),
                 "connect PayPal or Stripe first",
             )
-        settings = self.assistant.assisted_settings(
-            self.page_id,
+        settings = self.assistant.update_settings(
+            page_id=self.page_id,
             message="Theirs",
             currency="EUR" if own["settings"]["currency"] != "EUR" else "USD",
             sub_spins={"tier1": 1, "tier2": 2, "tier3": 3},
@@ -219,18 +221,18 @@ class AssistantsUseTheStreamersDashboard(AssistantsTestCase):
         self.assert_equal(own["settings"]["message"], "Theirs")
         self.assert_equal(own["settings"]["subSpins"], {"enabled": True, "tier1": 1, "tier2": 2, "tier3": 3})
         self.assert_backend_error(
-            409, lambda: self.assistant.assisted_test_spin(self.page_id), "Connect Moblin first."
+            409, lambda: self.assistant.test_spin(page_id=self.page_id), "Connect Moblin first."
         )
-        self.assistant.assisted_remove_image(self.page_id)
+        self.assistant.remove_image(page_id=self.page_id)
         self.connect_moblin()
         start = self.moblin.backend_requests_position()
-        self.assistant.assisted_test_tip(self.page_id, " Checking ")
+        self.assistant.test_tip(" Checking ", page_id=self.page_id)
         tip = self.moblin.wait_for_new_backend_request("message", start)
         self.assert_equal(
             [tip.body["name"], tip.body["message"], tip.body["amount"]],
             [self.assistant_login, "Checking", "5.00"],
         )
-        self.assert_equal(self.assistant.assisted_recent(self.page_id, "tip")["items"], [])
+        self.assert_equal(self.assistant.recent("tip", page_id=self.page_id)["items"], [])
 
     def teardown(self):
         super().teardown()
@@ -261,8 +263,8 @@ class AssistantsChangePaidFeatures(AssistantsTestCase):
             [settings["payable"], settings["merchantId"], settings["paypal"]], [True, None, False]
         )
         self.assert_equal([settings["tips"], settings["spin"]], [None, None])
-        settings = self.assistant.assisted_settings(
-            self.page_id,
+        settings = self.assistant.update_settings(
+            page_id=self.page_id,
             currency="EUR",
             tips={"amounts": [200, 700]},
             spin={"options": [{"spins": 1, "price": 300}, {"spins": 3, "price": 500}]},
@@ -285,7 +287,7 @@ class AssistantsChangePaidFeatures(AssistantsTestCase):
             "tips": {"enabled": True, "amounts": [500]},
             "spin": {**settings["spin"], "enabled": False},
         }
-        settings = self.assistant.assisted_settings(self.page_id, **off)
+        settings = self.assistant.update_settings(page_id=self.page_id, **off)
         self.assert_equal(
             {field: settings[field] for field in off}, off, "turned off features keep their values"
         )
@@ -297,7 +299,7 @@ class AssistantsChangePaidFeatures(AssistantsTestCase):
         self.assert_equal(tips["amounts"], [500])
         self.dashboard.remove_assistant("twitch", self.assistant_id)
         self.assert_backend_error(
-            403, lambda: self.assistant.assisted_settings(self.page_id, tips=None), NOT_ASSISTANT
+            403, lambda: self.assistant.update_settings(page_id=self.page_id, tips=None), NOT_ASSISTANT
         )
         self.assert_equal(self.dashboard.account()["settings"]["tips"], {"enabled": True, "amounts": [500]})
 
@@ -318,7 +320,7 @@ class AssistantsKeptOnRestart(AssistantsTestCase):
         self.backend.restart()
         self.assert_equal([assistant["id"] for assistant in self.listed_assistants()], [self.assistant_id])
         self.assert_equal([channel["id"] for channel in self.assisting()], [self.page_id])
-        self.assert_equal(self.assistant.assisted_recent(self.page_id, "tip")["more"], False)
+        self.assert_equal(self.assistant.recent("tip", page_id=self.page_id)["more"], False)
 
 
 class AssistantsRickRoll(AssistantsTestCase):

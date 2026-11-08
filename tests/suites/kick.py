@@ -252,10 +252,10 @@ class KickAssistants(KickTestCase):
             [(channel["id"], channel["platform"]) for channel in assisting], [(page_id, "kick")]
         )
         self.assert_equal(assisting[0]["login"], "kickmoddedkick")
-        self.assert_equal(assistant.assisted_test_tip(page_id), {})
+        self.assert_equal(assistant.test_tip(page_id=page_id), {})
         dashboard.unlink("kick")
         self.assert_equal(assistant.account()["assisting"], [])
-        self.assert_backend_error(403, lambda: assistant.assisted_test_tip(page_id))
+        self.assert_backend_error(403, lambda: assistant.test_tip(page_id=page_id))
         dashboard.link(self.frontend.link_token("kick", "kickmoddedkick"))
         self.assert_equal([channel["id"] for channel in assistant.account()["assisting"]], [page_id])
         dashboard.remove_assistant("kick", kick_user_id_of("kmod"))

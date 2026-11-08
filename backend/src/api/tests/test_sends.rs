@@ -9,10 +9,12 @@ use crate::api::test_utils::*;
 async fn tests_are_rate_limited_per_page() {
     let (address, api) = start_api(None).await;
     let client = reqwest::Client::new();
-    let (session, _, _) = streamer(&api);
+    let (session, _, page_id) = streamer(&api);
     for _ in 0..10 {
         let response = client
-            .post(format!("http://{address}/account/test/spin"))
+            .post(format!(
+                "http://{address}/account/pages/{page_id}/test/spin"
+            ))
             .bearer_auth(&session)
             .json(&json!({}))
             .send()
@@ -21,7 +23,9 @@ async fn tests_are_rate_limited_per_page() {
         assert_eq!(response.status(), StatusCode::CONFLICT);
     }
     let response = client
-        .post(format!("http://{address}/account/test/spin"))
+        .post(format!(
+            "http://{address}/account/pages/{page_id}/test/spin"
+        ))
         .bearer_auth(&session)
         .json(&json!({}))
         .send()
@@ -38,16 +42,18 @@ async fn tests_are_rate_limited_per_page() {
 async fn streamers_send_themselves_free_tests() {
     let (address, api) = start_api(None).await;
     let client = reqwest::Client::new();
-    let (session, moblin_cloud_key, _) = streamer(&api);
+    let (session, moblin_cloud_key, page_id) = streamer(&api);
     let test = |kind: &str, body: Value| {
         client
-            .post(format!("http://{address}/account/test/{kind}"))
+            .post(format!(
+                "http://{address}/account/pages/{page_id}/test/{kind}"
+            ))
             .bearer_auth(&session)
             .json(&body)
             .send()
     };
     let response = client
-        .post(format!("http://{address}/account/test/tip"))
+        .post(format!("http://{address}/account/pages/{page_id}/test/tip"))
         .json(&json!({}))
         .send()
         .await
@@ -68,7 +74,9 @@ async fn streamers_send_themselves_free_tests() {
     answer(&mut socket, &request, Value::Null).await;
     wait_until_added(&api).await;
     let recent: Value = client
-        .get(format!("http://{address}/account/recent?kind=tip"))
+        .get(format!(
+            "http://{address}/account/pages/{page_id}/recent?kind=tip"
+        ))
         .bearer_auth(&session)
         .send()
         .await

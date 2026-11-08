@@ -11,36 +11,17 @@ use crate::images;
 
 use super::*;
 
-pub(super) async fn handle_account_image(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<SettingsResponse>, Failure> {
-    let result = account_image(&api, &headers, body).await;
-    counted(&api, "imageUploads", result)
-}
-
-async fn account_image(
-    api: &Api,
-    headers: &HeaderMap,
-    body: Bytes,
-) -> Result<Json<SettingsResponse>, Failure> {
-    let SignedIn { account, .. } = signed_in(api, headers)?;
-    let premium = is_premium(api, &account);
-    save_image(api, &account.id, &account, premium, body).await
-}
-
-pub(super) async fn handle_assistant_image(
+pub(super) async fn handle_image(
     State(api): State<Arc<Api>>,
     Path(page_id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
-    let result = assistant_image(&api, &page_id, &headers, body).await;
+    let result = image(&api, &page_id, &headers, body).await;
     counted(&api, "imageUploads", result)
 }
 
-async fn assistant_image(
+async fn image(
     api: &Api,
     page_id: &str,
     headers: &HeaderMap,
@@ -48,15 +29,15 @@ async fn assistant_image(
 ) -> Result<Json<SettingsResponse>, Failure> {
     let user = editor(api, headers, page_id)?;
     let premium = is_premium(api, &user.streamer);
-    save_image(
+    let response = save_image(
         api,
         &user.signed_in.account.id,
         &user.streamer,
         premium,
         body,
     )
-    .await
-    .map(without_payments)
+    .await?;
+    Ok(settings_for(&user, response))
 }
 
 async fn save_image(
@@ -97,23 +78,14 @@ async fn save_image(
     Ok(settings_response(api, account, api.pages.look(page_id)))
 }
 
-pub(super) async fn handle_account_image_remove(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-) -> Result<Json<SettingsResponse>, (StatusCode, String)> {
-    let SignedIn { account, .. } = signed_in(&api, &headers)?;
-    remove_image(&api, &account.id, &account)
-}
-
-pub(super) async fn handle_assistant_image_remove(
+pub(super) async fn handle_image_remove(
     State(api): State<Arc<Api>>,
     Path(page_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, Failure> {
     let user = editor(&api, &headers, &page_id)?;
-    remove_image(&api, &user.signed_in.account.id, &user.streamer)
-        .map(without_payments)
-        .map_err(Failure::from)
+    let response = remove_image(&api, &user.signed_in.account.id, &user.streamer)?;
+    Ok(settings_for(&user, response))
 }
 
 fn remove_image(

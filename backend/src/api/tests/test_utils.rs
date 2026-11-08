@@ -220,7 +220,7 @@ pub(crate) async fn paypal_tip_order_in(
     connect_paypal(api);
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"currency": currency, "tips": {"amounts": [500]}}))
         .send()

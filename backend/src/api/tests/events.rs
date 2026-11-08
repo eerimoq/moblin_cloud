@@ -43,7 +43,7 @@ async fn dashboards_hear_about_changes() {
     let mut socket = connect(&address, &moblin_cloud_key).await;
     assert_eq!(events.next().await, ("account".to_string(), json!({})));
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"message": "Hello"}))
         .send()
@@ -62,7 +62,9 @@ async fn dashboards_hear_about_changes() {
     assert_eq!(events.next().await.0, "account");
     captured_tip(&api, &page_id);
     let response = client
-        .post(format!("http://{address}/account/recent/TIP1/resend"))
+        .post(format!(
+            "http://{address}/account/pages/{page_id}/recent/TIP1/resend"
+        ))
         .bearer_auth(&session)
         .send()
         .await
@@ -154,7 +156,9 @@ async fn tip_pages_hear_about_changes() {
     assert_eq!(response.status(), StatusCode::OK);
     captured_tip(&api, &page_id);
     let response = client
-        .post(format!("http://{address}/account/recent/TIP1/resend"))
+        .post(format!(
+            "http://{address}/account/pages/{page_id}/recent/TIP1/resend"
+        ))
         .bearer_auth(&session)
         .send()
         .await
@@ -162,7 +166,7 @@ async fn tip_pages_hear_about_changes() {
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     quiet(&mut events).await;
     let response = client
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"message": "Hello"}))
         .send()

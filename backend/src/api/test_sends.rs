@@ -25,18 +25,10 @@ pub(super) struct TestRequest {
 fn test_page(
     api: &Api,
     headers: &HeaderMap,
-    page_id: Option<&str>,
+    page_id: &str,
 ) -> Result<(String, Account, String), Failure> {
-    let (page_id, account) = match page_id {
-        Some(page_id) => (
-            page_id.to_string(),
-            assistant(api, headers, page_id)?.signed_in.account,
-        ),
-        None => {
-            let account = signed_in(api, headers)?.account;
-            (account.page_id.clone(), account)
-        }
-    };
+    let account = assistant(api, headers, page_id)?.signed_in.account;
+    let page_id = page_id.to_string();
     if !within_limit(&api.tests, &page_id, 10) {
         return Err(failure(
             "too-many-tests",
@@ -58,19 +50,18 @@ fn moblin_not_connected() -> Failure {
 
 pub(super) async fn handle_test_tip(
     State(api): State<Arc<Api>>,
-    page_id: Option<Path<String>>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let page_id = page_id.map(|Path(page_id)| page_id);
-    let result = test_tip(&api, &headers, page_id.as_deref(), request).await;
+    let result = test_tip(&api, &headers, &page_id, request).await;
     counted(&api, "tipTests", result)
 }
 
 async fn test_tip(
     api: &Api,
     headers: &HeaderMap,
-    page_id: Option<&str>,
+    page_id: &str,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let (page_id, account, request_id) = test_page(api, headers, page_id)?;
@@ -95,19 +86,18 @@ async fn test_tip(
 
 pub(super) async fn handle_test_spin(
     State(api): State<Arc<Api>>,
-    page_id: Option<Path<String>>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let page_id = page_id.map(|Path(page_id)| page_id);
-    let result = test_spin(&api, &headers, page_id.as_deref(), request).await;
+    let result = test_spin(&api, &headers, &page_id, request).await;
     counted(&api, "spinTests", result)
 }
 
 async fn test_spin(
     api: &Api,
     headers: &HeaderMap,
-    page_id: Option<&str>,
+    page_id: &str,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let (page_id, account, request_id) = test_page(api, headers, page_id)?;
@@ -143,19 +133,18 @@ async fn test_spin(
 
 pub(super) async fn handle_test_effect(
     State(api): State<Arc<Api>>,
-    page_id: Option<Path<String>>,
+    Path(page_id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<TestRequest>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
-    let page_id = page_id.map(|Path(page_id)| page_id);
-    let result = test_effect(&api, &headers, page_id.as_deref(), request).await;
+    let result = test_effect(&api, &headers, &page_id, request).await;
     counted(&api, "effectTests", result)
 }
 
 async fn test_effect(
     api: &Api,
     headers: &HeaderMap,
-    page_id: Option<&str>,
+    page_id: &str,
     request: TestRequest,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let (page_id, account, request_id) = test_page(api, headers, page_id)?;

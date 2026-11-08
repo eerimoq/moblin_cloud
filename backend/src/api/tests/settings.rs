@@ -8,28 +8,32 @@ use crate::pages::{Feature, Settings, Tips};
 async fn custom_colors_and_fonts_are_for_pro_streamers() {
     let (address, api) = start_api(None).await;
     let client = reqwest::Client::new();
-    let save = |session: String, accent: &'static str| {
+    let save = |session: String, page_id: String, accent: &'static str| {
         client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/pages/{page_id}/settings"))
             .bearer_auth(session)
             .json(&json!({"accent": accent}))
             .send()
     };
-    let save_font = |session: String, font: &'static str| {
+    let save_font = |session: String, page_id: String, font: &'static str| {
         client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/pages/{page_id}/settings"))
             .bearer_auth(session)
             .json(&json!({"font": font}))
             .send()
     };
-    let (session, _, _) = streamer(&api);
-    let response = save(session.clone(), "#123abc").await.unwrap();
+    let (session, _, own) = streamer(&api);
+    let response = save(session.clone(), own.clone(), "#123abc").await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    let response = save_font(session.clone(), "handwritten").await.unwrap();
+    let response = save_font(session.clone(), own.clone(), "handwritten")
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    let response = save_font(session.clone(), "rounded").await.unwrap();
+    let response = save_font(session.clone(), own.clone(), "rounded")
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let response = save(session, "pink").await.unwrap();
+    let response = save(session, own, "pink").await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     create_account(&api, "premium", "Premium", "premium");
     let premium = api.auth.session("premium", 0);
@@ -43,7 +47,7 @@ async fn custom_colors_and_fonts_are_for_pro_streamers() {
         .await
         .unwrap();
     let page_id = account["settings"]["id"].as_str().unwrap().to_string();
-    let settings: Value = save(premium.clone(), "#123ABC")
+    let settings: Value = save(premium.clone(), page_id.clone(), "#123ABC")
         .await
         .unwrap()
         .json()
@@ -59,23 +63,25 @@ async fn custom_colors_and_fonts_are_for_pro_streamers() {
         .await
         .unwrap();
     assert_eq!(profile["accent"], "#123abc");
-    let response = save(premium.clone(), "#12345").await.unwrap();
+    let response = save(premium.clone(), page_id.clone(), "#12345")
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let settings: Value = save_font(premium.clone(), "handwritten")
+    let settings: Value = save_font(premium.clone(), page_id.clone(), "handwritten")
         .await
         .unwrap()
         .json()
         .await
         .unwrap();
     assert_eq!(settings["font"], "handwritten");
-    let response = save_font(premium, "comic").await.unwrap();
+    let response = save_font(premium, page_id, "comic").await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn the_currency_only_changes_while_paid_features_are_off() {
     let (address, api, _) = start_paid().await;
-    let (session, _, _) = streamer(&api);
+    let (session, _, page_id) = streamer(&api);
     connect_paypal(&api);
     let client = reqwest::Client::new();
     for (request, status) in [
@@ -111,7 +117,7 @@ async fn the_currency_only_changes_while_paid_features_are_off() {
         (json!({"currency": "USD"}), StatusCode::OK),
     ] {
         let response = client
-            .post(format!("http://{address}/account/settings"))
+            .post(format!("http://{address}/account/pages/{page_id}/settings"))
             .bearer_auth(&session)
             .json(&request)
             .send()
@@ -144,7 +150,7 @@ async fn a_paypal_merchant_is_not_payable_without_paypal() {
         Value::Null
     );
     let response = reqwest::Client::new()
-        .post(format!("http://{address}/account/settings"))
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
         .bearer_auth(&session)
         .json(&json!({"tips": {"amounts": [700]}}))
         .send()
