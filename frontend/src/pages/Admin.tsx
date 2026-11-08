@@ -520,8 +520,8 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
             <th class="px-4 pt-3 pb-2 text-left sm:px-5">
               Endpoint
               <Info>
-                The route each request matched, so every page id counts under the same row. Requests
-                that match no route are the * row.
+                The method and route each request matched, so every page id counts under the same
+                row. Requests that match no route are the * rows.
               </Info>
             </th>
             <th class="w-20 px-2 pt-3 pb-2 text-right sm:w-24 sm:px-4">Requests</th>
@@ -547,7 +547,7 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
                 return (
                   <tr>
                     <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">
-                      {endpoint.path}
+                      <span class="text-ink-2">{endpoint.method}</span> {endpoint.path}
                     </td>
                     <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
                       {format(endpoint.total)}

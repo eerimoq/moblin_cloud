@@ -284,7 +284,12 @@ export type AdminStats = {
     requests: {
       total: number;
       statuses: Record<string, number>;
-      endpoints: { path: string; total: number; statuses: Record<string, number> }[];
+      endpoints: {
+        method: string;
+        path: string;
+        total: number;
+        statuses: Record<string, number>;
+      }[];
     };
   };
   accounts: { total: number; paypal: number; stripe: number; premium: number };

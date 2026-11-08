@@ -10,7 +10,7 @@ use crate::api::Api;
 
 #[derive(Default)]
 pub struct Requests {
-    endpoints: Mutex<HashMap<String, BTreeMap<u16, u64>>>,
+    endpoints: Mutex<HashMap<(String, String), BTreeMap<u16, u64>>>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -22,24 +22,26 @@ pub struct RequestStats {
 
 #[derive(Serialize, Debug, PartialEq)]
 pub struct Endpoint {
+    pub method: String,
     pub path: String,
     pub total: u64,
     pub statuses: BTreeMap<u16, u64>,
 }
 
 impl Requests {
-    pub fn record(&self, path: Option<&str>, status: u16) {
+    pub fn record(&self, method: &str, path: Option<&str>, status: u16) {
         if !(100..600).contains(&status) {
             return;
         }
-        let path = path.unwrap_or("*");
-        let mut endpoints = self.endpoints.lock().unwrap();
-        match endpoints.get_mut(path) {
-            Some(statuses) => *statuses.entry(status).or_default() += 1,
-            None => {
-                endpoints.insert(path.to_string(), BTreeMap::from([(status, 1)]));
-            }
-        }
+        let key = (method.to_string(), path.unwrap_or("*").to_string());
+        *self
+            .endpoints
+            .lock()
+            .unwrap()
+            .entry(key)
+            .or_default()
+            .entry(status)
+            .or_default() += 1;
     }
 
     pub fn stats(&self) -> RequestStats {
@@ -48,13 +50,19 @@ impl Requests {
             .lock()
             .unwrap()
             .iter()
-            .map(|(path, statuses)| Endpoint {
+            .map(|((method, path), statuses)| Endpoint {
+                method: method.clone(),
                 path: path.clone(),
                 total: statuses.values().sum(),
                 statuses: statuses.clone(),
             })
             .collect();
-        endpoints.sort_by(|a, b| b.total.cmp(&a.total).then_with(|| a.path.cmp(&b.path)));
+        endpoints.sort_by(|a, b| {
+            b.total
+                .cmp(&a.total)
+                .then_with(|| a.path.cmp(&b.path))
+                .then_with(|| a.method.cmp(&b.method))
+        });
         let mut statuses = BTreeMap::new();
         for endpoint in &endpoints {
             for (status, count) in &endpoint.statuses {
@@ -70,9 +78,11 @@ impl Requests {
 }
 
 pub async fn count(State(api): State<Arc<Api>>, request: Request, next: Next) -> Response {
+    let method = request.method().clone();
     let path = request.extensions().get::<MatchedPath>().cloned();
     let response = next.run(request).await;
     api.requests.record(
+        method.as_str(),
         path.as_ref().map(MatchedPath::as_str),
         response.status().as_u16(),
     );

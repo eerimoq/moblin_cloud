@@ -401,7 +401,7 @@ class AccountAdmin(AccountTestCase):
         self.assert_equal(sorted(served), ["endpoints", "statuses", "total"])
         self.assert_equal(sum(endpoint["total"] for endpoint in served["endpoints"]), served["total"])
         stats_endpoint = next(e for e in served["endpoints"] if e["path"] == "/admin/stats")
-        self.assert_equal(sorted(stats_endpoint), ["path", "statuses", "total"])
+        self.assert_equal(sorted(stats_endpoint), ["method", "path", "statuses", "total"])
         self.assert_true(stats_endpoint["statuses"]["401"] >= 1)
         self.assert_equal(sum(served["statuses"].values()), served["total"])
         self.assert_true(served["statuses"]["401"] >= 1)

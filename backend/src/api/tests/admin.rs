@@ -83,9 +83,9 @@ async fn admin_stats() {
             "total": 5,
             "statuses": {"101": 1, "200": 2, "401": 1, "403": 1},
             "endpoints": [
-                {"path": "/account", "total": 2, "statuses": {"200": 2}},
-                {"path": "/admin/stats", "total": 2, "statuses": {"401": 1, "403": 1}},
-                {"path": "/remote-control/streamer/{key}", "total": 1, "statuses": {"101": 1}},
+                {"method": "GET", "path": "/account", "total": 2, "statuses": {"200": 2}},
+                {"method": "GET", "path": "/admin/stats", "total": 2, "statuses": {"401": 1, "403": 1}},
+                {"method": "GET", "path": "/remote-control/streamer/{key}", "total": 1, "statuses": {"101": 1}},
             ],
         })
     );
