@@ -321,9 +321,34 @@ class AssistantsKeptOnRestart(AssistantsTestCase):
         self.assert_equal(self.assistant.assisted_recent(self.page_id, "tip")["more"], False)
 
 
+class AssistantsRickRoll(AssistantsTestCase):
+    """Count the Rick Rolls the streamer and their assistants play, and nobody else's."""
+
+    login = "rickroller"
+
+    def run(self):
+        admin = self.sign_in("admin")
+        before = self.rick_rolls(admin)
+        self.assert_backend_error(
+            401, lambda: Dashboard(self.backend.url, None).rick_roll(self.page_id), "not signed in"
+        )
+        self.assert_backend_error(403, lambda: self.assistant.rick_roll(self.page_id), NOT_ASSISTANT)
+        self.add_assistant()
+        self.dashboard.rick_roll(self.page_id)
+        self.assistant.rick_roll(self.page_id)
+        after = self.rick_rolls(admin)
+        for period in ["today", "week", "total"]:
+            self.assert_equal(after[period], before[period] + 2)
+
+    def rick_rolls(self, admin: Dashboard) -> dict:
+        counters = [counter for counter in admin.admin_stats()["counters"] if counter["name"] == "rickRolls"]
+        return counters[0] if counters else {"today": 0, "week": 0, "total": 0}
+
+
 def tests(context: Context):
     return [
         AssistantsAdded(context),
         AssistantsUseTheStreamersDashboard(context),
         AssistantsKeptOnRestart(context),
+        AssistantsRickRoll(context),
     ]

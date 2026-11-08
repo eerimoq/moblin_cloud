@@ -941,6 +941,7 @@ function Loaded(props: { stats: AdminStats }) {
       label: "Tests",
       caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
     },
+    { id: "rick-roll", label: "Rick Roll", caption: `${format(today("rickRolls"))} today` },
   ];
 
   const server = () => props.stats.server;
@@ -1163,6 +1164,18 @@ function Loaded(props: { stats: AdminStats }) {
                 )}
               </For>
             </div>
+          </Section>
+          <Section id="rick-roll" title="Rick Roll">
+            <StepTable
+              steps={[
+                {
+                  label: "Played",
+                  hint: "The Moblin icon on a device page, in the dashboard and the Monitor, clicked by a signed in streamer or assistant. Counted when the video opens, whether or not they watched it.",
+                  counts: counters().get("rickRolls"),
+                  failures: [],
+                },
+              ]}
+            />
           </Section>
         </div>
       </div>

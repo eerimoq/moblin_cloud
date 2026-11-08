@@ -194,6 +194,16 @@ pub(super) async fn handle_device_preview(
     Ok(Sse::new(iter(first.map(Ok)).chain(stream)).keep_alive(KeepAlive::default()))
 }
 
+pub(super) async fn handle_rick_roll(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Path(page_id): Path<String>,
+) -> Result<StatusCode, Failure> {
+    assistant(&api, &headers, &page_id)?;
+    api.counters.bump("rickRolls");
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub(super) async fn handle_device_control(
     State(api): State<Arc<Api>>,
     Path((page_id, device)): Path<(String, String)>,

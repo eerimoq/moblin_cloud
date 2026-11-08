@@ -254,6 +254,7 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/pages/{id}/test/tip", post(handle_test_tip))
         .route("/account/pages/{id}/test/spin", post(handle_test_spin))
         .route("/account/pages/{id}/test/effect", post(handle_test_effect))
+        .route("/account/pages/{id}/rick-rolls", post(handle_rick_roll))
         .route("/admin/stats", get(handle_admin_stats))
         .route("/admin/stats/events", get(handle_admin_stats_events))
         .route("/pages/{id}", get(handle_page))

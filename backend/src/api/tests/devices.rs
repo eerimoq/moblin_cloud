@@ -1004,3 +1004,47 @@ async fn the_streamer_sees_when_assistants_were_last_active() {
     }
     assert!(remote_control().await.as_u64().unwrap() >= at);
 }
+
+#[tokio::test]
+async fn rick_rolls_are_counted_for_the_streamer_and_assistants() {
+    let (address, api) = start_api(None).await;
+    let (session, _, page_id) = streamer(&api);
+    let client = reqwest::Client::new();
+    let url = format!("http://{address}/account/pages/{page_id}/rick-rolls");
+    let response = client.post(&url).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    create_account(&api, "21", "Mod 21", "mod21");
+    let assistant = api.auth.session("21", 0);
+    let response = client
+        .post(&url)
+        .bearer_auth(&assistant)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        response.text().await.unwrap(),
+        "Only the streamer and the assistants they turned on can do this."
+    );
+    assert_eq!(counter(&api, "rickRolls"), 0);
+    api.accounts
+        .add_assistant(
+            Platform::Twitch,
+            "1",
+            &twitch_assistant("21", "mod21", "Mod 21"),
+        )
+        .unwrap();
+    for session in [&session, &assistant] {
+        let response = client.post(&url).bearer_auth(session).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+    assert_eq!(counter(&api, "rickRolls"), 2);
+    let response = client
+        .post(format!("http://{address}/account/pages/unknown/rick-rolls"))
+        .bearer_auth(&session)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(counter(&api, "rickRolls"), 2);
+}

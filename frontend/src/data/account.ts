@@ -429,6 +429,9 @@ export function createAccountSession() {
 const accountPath = (page?: string) =>
   page === undefined ? "/account" : `/account/pages/${encodeURIComponent(page)}`;
 
+export const postRickRoll = (session: string, page: string) =>
+  call<void>(`${accountPath(page)}/rick-rolls`, session, post());
+
 export const fetchAccount = (session: string, page?: string) =>
   call<Account>(accountPath(page), session);
 

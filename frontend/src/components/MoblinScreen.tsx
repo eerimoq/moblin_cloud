@@ -782,7 +782,11 @@ export default function MoblinScreen(props: {
                         <div class="flex h-full w-full shrink-0 snap-start snap-always flex-col">
                           <Show when={number === 1}>
                             <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
-                              <button type="button" aria-label="Moblin" onClick={rickRoll}>
+                              <button
+                                type="button"
+                                aria-label="Moblin"
+                                onClick={() => rickRoll(props.page)}
+                              >
                                 <img
                                   src={moblinIconUrl(icon() ?? "plain")}
                                   alt=""

@@ -1,5 +1,6 @@
 import { For, type JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { postRickRoll, readSession } from "../data/account";
 import { links } from "../data/links";
 import { t } from "../i18n";
 import { ghostButtonClass } from "./PageParts";
@@ -120,7 +121,11 @@ export function choose(title: string, actions: string[]): Promise<number | null>
   });
 }
 
-export function rickRoll() {
+export function rickRoll(page: string) {
+  const session = readSession();
+  if (session) {
+    postRickRoll(session, page).catch(() => {});
+  }
   if (
     "ontouchend" in document &&
     /AppleWebKit/.test(navigator.userAgent) &&

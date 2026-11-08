@@ -301,6 +301,11 @@ class Dashboard(Client):
     def admin_stats(self) -> dict:
         return self.get("/admin/stats")
 
+    def rick_roll(self, page_id: str):
+        response = self.request("POST", f"/account/pages/{quote(page_id, safe='')}/rick-rolls")
+        if not response.ok:
+            raise BackendError(response.status_code, response.text)
+
     def add_assistant(self, platform: str, username: str) -> dict:
         return self.post(f"/account/assistants/{platform}", {"username": username})
 
