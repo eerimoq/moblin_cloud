@@ -439,13 +439,16 @@ const statusLabels: Record<number, string> = {
   101: "WebSocket connected",
   200: "OK",
   202: "Accepted",
+  204: "OK, nothing to return",
   303: "Redirected",
   400: "Bad request",
   401: "Not signed in",
+  402: "Payment not completed",
   403: "Forbidden",
   404: "Not found",
   405: "Method not allowed",
   409: "Conflict",
+  410: "Expired",
   413: "Too large",
   415: "Unsupported type",
   422: "Unreadable request",
@@ -453,6 +456,7 @@ const statusLabels: Record<number, string> = {
   500: "Backend error",
   502: "Provider failed",
   503: "Unavailable",
+  504: "Moblin timed out",
 };
 
 function StatusTable(props: { statuses: (readonly [number, number])[]; total: number }) {
