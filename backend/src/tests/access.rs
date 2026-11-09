@@ -61,20 +61,25 @@ fn restricting_allows_the_existing_identities_and_survives_restarts() {
     access.set_restricted(false).unwrap();
     assert!(!SignInAccess::new(database.clone()).restricted());
     assert_eq!(access.state().allowed.len(), 1);
-    let later = Identity::twitch("3", "Later", "later");
-    account(&accounts, &later);
     access.set_restricted(true).unwrap();
-    let state = access.state();
-    let mut allowed = keys(&state.allowed);
-    allowed.sort_by_key(|(_, user_id, _)| *user_id);
     assert_eq!(
-        allowed,
-        [
-            (Platform::Twitch, "1", "erik"),
-            (Platform::Kick, "2", "kicker"),
-            (Platform::Twitch, "3", "later")
-        ]
+        keys(&access.state().allowed),
+        [(Platform::Kick, "2", "kicker")]
     );
+}
+
+#[test]
+fn turning_off_before_ever_restricting_changes_nothing() {
+    let database = Database::memory();
+    account(
+        &Accounts::new(database.clone()),
+        &Identity::twitch("1", "Erik", "erik"),
+    );
+    let access = SignInAccess::new(database);
+    access.set_restricted(false).unwrap();
+    assert!(!access.restricted());
+    access.set_restricted(true).unwrap();
+    assert_eq!(access.state().allowed.len(), 1);
 }
 
 #[test]

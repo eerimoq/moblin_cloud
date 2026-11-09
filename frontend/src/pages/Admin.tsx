@@ -864,7 +864,7 @@ function SignIn(props: {
           <span class="text-[15px] text-ink-2">
             {props.access.restricted
               ? "The allowed accounts and the admins can sign in. Anyone else is turned away and waits below until you allow them."
-              : "Anyone with a Twitch or Kick account can sign in and get a page. Limiting it allows every account that exists then."}
+              : "Anyone with a Twitch or Kick account can sign in and get a page. Limiting it the first time allows every account that exists then."}
           </span>
         </div>
         <button

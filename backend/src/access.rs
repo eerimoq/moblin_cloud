@@ -84,7 +84,18 @@ impl SignInAccess {
     pub fn set_restricted(&self, restricted: bool) -> rusqlite::Result<()> {
         let mut database = self.database.lock();
         let transaction = database.transaction()?;
-        if restricted {
+        let first = transaction
+            .query_row(
+                "SELECT 1 FROM server_settings WHERE name = ?1",
+                [RESTRICTED],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_none();
+        if !restricted && first {
+            return Ok(());
+        }
+        if first {
             transaction.execute(
                 "INSERT OR IGNORE INTO allowed_identities (platform, user_id, login, name, avatar, at)
                  SELECT platform, user_id, login, name, avatar, ?1 FROM identities",
