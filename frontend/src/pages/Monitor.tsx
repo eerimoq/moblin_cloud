@@ -438,7 +438,7 @@ function PaneFrame(props: {
     <section class="flex size-full min-h-0 min-w-0 flex-col rounded-xl border border-line bg-card">
       <header
         {...props.actions.drag}
-        class="flex h-9 shrink-0 items-center gap-1 border-b border-line pr-1 text-[13px]"
+        class="@container flex h-9 shrink-0 items-center gap-1 border-b border-line pr-1 text-[13px]"
       >
         <span
           title={t("Drag to move this pane")}
@@ -493,6 +493,9 @@ function PaneFrame(props: {
           <button
             type="button"
             aria-pressed={props.leaf.hidePreview === true}
+            aria-label={
+              props.leaf.hidePreview ? t("Show stream preview") : t("Hide stream preview")
+            }
             title={t("Hiding the stream preview saves bandwidth on the phone.")}
             onClick={() =>
               props.actions.change({
@@ -503,7 +506,9 @@ function PaneFrame(props: {
             class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink"
           >
             <Icon name={props.leaf.hidePreview ? "eye" : "eye-off"} class="size-4" />
-            {props.leaf.hidePreview ? t("Show stream preview") : t("Hide stream preview")}
+            <span class="hidden @lg:inline">
+              {props.leaf.hidePreview ? t("Show stream preview") : t("Hide stream preview")}
+            </span>
           </button>
         </Show>
         <Show when={props.leaf.panel === "phone"}>
