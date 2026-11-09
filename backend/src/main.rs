@@ -1,3 +1,4 @@
+mod access;
 mod accounts;
 mod api;
 mod app_attest;
@@ -31,6 +32,7 @@ use reqwest::Client;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 
+use crate::access::SignInAccess;
 use crate::accounts::Accounts;
 use crate::api::{Api, Timing};
 use crate::app_attest::{AppAttest, Environment};
@@ -258,6 +260,10 @@ async fn main() -> Result<()> {
     }
     let database = Database::open(cli.database.as_deref())?;
     let accounts = Accounts::new(database.clone());
+    let access = SignInAccess::new(database.clone());
+    if access.restricted() {
+        info!("only letting allowed accounts sign in");
+    }
     let remote_control = Streamers::new(Duration::from_secs(60));
     let app_attest = if cli.allow_unattested {
         warn!("accepting Moblin Cloud connections from anyone");
@@ -361,6 +367,7 @@ async fn main() -> Result<()> {
         deliveries,
         auth,
         accounts,
+        access,
         counters,
         database,
         admins: cli.admins,

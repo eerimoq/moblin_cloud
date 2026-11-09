@@ -445,6 +445,7 @@
   "Numeric input": "Sayısal giriş",
   "Off": "Kapalı",
   "On": "Açık",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "Bu Moblin Cloud'a yalnızca yöneticinin izin verdiği hesaplar giriş yapabilir. Yönetici isteğini görebilir.",
   "Only show when spinning": "Yalnızca dönerken göster",
   "Only the settings Moblin shares over remote control are here.": "Burada yalnızca Moblin'in uzaktan kontrol üzerinden paylaştığı ayarlar var.",
   "Opacity": "Opaklık",

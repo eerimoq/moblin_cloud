@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import { asset } from "../asset";
-import { noSignInPlatforms, signInPlatforms } from "../data/account";
+import { noSignInPlatforms, signInPlatforms, type SignInFailure } from "../data/account";
 import { cloudSteps } from "../data/cloud";
 import { isCompactLanding } from "../data/links";
 import Icon, { kindIcons, type IconName } from "./Icon";
@@ -112,7 +112,7 @@ function PageMockup() {
   );
 }
 
-export default function CloudLanding(props: { failed: boolean; connecting: boolean }) {
+export default function CloudLanding(props: { failed: SignInFailure | null; connecting: boolean }) {
   if (isCompactLanding()) {
     return (
       <CompactLanding {...props}>

@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use serde::Serialize;
+use log::{info, warn};
+use serde::{Deserialize, Serialize};
 
+use crate::access::SignInState;
 use crate::accounts::{AccountStats, Platform};
 use crate::counters::Counter;
 use crate::deliveries;
@@ -23,6 +25,7 @@ pub(super) struct AdminStatsResponse {
     pending: PendingStats,
     database: DatabaseStats,
     counters: Vec<Counter>,
+    sign_in: SignInState,
 }
 
 #[derive(Serialize)]
@@ -131,7 +134,106 @@ pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
         },
         database: database_stats(&api.database),
         counters: api.counters.all(),
+        sign_in: api.access.state(),
     }
+}
+
+fn changed(
+    result: rusqlite::Result<()>,
+    api: &Api,
+) -> Result<Json<SignInState>, (StatusCode, String)> {
+    result.map_err(|error| {
+        warn!("changing who may sign in failed: {error:#}");
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "This is unavailable right now. Try again later.".to_string(),
+        )
+    })?;
+    Ok(Json(api.access.state()))
+}
+
+#[derive(Deserialize)]
+pub(super) struct RestrictRequest {
+    restricted: bool,
+}
+
+pub(super) async fn handle_admin_sign_in(
+    State(api): State<Arc<Api>>,
+    headers: HeaderMap,
+    Json(request): Json<RestrictRequest>,
+) -> Result<Json<SignInState>, (StatusCode, String)> {
+    let admin = admin(&api, &headers)?;
+    info!(
+        "account {} {} sign in to allowed accounts",
+        admin.account.id,
+        if request.restricted {
+            "limited"
+        } else {
+            "opened"
+        }
+    );
+    changed(api.access.set_restricted(request.restricted), &api)
+}
+
+pub(super) async fn handle_admin_sign_in_allow(
+    State(api): State<Arc<Api>>,
+    Path((platform, user_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<SignInState>, (StatusCode, String)> {
+    let admin = admin(&api, &headers)?;
+    let platform = platform_of(&platform)?;
+    let allowed = api.access.allow(platform, &user_id).map_err(|error| {
+        warn!(
+            "allowing {} user {user_id} failed: {error:#}",
+            platform.title()
+        );
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "This is unavailable right now. Try again later.".to_string(),
+        )
+    })?;
+    if !allowed {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "No one with that ID has asked to sign in or has an account.".to_string(),
+        ));
+    }
+    info!(
+        "account {} allowed {} user {user_id} to sign in",
+        admin.account.id,
+        platform.title()
+    );
+    Ok(Json(api.access.state()))
+}
+
+pub(super) async fn handle_admin_sign_in_remove(
+    State(api): State<Arc<Api>>,
+    Path((platform, user_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<SignInState>, (StatusCode, String)> {
+    let admin = admin(&api, &headers)?;
+    let platform = platform_of(&platform)?;
+    info!(
+        "account {} stopped {} user {user_id} from signing in",
+        admin.account.id,
+        platform.title()
+    );
+    changed(api.access.remove(platform, &user_id), &api)
+}
+
+pub(super) async fn handle_admin_sign_in_dismiss(
+    State(api): State<Arc<Api>>,
+    Path((platform, user_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<SignInState>, (StatusCode, String)> {
+    let admin = admin(&api, &headers)?;
+    let platform = platform_of(&platform)?;
+    info!(
+        "account {} dismissed the sign in request of {} user {user_id}",
+        admin.account.id,
+        platform.title()
+    );
+    changed(api.access.dismiss(platform, &user_id), &api)
 }
 
 #[cfg(test)]

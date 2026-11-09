@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { asset } from "../asset";
-import { signInUrl } from "../data/account";
+import { signInUrl, type SignInFailure } from "../data/account";
 import { cloudName, instanceName, pages } from "../data/links";
 import { type Platform, platformNames } from "../data/remoteControl";
 import CopyButton from "./CopyButton";
@@ -119,14 +119,18 @@ export function SaveButton(props: { saving: boolean; saved: boolean; disabled: b
   );
 }
 
-export function SignInNotices(props: { failed: boolean; connecting: boolean }) {
+export function SignInNotices(props: { failed: SignInFailure | null; connecting: boolean }) {
   const [dismissed, setDismissed] = createSignal(false);
 
   return (
     <>
       <Show when={props.failed && !dismissed()}>
         <Notice status onClose={() => setDismissed(true)}>
-          {t("Signing in did not work. Try again.")}
+          {props.failed === "refused"
+            ? t(
+                "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.",
+              )
+            : t("Signing in did not work. Try again.")}
         </Notice>
       </Show>
       <Show when={props.connecting}>

@@ -445,6 +445,7 @@
   "Numeric input": "Numerisk inmatning",
   "Off": "Av",
   "On": "På",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "Bara konton som admin har godkänt kan logga in på den här Moblin Cloud. Admin kan se din förfrågan.",
   "Only show when spinning": "Visa bara vid snurr",
   "Only the settings Moblin shares over remote control are here.": "Här finns bara de inställningar som Moblin delar via fjärrstyrning.",
   "Opacity": "Opacitet",

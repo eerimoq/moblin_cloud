@@ -193,6 +193,38 @@ async fn signed_in_redirect(
             api.auth.link_token(sign_in.identity)
         ));
     }
+    let existing = api
+        .accounts
+        .account_of_identity(platform, &identity.user_id)
+        .and_then(|id| api.accounts.get(&id));
+    let candidate = Account {
+        identities: existing
+            .map(|account| account.identities)
+            .unwrap_or_default()
+            .into_iter()
+            .chain([identity.clone()])
+            .collect(),
+        ..Account::default()
+    };
+    if !may_sign_in(api, &candidate) {
+        if let Err(error) = api.access.request(identity) {
+            warn!(
+                "saving the sign in request of {} user {} failed: {error:#}",
+                platform.title(),
+                identity.user_id
+            );
+        }
+        info!(
+            "{} user {} ({}) is not allowed to sign in",
+            platform.title(),
+            identity.user_id,
+            identity.login
+        );
+        return Redirect::to(&match port {
+            Some(port) => format!("http://127.0.0.1:{port}/?signInRefused"),
+            None => format!("{dashboard}#signInRefused"),
+        });
+    }
     let moblin_cloud_key = api.remote_control.new_moblin_cloud_key();
     let (Some(page_id), Some(new_id)) = (
         api.remote_control.new_page_id(),

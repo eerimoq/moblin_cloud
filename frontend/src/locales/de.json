@@ -445,6 +445,7 @@
   "Numeric input": "Numerische Eingabe",
   "Off": "Aus",
   "On": "An",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "Nur vom Admin zugelassene Konten können sich bei dieser Moblin Cloud anmelden. Der Admin kann deine Anfrage sehen.",
   "Only show when spinning": "Nur beim Drehen anzeigen",
   "Only the settings Moblin shares over remote control are here.": "Hier sind nur die Einstellungen, die Moblin über die Fernsteuerung teilt.",
   "Opacity": "Deckkraft",

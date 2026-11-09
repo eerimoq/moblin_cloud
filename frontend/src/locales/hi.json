@@ -445,6 +445,7 @@
   "Numeric input": "संख्यात्मक इनपुट",
   "Off": "बंद",
   "On": "चालू",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "इस Moblin Cloud में सिर्फ़ वही अकाउंट साइन इन कर सकते हैं जिन्हें एडमिन ने अनुमति दी है। एडमिन आपकी रिक्वेस्ट देख सकता है।",
   "Only show when spinning": "सिर्फ़ घूमते समय दिखाएँ",
   "Only the settings Moblin shares over remote control are here.": "यहाँ सिर्फ़ वही सेटिंग्स हैं जिन्हें Moblin रिमोट कंट्रोल के ज़रिए शेयर करता है।",
   "Opacity": "अपारदर्शिता",

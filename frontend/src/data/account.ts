@@ -268,6 +268,21 @@ export type RecentKind = "tip" | "spin" | "effect";
 
 export type RecentList = { items: Recent[]; more: boolean };
 
+export type SignInPerson = {
+  platform: Platform;
+  userId: string;
+  login: string;
+  name: string;
+  avatar: string | null;
+  at: number;
+};
+
+export type SignInAccess = {
+  restricted: boolean;
+  allowed: SignInPerson[];
+  requests: SignInPerson[];
+};
+
 export type AdminStats = {
   server: {
     version: string;
@@ -300,6 +315,7 @@ export type AdminStats = {
   pending: { orders: number; deliveries: number };
   database: { bytes: number; files: { name: string; bytes: number }[] };
   counters: { name: string; today: number; week: number; total: number }[];
+  signIn: SignInAccess;
 };
 
 const sessionKey = "session";
@@ -308,9 +324,11 @@ export const readSession = () => readStored(sessionKey);
 
 const saveSession = (session: string | null) => store(sessionKey, session || null);
 
+export type SignInFailure = "failed" | "refused";
+
 function takeSignInResult(): {
   session: string | null;
-  failed: boolean;
+  failed: SignInFailure | null;
   link: string | null;
   linkFailed: boolean;
 } {
@@ -318,7 +336,7 @@ function takeSignInResult(): {
   const params = new URLSearchParams(hash);
   const session = params.get("session");
   const link = params.get("link");
-  const failed = hash === "signInFailed";
+  const failed = hash === "signInFailed" ? "failed" : hash === "signInRefused" ? "refused" : null;
   const linkFailed = hash === "linkFailed";
   if (session || failed || link || linkFailed) {
     history.replaceState(
@@ -371,7 +389,7 @@ export function createAccountSession() {
   serverConfig();
   const [session, setSession] = createSignal<{ session: string; account: Account } | null>(null);
   const [loading, setLoading] = createSignal(true);
-  const [signInFailed, setSignInFailed] = createSignal(false);
+  const [signInFailed, setSignInFailed] = createSignal<SignInFailure | null>(null);
   const [linkResult, setLinkResult] = createSignal<LinkResult | null>(null);
 
   onMount(async () => {
@@ -436,6 +454,21 @@ export const fetchAccount = (session: string, page?: string) =>
   call<Account>(accountPath(page), session);
 
 export const adminStatsEventsUrl = `${backendUrl}/admin/stats/events`;
+
+export const restrictSignIn = (session: string, restricted: boolean) =>
+  call<SignInAccess>("/admin/sign-in", session, post({ restricted }));
+
+const personPath = (person: SignInPerson) =>
+  `${person.platform}/${encodeURIComponent(person.userId)}`;
+
+export const allowSignIn = (session: string, person: SignInPerson) =>
+  call<SignInAccess>(`/admin/sign-in/allowed/${personPath(person)}`, session, post());
+
+export const removeSignIn = (session: string, person: SignInPerson) =>
+  call<SignInAccess>(`/admin/sign-in/allowed/${personPath(person)}/remove`, session, post());
+
+export const dismissSignIn = (session: string, person: SignInPerson) =>
+  call<SignInAccess>(`/admin/sign-in/requests/${personPath(person)}/remove`, session, post());
 
 export const pageEventsUrl = (page: string) => `${backendUrl}${accountPath(page)}/events`;
 

@@ -445,6 +445,7 @@
   "Numeric input": "숫자 입력",
   "Off": "꺼짐",
   "On": "켜짐",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "관리자가 허용한 계정만 이 Moblin Cloud에 로그인할 수 있어요. 관리자가 내 요청을 볼 수 있어요.",
   "Only show when spinning": "회전 중에만 표시",
   "Only the settings Moblin shares over remote control are here.": "Moblin이 원격 제어로 공유하는 설정만 여기에 있어요.",
   "Opacity": "불투명도",

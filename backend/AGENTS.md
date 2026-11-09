@@ -81,6 +81,9 @@ Stripe:
 - The Moblin Cloud key is only used by Moblin's WebSocket and only leaves the backend in the signed in account. The page id is public, unrelated to the key, and stays when the key is replaced.
 - Starting to connect PayPal needs a session issued in the last 10 minutes.
 - Deleting an account never touches PayPal or Stripe accounts.
+- Only allowed accounts (`access.rs`) is turned on from the admin page, not by an option, so a self-hosted copy changes it without a restart. While on, an account signs in when any of its identities is allowed. Admins always can, so the admin is never locked out. Premium accounts are not allowed automatically.
+- The first time it is turned on, every identity that exists then is allowed, so turning it on cuts no one off. Later times allow no one new, so turning it off and on again doesn't bring back people the admin removed.
+- A refused sign in creates no account, only a request the admin page lists. Removing an identity ends its account's sessions through `signed_in`, but the page, its orders and its Moblin keep working, so it never breaks a stream in progress.
 
 ## Subscribers
 

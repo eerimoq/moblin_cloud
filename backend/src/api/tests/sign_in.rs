@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 
 use super::*;
+use crate::access::SignInAccess;
 use crate::accounts::{Accounts, Identity, Platform};
 use crate::api::test_utils::*;
 use crate::auth::Auth;
@@ -650,6 +651,7 @@ async fn sessions_of_twitch_user_ids_keep_working() {
         )
         .unwrap(),
         accounts: Accounts::new(database.clone()),
+        access: SignInAccess::new(database.clone()),
         counters: Counters::new(database.clone()),
         database,
         admins: vec!["twitch:42".to_string()],
@@ -945,4 +947,173 @@ async fn terminals_sign_in_with_a_code_approved_on_another_device() {
             "Too many tries. Try again in a minute.".to_string()
         )
     );
+}
+
+#[tokio::test]
+async fn only_allowed_accounts_sign_in_while_restricted() {
+    let twitch = start_twitch().await;
+    let (kick, fake) = start_kick().await;
+    let (address, api) = start_api_with(
+        None,
+        None,
+        Some(twitch_app(&twitch)),
+        Some(kick_app(&kick)),
+        None,
+    )
+    .await;
+    let flow = SignInFlow::new(&address, fake);
+    let client = reqwest::Client::new();
+    let admin_page = create_account(&api, "admin", "Admin", "admin").page_id;
+    let admin = api.auth.session("admin", 0);
+    create_account(&api, "premium", "Premium", "premium");
+    let premium = api.auth.session("premium", 0);
+    let kicker = session_of(&flow.sign_in("kick", "kick-a").await);
+    let post = async |path: &str, session: &str, body: Value| {
+        let response = client
+            .post(format!("http://{address}{path}"))
+            .bearer_auth(session)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let text = response.text().await.unwrap();
+        (
+            status,
+            serde_json::from_str(&text).unwrap_or(Value::String(text)),
+        )
+    };
+    let status_of = async |session: &str| {
+        client
+            .get(format!("http://{address}/account"))
+            .bearer_auth(session)
+            .send()
+            .await
+            .unwrap()
+            .status()
+    };
+    let users = |people: &Value| {
+        people
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|person| {
+                format!(
+                    "{}:{}",
+                    person["platform"].as_str().unwrap(),
+                    person["userId"].as_str().unwrap()
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let restrict = json!({"restricted": true});
+    assert_eq!(
+        post("/admin/sign-in", &kicker, restrict.clone()).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post("/admin/sign-in/allowed/twitch/42", &kicker, Value::Null)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, state) = post("/admin/sign-in", &admin, restrict).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(state["restricted"], true);
+    let mut allowed = users(&state["allowed"]);
+    allowed.sort();
+    assert_eq!(allowed, ["kick:123", "twitch:admin", "twitch:premium"]);
+    assert_eq!(state["requests"], json!([]));
+    assert_eq!(status_of(&kicker).await, StatusCode::OK);
+    assert_eq!(status_of(&premium).await, StatusCode::OK);
+    let (status, _) = post(
+        "/admin/sign-in/allowed/twitch/premium/remove",
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status_of(&premium).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        flow.sign_in("twitch", "c").await,
+        "https://cloud.moblin.app/dashboard/#signInRefused"
+    );
+    assert_eq!(
+        api.accounts.account_of_identity(Platform::Twitch, "42"),
+        None
+    );
+    let challenge = crate::auth::challenge_of("verifier");
+    let (query, cookie) = flow
+        .start(&format!(
+            "/auth/twitch/login?port=1234&challenge={challenge}"
+        ))
+        .await;
+    assert_eq!(
+        flow.finish("twitch", "c", &query["state"], &cookie).await,
+        "http://127.0.0.1:1234/?signInRefused"
+    );
+    let (query, cookie) = flow
+        .start(&format!("/auth/twitch/login?page={admin_page}"))
+        .await;
+    assert!(
+        flow.finish("twitch", "c", &query["state"], &cookie)
+            .await
+            .starts_with("https://cloud.moblin.app/twitch/admin#viewer=")
+    );
+    let requests = api.access.state().requests;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        (requests[0].user_id.as_str(), requests[0].login.as_str()),
+        ("42", "erik")
+    );
+    for path in [
+        "/admin/sign-in/allowed/twitch/nobody",
+        "/admin/sign-in/allowed/youtube/42",
+    ] {
+        assert_eq!(
+            post(path, &admin, Value::Null).await.0,
+            StatusCode::NOT_FOUND,
+            "{path}"
+        );
+    }
+    let (status, state) = post("/admin/sign-in/allowed/twitch/42", &admin, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(state["requests"], json!([]));
+    assert!(users(&state["allowed"]).contains(&"twitch:42".to_string()));
+    let erik = session_of(&flow.sign_in("twitch", "c").await);
+    assert_eq!(status_of(&erik).await, StatusCode::OK);
+    post(
+        "/admin/sign-in/allowed/twitch/42/remove",
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status_of(&erik).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        flow.sign_in("twitch", "c").await,
+        "https://cloud.moblin.app/dashboard/#signInRefused"
+    );
+    let (status, state) = post(
+        "/admin/sign-in/requests/twitch/42/remove",
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(state["requests"], json!([]));
+    post(
+        "/admin/sign-in/allowed/twitch/admin/remove",
+        &admin,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status_of(&admin).await, StatusCode::OK);
+    assert_eq!(
+        post("/admin/sign-in", &admin, json!({"restricted": false}))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(status_of(&erik).await, StatusCode::OK);
+    assert_eq!(status_of(&premium).await, StatusCode::OK);
 }

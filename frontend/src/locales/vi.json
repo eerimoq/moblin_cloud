@@ -445,6 +445,7 @@
   "Numeric input": "Nhập số",
   "Off": "Tắt",
   "On": "Bật",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "Chỉ những tài khoản được admin cho phép mới đăng nhập được vào Moblin Cloud này. Admin có thể xem yêu cầu của bạn.",
   "Only show when spinning": "Chỉ hiện khi đang quay",
   "Only the settings Moblin shares over remote control are here.": "Ở đây chỉ có các cài đặt mà Moblin chia sẻ qua điều khiển từ xa.",
   "Opacity": "Độ mờ đục",

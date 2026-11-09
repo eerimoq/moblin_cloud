@@ -10,6 +10,13 @@ fn the_code_is_taken_from_the_redirect() {
         result_of("GET /?signInFailed HTTP/1.1\r\n\r\n"),
         Some(Err("Signing in failed. Try again.".to_string()))
     );
+    assert_eq!(
+        result_of("GET /?signInRefused HTTP/1.1\r\n\r\n"),
+        Some(Err(
+            "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request."
+                .to_string()
+        ))
+    );
     assert_eq!(result_of("GET /favicon.ico HTTP/1.1\r\n\r\n"), None);
     assert_eq!(result_of("GET / HTTP/1.1\r\n\r\n"), None);
     assert_eq!(result_of("GET /?session=a HTTP/1.1\r\n\r\n"), None);

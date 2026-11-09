@@ -445,6 +445,7 @@
   "Numeric input": "Numeerinen syöttö",
   "Off": "Pois",
   "On": "Päällä",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "Vain ylläpitäjän sallimat tilit voivat kirjautua tähän Moblin Cloudiin. Ylläpitäjä näkee pyyntösi.",
   "Only show when spinning": "Näytä vain pyöriessä",
   "Only the settings Moblin shares over remote control are here.": "Täällä on vain ne asetukset, jotka Moblin jakaa etähallinnan kautta.",
   "Opacity": "Läpinäkyvyys",

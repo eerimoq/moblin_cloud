@@ -137,6 +137,12 @@ fn result_of(request: &str) -> Option<Result<String, String>> {
         match name.as_ref() {
             "code" if !value.is_empty() => return Some(Ok(value.into_owned())),
             "signInFailed" => return Some(Err("Signing in failed. Try again.".to_string())),
+            "signInRefused" => {
+                return Some(Err(
+                    "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request."
+                        .to_string(),
+                ));
+            }
             _ => {}
         }
     }

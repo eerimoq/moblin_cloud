@@ -1,11 +1,12 @@
 import type { JSX } from "solid-js";
 import { asset } from "../asset";
+import type { SignInFailure } from "../data/account";
 import { cloudName, links } from "../data/links";
 import { t, tRich } from "../i18n";
 import { SignInNotices } from "./PageParts";
 
 export default function CompactLanding(props: {
-  failed: boolean;
+  failed: SignInFailure | null;
   connecting: boolean;
   children: JSX.Element;
 }) {

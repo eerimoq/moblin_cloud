@@ -99,6 +99,7 @@ async fn admin_stats() {
             "counters": [
                 {"name": "tipOrders", "today": 2, "week": 2, "total": 2},
             ],
+            "signIn": {"restricted": false, "allowed": [], "requests": []},
         })
     );
 }

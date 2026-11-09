@@ -393,7 +393,9 @@ class AccountAdmin(AccountTestCase):
         admin = self.sign_in("admin")
         self.assert_true(admin.account()["admin"])
         stats = admin.admin_stats()
-        self.assert_equal(sorted(stats), ["accounts", "counters", "database", "moblin", "pending", "server"])
+        self.assert_equal(
+            sorted(stats), ["accounts", "counters", "database", "moblin", "pending", "server", "signIn"]
+        )
         server = stats["server"]
         self.assert_equal(sorted(server), ["integrations", "memory", "now", "requests", "started", "version"])
         self.assert_true(0 < server["started"] <= server["now"])

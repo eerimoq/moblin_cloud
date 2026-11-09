@@ -1,9 +1,20 @@
 import { createSignal, For, Index, onCleanup, onMount, Show, type JSX } from "solid-js";
 import Icon, { type IconName } from "../components/Icon";
 import { subscribe } from "../sse";
-import { cardClass, Notice, Spinner } from "../components/PageParts";
-import { adminStatsEventsUrl, type AdminStats } from "../data/account";
-import type { Provider } from "../data/remoteControl";
+import { Avatar } from "../components/HeaderPickers";
+import { cardClass, ghostButtonClass, Notice, Spinner } from "../components/PageParts";
+import {
+  adminStatsEventsUrl,
+  allowSignIn,
+  dismissSignIn,
+  removeSignIn,
+  restrictSignIn,
+  type AdminStats,
+  type SignInAccess,
+  type SignInPerson,
+} from "../data/account";
+import { BackendError } from "../data/backend";
+import { platformNames, type Provider } from "../data/remoteControl";
 import { formatBytes } from "../format";
 
 type Counts = { today: number; week: number; total: number };
@@ -769,6 +780,132 @@ function Status(props: { counters: Counters; problems: Problem[]; services: stri
   );
 }
 
+function People(props: {
+  title: string;
+  hint: string;
+  empty: string;
+  people: SignInPerson[];
+  children: (person: SignInPerson) => JSX.Element;
+}) {
+  return (
+    <div class="flex flex-col gap-2">
+      <h3 class="text-[17px] font-semibold text-ink-2">
+        {props.title}
+        <Info>{props.hint}</Info>
+      </h3>
+      <Show when={props.people.length > 0} fallback={<p class="text-muted">{props.empty}</p>}>
+        <ul class={`${cardClass} gap-0! divide-y divide-line p-0! sm:p-0!`}>
+          <Index each={props.people}>
+            {(person) => (
+              <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+                <Avatar
+                  picked={{ name: person().name || person().login, avatar: person().avatar }}
+                />
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class="truncate font-semibold">{person().name || person().login}</span>
+                  <span class="truncate text-[13px] text-muted">
+                    {platformNames[person().platform]} {person().login || person().userId},{" "}
+                    {new Date(person().at * 1000).toLocaleString("en")}
+                  </span>
+                </span>
+                <span class="flex gap-4">{props.children(person())}</span>
+              </li>
+            )}
+          </Index>
+        </ul>
+      </Show>
+    </div>
+  );
+}
+
+function SignIn(props: {
+  session: string;
+  access: SignInAccess;
+  onChange: (access: SignInAccess) => void;
+}) {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const run = async (action: () => Promise<SignInAccess>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      props.onChange(await action());
+    } catch (error) {
+      setError(
+        error instanceof BackendError && error.message
+          ? error.message
+          : "The change could not be saved.",
+      );
+    }
+    setBusy(false);
+  };
+
+  const action = (label: string, danger: boolean, call: () => Promise<SignInAccess>) => (
+    <button
+      type="button"
+      class={`text-[15px] font-semibold hover:underline disabled:opacity-60 ${
+        danger ? "text-danger" : "text-leaf"
+      }`}
+      disabled={busy()}
+      onClick={() => void run(call)}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div class="flex flex-col gap-5">
+      <div class={`${cardClass} flex-row! flex-wrap items-center justify-between gap-4! p-5!`}>
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <span class="font-display text-xl font-bold">
+            {props.access.restricted ? "Only allowed accounts" : "Everyone"}
+          </span>
+          <span class="text-[15px] text-ink-2">
+            {props.access.restricted
+              ? "The allowed accounts and the admins can sign in. Anyone else is turned away and waits below until you allow them."
+              : "Anyone with a Twitch or Kick account can sign in and get a page. Limiting it the first time allows every account that exists then."}
+          </span>
+        </div>
+        <button
+          type="button"
+          class={ghostButtonClass}
+          disabled={busy()}
+          onClick={() => void run(() => restrictSignIn(props.session, !props.access.restricted))}
+        >
+          {props.access.restricted ? "Let everyone sign in" : "Only allowed accounts"}
+        </button>
+      </div>
+      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      <Show when={props.access.restricted || props.access.requests.length > 0}>
+        <People
+          title="Waiting"
+          hint="Who tried to sign in without being allowed, newest first. They get no account until you allow them, and then sign in again. Only the newest 100 are kept."
+          empty="No one is waiting."
+          people={props.access.requests}
+        >
+          {(person) => (
+            <>
+              {action("Allow", false, () => allowSignIn(props.session, person))}
+              {action("Dismiss", true, () => dismissSignIn(props.session, person))}
+            </>
+          )}
+        </People>
+      </Show>
+      <Show when={props.access.restricted || props.access.allowed.length > 0}>
+        <People
+          title="Allowed"
+          hint="Twitch and Kick users who may sign in. An account may sign in when any of its linked identities is here. Removing one signs its account out, while its page and Moblin keep working. Admins can always sign in."
+          empty="No one is allowed but the admins."
+          people={props.access.allowed}
+        >
+          {(person) => action("Remove", true, () => removeSignIn(props.session, person))}
+        </People>
+      </Show>
+    </div>
+  );
+}
+
 type NavItem = { id: string; label: string; caption: string; attention?: boolean };
 
 function Nav(props: { items: NavItem[] }) {
@@ -798,7 +935,11 @@ function Nav(props: { items: NavItem[] }) {
   );
 }
 
-function Loaded(props: { stats: AdminStats }) {
+function Loaded(props: {
+  stats: AdminStats;
+  session: string;
+  onSignIn: (access: SignInAccess) => void;
+}) {
   const counters = () => new Counters(props.stats.counters);
   const offered = () => providerRows.filter(({ slug }) => props.stats.server.integrations[slug]);
   const problems = () => problemsOf(offered());
@@ -907,6 +1048,14 @@ function Loaded(props: { stats: AdminStats }) {
 
   const navItems = (): NavItem[] => [
     { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
+    {
+      id: "sign-in",
+      label: "Sign in",
+      caption: props.stats.signIn.restricted
+        ? `${format(props.stats.signIn.requests.length)} waiting`
+        : "Everyone",
+      attention: props.stats.signIn.restricted && props.stats.signIn.requests.length > 0,
+    },
     {
       id: "server",
       label: "Server",
@@ -1040,6 +1189,13 @@ function Loaded(props: { stats: AdminStats }) {
                 )}
               </Index>
             </div>
+          </Section>
+          <Section
+            id="sign-in"
+            title="Sign in"
+            hint="Who may sign in to the dashboard and mobtop. Viewers signing in on a page are not affected."
+          >
+            <SignIn session={props.session} access={props.stats.signIn} onChange={props.onSignIn} />
           </Section>
           <Section id="server" title="Server" hint="The backend, right now.">
             <div class="flex flex-col gap-4">
@@ -1224,7 +1380,13 @@ function Stats(props: { session: string; onSignOut: () => void }) {
       when={error()}
       fallback={
         <Show when={stats()} fallback={<Spinner />}>
-          {(stats) => <Loaded stats={stats()} />}
+          {(stats) => (
+            <Loaded
+              stats={stats()}
+              session={props.session}
+              onSignIn={(signIn) => setStats((stats) => stats && { ...stats, signIn })}
+            />
+          )}
         </Show>
       }
     >

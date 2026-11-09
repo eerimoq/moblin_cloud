@@ -10,6 +10,7 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::*;
+use crate::access::SignInAccess;
 use crate::accounts::{Account, Accounts, Assistant, Identity};
 use crate::auth::{Auth, KickApp, OAuthApp};
 use crate::counters::Counters;
@@ -93,6 +94,7 @@ pub(crate) fn build_api(
         )
         .unwrap(),
         accounts: Accounts::new(database.clone()),
+        access: SignInAccess::new(database.clone()),
         counters: Counters::new(database.clone()),
         database,
         admins: vec!["twitch:admin".to_string()],

@@ -445,6 +445,7 @@
   "Numeric input": "Числовой ввод",
   "Off": "Выкл.",
   "On": "Включено",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "Войти в этот Moblin Cloud могут только аккаунты, которым разрешил доступ админ. Админ видит твой запрос.",
   "Only show when spinning": "Показывать только при вращении",
   "Only the settings Moblin shares over remote control are here.": "Здесь только настройки, которыми Moblin делится через удалённое управление.",
   "Opacity": "Непрозрачность",

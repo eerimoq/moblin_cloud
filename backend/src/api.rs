@@ -14,6 +14,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
+use crate::access::SignInAccess;
 use crate::accounts::{Access, Account, Accounts, Permission, Platform, Rights};
 use crate::app_attest::AppAttest;
 use crate::auth::Auth;
@@ -104,6 +105,7 @@ pub struct Api {
     pub deliveries: Deliveries,
     pub auth: Auth,
     pub accounts: Accounts,
+    pub access: SignInAccess,
     pub counters: Counters,
     pub database: Arc<Database>,
     pub admins: Vec<String>,
@@ -240,6 +242,19 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/pages/{id}/rick-rolls", post(handle_rick_roll))
         .route("/admin/stats", get(handle_admin_stats))
         .route("/admin/stats/events", get(handle_admin_stats_events))
+        .route("/admin/sign-in", post(handle_admin_sign_in))
+        .route(
+            "/admin/sign-in/allowed/{platform}/{user_id}",
+            post(handle_admin_sign_in_allow),
+        )
+        .route(
+            "/admin/sign-in/allowed/{platform}/{user_id}/remove",
+            post(handle_admin_sign_in_remove),
+        )
+        .route(
+            "/admin/sign-in/requests/{platform}/{user_id}/remove",
+            post(handle_admin_sign_in_dismiss),
+        )
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/image", get(handle_page_image))
         .route("/pages/{id}/events", get(handle_public_page_events))
@@ -307,7 +322,7 @@ pub(super) fn signed_in(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (Sta
             api.accounts.get(&id).ok_or_else(not_signed_in)?
         }
     };
-    if account.sessions != session.generation {
+    if account.sessions != session.generation || !may_sign_in(api, &account) {
         return Err(not_signed_in());
     }
     Ok(SignedIn { fresh, account })
@@ -324,6 +339,10 @@ pub(super) fn is_admin(api: &Api, account: &Account) -> bool {
         .identities
         .iter()
         .any(|identity| api.admins.contains(&identity.admin_key()))
+}
+
+pub(super) fn may_sign_in(api: &Api, account: &Account) -> bool {
+    !api.access.restricted() || is_admin(api, account) || api.access.allows(&account.identities)
 }
 
 pub(super) fn is_premium(api: &Api, account: &Account) -> bool {

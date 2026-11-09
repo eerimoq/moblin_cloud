@@ -445,6 +445,7 @@
   "Numeric input": "Saisie numérique",
   "Off": "Désactivé",
   "On": "Activé",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "Seuls les comptes autorisés par l'admin peuvent se connecter à ce Moblin Cloud. L'admin peut voir ta demande.",
   "Only show when spinning": "Afficher seulement pendant le tirage",
   "Only the settings Moblin shares over remote control are here.": "Seuls les réglages que Moblin partage via la télécommande sont ici.",
   "Opacity": "Opacité",

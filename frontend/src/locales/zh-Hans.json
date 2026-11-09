@@ -445,6 +445,7 @@
   "Numeric input": "数字输入",
   "Off": "关",
   "On": "已开启",
+  "Only accounts the admin allowed can sign in to this Moblin Cloud. The admin can see your request.": "只有管理员允许的账号才能登录这个 Moblin Cloud。管理员可以看到你的请求。",
   "Only show when spinning": "仅在旋转时显示",
   "Only the settings Moblin shares over remote control are here.": "这里只有 Moblin 通过远程控制共享的设置。",
   "Opacity": "不透明度",

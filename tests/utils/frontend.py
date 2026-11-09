@@ -312,6 +312,18 @@ class Dashboard(Client):
     def admin_stats(self) -> dict:
         return self.get("/admin/stats")
 
+    def restrict_sign_in(self, restricted: bool) -> dict:
+        return self.post("/admin/sign-in", {"restricted": restricted})
+
+    def allow_sign_in(self, platform: str, user_id: str) -> dict:
+        return self.post(f"/admin/sign-in/allowed/{platform}/{quote(user_id, safe='')}")
+
+    def remove_sign_in(self, platform: str, user_id: str) -> dict:
+        return self.post(f"/admin/sign-in/allowed/{platform}/{quote(user_id, safe='')}/remove")
+
+    def dismiss_sign_in(self, platform: str, user_id: str) -> dict:
+        return self.post(f"/admin/sign-in/requests/{platform}/{quote(user_id, safe='')}/remove")
+
     def rick_roll(self, page_id: str):
         response = self.request("POST", f"/account/pages/{quote(page_id, safe='')}/rick-rolls")
         if not response.ok:
