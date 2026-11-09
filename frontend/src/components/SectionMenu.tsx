@@ -6,8 +6,10 @@ export type Section = {
   id: string;
   label: string;
   icon: IconName;
-  status: () => { on: boolean; text: string } | null;
+  status: () => SectionStatus | null;
 };
+
+export type SectionStatus = { on?: boolean; attention?: boolean; text: string };
 
 export const connectedOrNot = (on: boolean) => ({
   on,
@@ -37,10 +39,20 @@ export function createSectionChoice(visible: () => Section[], initial = location
   return { active, select };
 }
 
-function Status(props: { status: { on: boolean; text: string } }) {
+function Status(props: { status: SectionStatus }) {
   return (
-    <span class="ml-auto flex items-center gap-1.5 pl-1 text-[13px] text-muted">
-      <span class={`size-2 shrink-0 rounded-full ${props.status.on ? "bg-leaf" : "bg-muted/50"}`} />
+    <span
+      class={`ml-auto flex items-center gap-1.5 pl-1 text-[13px] whitespace-nowrap ${
+        props.status.attention ? "font-semibold text-amber" : "text-muted"
+      }`}
+    >
+      <Show when={props.status.attention || props.status.on !== undefined}>
+        <span
+          class={`size-2 shrink-0 rounded-full ${
+            props.status.attention ? "bg-amber" : props.status.on ? "bg-leaf" : "bg-muted/50"
+          }`}
+        />
+      </Show>
       {props.status.text}
     </span>
   );

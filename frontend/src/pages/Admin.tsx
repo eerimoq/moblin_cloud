@@ -3,6 +3,10 @@ import Icon, { type IconName } from "../components/Icon";
 import { subscribe } from "../sse";
 import { Avatar } from "../components/HeaderPickers";
 import { cardClass, ghostButtonClass, Notice, Spinner } from "../components/PageParts";
+import SectionMenu, {
+  createSectionChoice,
+  type Section as MenuItem,
+} from "../components/SectionMenu";
 import {
   adminStatsEventsUrl,
   allowSignIn,
@@ -128,6 +132,7 @@ const problemsOf = (offered: ProviderRow[]): Problem[] => [
 type Kind = {
   kind: string;
   label: string;
+  icon: IconName;
   orders: string[];
   payments: string[];
   subscribers?: { event: string; reasons: string[] };
@@ -151,6 +156,7 @@ const kinds: Kind[] = [
   {
     kind: "tip",
     label: "Messages",
+    icon: "chat",
     orders: [
       "feature-off",
       "payments-unavailable",
@@ -166,6 +172,7 @@ const kinds: Kind[] = [
   {
     kind: "spin",
     label: "Wheel spins",
+    icon: "wheel",
     orders: [
       "feature-off",
       "no-wheel",
@@ -198,6 +205,7 @@ const kinds: Kind[] = [
   {
     kind: "effect",
     label: "Effects",
+    icon: "sparkles",
     orders: [
       "feature-off",
       "payments-unavailable",
@@ -704,15 +712,27 @@ function MessageTable(props: {
   );
 }
 
-function Section(props: { id: string; title: string; hint?: string; children: JSX.Element }) {
+function Section(props: { shown: boolean; title: string; hint?: string; children: JSX.Element }) {
   return (
-    <section id={props.id} class="flex scroll-mt-24 flex-col gap-3">
+    <section hidden={!props.shown} class="flex flex-col gap-6">
       <h2 class="font-display text-2xl font-bold">
         {props.title}
         <Show when={props.hint}>{(hint) => <Info>{hint()}</Info>}</Show>
       </h2>
       {props.children}
     </section>
+  );
+}
+
+function Part(props: { title: string; hint?: string; children: JSX.Element }) {
+  return (
+    <div class="flex flex-col gap-2">
+      <h3 class="text-[17px] font-semibold text-ink-2">
+        {props.title}
+        <Show when={props.hint}>{(hint) => <Info>{hint()}</Info>}</Show>
+      </h3>
+      {props.children}
+    </div>
   );
 }
 
@@ -906,35 +926,6 @@ function SignIn(props: {
   );
 }
 
-type NavItem = { id: string; label: string; caption: string; attention?: boolean };
-
-function Nav(props: { items: NavItem[] }) {
-  return (
-    <nav
-      aria-label="Sections"
-      class="flex flex-wrap gap-2 lg:sticky lg:top-24 lg:flex-col lg:flex-nowrap"
-    >
-      <Index each={props.items}>
-        {(item) => (
-          <a
-            href={`#${item().id}`}
-            class="flex items-baseline gap-2 rounded-2xl border-[1.5px] border-ghost-line bg-ghost px-4 py-2 text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink lg:border-transparent lg:bg-transparent lg:py-2.5 lg:hover:bg-ghost"
-          >
-            <span class="font-display text-[16px] font-semibold">{item().label}</span>
-            <span
-              class={`text-[13px] whitespace-nowrap lg:ml-auto ${
-                item().attention ? "font-semibold text-amber" : "text-muted"
-              }`}
-            >
-              {item().caption}
-            </span>
-          </a>
-        )}
-      </Index>
-    </nav>
-  );
-}
-
 function Loaded(props: {
   stats: AdminStats;
   session: string;
@@ -1046,57 +1037,6 @@ function Loaded(props: {
     problems().filter((problem) => counters().sum(problem.matches).today > 0).length;
   const today = (name: string) => counters().get(name).today;
 
-  const navItems = (): NavItem[] => [
-    { id: "accounts", label: "Accounts", caption: format(props.stats.accounts.total) },
-    {
-      id: "sign-in",
-      label: "Sign in",
-      caption: props.stats.signIn.restricted
-        ? `${format(props.stats.signIn.requests.length)} waiting`
-        : "Everyone",
-      attention: props.stats.signIn.restricted && props.stats.signIn.requests.length > 0,
-    },
-    {
-      id: "server",
-      label: "Server",
-      caption: props.stats.server.version,
-      attention: integrations().some(([, , on]) => !on) || serverErrors() > 0,
-    },
-    {
-      id: "moblin",
-      label: "Moblin",
-      caption: `${format(props.stats.moblin.connectedDevices)} connected`,
-    },
-    {
-      id: "problems",
-      label: "Problems",
-      caption: `${format(problemsToday())} today`,
-      attention: problemsToday() > 0,
-    },
-    ...(offered().length > 0
-      ? [
-          {
-            id: "providers",
-            label: "Providers",
-            caption: offered()
-              .map(({ slug, label }) => `${format(today(`${slug}Payments`))} ${label}`)
-              .join(", "),
-          },
-        ]
-      : []),
-    ...kinds.map((kind) => ({
-      id: kind.kind,
-      label: kind.label,
-      caption: `${format(today(`${kind.kind}Payments`))} paid today`,
-    })),
-    {
-      id: "tests",
-      label: "Tests",
-      caption: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
-    },
-    { id: "rick-roll", label: "Rick Roll", caption: `${format(today("rickRolls"))} today` },
-  ];
-
   const server = () => props.stats.server;
 
   const statuses = () =>
@@ -1152,125 +1092,100 @@ function Loaded(props: {
         : []),
     ] as [string, string, number][];
 
+  const sections: (MenuItem & { shown: () => boolean })[] = [
+    {
+      id: "overview",
+      label: "Overview",
+      icon: "chart-bar",
+      shown: () => true,
+      status: () =>
+        problemsToday() > 0
+          ? { attention: true, text: `${plural(problemsToday(), "problem", "problems")} today` }
+          : { on: true, text: "No problems" },
+    },
+    {
+      id: "accounts",
+      label: "Accounts",
+      icon: "users",
+      shown: () => true,
+      status: () =>
+        props.stats.signIn.restricted && props.stats.signIn.requests.length > 0
+          ? { attention: true, text: `${format(props.stats.signIn.requests.length)} waiting` }
+          : { text: format(props.stats.accounts.total) },
+    },
+    {
+      id: "server",
+      label: "Server",
+      icon: "server",
+      shown: () => true,
+      status: () => {
+        const off = integrations().filter(([, , on]) => !on).length;
+        return serverErrors() > 0
+          ? { attention: true, text: plural(serverErrors(), "error", "errors") }
+          : off > 0
+            ? { attention: true, text: `${format(off)} off` }
+            : { text: server().version };
+      },
+    },
+    {
+      id: "providers",
+      label: "Providers",
+      icon: "wallet",
+      shown: () => offered().length > 0,
+      status: () => ({
+        text: `${format(offered().reduce((sum, { slug }) => sum + today(`${slug}Payments`), 0))} today`,
+      }),
+    },
+    ...kinds.map((kind): MenuItem & { shown: () => boolean } => ({
+      id: kind.kind,
+      label: kind.label,
+      icon: kind.icon,
+      shown: () => true,
+      status: () => ({ text: `${format(today(`${kind.kind}Payments`))} paid today` }),
+    })),
+    {
+      id: "tests",
+      label: "Tests",
+      icon: "target",
+      shown: () => true,
+      status: () => ({
+        text: `${format(kinds.reduce((sum, kind) => sum + today(`${kind.kind}Tests`), 0))} today`,
+      }),
+    },
+  ];
+  const visible = () => sections.filter((section) => section.shown());
+  const { active, select } = createSectionChoice(visible);
+
   return (
-    <div class="flex flex-col gap-8">
-      <Status counters={counters()} problems={problems()} services={services()} />
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile
-          label="Connected devices"
-          value={format(props.stats.moblin.connectedDevices)}
-          hint="Moblin devices with an open Moblin Cloud connection."
-        />
-        <Tile
-          label="Unfinished payments"
-          value={format(props.stats.pending.orders)}
-          hint="Orders started in the last 3 hours whose payment has not completed."
-        />
-        <Tile
-          label="Waiting for a device"
-          value={format(props.stats.pending.deliveries)}
-          hint="Messages and spins no device has received yet. A message one of several devices got is not counted. Kept for 7 days."
-          attention={props.stats.pending.deliveries > 0}
-        />
-        <Tile
-          label="Database"
-          value={formatBytes(props.stats.database.bytes)}
-          hint={`${format(props.stats.database.bytes)} bytes on disk for the SQLite database and its WAL files. Per file under Server.`}
-        />
-      </div>
-      <div class="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
-        <Nav items={navItems()} />
-        <div class="flex min-w-0 flex-col gap-10">
-          <Section id="accounts" title="Accounts" hint="Right now, not per day.">
-            <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              <Index each={accounts()}>
-                {(account) => (
-                  <Tile label={account()[0]} value={format(account()[2])} hint={account()[1]} />
-                )}
-              </Index>
-            </div>
-          </Section>
-          <Section
-            id="sign-in"
-            title="Sign in"
-            hint="Who may sign in to the dashboard and mobtop. Viewers signing in on a page are not affected."
-          >
-            <SignIn session={props.session} access={props.stats.signIn} onChange={props.onSignIn} />
-          </Section>
-          <Section id="server" title="Server" hint="The backend, right now.">
-            <div class="flex flex-col gap-4">
-              <div class="grid gap-4 sm:grid-cols-3">
-                <Tile
-                  label="Version"
-                  value={server().version}
-                  hint="The release tag the backend image was built from, dev for local builds."
-                />
-                <Tile
-                  label="Uptime"
-                  value={formatDuration(Math.max(0, server().now - server().started))}
-                  hint={`Running since ${new Date(server().started * 1000).toLocaleString("en")}, the last deploy or restart.`}
-                />
-                <Tile
-                  label="Memory"
-                  value={server().memory === null ? "–" : formatBytes(server().memory ?? 0)}
-                  hint="Resident memory of the backend process. Only known on Linux."
-                />
-              </div>
-              <div
-                class={`${cardClass} flex-row! flex-wrap gap-x-6! gap-y-2! px-5! py-3! sm:px-5! sm:py-3!`}
-              >
-                <Index each={integrations()}>
-                  {(integration) => (
-                    <span class="flex items-center gap-2 text-[15px] font-semibold text-ink-2">
-                      <span
-                        class={`size-2 rounded-full ${integration()[2] ? "bg-leaf" : "bg-amber"}`}
-                        aria-hidden="true"
-                      />
-                      {integration()[0]}
-                      <span
-                        class={`font-mono text-[13px] ${integration()[2] ? "text-muted" : "text-amber-ink"}`}
-                      >
-                        {integration()[2] ? "On" : "Off"}
-                      </span>
-                      <Info>{integration()[1]}</Info>
-                    </span>
-                  )}
-                </Index>
-              </div>
-              <div class="grid gap-4 sm:grid-cols-2">
-                <Tile
-                  label="Requests"
-                  value={format(server().requests.total)}
-                  hint="HTTP requests answered since the backend started, Moblin's WebSocket connections included. Counted in memory, so a restart starts over."
-                />
-                <Tile
-                  label="Server errors"
-                  value={format(serverErrors())}
-                  hint="Requests answered with a 5xx status since the backend started."
-                  attention={serverErrors() > 0}
-                />
-              </div>
-              <StatusTable statuses={statuses()} total={server().requests.total} />
-              <EndpointTable endpoints={server().requests.endpoints} />
-              <DatabaseTable database={props.stats.database} />
-            </div>
-          </Section>
-          <Section id="moblin" title="Moblin">
-            <div class="grid gap-4 lg:grid-cols-2">
-              <MessageTable
-                title="Sent to Moblin"
-                hint="Remote control messages sent on Moblin's WebSocket connections since the backend started, per request: tips, status and settings requests for the device page, controls and so on. Counted in memory, so a restart starts over."
-                kinds={props.stats.moblin.messages.sent}
-              />
-              <MessageTable
-                title="Received from Moblin"
-                hint="Remote control messages Moblin sent since the backend started, per event, with responses split by their result and messages that could not be read as invalid. Counted in memory, so a restart starts over."
-                kinds={props.stats.moblin.messages.received}
-              />
-            </div>
-          </Section>
-          <Section
-            id="problems"
+    <div class="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+      <SectionMenu label="Admin" sections={visible()} active={active()} onSelect={select} />
+      <div class="min-w-0">
+        <Section shown={active() === "overview"} title="Overview">
+          <Status counters={counters()} problems={problems()} services={services()} />
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Tile
+              label="Connected devices"
+              value={format(props.stats.moblin.connectedDevices)}
+              hint="Moblin devices with an open Moblin Cloud connection."
+            />
+            <Tile
+              label="Unfinished payments"
+              value={format(props.stats.pending.orders)}
+              hint="Orders started in the last 3 hours whose payment has not completed."
+            />
+            <Tile
+              label="Waiting for a device"
+              value={format(props.stats.pending.deliveries)}
+              hint="Messages and spins no device has received yet. A message one of several devices got is not counted. Kept for 7 days."
+              attention={props.stats.pending.deliveries > 0}
+            />
+            <Tile
+              label="Database"
+              value={formatBytes(props.stats.database.bytes)}
+              hint={`${format(props.stats.database.bytes)} bytes on disk for the SQLite database and its WAL files. Per file under Server.`}
+            />
+          </div>
+          <Part
             title="Problems"
             hint={`Failures on our side or at ${services()}, across all kinds of tips. Viewer mistakes and streamers being offline are not counted here.`}
           >
@@ -1283,53 +1198,104 @@ function Loaded(props: {
                 problem: true,
               }))}
             />
-          </Section>
-          <Show when={offered().length > 0}>
-            <Section
-              id="providers"
-              title="Providers"
-              hint="Payments by provider, across all kinds of tips. The failures before a provider is involved are under each kind below."
-            >
-              <div class="flex flex-col gap-5">
-                <For each={offered()}>
-                  {(item) => (
-                    <div class="flex flex-col gap-2">
-                      <h3 class="text-[17px] font-semibold text-ink-2">{item.label}</h3>
-                      <StepTable steps={provider(item)} />
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Section>
-          </Show>
-          <For each={kinds}>
-            {(kind) => (
-              <Section
-                id={kind.kind}
-                title={kind.label}
-                hint={`Every step shows its count, then how often it failed and why. Amber reasons are failures on our side or at ${services()}; grey ones are viewer mistakes or offline streamers.`}
-              >
-                <StepTable steps={flow(kind)} />
-              </Section>
-            )}
-          </For>
-          <Section
-            id="tests"
-            title="Tests"
-            hint="Free tests streamers send themselves from the dashboard. Not counted as problems above."
+          </Part>
+        </Section>
+        <Section
+          shown={active() === "accounts"}
+          title="Accounts"
+          hint="The counts are right now, not per day."
+        >
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Index each={accounts()}>
+              {(account) => (
+                <Tile label={account()[0]} value={format(account()[2])} hint={account()[1]} />
+              )}
+            </Index>
+          </div>
+          <Part
+            title="Sign in"
+            hint="Who may sign in to the dashboard and mobtop. Viewers signing in on a page are not affected."
           >
-            <div class="flex flex-col gap-5">
-              <For each={kinds}>
-                {(kind) => (
-                  <div class="flex flex-col gap-2">
-                    <h3 class="text-[17px] font-semibold text-ink-2">{kind.label}</h3>
-                    <StepTable steps={tests(kind)} />
-                  </div>
-                )}
-              </For>
+            <SignIn session={props.session} access={props.stats.signIn} onChange={props.onSignIn} />
+          </Part>
+        </Section>
+        <Section shown={active() === "server"} title="Server" hint="The backend, right now.">
+          <div class="grid gap-4 sm:grid-cols-3">
+            <Tile
+              label="Version"
+              value={server().version}
+              hint="The release tag the backend image was built from, dev for local builds."
+            />
+            <Tile
+              label="Uptime"
+              value={formatDuration(Math.max(0, server().now - server().started))}
+              hint={`Running since ${new Date(server().started * 1000).toLocaleString("en")}, the last deploy or restart.`}
+            />
+            <Tile
+              label="Memory"
+              value={server().memory === null ? "–" : formatBytes(server().memory ?? 0)}
+              hint="Resident memory of the backend process. Only known on Linux."
+            />
+          </div>
+          <div
+            class={`${cardClass} flex-row! flex-wrap gap-x-6! gap-y-2! px-5! py-3! sm:px-5! sm:py-3!`}
+          >
+            <Index each={integrations()}>
+              {(integration) => (
+                <span class="flex items-center gap-2 text-[15px] font-semibold text-ink-2">
+                  <span
+                    class={`size-2 rounded-full ${integration()[2] ? "bg-leaf" : "bg-amber"}`}
+                    aria-hidden="true"
+                  />
+                  {integration()[0]}
+                  <span
+                    class={`font-mono text-[13px] ${integration()[2] ? "text-muted" : "text-amber-ink"}`}
+                  >
+                    {integration()[2] ? "On" : "Off"}
+                  </span>
+                  <Info>{integration()[1]}</Info>
+                </span>
+              )}
+            </Index>
+          </div>
+          <DatabaseTable database={props.stats.database} />
+          <Part
+            title="Requests"
+            hint="Counted in memory since the backend started, so a restart starts over."
+          >
+            <div class="flex flex-col gap-4">
+              <div class="grid gap-4 sm:grid-cols-2">
+                <Tile
+                  label="Requests"
+                  value={format(server().requests.total)}
+                  hint="HTTP requests answered since the backend started, Moblin's WebSocket connections included."
+                />
+                <Tile
+                  label="Server errors"
+                  value={format(serverErrors())}
+                  hint="Requests answered with a 5xx status since the backend started."
+                  attention={serverErrors() > 0}
+                />
+              </div>
+              <StatusTable statuses={statuses()} total={server().requests.total} />
+              <EndpointTable endpoints={server().requests.endpoints} />
             </div>
-          </Section>
-          <Section id="rick-roll" title="Rick Roll">
+          </Part>
+          <Part title="Moblin">
+            <div class="grid gap-4 xl:grid-cols-2">
+              <MessageTable
+                title="Sent to Moblin"
+                hint="Remote control messages sent on Moblin's WebSocket connections since the backend started, per request: tips, status and settings requests for the device page, controls and so on. Counted in memory, so a restart starts over."
+                kinds={props.stats.moblin.messages.sent}
+              />
+              <MessageTable
+                title="Received from Moblin"
+                hint="Remote control messages Moblin sent since the backend started, per event, with responses split by their result and messages that could not be read as invalid. Counted in memory, so a restart starts over."
+                kinds={props.stats.moblin.messages.received}
+              />
+            </div>
+          </Part>
+          <Part title="Rick Roll">
             <StepTable
               steps={[
                 {
@@ -1340,8 +1306,45 @@ function Loaded(props: {
                 },
               ]}
             />
-          </Section>
-        </div>
+          </Part>
+        </Section>
+        <Section
+          shown={active() === "providers"}
+          title="Providers"
+          hint="Payments by provider, across all kinds of tips. The failures before a provider is involved are under Messages, Wheel spins and Effects."
+        >
+          <For each={offered()}>
+            {(item) => (
+              <Part title={item.label}>
+                <StepTable steps={provider(item)} />
+              </Part>
+            )}
+          </For>
+        </Section>
+        <For each={kinds}>
+          {(kind) => (
+            <Section
+              shown={active() === kind.kind}
+              title={kind.label}
+              hint={`Every step shows its count, then how often it failed and why. Amber reasons are failures on our side or at ${services()}; grey ones are viewer mistakes or offline streamers.`}
+            >
+              <StepTable steps={flow(kind)} />
+            </Section>
+          )}
+        </For>
+        <Section
+          shown={active() === "tests"}
+          title="Tests"
+          hint="Free tests streamers send themselves from the dashboard. Not counted as problems."
+        >
+          <For each={kinds}>
+            {(kind) => (
+              <Part title={kind.label}>
+                <StepTable steps={tests(kind)} />
+              </Part>
+            )}
+          </For>
+        </Section>
       </div>
     </div>
   );
