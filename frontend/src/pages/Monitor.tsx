@@ -1,4 +1,13 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  type JSX,
+  onCleanup,
+  Show,
+} from "solid-js";
 import Activity from "../components/Activity";
 import Graphs from "../components/Graphs";
 import Icon, { type IconName } from "../components/Icon";
@@ -683,7 +692,9 @@ function StatusPanel(props: { device: Device; feed: DeviceFeed }) {
       }
     >
       <ul class="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-4 gap-y-1 p-3 text-[13px]">
-        <For each={flags()}>{(entry) => <StatusRow icon={entry.icon} item={entry.item} />}</For>
+        <Index each={flags()}>
+          {(entry) => <StatusRow icon={entry().icon} item={entry().item} />}
+        </Index>
         <For each={left()}>
           {([key, icon]) => <StatusRow icon={icon} item={status().topLeft[key]!} />}
         </For>

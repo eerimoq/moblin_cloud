@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, Match, Show, Switch } from "solid-js";
+import { createResource, createSignal, Index, Match, Show, Switch } from "solid-js";
 import Icon from "./Icon";
 import {
   Choices,
@@ -81,20 +81,20 @@ function Priorities(props: { remote: Remote }) {
             fallback={<Empty text={t("The stream has no connection priorities.")} />}
           >
             <Group>
-              <For each={settings().srt.connectionPriorities}>
+              <Index each={settings().srt.connectionPriorities}>
                 {(connection) => {
-                  const key = `setSrtConnectionPriority:${connection.id}`;
+                  const key = () => `setSrtConnectionPriority:${connection().id}`;
                   return (
                     <div class="flex flex-col">
                       <PhoneSwitch
-                        label={connection.name}
-                        on={connection.enabled}
-                        disabled={props.remote.disabled(key)}
+                        label={connection().name}
+                        on={connection().enabled}
+                        disabled={props.remote.disabled(key())}
                         onToggle={(enabled) =>
                           void props.remote.control({
                             setSrtConnectionPriority: {
-                              id: connection.id,
-                              priority: connection.priority,
+                              id: connection().id,
+                              priority: connection().priority,
                               enabled,
                             },
                           })
@@ -108,26 +108,26 @@ function Priorities(props: { remote: Remote }) {
                           step="1"
                           aria-label={t("Priority")}
                           class="flex-1 accent-phone-tint"
-                          value={connection.priority}
-                          disabled={props.remote.disabled(key) || !connection.enabled}
+                          value={connection().priority}
+                          disabled={props.remote.disabled(key()) || !connection().enabled}
                           onChange={async (event) => {
                             const slider = event.currentTarget;
                             await props.remote.control({
                               setSrtConnectionPriority: {
-                                id: connection.id,
+                                id: connection().id,
                                 priority: Number(slider.value),
-                                enabled: connection.enabled,
+                                enabled: connection().enabled,
                               },
                             });
-                            slider.value = String(connection.priority);
+                            slider.value = String(connection().priority);
                           }}
                         />
-                        <span class="w-5 text-right text-[15px]">{connection.priority}</span>
+                        <span class="w-5 text-right text-[15px]">{connection().priority}</span>
                       </div>
                     </div>
                   );
                 }}
-              </For>
+              </Index>
             </Group>
           </Show>
         </>
@@ -154,33 +154,33 @@ function Macros(props: { remote: Remote }) {
   return (
     <Show when={macros().length > 0} fallback={<Empty text={t("No macros.")} />}>
       <Group>
-        <For each={macros()}>
+        <Index each={macros()}>
           {(macro) => (
             <div class={rowClass}>
               <Icon name="list" class="size-[18px] shrink-0 text-phone-tint" />
-              <span class="min-w-0 flex-1 truncate">{macro.name}</span>
-              <Show when={macro.running}>
+              <span class="min-w-0 flex-1 truncate">{macro().name}</span>
+              <Show when={macro().running}>
                 <span class="size-[8px] rounded-full bg-phone-switch" />
               </Show>
               <button
                 type="button"
                 class="text-phone-tint disabled:opacity-50"
                 disabled={props.remote.disabled(
-                  `${macro.running ? "stopMacro" : "startMacro"}:${macro.id}`,
+                  `${macro().running ? "stopMacro" : "startMacro"}:${macro().id}`,
                 )}
                 onClick={() =>
                   void props.remote.control(
-                    macro.running
-                      ? { stopMacro: { id: macro.id } }
-                      : { startMacro: { id: macro.id } },
+                    macro().running
+                      ? { stopMacro: { id: macro().id } }
+                      : { startMacro: { id: macro().id } },
                   )
                 }
               >
-                {macro.running ? t("Stop") : t("Run")}
+                {macro().running ? t("Stop") : t("Run")}
               </button>
             </div>
           )}
-        </For>
+        </Index>
       </Group>
     </Show>
   );

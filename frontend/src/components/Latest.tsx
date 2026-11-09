@@ -1,10 +1,11 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Index, Show } from "solid-js";
 import Icon from "./Icon";
 import { cardClass, ghostButtonClass, Spinner } from "./PageParts";
 import type { Recent, RecentKind, RecentList } from "../data/account";
 import { formatPrice, providerName, spinsText } from "../data/remoteControl";
 import { effectName } from "../data/effects";
 import { language, t } from "../i18n";
+import { sameData } from "../same";
 
 const relativeTime = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
 
@@ -41,20 +42,22 @@ export function ReceivedDevices(props: {
     <ul
       class={`flex flex-wrap ${props.compact ? "gap-x-2.5 text-[12px]" : "gap-x-3 gap-y-0.5 text-[15px]"}`}
     >
-      <For each={props.devices}>
+      <Index each={props.devices}>
         {(device) => (
           <li
-            class={`flex items-center ${props.compact ? "gap-0.5" : "gap-1"} ${device.received ? "text-leaf" : "text-muted"}`}
+            class={`flex items-center ${props.compact ? "gap-0.5" : "gap-1"} ${device().received ? "text-leaf" : "text-muted"}`}
           >
             <Icon
-              name={device.received ? "check" : "clock"}
+              name={device().received ? "check" : "clock"}
               class={`${props.compact ? "size-3" : "size-4"} shrink-0`}
             />
-            <span class="sr-only">{device.received ? t("Received:") : t("Not received yet:")}</span>
-            {device.name}
+            <span class="sr-only">
+              {device().received ? t("Received:") : t("Not received yet:")}
+            </span>
+            {device().name}
           </li>
         )}
-      </For>
+      </Index>
     </ul>
   );
 }
@@ -212,7 +215,15 @@ export function createRecent(
           50,
         ),
       );
-      const merge = (page: RecentList, old: RecentList | undefined) => {
+      const merge = (fetched: RecentList, old: RecentList | undefined) => {
+        const kept = new Map(old?.items.map((item) => [item.id, item]));
+        const page = {
+          ...fetched,
+          items: fetched.items.map((item) => {
+            const known = kept.get(item.id);
+            return known && sameData(known, item) ? known : item;
+          }),
+        };
         const last = page.items[page.items.length - 1]?.id;
         const index = old && page.more ? old.items.findIndex((item) => item.id === last) : -1;
         if (!old || index < 0 || index === old.items.length - 1) {

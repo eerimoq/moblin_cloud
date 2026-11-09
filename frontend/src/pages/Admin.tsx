@@ -357,40 +357,40 @@ function StepTable(props: { steps: Step[] }) {
             </For>
           </tr>
         </thead>
-        <For each={props.steps}>
+        <Index each={props.steps}>
           {(step) => {
             const seen = () =>
-              step.failures
-                .filter((failure) => failure.counts.total > 0)
+              step()
+                .failures.filter((failure) => failure.counts.total > 0)
                 .sort(
                   (a, b) =>
                     Number(b.problem) - Number(a.problem) || b.counts.total - a.counts.total,
                 );
-            const never = () => step.failures.filter((failure) => failure.counts.total === 0);
+            const never = () => step().failures.filter((failure) => failure.counts.total === 0);
             const failed = () => seen().reduce((sum, failure) => add(sum, failure.counts), zero);
             return (
               <tbody class="border-t-[1.5px] border-line [&>tr:last-child>td]:pb-3">
                 <tr>
                   <td
                     class={`px-4 pt-3 pb-2 align-top text-[16px] font-semibold sm:px-5 ${
-                      step.problem && step.counts.total > 0 ? "text-amber-ink" : "text-ink"
+                      step().problem && step().counts.total > 0 ? "text-amber-ink" : "text-ink"
                     }`}
                   >
-                    {step.label}
-                    <Show when={step.hint}>{(hint) => <Info>{hint()}</Info>}</Show>
+                    {step().label}
+                    <Show when={step().hint}>{(hint) => <Info>{hint()}</Info>}</Show>
                     <Show when={never().length > 0}>
                       <Info icon="failed" label="Never failed with">
                         <span class="font-semibold">Never failed with</span>
                         <ul class="mt-1 list-disc pl-4">
-                          <For each={never()}>{(failure) => <li>{failure.label}</li>}</For>
+                          <Index each={never()}>{(failure) => <li>{failure().label}</li>}</Index>
                         </ul>
                       </Info>
                     </Show>
                   </td>
                   <Cells
-                    counts={step.counts}
+                    counts={step().counts}
                     class="pt-3 pb-2 text-[17px] font-semibold"
-                    attention={step.problem}
+                    attention={step().problem}
                   />
                 </tr>
                 <Show when={seen().length > 0}>
@@ -400,36 +400,36 @@ function StepTable(props: { steps: Step[] }) {
                     </td>
                     <Cells counts={failed()} class="pt-1 pb-0.5 text-[13px] text-muted" />
                   </tr>
-                  <For each={seen()}>
+                  <Index each={seen()}>
                     {(failure) => (
                       <tr>
                         <td class="px-4 py-0.5 text-[14px] sm:px-5">
                           <span
                             class={`flex items-baseline gap-2 ${
-                              failure.problem ? "text-amber-ink" : "text-ink-2"
+                              failure().problem ? "text-amber-ink" : "text-ink-2"
                             }`}
                           >
                             <span
                               class={`size-1.5 shrink-0 translate-y-[-2px] rounded-full ${
-                                failure.problem ? "bg-amber" : "bg-muted/40"
+                                failure().problem ? "bg-amber" : "bg-muted/40"
                               }`}
                             />
-                            {failure.label}
+                            {failure().label}
                           </span>
                         </td>
                         <Cells
-                          counts={failure.counts}
+                          counts={failure().counts}
                           class="py-0.5 text-[14px]"
-                          attention={failure.problem}
+                          attention={failure().problem}
                         />
                       </tr>
                     )}
-                  </For>
+                  </Index>
                 </Show>
               </tbody>
             );
           }}
-        </For>
+        </Index>
       </table>
     </div>
   );
@@ -481,22 +481,26 @@ function StatusTable(props: { statuses: (readonly [number, number])[]; total: nu
               </tr>
             }
           >
-            <For each={props.statuses}>
-              {([status, count]) => (
-                <tr class={status >= 500 ? "text-amber-ink" : ""}>
-                  <td class="px-4 py-0.5 text-[14px] sm:px-5">
-                    <span class="font-mono">{status}</span>
-                    <span class="ml-2 text-ink-2">{statusLabels[status] ?? ""}</span>
-                  </td>
-                  <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
-                    {format(count)}
-                  </td>
-                  <td class="px-2 py-0.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
-                    {((count / props.total) * 100).toFixed(1)}%
-                  </td>
-                </tr>
-              )}
-            </For>
+            <Index each={props.statuses}>
+              {(entry) => {
+                const status = () => entry()[0];
+                const count = () => entry()[1];
+                return (
+                  <tr class={status() >= 500 ? "text-amber-ink" : ""}>
+                    <td class="px-4 py-0.5 text-[14px] sm:px-5">
+                      <span class="font-mono">{status()}</span>
+                      <span class="ml-2 text-ink-2">{statusLabels[status()] ?? ""}</span>
+                    </td>
+                    <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
+                      {format(count())}
+                    </td>
+                    <td class="px-2 py-0.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
+                      {((count() / props.total) * 100).toFixed(1)}%
+                    </td>
+                  </tr>
+                );
+              }}
+            </Index>
           </Show>
         </tbody>
       </table>
@@ -540,17 +544,17 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
               </tr>
             }
           >
-            <For each={props.endpoints}>
+            <Index each={props.endpoints}>
               {(endpoint) => {
-                const clientErrors = () => statusesFrom(endpoint.statuses, 400);
-                const serverErrors = () => statusesFrom(endpoint.statuses, 500);
+                const clientErrors = () => statusesFrom(endpoint().statuses, 400);
+                const serverErrors = () => statusesFrom(endpoint().statuses, 500);
                 return (
                   <tr>
                     <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">
-                      <span class="text-ink-2">{endpoint.method}</span> {endpoint.path}
+                      <span class="text-ink-2">{endpoint().method}</span> {endpoint().path}
                     </td>
                     <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
-                      {format(endpoint.total)}
+                      {format(endpoint().total)}
                     </td>
                     <td
                       class={`px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4 ${
@@ -569,7 +573,7 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
                   </tr>
                 );
               }}
-            </For>
+            </Index>
           </Show>
         </tbody>
       </table>
@@ -605,19 +609,19 @@ function DatabaseTable(props: { database: AdminStats["database"] }) {
               </tr>
             }
           >
-            <For each={props.database.files}>
+            <Index each={props.database.files}>
               {(file) => (
                 <tr>
-                  <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">{file.name}</td>
+                  <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">{file().name}</td>
                   <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
-                    {formatBytes(file.bytes)}
+                    {formatBytes(file().bytes)}
                   </td>
                   <td class="px-2 py-0.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
-                    {format(file.bytes)}
+                    {format(file().bytes)}
                   </td>
                 </tr>
               )}
-            </For>
+            </Index>
             <tr class="font-semibold">
               <td class="px-4 pt-1.5 text-[14px] sm:px-5">Total</td>
               <td class="px-2 pt-1.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
@@ -663,25 +667,25 @@ function MessageTable(props: {
               </tr>
             }
           >
-            <For each={props.kinds}>
+            <Index each={props.kinds}>
               {(kind) => (
                 <tr
                   class={
-                    kind.kind === "invalid" || kind.kind === "response:error"
+                    kind().kind === "invalid" || kind().kind === "response:error"
                       ? "text-amber-ink"
                       : ""
                   }
                 >
-                  <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">{kind.kind}</td>
+                  <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">{kind().kind}</td>
                   <td class="px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
-                    {format(kind.messages)}
+                    {format(kind().messages)}
                   </td>
                   <td class="px-2 py-0.5 text-right font-mono text-[14px] text-muted tabular-nums sm:px-4">
-                    {formatBytes(kind.bytes)}
+                    {formatBytes(kind().bytes)}
                   </td>
                 </tr>
               )}
-            </For>
+            </Index>
           </Show>
         </tbody>
       </table>
@@ -757,7 +761,7 @@ function Status(props: { counters: Counters; problems: Problem[]; services: stri
             {plural(issues().length, "problem", "problems")} today
           </span>
           <ul class="flex flex-col gap-0.5 text-[15px]">
-            <For each={issues()}>{(issue) => <li>{issue}</li>}</For>
+            <Index each={issues()}>{(issue) => <li>{issue()}</li>}</Index>
           </ul>
         </div>
       </div>
@@ -1030,9 +1034,11 @@ function Loaded(props: { stats: AdminStats }) {
         <div class="flex min-w-0 flex-col gap-10">
           <Section id="accounts" title="Accounts" hint="Right now, not per day.">
             <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              <For each={accounts()}>
-                {([label, hint, value]) => <Tile label={label} value={format(value)} hint={hint} />}
-              </For>
+              <Index each={accounts()}>
+                {(account) => (
+                  <Tile label={account()[0]} value={format(account()[2])} hint={account()[1]} />
+                )}
+              </Index>
             </div>
           </Section>
           <Section id="server" title="Server" hint="The backend, right now.">
@@ -1057,21 +1063,23 @@ function Loaded(props: { stats: AdminStats }) {
               <div
                 class={`${cardClass} flex-row! flex-wrap gap-x-6! gap-y-2! px-5! py-3! sm:px-5! sm:py-3!`}
               >
-                <For each={integrations()}>
-                  {([label, hint, on]) => (
+                <Index each={integrations()}>
+                  {(integration) => (
                     <span class="flex items-center gap-2 text-[15px] font-semibold text-ink-2">
                       <span
-                        class={`size-2 rounded-full ${on ? "bg-leaf" : "bg-amber"}`}
+                        class={`size-2 rounded-full ${integration()[2] ? "bg-leaf" : "bg-amber"}`}
                         aria-hidden="true"
                       />
-                      {label}
-                      <span class={`font-mono text-[13px] ${on ? "text-muted" : "text-amber-ink"}`}>
-                        {on ? "On" : "Off"}
+                      {integration()[0]}
+                      <span
+                        class={`font-mono text-[13px] ${integration()[2] ? "text-muted" : "text-amber-ink"}`}
+                      >
+                        {integration()[2] ? "On" : "Off"}
                       </span>
-                      <Info>{hint}</Info>
+                      <Info>{integration()[1]}</Info>
                     </span>
                   )}
-                </For>
+                </Index>
               </div>
               <div class="grid gap-4 sm:grid-cols-2">
                 <Tile

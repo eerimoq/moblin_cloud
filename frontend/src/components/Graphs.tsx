@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { cardClass } from "./PageParts";
 import type { Sample } from "../data/account";
 import { formatBits } from "../data/moblin";
@@ -194,18 +194,18 @@ function TimeChart(props: {
               class="stroke-line"
               stroke-width="1"
             />
-            <For each={props.series}>
+            <Index each={props.series}>
               {(series) => (
                 <path
-                  d={path(series)}
+                  d={path(series())}
                   fill="none"
-                  stroke={series.color}
-                  stroke-width={series.wide ? 3 : 2}
+                  stroke={series().color}
+                  stroke-width={series().wide ? 3 : 2}
                   stroke-linejoin="round"
                   stroke-linecap="round"
                 />
               )}
-            </For>
+            </Index>
             <Show when={hover() !== null && props.times[hover()!] !== undefined}>
               <line
                 x1={x(props.times[hover()!]!)}
@@ -215,22 +215,24 @@ function TimeChart(props: {
                 class="stroke-muted"
                 stroke-width="1"
               />
-              <For each={props.series}>
+              <Index each={props.series}>
                 {(series) => (
                   <Show
-                    when={series.points[hover()!] !== null && series.points[hover()!] !== undefined}
+                    when={
+                      series().points[hover()!] !== null && series().points[hover()!] !== undefined
+                    }
                   >
                     <circle
                       cx={x(props.times[hover()!]!)}
-                      cy={y(series.points[hover()!]!)}
+                      cy={y(series().points[hover()!]!)}
                       r="4"
-                      fill={series.color}
+                      fill={series().color}
                       class="stroke-card"
                       stroke-width="2"
                     />
                   </Show>
                 )}
-              </For>
+              </Index>
             </Show>
           </svg>
           <Show when={hover() !== null && props.times[hover()!] !== undefined}>
@@ -241,38 +243,38 @@ function TimeChart(props: {
               }}
             >
               <div class="text-muted">{formatTime(props.times[hover()!]!)}</div>
-              <For each={props.series}>
+              <Index each={props.series}>
                 {(series) => (
                   <div class="flex items-center gap-2">
-                    <span class="size-2 rounded-full" style={{ background: series.color }} />
+                    <span class="size-2 rounded-full" style={{ background: series().color }} />
                     <span class="font-semibold text-ink">
-                      {series.points[hover()!] === null || series.points[hover()!] === undefined
+                      {series().points[hover()!] === null || series().points[hover()!] === undefined
                         ? "–"
-                        : props.format(series.points[hover()!]!)}
+                        : props.format(series().points[hover()!]!)}
                     </span>
                     <Show when={props.series.length > 1}>
-                      <span class="text-ink-2">{series.name}</span>
+                      <span class="text-ink-2">{series().name}</span>
                     </Show>
                   </div>
                 )}
-              </For>
+              </Index>
             </div>
           </Show>
         </Show>
       </div>
       <Show when={props.series.length > 1}>
         <ul class="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
-          <For each={props.series}>
+          <Index each={props.series}>
             {(series) => (
               <li class="flex items-center gap-2">
-                <span class="size-2.5 rounded-full" style={{ background: series.color }} />
-                <span class="text-ink-2">{series.name}</span>
+                <span class="size-2.5 rounded-full" style={{ background: series().color }} />
+                <span class="text-ink-2">{series().name}</span>
                 <span class="font-mono text-ink">
-                  {latest(series) === null ? "–" : props.format(latest(series)!)}
+                  {latest(series()) === null ? "–" : props.format(latest(series())!)}
                 </span>
               </li>
             )}
-          </For>
+          </Index>
         </ul>
       </Show>
     </div>

@@ -5,6 +5,7 @@ import {
   createUniqueId,
   For,
   Index,
+  type Accessor,
   type JSX,
   lazy,
   on,
@@ -900,39 +901,39 @@ function GetStarted(props: {
       <div class={cardClass}>
         <h2 class="text-[23px] font-semibold">{t("Get started")}</h2>
         <ol class="flex flex-col gap-3">
-          <For each={steps()}>
+          <Index each={steps()}>
             {(step, index) => (
               <li class="flex items-start gap-3">
                 <span
                   class={`flex size-8 shrink-0 items-center justify-center rounded-full font-display font-bold ${
-                    step.done ? "bg-moss text-white" : "bg-well text-leaf"
+                    step().done ? "bg-moss text-white" : "bg-well text-leaf"
                   }`}
                 >
-                  <Show when={step.done} fallback={index() + 1}>
+                  <Show when={step().done} fallback={index + 1}>
                     <Icon name="check" class="size-4" />
                   </Show>
                 </span>
                 <span class="flex min-w-0 flex-1 flex-col">
-                  <span class={`font-semibold ${step.done ? "text-muted line-through" : ""}`}>
-                    {step.title}
+                  <span class={`font-semibold ${step().done ? "text-muted line-through" : ""}`}>
+                    {step().title}
                   </span>
-                  <Show when={!step.done}>
-                    <span class="text-[15px] text-ink-2">{step.text}</span>
+                  <Show when={!step().done}>
+                    <span class="text-[15px] text-ink-2">{step().text}</span>
                   </Show>
                 </span>
-                <Show when={!step.done}>
+                <Show when={!step().done}>
                   <button
                     type="button"
                     class={`${smallButtonClass} shrink-0`}
-                    aria-label={step.title}
-                    onClick={() => props.onSelect(step.section)}
+                    aria-label={step().title}
+                    onClick={() => props.onSelect(step().section)}
                   >
                     {t("Go")}
                   </button>
                 </Show>
               </li>
             )}
-          </For>
+          </Index>
         </ol>
         <p class="text-[15px] text-ink-2">
           {tRich("To show tips as alerts on stream, see the {guide}.", {
@@ -2594,23 +2595,27 @@ function MoblinSettings(props: {
           <DeviceList devices={props.account.devices}>
             {(device) => (
               <Show
-                when={renaming() === device.id}
+                when={renaming() === device().id}
                 fallback={
-                  <DeviceRow device={device} page={props.account.settings.id} onOpen={props.onOpen}>
+                  <DeviceRow
+                    device={device()}
+                    page={props.account.settings.id}
+                    onOpen={props.onOpen}
+                  >
                     <button
                       type="button"
                       class="text-[15px] font-semibold text-leaf hover:underline disabled:opacity-60"
                       disabled={props.busy}
-                      onClick={() => startRenaming(device)}
+                      onClick={() => startRenaming(device())}
                     >
                       {t("Rename")}
                     </button>
-                    <Show when={!device.connected && !device.reconnecting}>
+                    <Show when={!device().connected && !device().reconnecting}>
                       <button
                         type="button"
                         class="text-[15px] font-semibold text-danger hover:underline disabled:opacity-60"
                         disabled={props.busy}
-                        onClick={() => void remove(device)}
+                        onClick={() => void remove(device())}
                       >
                         {t("Remove")}
                       </button>
@@ -2620,7 +2625,7 @@ function MoblinSettings(props: {
               >
                 <form
                   class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
-                  onSubmit={(event) => rename(event, device.id)}
+                  onSubmit={(event) => rename(event, device().id)}
                 >
                   <input
                     type="text"
@@ -2694,16 +2699,19 @@ function ActivityLine(props: { at: number; now: string; then: (time: string) => 
   );
 }
 
-function DeviceList(props: { devices: Device[]; children: (device: Device) => JSX.Element }) {
+function DeviceList(props: {
+  devices: Device[];
+  children: (device: Accessor<Device>) => JSX.Element;
+}) {
   return (
     <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
-      <For each={props.devices}>
+      <Index each={props.devices}>
         {(device) => (
           <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
             {props.children(device)}
           </li>
         )}
-      </For>
+      </Index>
     </ul>
   );
 }
@@ -2751,13 +2759,13 @@ function DeviceRow(props: {
       <Show when={props.device.watchers.length > 0}>
         <span class="flex basis-full items-center gap-2 pl-[22px] text-[15px] text-ink-2">
           <span class="flex shrink-0 -space-x-1.5">
-            <For each={props.device.watchers}>
+            <Index each={props.device.watchers}>
               {(watcher) => (
-                <span title={watcher.name} class="flex rounded-full ring-2 ring-card">
-                  <Avatar picked={watcher} class="size-6 text-[11px]" />
+                <span title={watcher().name} class="flex rounded-full ring-2 ring-card">
+                  <Avatar picked={watcher()} class="size-6 text-[11px]" />
                 </span>
               )}
-            </For>
+            </Index>
           </span>
           <span class="min-w-0">
             {t("Watching now: {names}", {
@@ -2786,7 +2794,7 @@ function AssistedDevices(props: { account: Account; onOpen: (device: string) => 
           <DeviceList devices={props.account.devices}>
             {(device) => (
               <DeviceRow
-                device={device}
+                device={device()}
                 page={props.account.settings.id}
                 remote={props.account.remoteControl !== "none"}
                 onOpen={props.onOpen}
