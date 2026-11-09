@@ -2,7 +2,14 @@ import { createSignal, For, Index, onCleanup, onMount, Show, type JSX } from "so
 import Icon, { type IconName } from "../components/Icon";
 import { subscribe } from "../sse";
 import { Avatar } from "../components/HeaderPickers";
-import { cardClass, ghostButtonClass, Notice, Spinner } from "../components/PageParts";
+import {
+  buttonClass,
+  cardClass,
+  ghostButtonClass,
+  inputClass,
+  Notice,
+  Spinner,
+} from "../components/PageParts";
 import SectionMenu, {
   createSectionChoice,
   type Section as MenuItem,
@@ -13,6 +20,9 @@ import {
   dismissSignIn,
   removeSignIn,
   restrictSignIn,
+  searchAccounts,
+  setPremium,
+  type AdminAccount,
   type AdminStats,
   type SignInAccess,
   type SignInPerson,
@@ -800,6 +810,46 @@ function Status(props: { counters: Counters; problems: Problem[]; services: stri
   );
 }
 
+function Row(props: {
+  name: string;
+  avatar: string | null;
+  detail: string;
+  children: JSX.Element;
+}) {
+  return (
+    <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+      <Avatar picked={{ name: props.name, avatar: props.avatar }} />
+      <span class="flex min-w-0 flex-1 flex-col">
+        <span class="truncate font-semibold">{props.name}</span>
+        <span class="truncate text-[13px] text-muted">{props.detail}</span>
+      </span>
+      <span class="flex gap-4">{props.children}</span>
+    </li>
+  );
+}
+
+function Rows<T>(props: {
+  title: string;
+  hint?: string;
+  empty: string;
+  items: T[];
+  children: (item: T) => JSX.Element;
+}) {
+  return (
+    <div class="flex flex-col gap-2">
+      <h3 class="text-[17px] font-semibold text-ink-2">
+        {props.title}
+        <Show when={props.hint}>{(hint) => <Info>{hint()}</Info>}</Show>
+      </h3>
+      <Show when={props.items.length > 0} fallback={<p class="text-muted">{props.empty}</p>}>
+        <ul class={`${cardClass} gap-0! divide-y divide-line p-0! sm:p-0!`}>
+          <Index each={props.items}>{(item) => props.children(item())}</Index>
+        </ul>
+      </Show>
+    </div>
+  );
+}
+
 function People(props: {
   title: string;
   hint: string;
@@ -808,49 +858,31 @@ function People(props: {
   children: (person: SignInPerson) => JSX.Element;
 }) {
   return (
-    <div class="flex flex-col gap-2">
-      <h3 class="text-[17px] font-semibold text-ink-2">
-        {props.title}
-        <Info>{props.hint}</Info>
-      </h3>
-      <Show when={props.people.length > 0} fallback={<p class="text-muted">{props.empty}</p>}>
-        <ul class={`${cardClass} gap-0! divide-y divide-line p-0! sm:p-0!`}>
-          <Index each={props.people}>
-            {(person) => (
-              <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
-                <Avatar
-                  picked={{ name: person().name || person().login, avatar: person().avatar }}
-                />
-                <span class="flex min-w-0 flex-1 flex-col">
-                  <span class="truncate font-semibold">{person().name || person().login}</span>
-                  <span class="truncate text-[13px] text-muted">
-                    {platformNames[person().platform]} {person().login || person().userId},{" "}
-                    {new Date(person().at * 1000).toLocaleString("en")}
-                  </span>
-                </span>
-                <span class="flex gap-4">{props.children(person())}</span>
-              </li>
-            )}
-          </Index>
-        </ul>
-      </Show>
-    </div>
+    <Rows title={props.title} hint={props.hint} empty={props.empty} items={props.people}>
+      {(person) => (
+        <Row
+          name={person.name || person.login}
+          avatar={person.avatar}
+          detail={`${platformNames[person.platform]} ${person.login || person.userId}, ${new Date(
+            person.at * 1000,
+          ).toLocaleString("en")}`}
+        >
+          {props.children(person)}
+        </Row>
+      )}
+    </Rows>
   );
 }
 
-function SignIn(props: {
-  session: string;
-  access: SignInAccess;
-  onChange: (access: SignInAccess) => void;
-}) {
+function createActions() {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  const run = async (action: () => Promise<SignInAccess>) => {
+  const run = async (task: () => Promise<void>) => {
     setBusy(true);
     setError(null);
     try {
-      props.onChange(await action());
+      await task();
     } catch (error) {
       setError(
         error instanceof BackendError && error.message
@@ -861,18 +893,29 @@ function SignIn(props: {
     setBusy(false);
   };
 
-  const action = (label: string, danger: boolean, call: () => Promise<SignInAccess>) => (
+  const action = (label: string, danger: boolean, task: () => Promise<void>) => (
     <button
       type="button"
       class={`text-[15px] font-semibold hover:underline disabled:opacity-60 ${
         danger ? "text-danger" : "text-leaf"
       }`}
       disabled={busy()}
-      onClick={() => void run(call)}
+      onClick={() => void run(task)}
     >
       {label}
     </button>
   );
+
+  return { busy, error, run, action };
+}
+
+function SignIn(props: {
+  session: string;
+  access: SignInAccess;
+  onChange: (access: SignInAccess) => void;
+}) {
+  const { busy, error, run, action } = createActions();
+  const change = (call: () => Promise<SignInAccess>) => async () => props.onChange(await call());
 
   return (
     <div class="flex flex-col gap-5">
@@ -891,7 +934,9 @@ function SignIn(props: {
           type="button"
           class={ghostButtonClass}
           disabled={busy()}
-          onClick={() => void run(() => restrictSignIn(props.session, !props.access.restricted))}
+          onClick={() =>
+            void run(change(() => restrictSignIn(props.session, !props.access.restricted)))
+          }
         >
           {props.access.restricted ? "Let everyone sign in" : "Only allowed accounts"}
         </button>
@@ -906,8 +951,16 @@ function SignIn(props: {
         >
           {(person) => (
             <>
-              {action("Allow", false, () => allowSignIn(props.session, person))}
-              {action("Dismiss", true, () => dismissSignIn(props.session, person))}
+              {action(
+                "Allow",
+                false,
+                change(() => allowSignIn(props.session, person)),
+              )}
+              {action(
+                "Dismiss",
+                true,
+                change(() => dismissSignIn(props.session, person)),
+              )}
             </>
           )}
         </People>
@@ -919,9 +972,117 @@ function SignIn(props: {
           empty="No one is allowed but the admins."
           people={props.access.allowed}
         >
-          {(person) => action("Remove", true, () => removeSignIn(props.session, person))}
+          {(person) =>
+            action(
+              "Remove",
+              true,
+              change(() => removeSignIn(props.session, person)),
+            )
+          }
         </People>
       </Show>
+    </div>
+  );
+}
+
+const identitiesText = (account: AdminAccount) =>
+  account.identities
+    .map((identity) => `${platformNames[identity.platform]} ${identity.login || identity.userId}`)
+    .join(", ");
+
+function AccountRow(props: { account: AdminAccount; children: JSX.Element }) {
+  return (
+    <Row
+      name={props.account.name || props.account.id}
+      avatar={props.account.avatar}
+      detail={identitiesText(props.account)}
+    >
+      {props.children}
+    </Row>
+  );
+}
+
+function Premium(props: {
+  session: string;
+  accounts: AdminAccount[];
+  onChange: (accounts: AdminAccount[]) => void;
+}) {
+  const [text, setText] = createSignal("");
+  const [searched, setSearched] = createSignal<string | null>(null);
+  const [found, setFound] = createSignal<AdminAccount[]>([]);
+  const { busy, error, run, action } = createActions();
+
+  const search = async (search: string) => {
+    setFound(await searchAccounts(props.session, search));
+    setSearched(search);
+  };
+
+  const change = (account: AdminAccount, premium: boolean) => async () => {
+    props.onChange(await setPremium(props.session, account.id, premium));
+    const last = searched();
+    if (last !== null) {
+      await search(last);
+    }
+  };
+
+  return (
+    <div class="flex flex-col gap-5">
+      <form
+        class="flex flex-wrap gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run(() => search(text().trim()));
+        }}
+      >
+        <input
+          type="search"
+          value={text()}
+          onInput={(event) => setText(event.currentTarget.value)}
+          placeholder="Twitch or Kick login or name"
+          aria-label="Twitch or Kick login or name"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck={false}
+          class={`${inputClass} min-w-0 flex-1`}
+        />
+        <button type="submit" class={buttonClass} disabled={busy() || !text().trim()}>
+          Search
+        </button>
+      </form>
+      <Show when={error()}>{(error) => <Notice status>{error()}</Notice>}</Show>
+      <Show when={searched()}>
+        {(searched) => (
+          <Rows
+            title="Found"
+            hint="Accounts whose login or name contains the text, or whose user ID is the text. At most 20 are shown."
+            empty={`No account matches ${searched()}.`}
+            items={found()}
+          >
+            {(account) => (
+              <AccountRow account={account}>
+                <Show
+                  when={!account.premium}
+                  fallback={<span class="text-[15px] font-semibold text-muted">Premium</span>}
+                >
+                  {action("Make premium", false, change(account, true))}
+                </Show>
+              </AccountRow>
+            )}
+          </Rows>
+        )}
+      </Show>
+      <Rows
+        title="Premium accounts"
+        hint="They can add a banner image, pick any color and choose a font. Removing one keeps the banner, color and font it has and only stops new choices. Admins are always premium."
+        empty="No one is premium but the admins."
+        items={props.accounts}
+      >
+        {(account) => (
+          <AccountRow account={account}>
+            {action("Remove", true, change(account, false))}
+          </AccountRow>
+        )}
+      </Rows>
     </div>
   );
 }
@@ -930,6 +1091,7 @@ function Loaded(props: {
   stats: AdminStats;
   session: string;
   onSignIn: (access: SignInAccess) => void;
+  onPremium: (premium: AdminAccount[]) => void;
 }) {
   const counters = () => new Counters(props.stats.counters);
   const offered = () => providerRows.filter(({ slug }) => props.stats.server.integrations[slug]);
@@ -1069,7 +1231,7 @@ function Loaded(props: {
       ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
       [
         "Premium",
-        "Signed in accounts with the premium features: the admins and the premium accounts list.",
+        "Signed in accounts with the premium features: the admins and the premium accounts below.",
         props.stats.accounts.premium,
       ],
       ...(props.stats.server.integrations.paypal
@@ -1217,6 +1379,16 @@ function Loaded(props: {
             hint="Who may sign in to the dashboard and mobtop. Viewers signing in on a page are not affected."
           >
             <SignIn session={props.session} access={props.stats.signIn} onChange={props.onSignIn} />
+          </Part>
+          <Part
+            title="Premium"
+            hint="Find an account to give it the premium features, or take them away below."
+          >
+            <Premium
+              session={props.session}
+              accounts={props.stats.premium}
+              onChange={props.onPremium}
+            />
           </Part>
         </Section>
         <Section shown={active() === "server"} title="Server" hint="The backend, right now.">
@@ -1388,6 +1560,7 @@ function Stats(props: { session: string; onSignOut: () => void }) {
               stats={stats()}
               session={props.session}
               onSignIn={(signIn) => setStats((stats) => stats && { ...stats, signIn })}
+              onPremium={(premium) => setStats((stats) => stats && { ...stats, premium })}
             />
           )}
         </Show>

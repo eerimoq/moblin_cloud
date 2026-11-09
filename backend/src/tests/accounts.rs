@@ -782,6 +782,76 @@ fn premium_accounts_are_counted() {
         .unwrap();
     assert_eq!(accounts.stats(&["twitch:1", "kick:8"]).premium, 1);
     assert_eq!(accounts.stats(&["kick:8", "kick:7"]).premium, 2);
+    accounts.set_premium("2", true).unwrap();
+    assert_eq!(accounts.stats(&[]).premium, 1);
+    assert_eq!(accounts.stats(&["twitch:1"]).premium, 2);
+    accounts.set_premium("1", true).unwrap();
+    assert_eq!(accounts.stats(&["twitch:1"]).premium, 2);
+}
+
+#[test]
+fn accounts_are_made_premium() {
+    let accounts = Accounts::new(Database::memory());
+    assert_eq!(accounts.set_premium("1", true), Err(AccountError::Unknown));
+    sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
+    sign_in(&accounts, "2", "Adam", "adam", "q", "l").unwrap();
+    assert!(accounts.premium().is_empty());
+    assert!(accounts.set_premium("1", true).unwrap().premium);
+    assert!(accounts.set_premium("2", true).unwrap().premium);
+    assert!(accounts.get("1").unwrap().premium);
+    assert!(accounts.of_page("p").unwrap().premium);
+    let ids = |list: Vec<Account>| {
+        list.into_iter()
+            .map(|account| account.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(accounts.premium()), ["2", "1"]);
+    assert!(!accounts.set_premium("1", false).unwrap().premium);
+    assert_eq!(ids(accounts.premium()), ["2"]);
+}
+
+#[test]
+fn accounts_are_searched() {
+    let accounts = Accounts::new(Database::memory());
+    let ids = |text: &str| {
+        accounts
+            .search(text)
+            .into_iter()
+            .map(|account| account.id)
+            .collect::<Vec<_>>()
+    };
+    sign_in(&accounts, "1", "Erik", "erik", "p1", "k1").unwrap();
+    sign_in(&accounts, "2", "Derik", "derik", "p2", "k2").unwrap();
+    sign_in(&accounts, "3", "Other", "un_der", "p3", "k3").unwrap();
+    sign_in(&accounts, "4", "Fourth", "per%cent", "p4", "k4").unwrap();
+    accounts
+        .link("3", &Identity::kick("9", "Kicker", "kickerik"))
+        .unwrap();
+    assert_eq!(ids("erik"), ["1", "2", "3"]);
+    assert_eq!(ids(" @ERIK "), ["1", "2", "3"]);
+    assert_eq!(ids("kick"), ["3"]);
+    assert_eq!(ids("derik"), ["2"]);
+    assert_eq!(ids("fourth"), ["4"]);
+    assert_eq!(ids("n_"), ["3"]);
+    assert_eq!(ids("r%"), ["4"]);
+    assert_eq!(ids("9"), ["3"]);
+    assert_eq!(ids("1"), ["1"]);
+    assert!(ids("").is_empty());
+    assert!(ids("@").is_empty());
+    assert!(ids("nobody").is_empty());
+    for id in 10..40 {
+        let id = id.to_string();
+        sign_in(
+            &accounts,
+            &id,
+            "Many",
+            &format!("many{id}"),
+            &format!("p{id}"),
+            &format!("k{id}"),
+        )
+        .unwrap();
+    }
+    assert_eq!(ids("many").len(), 20);
 }
 
 #[test]

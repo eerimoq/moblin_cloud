@@ -100,6 +100,108 @@ async fn admin_stats() {
                 {"name": "tipOrders", "today": 2, "week": 2, "total": 2},
             ],
             "signIn": {"restricted": false, "allowed": [], "requests": []},
+            "premium": [],
         })
     );
+}
+
+#[tokio::test]
+async fn admins_make_accounts_premium() {
+    let (address, api) = start_api(None).await;
+    let client = reqwest::Client::new();
+    let (session, _, page_id) = streamer(&api);
+    create_account(&api, "admin", "Admin", "admin");
+    let admin = api.auth.session("admin", 0);
+    let search = |session: String, text: &'static str| {
+        client
+            .get(format!("http://{address}/admin/accounts"))
+            .query(&[("search", text)])
+            .bearer_auth(session)
+            .send()
+    };
+    let premium = |session: String, id: &'static str, premium: bool| {
+        client
+            .post(format!("http://{address}/admin/accounts/{id}/premium"))
+            .bearer_auth(session)
+            .json(&json!({"premium": premium}))
+            .send()
+    };
+    let save_font = |font: &'static str| {
+        client
+            .post(format!("http://{address}/account/pages/{page_id}/settings"))
+            .bearer_auth(&session)
+            .json(&json!({"font": font}))
+            .send()
+    };
+    let response = search(session.clone(), "erik").await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = premium(session.clone(), "1", true).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = premium(admin.clone(), "2", true).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.text().await.unwrap(), "No such account.");
+    let found: Value = search(admin.clone(), "@ERI")
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        found,
+        json!([{
+            "id": "1",
+            "name": "Erik",
+            "avatar": null,
+            "identities": [{"platform": "twitch", "userId": "1", "login": "erik"}],
+            "premium": false,
+        }])
+    );
+    let found: Value = search(admin.clone(), "admin")
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(found[0]["premium"], true);
+    let response = save_font("handwritten").await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let url = format!("http://{address}/account/pages/{page_id}/events");
+    let mut events = Events::open(&client, &url, &session).await;
+    let listed: Value = premium(admin.clone(), "1", true)
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed[0]["id"], "1");
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(events.next().await.0, "account");
+    assert_eq!(account_of(&address, &session).await["premium"], true);
+    let stats: Value = client
+        .get(format!("http://{address}/admin/stats"))
+        .bearer_auth(&admin)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(stats["premium"], listed);
+    assert_eq!(stats["accounts"]["premium"], 2);
+    let response = save_font("handwritten").await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(events.next().await.0, "account");
+    let listed: Value = premium(admin, "1", false)
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed, json!([]));
+    assert_eq!(events.next().await.0, "account");
+    let account = account_of(&address, &session).await;
+    assert_eq!(account["premium"], false);
+    assert_eq!(account["settings"]["font"], "handwritten");
+    let response = save_font("serif").await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }

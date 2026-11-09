@@ -85,10 +85,11 @@ Everything is optional, but nobody can sign in without Twitch or Kick.
   `PAYPAL_SANDBOX=true` uses PayPal's sandbox.
 - Stripe: a Stripe Connect platform, with `STRIPE_SECRET_KEY` and
   `STRIPE_PUBLISHABLE_KEY`. A test mode key takes test payments.
-- `ADMINS` and `PREMIUM_ACCOUNTS`: comma separated `twitch:<Twitch user ID>`
-  or `kick:<Kick user ID>` (a bare ID is a Twitch one) of the accounts that see
-  the admin page and of those that get the premium features. Admins are premium
-  too. The admin page can limit sign in to the accounts an admin allows.
+- `ADMINS`: comma separated `twitch:<Twitch user ID>` or `kick:<Kick user ID>`
+  (a bare ID is a Twitch one) of the accounts that see the admin page. Admins
+  are premium. The admin page makes other accounts premium and can limit sign
+  in to the accounts an admin allows. `PREMIUM_ACCOUNTS` is deprecated and
+  ignored.
 
 Every setting is an environment variable in `.env`; the backend lists them
 all with their defaults:

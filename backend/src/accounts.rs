@@ -90,6 +90,7 @@ pub struct Account {
     pub paypal_tracking_id: Option<String>,
     pub stripe_account_id: Option<String>,
     pub stripe_ready: bool,
+    pub premium: bool,
 }
 
 impl Account {
@@ -287,14 +288,14 @@ pub fn device_ids(connection: &Connection, page_id: &str) -> Vec<String> {
     })
 }
 
-const COLUMNS: &str = "id, page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready";
+const COLUMNS: &str = "id, page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready, premium";
 
 const IDENTITIES: &str = "(SELECT json_group_array(json_object('platform', platform, 'user_id', user_id, 'login', login, 'name', name, 'avatar', avatar) ORDER BY platform = 'twitch' DESC, platform) FROM identities WHERE account = accounts.id)";
 
 fn account(row: &Row) -> rusqlite::Result<Account> {
-    let identities: String = row.get(8)?;
+    let identities: String = row.get(9)?;
     let identities = serde_json::from_str(&identities).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, error.into())
+        rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, error.into())
     })?;
     Ok(Account {
         id: row.get(0)?,
@@ -306,6 +307,7 @@ fn account(row: &Row) -> rusqlite::Result<Account> {
         paypal_tracking_id: row.get(5)?,
         stripe_account_id: row.get(6)?,
         stripe_ready: row.get(7)?,
+        premium: row.get(8)?,
     })
 }
 
@@ -425,7 +427,7 @@ impl Accounts {
                 }
                 transaction
                     .execute(
-                        &format!("INSERT INTO accounts ({COLUMNS}) VALUES (?1, ?2, ?3, 0, NULL, NULL, NULL, 0)"),
+                        &format!("INSERT INTO accounts ({COLUMNS}) VALUES (?1, ?2, ?3, 0, NULL, NULL, NULL, 0, 0)"),
                         params![id, page_id, moblin_cloud_key],
                     )
                     .map_err(not_saved)?;
@@ -533,7 +535,7 @@ impl Accounts {
                     .query_row([page_id], |row| {
                         Ok((
                             account(row)?,
-                            Look::new(page_id, row.get(9)?, row.get(10)?, row.get(11)?),
+                            Look::new(page_id, row.get(10)?, row.get(11)?, row.get(12)?),
                         ))
                     })
                     .optional()
@@ -834,6 +836,61 @@ impl Accounts {
         })
     }
 
+    pub fn set_premium(&self, id: &str, premium: bool) -> Result<Account, AccountError> {
+        self.change(id, |account| {
+            account.premium = premium;
+            Ok(())
+        })
+    }
+
+    pub fn premium(&self) -> Vec<Account> {
+        self.list(
+            "premium ORDER BY (SELECT min(login) FROM identities WHERE account = accounts.id)",
+            [],
+        )
+    }
+
+    pub fn search(&self, text: &str) -> Vec<Account> {
+        let text = text.trim().trim_start_matches('@');
+        if text.is_empty() {
+            return Vec::new();
+        }
+        let escaped = text
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        self.list(
+            "id IN (SELECT account FROM identities
+                     WHERE login LIKE ?1 ESCAPE '\\' OR name LIKE ?1 ESCAPE '\\' OR user_id = ?3)
+             ORDER BY NOT EXISTS (SELECT 1 FROM identities
+                                  WHERE account = accounts.id AND login LIKE ?2 ESCAPE '\\'),
+                      (SELECT min(login) FROM identities WHERE account = accounts.id)
+             LIMIT 20",
+            [
+                format!("%{escaped}%"),
+                format!("{escaped}%"),
+                text.to_string(),
+            ],
+        )
+    }
+
+    fn list(&self, condition: &str, values: impl rusqlite::Params) -> Vec<Account> {
+        let database = self.database.lock();
+        let result = database
+            .prepare_cached(&format!(
+                "SELECT {COLUMNS}, {IDENTITIES} FROM accounts WHERE {condition}"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map(values, account)?
+                    .collect::<rusqlite::Result<_>>()
+            });
+        result.unwrap_or_else(|error| {
+            warn!("failed to read accounts: {error:#}");
+            Vec::new()
+        })
+    }
+
     pub fn forget_stripe(&self, id: &str) -> Result<Account, AccountError> {
         self.change(id, |account| {
             account.stripe_account_id = None;
@@ -1063,7 +1120,7 @@ impl Accounts {
             .and_then(|mut statement| {
                 statement
                     .query_map(assistants, |row| {
-                        Ok((row.get::<_, String>(9)?, account(row)?))
+                        Ok((row.get::<_, String>(10)?, account(row)?))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
             });
@@ -1180,18 +1237,18 @@ impl Accounts {
         Ok(account)
     }
 
-    pub fn stats(&self, premium: &[&str]) -> AccountStats {
+    pub fn stats(&self, admins: &[&str]) -> AccountStats {
         self.database
             .lock()
             .query_row(
                 "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0),
-                        count(*) FILTER (WHERE EXISTS (
+                        count(*) FILTER (WHERE premium OR EXISTS (
                             SELECT 1 FROM identities WHERE identities.account = accounts.id
                             AND platform || ':' || user_id
                                 IN (SELECT value FROM json_each(?1))
                         ))
                  FROM accounts",
-                [serde_json::to_string(premium).unwrap()],
+                [serde_json::to_string(admins).unwrap()],
                 |row| {
                     Ok(AccountStats {
                         total: row.get(0)?,
@@ -1237,7 +1294,7 @@ impl Accounts {
         }
         transaction
             .execute(
-                &format!("INSERT OR REPLACE INTO accounts ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
+                &format!("INSERT OR REPLACE INTO accounts ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
                 params![
                     id,
                     account.page_id,
@@ -1247,6 +1304,7 @@ impl Accounts {
                     account.paypal_tracking_id,
                     account.stripe_account_id,
                     account.stripe_ready,
+                    account.premium,
                 ],
             )
             .map_err(not_saved)?;

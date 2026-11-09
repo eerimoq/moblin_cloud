@@ -98,7 +98,6 @@ pub(crate) fn build_api(
         counters: Counters::new(database.clone()),
         database,
         admins: vec!["twitch:admin".to_string()],
-        premium_accounts: vec!["twitch:premium".to_string()],
         started: 0,
         tests: Mutex::default(),
         connect_tries: Mutex::default(),

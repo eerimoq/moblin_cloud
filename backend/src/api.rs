@@ -109,7 +109,6 @@ pub struct Api {
     pub counters: Counters,
     pub database: Arc<Database>,
     pub admins: Vec<String>,
-    pub premium_accounts: Vec<String>,
     pub started: u64,
     pub tests: Mutex<HashMap<String, Vec<Instant>>>,
     pub connect_tries: Mutex<HashMap<String, Vec<Instant>>>,
@@ -255,6 +254,11 @@ pub fn router(api: Arc<Api>) -> Router {
             "/admin/sign-in/requests/{platform}/{user_id}/remove",
             post(handle_admin_sign_in_dismiss),
         )
+        .route("/admin/accounts", get(handle_admin_accounts))
+        .route(
+            "/admin/accounts/{id}/premium",
+            post(handle_admin_account_premium),
+        )
         .route("/pages/{id}", get(handle_page))
         .route("/pages/{id}/image", get(handle_page_image))
         .route("/pages/{id}/events", get(handle_public_page_events))
@@ -346,11 +350,7 @@ pub(super) fn may_sign_in(api: &Api, account: &Account) -> bool {
 }
 
 pub(super) fn is_premium(api: &Api, account: &Account) -> bool {
-    is_admin(api, account)
-        || account
-            .identities
-            .iter()
-            .any(|identity| api.premium_accounts.contains(&identity.admin_key()))
+    account.premium || is_admin(api, account)
 }
 
 pub(super) fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {

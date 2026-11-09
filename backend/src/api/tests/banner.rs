@@ -22,6 +22,7 @@ async fn banner_images() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     create_account(&api, "premium", "Premium", "premium");
+    api.accounts.set_premium("premium", true).unwrap();
     let premium = api.auth.session("premium", 0);
     let account: Value = client
         .get(format!("http://{address}/account"))

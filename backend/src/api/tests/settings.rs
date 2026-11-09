@@ -36,6 +36,7 @@ async fn custom_colors_and_fonts_are_for_pro_streamers() {
     let response = save(session, own, "pink").await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     create_account(&api, "premium", "Premium", "premium");
+    api.accounts.set_premium("premium", true).unwrap();
     let premium = api.auth.session("premium", 0);
     let account: Value = client
         .get(format!("http://{address}/account"))

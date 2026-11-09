@@ -173,7 +173,6 @@ class Backend:
             ["--session-secret", SESSION_SECRET],
             ["--database", str(self.files_dir / "database.sqlite")],
             ["--admins", twitch_user_id_of("admin")],
-            ["--premium-accounts", twitch_user_id_of("pagelook")],
             ["--allow-unattested"],
             ["--delivery-retry-interval", "1"],
             ["--access-recheck-interval", "1"],

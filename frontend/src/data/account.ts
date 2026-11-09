@@ -283,6 +283,14 @@ export type SignInAccess = {
   requests: SignInPerson[];
 };
 
+export type AdminAccount = {
+  id: string;
+  name: string;
+  avatar: string | null;
+  identities: { platform: Platform; userId: string; login: string }[];
+  premium: boolean;
+};
+
 export type AdminStats = {
   server: {
     version: string;
@@ -316,6 +324,7 @@ export type AdminStats = {
   database: { bytes: number; files: { name: string; bytes: number }[] };
   counters: { name: string; today: number; week: number; total: number }[];
   signIn: SignInAccess;
+  premium: AdminAccount[];
 };
 
 const sessionKey = "session";
@@ -469,6 +478,16 @@ export const removeSignIn = (session: string, person: SignInPerson) =>
 
 export const dismissSignIn = (session: string, person: SignInPerson) =>
   call<SignInAccess>(`/admin/sign-in/requests/${personPath(person)}/remove`, session, post());
+
+export const searchAccounts = (session: string, search: string) =>
+  call<AdminAccount[]>(`/admin/accounts?${new URLSearchParams({ search })}`, session);
+
+export const setPremium = (session: string, id: string, premium: boolean) =>
+  call<AdminAccount[]>(
+    `/admin/accounts/${encodeURIComponent(id)}/premium`,
+    session,
+    post({ premium }),
+  );
 
 export const pageEventsUrl = (page: string) => `${backendUrl}${accountPath(page)}/events`;
 

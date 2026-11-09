@@ -8,7 +8,7 @@ default:
 
 # Signing in goes through the fake Twitch in tests/utils/fake_twitch.py and the fake Kick in
 # tests/utils/fake_kick.py, which sign in as any made-up user, each with its own account until
-# linked: admin is an admin, premium a premium account, normal neither, on both.
+# linked: admin is an admin, premium one to make premium on the admin page, normal neither, on both.
 [group('dev')]
 [doc("Runs the backend, the frontend and the fake Moblin as the admin user's, at http://localhost:5173, with the given sign in platforms, like just dev kick, or none with just dev \"\".")]
 dev platforms="twitch,kick":
@@ -53,7 +53,7 @@ dev-backend *args:
 	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
 	cd backend
 	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested $sign_in --admins twitch:847161455,kick:33069881 --premium-accounts twitch:325813636,kick:57017113 --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
+	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested $sign_in --admins twitch:847161455,kick:33069881 --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
 	wait
 
 [group('dev')]

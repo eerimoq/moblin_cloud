@@ -64,6 +64,14 @@ class AccountTestCase(TestCase):
     def assert_signed_out(self, dashboard: Dashboard):
         self.assert_backend_error(401, dashboard.account, "not signed in")
 
+    def account_id_of(self, admin: Dashboard, login: str) -> str:
+        found = admin.search_accounts(login)
+        return next(
+            account["id"]
+            for account in found
+            if any(identity["login"] == login for identity in account["identities"])
+        )
+
 
 class AccountSignIn(AccountTestCase):
     """Sign in with Twitch from the dashboard and get the account with its page."""
@@ -307,6 +315,8 @@ class AccountPageLook(AccountTestCase):
 
     def run(self):
         dashboard = self.sign_in("pagelook")
+        admin = self.sign_in("admin")
+        admin.set_premium(self.account_id_of(admin, "pagelook"), True)
         page_id = dashboard.page_id()
         settings = dashboard.save_settings(message="  Thanks for watching.  ", accent="purple", font="serif")
         self.assert_equal(settings["message"], "Thanks for watching.")
@@ -333,6 +343,42 @@ class AccountPageLook(AccountTestCase):
             403, lambda: normal.save_settings(font="serif"), "fonts are only for premium accounts"
         )
         self.assert_equal(normal.save_settings(accent="purple", font="rounded")["font"], None)
+
+
+class AccountPremium(AccountTestCase):
+    """Let an admin find an account and make it premium, and take that away while keeping its look."""
+
+    def run(self):
+        streamer = self.sign_in("premiumsearch")
+        admin = self.sign_in("admin")
+        self.assert_backend_error(403, lambda: streamer.search_accounts("premiumsearch"), "not an admin")
+        found = admin.search_accounts("@PREMIUMSEARCH")
+        self.assert_equal(len(found), 1)
+        account_id = found[0]["id"]
+        self.assert_equal(
+            [found[0]["identities"][0]["login"], found[0]["premium"]],
+            ["premiumsearch", False],
+        )
+        self.assert_true(admin.search_accounts("admin")[0]["premium"])
+        self.assert_backend_error(403, lambda: streamer.set_premium(account_id, True), "not an admin")
+        self.assert_backend_error(404, lambda: admin.set_premium("unknown", True), "No such account.")
+        self.assert_backend_error(
+            403, lambda: streamer.save_settings(font="serif"), "fonts are only for premium accounts"
+        )
+        listed = admin.set_premium(account_id, True)
+        self.assert_in(account_id, [account["id"] for account in listed])
+        self.assert_equal(admin.admin_stats()["premium"], listed)
+        self.assert_true(streamer.account()["premium"])
+        self.assert_true(admin.search_accounts("premiumsearch")[0]["premium"])
+        self.assert_equal(streamer.save_settings(font="serif")["font"], "serif")
+        listed = admin.set_premium(account_id, False)
+        self.assert_not_in(account_id, [account["id"] for account in listed])
+        account = streamer.account()
+        self.assert_false(account["premium"])
+        self.assert_equal(account["settings"]["font"], "serif")
+        self.assert_backend_error(
+            403, lambda: streamer.save_settings(font="handwritten"), "fonts are only for premium accounts"
+        )
 
 
 class AccountCurrency(AccountTestCase):
@@ -394,7 +440,8 @@ class AccountAdmin(AccountTestCase):
         self.assert_true(admin.account()["admin"])
         stats = admin.admin_stats()
         self.assert_equal(
-            sorted(stats), ["accounts", "counters", "database", "moblin", "pending", "server", "signIn"]
+            sorted(stats),
+            ["accounts", "counters", "database", "moblin", "pending", "premium", "server", "signIn"],
         )
         server = stats["server"]
         self.assert_equal(sorted(server), ["integrations", "memory", "now", "requests", "started", "version"])
@@ -453,6 +500,7 @@ def tests(context: Context):
         AccountSignOutEverywhere(context),
         AccountDelete(context),
         AccountPageLook(context),
+        AccountPremium(context),
         AccountCurrency(context),
         AccountPaidFeaturesNeedPayments(context),
         AccountTestDeliveriesNeedMoblin(context),

@@ -72,6 +72,29 @@ fn the_old_page_id_index_is_dropped() {
     remove(&path);
 }
 
+#[test]
+fn accounts_get_the_premium_column() {
+    let path = temporary_path("premium");
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE accounts (id TEXT PRIMARY KEY, page_id TEXT, moblin_key TEXT, sessions INTEGER NOT NULL, merchant_id TEXT, paypal_tracking_id TEXT, stripe_account_id TEXT, stripe_ready INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO accounts (id, page_id, moblin_key, sessions) VALUES ('1', 'p', 'k', 0);",
+        )
+        .unwrap();
+    for _ in 0..2 {
+        let database = Database::open(Some(&path)).unwrap();
+        let premium: bool = database
+            .lock()
+            .query_row("SELECT premium FROM accounts WHERE id = '1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(!premium);
+    }
+    remove(&path);
+}
+
 impl Database {
     pub fn memory() -> Arc<Self> {
         Self::open(None).unwrap()

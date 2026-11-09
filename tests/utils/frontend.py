@@ -3,6 +3,7 @@ import logging
 import time
 from urllib.parse import parse_qs
 from urllib.parse import quote
+from urllib.parse import urlencode
 from urllib.parse import urlsplit
 
 import requests
@@ -320,6 +321,12 @@ class Dashboard(Client):
 
     def remove_sign_in(self, platform: str, user_id: str) -> dict:
         return self.post(f"/admin/sign-in/allowed/{platform}/{quote(user_id, safe='')}/remove")
+
+    def search_accounts(self, search: str) -> list:
+        return self.get(f"/admin/accounts?{urlencode({'search': search})}")
+
+    def set_premium(self, account_id: str, premium: bool) -> list:
+        return self.post(f"/admin/accounts/{quote(account_id, safe='')}/premium", {"premium": premium})
 
     def dismiss_sign_in(self, platform: str, user_id: str) -> dict:
         return self.post(f"/admin/sign-in/requests/{platform}/{quote(user_id, safe='')}/remove")

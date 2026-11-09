@@ -163,10 +163,9 @@ struct Cli {
     /// accounts allowed to see the admin page.
     #[arg(long, env = "ADMINS", value_delimiter = ',', value_parser = accounts::admin_key_of)]
     admins: Vec<String>,
-    /// twitch:<Twitch user ID> or kick:<Kick user ID> (a bare ID is a Twitch one) of the
-    /// premium accounts, which get the premium features.
-    #[arg(long, env = "PREMIUM_ACCOUNTS", value_delimiter = ',', value_parser = accounts::admin_key_of)]
-    premium_accounts: Vec<String>,
+    /// Deprecated and ignored: premium accounts are made premium on the admin page.
+    #[arg(long, env = "PREMIUM_ACCOUNTS", value_name = "IGNORED")]
+    premium_accounts: Option<String>,
     #[arg(long, hide = true, value_name = "SECONDS", default_value_t = payments::DEADLINE.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
     payment_deadline: u64,
     #[arg(long, hide = true, value_name = "SECONDS", default_value_t = Timing::default().settle.as_secs(), value_parser = clap::value_parser!(u64).range(1..))]
@@ -197,7 +196,15 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let mut cli = Cli::parse();
     cli.admins.retain(|key| !key.is_empty());
-    cli.premium_accounts.retain(|key| !key.is_empty());
+    if cli
+        .premium_accounts
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        warn!(
+            "--premium-accounts and PREMIUM_ACCOUNTS are ignored, make accounts premium on the admin page"
+        );
+    }
     let twitch_app = match (
         &cli.twitch_client_id,
         &cli.twitch_client_secret,
@@ -371,7 +378,6 @@ async fn main() -> Result<()> {
         counters,
         database,
         admins: cli.admins,
-        premium_accounts: cli.premium_accounts,
         started: crate::deliveries::now(),
         tests: Mutex::default(),
         connect_tries: Mutex::default(),

@@ -11,7 +11,7 @@ Run a single test: `cargo test payments::tests::orders_survive_restarts`. The AP
 - Everything optional degrades rather than fails: without a platform's credentials its sign in answers 503.
 - `--allow-unattested` disables App Attest for Moblin Cloud. `--twitch-sign-in-url`, `--kick-sign-in-url`, `--paypal-url` and `--stripe-url` are for local development and the system tests only.
 - SQLite in `database.rs` is shared by `Accounts`, `Pages`, `Orders`, `Deliveries` and `Counters` behind one mutex. `counters::bump` takes a connection, for callers already holding the lock.
-- The schema is only ever created, never altered, except the `DROP INDEX IF EXISTS accounts_page_id`: databases from before November 2026 have that non-unique index, and `CREATE INDEX IF NOT EXISTS` only checks the name, which is why the unique one is `accounts_page_id_unique`.
+- `CREATE TABLE IF NOT EXISTS` never adds a column to an existing table, so a new column is also added by `migrate` in `database.rs`, checked with `pragma_table_info` and given a default. The `DROP INDEX IF EXISTS accounts_page_id` is there because databases from before November 2026 have that non-unique index, and `CREATE INDEX IF NOT EXISTS` only checks the name, which is why the unique one is `accounts_page_id_unique`.
 - Requests and the remote control traffic are counted in memory only, so a restart starts over.
 
 ## Counters
@@ -97,5 +97,5 @@ Stripe:
 
 - The currency only changes while tips, the wheel and effects are all off, so their amounts never silently switch currency.
 - Each `Feature` has `enabled` next to its values, so turning one off keeps them. It defaults to true, so settings saved before the flag are on.
-- Only premium accounts upload a banner and pick a font or custom color. Taking a streamer off `--premium-accounts` keeps what they have and only stops new choices.
+- Only premium accounts upload a banner and pick a font or custom color. Premium is a flag on the account set on the admin page, and admins are always premium. Taking it away keeps what they have and only stops new choices.
 - `banner` re-encodes every upload, so nothing but pixels is kept.

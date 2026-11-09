@@ -655,7 +655,6 @@ async fn sessions_of_twitch_user_ids_keep_working() {
         counters: Counters::new(database.clone()),
         database,
         admins: vec!["twitch:42".to_string()],
-        premium_accounts: Vec::new(),
         started: 0,
         tests: Mutex::default(),
         connect_tries: Mutex::default(),

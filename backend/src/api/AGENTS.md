@@ -41,4 +41,4 @@ The router, `Api`, `Failure` and the session checks are in `../api.rs`; the hand
 
 `GET /admin/stats` is for the site operator, from `--admins` (a bare id is a Twitch one, and any other prefix is refused at start). Unfinished orders and pending deliveries are plain column counts, and no JSON is read.
 
-The `/admin/sign-in` routes are admin only too, and change who may sign in. They answer the new sign in state, which the stats also carry, so the page needs no separate stream.
+The `/admin/sign-in` routes are admin only too, and change who may sign in, as are the `/admin/accounts` routes that find accounts and make them premium. They answer the new sign in state, which the stats also carry, so the page needs no separate stream.

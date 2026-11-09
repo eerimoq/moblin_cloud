@@ -52,7 +52,7 @@ just dev-frontend   # vite dev server; proxies /api -> localhost:8080
 
 - Moblin's remote control messages are a contract with the Moblin iOS app and must match `Moblin/RemoteControl/RemoteControl.swift`; changing them requires an app change too.
 - The WebSocket, Twitch and Kick callback and PayPal webhook paths are registered outside this repo (in Moblin and in Twitch's, Kick's and PayPal's consoles) and must not be renamed. `GET /pages/addresses` is a contract with the Moblin website's backend.
-- There are no database migrations: tables are created with `CREATE TABLE IF NOT EXISTS`, so a schema change needs the existing database changed by hand.
+- Tables are created with `CREATE TABLE IF NOT EXISTS`, which never changes an existing table, so a column added to one needs a step in `migrate` (`backend/src/database.rs`).
 - The web Monitor and mobtop do the same things and read and write the same saved layout, so a change to one usually needs the other.
 - Nothing is polled: what changes on the backend is pushed as server-sent events. The one exception is mobtop waiting for a sign in on another device.
 - There is no fake logic in the backend: the fakes are in `tests/utils/`, and the options pointing the backend at them and shortening its timers are for local development and the system tests only.

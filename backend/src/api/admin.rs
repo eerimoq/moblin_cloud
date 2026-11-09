@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
 use crate::access::SignInState;
-use crate::accounts::{AccountStats, Platform};
+use crate::accounts::{Account, AccountError, AccountStats, Platform};
 use crate::counters::Counter;
 use crate::deliveries;
 use crate::requests::RequestStats;
@@ -26,6 +26,51 @@ pub(super) struct AdminStatsResponse {
     database: DatabaseStats,
     counters: Vec<Counter>,
     sign_in: SignInState,
+    premium: Vec<AdminAccount>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AdminIdentity {
+    platform: Platform,
+    user_id: String,
+    login: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AdminAccount {
+    id: String,
+    name: String,
+    avatar: Option<String>,
+    identities: Vec<AdminIdentity>,
+    premium: bool,
+}
+
+fn admin_account(api: &Api, account: Account) -> AdminAccount {
+    AdminAccount {
+        premium: is_premium(api, &account),
+        name: account.name().to_string(),
+        avatar: account.avatar().map(str::to_string),
+        identities: account
+            .identities
+            .into_iter()
+            .map(|identity| AdminIdentity {
+                platform: identity.platform,
+                user_id: identity.user_id,
+                login: identity.login,
+            })
+            .collect(),
+        id: account.id,
+    }
+}
+
+fn premium_accounts(api: &Api) -> Vec<AdminAccount> {
+    api.accounts
+        .premium()
+        .into_iter()
+        .map(|account| admin_account(api, account))
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -117,13 +162,9 @@ pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
             },
             requests: api.requests.stats(),
         },
-        accounts: api.accounts.stats(
-            &api.admins
-                .iter()
-                .chain(&api.premium_accounts)
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-        ),
+        accounts: api
+            .accounts
+            .stats(&api.admins.iter().map(String::as_str).collect::<Vec<_>>()),
         moblin: MoblinStats {
             connected_devices: api.remote_control.connected_count(),
             messages: api.remote_control.traffic.stats(),
@@ -135,6 +176,7 @@ pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
         database: database_stats(&api.database),
         counters: api.counters.all(),
         sign_in: api.access.state(),
+        premium: premium_accounts(api),
     }
 }
 
@@ -234,6 +276,56 @@ pub(super) async fn handle_admin_sign_in_dismiss(
         platform.title()
     );
     changed(api.access.dismiss(platform, &user_id), &api)
+}
+
+#[derive(Deserialize)]
+pub(super) struct AccountsQuery {
+    search: String,
+}
+
+pub(super) async fn handle_admin_accounts(
+    State(api): State<Arc<Api>>,
+    Query(query): Query<AccountsQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AdminAccount>>, (StatusCode, String)> {
+    admin(&api, &headers)?;
+    Ok(Json(
+        api.accounts
+            .search(&query.search)
+            .into_iter()
+            .map(|account| admin_account(&api, account))
+            .collect(),
+    ))
+}
+
+#[derive(Deserialize)]
+pub(super) struct PremiumRequest {
+    premium: bool,
+}
+
+pub(super) async fn handle_admin_account_premium(
+    State(api): State<Arc<Api>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<PremiumRequest>,
+) -> Result<Json<Vec<AdminAccount>>, (StatusCode, String)> {
+    let admin = admin(&api, &headers)?;
+    let account = api
+        .accounts
+        .set_premium(&id, request.premium)
+        .map_err(|error| match error {
+            AccountError::Unknown => (StatusCode::NOT_FOUND, "No such account.".to_string()),
+            error => account_error(error),
+        })?;
+    info!(
+        "account {} {} account {id} premium",
+        admin.account.id,
+        if request.premium { "made" } else { "stopped" }
+    );
+    api.remote_control
+        .changes
+        .notify(&account.page_id, Change::Account);
+    Ok(Json(premium_accounts(&api)))
 }
 
 #[cfg(test)]

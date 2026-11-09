@@ -2,11 +2,28 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 pub struct Database {
     connection: Mutex<Connection>,
     path: Option<PathBuf>,
+}
+
+fn migrate(connection: &Connection) -> rusqlite::Result<()> {
+    let premium = connection
+        .query_row(
+            "SELECT 1 FROM pragma_table_info('accounts') WHERE name = 'premium'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?;
+    if premium.is_none() {
+        connection.execute(
+            "ALTER TABLE accounts ADD COLUMN premium INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 impl Database {
@@ -28,7 +45,8 @@ impl Database {
                      merchant_id TEXT,
                      paypal_tracking_id TEXT,
                      stripe_account_id TEXT,
-                     stripe_ready INTEGER NOT NULL DEFAULT 0
+                     stripe_ready INTEGER NOT NULL DEFAULT 0,
+                     premium INTEGER NOT NULL DEFAULT 0
                  );
                  DROP INDEX IF EXISTS accounts_page_id;
                  CREATE UNIQUE INDEX IF NOT EXISTS accounts_page_id_unique ON accounts (page_id);
@@ -167,6 +185,7 @@ impl Database {
                  );",
             )
             .context("failed to create the database tables")?;
+        migrate(&connection).context("failed to migrate the database")?;
         connection.set_prepared_statement_cache_capacity(64);
         Ok(Arc::new(Self {
             connection: Mutex::new(connection),
