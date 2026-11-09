@@ -843,7 +843,7 @@ function Rows<T>(props: {
       </h3>
       <Show when={props.items.length > 0} fallback={<p class="text-muted">{props.empty}</p>}>
         <ul class={`${cardClass} gap-0! divide-y divide-line p-0! sm:p-0!`}>
-          <Index each={props.items}>{(item) => props.children(item())}</Index>
+          <For each={props.items}>{(item) => props.children(item)}</For>
         </ul>
       </Show>
     </div>
