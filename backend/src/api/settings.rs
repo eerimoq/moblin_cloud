@@ -295,7 +295,7 @@ pub(super) async fn handle_settings(
             ..request
         }
     };
-    let premium = is_premium(&api, &user.streamer);
+    let premium = user.streamer.premium;
     let response = update_settings(&api, &user.streamer, premium, request).await?;
     Ok(settings_for(&user, response))
 }

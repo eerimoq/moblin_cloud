@@ -1062,11 +1062,7 @@ function Premium(props: {
               <AccountRow account={account}>
                 <Show
                   when={!account.premium}
-                  fallback={
-                    <span class="text-[15px] font-semibold text-muted">
-                      {account.admin ? "Admin" : "Premium"}
-                    </span>
-                  }
+                  fallback={<span class="text-[15px] font-semibold text-muted">Premium</span>}
                 >
                   {action("Make premium", false, change(account, true))}
                 </Show>
@@ -1077,18 +1073,13 @@ function Premium(props: {
       </Show>
       <Rows
         title="Premium accounts"
-        hint="They can add a banner image, pick any color and choose a font. Removing one keeps the banner, color and font it has and only stops new choices. Admins are always premium and can't be removed."
+        hint="They can add a banner image, pick any color and choose a font. Removing one keeps the banner, color and font it has and only stops new choices."
         empty="No one is premium."
         items={props.accounts}
       >
         {(account) => (
           <AccountRow account={account}>
-            <Show
-              when={!account.admin}
-              fallback={<span class="text-[15px] font-semibold text-muted">Admin</span>}
-            >
-              {action("Remove", true, change(account, false))}
-            </Show>
+            {action("Remove", true, change(account, false))}
           </AccountRow>
         )}
       </Rows>
@@ -1238,11 +1229,7 @@ function Loaded(props: {
   const accounts = () =>
     [
       ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
-      [
-        "Premium",
-        "Signed in accounts with the premium features, including the admins.",
-        props.stats.accounts.premium,
-      ],
+      ["Premium", "Signed in accounts with the premium features.", props.stats.accounts.premium],
       ...(props.stats.server.integrations.paypal
         ? [
             [

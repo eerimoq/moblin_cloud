@@ -349,10 +349,6 @@ pub(super) fn may_sign_in(api: &Api, account: &Account) -> bool {
     !api.access.restricted() || is_admin(api, account) || api.access.allows(&account.identities)
 }
 
-pub(super) fn is_premium(api: &Api, account: &Account) -> bool {
-    account.premium || is_admin(api, account)
-}
-
 pub(super) fn admin(api: &Api, headers: &HeaderMap) -> Result<SignedIn, (StatusCode, String)> {
     let signed_in = signed_in(api, headers)?;
     if !is_admin(api, &signed_in.account) {

@@ -393,11 +393,6 @@ async fn kick_streamers_sign_in_with_pkce() {
     let account = api.accounts.get(&session_account).unwrap();
     assert_eq!(account.identities[0].admin_key(), "kick:123");
     assert!(!is_admin(&api, &account));
-    assert_eq!(
-        api.accounts.stats(&["kick:123", "kick:456", "123"]).premium,
-        2
-    );
-    assert_eq!(api.accounts.stats(&["123", "456"]).premium, 0);
 }
 
 #[tokio::test]

@@ -215,7 +215,7 @@ pub(super) async fn handle_assistant_account(
         devices: devices(&api, &page_id, false),
         settings: settings_for(&user, settings_response(&api, account, look)).0,
         admin: false,
-        premium: is_premium(&api, account),
+        premium: account.premium,
         preview: user.rights.preview,
         go_live: user.rights.go_live,
         edit_tips: user.rights.edit_tips,

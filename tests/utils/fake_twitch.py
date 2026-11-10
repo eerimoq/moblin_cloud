@@ -24,7 +24,7 @@ LOGGER = logging.getLogger(__name__)
 LOGIN_RE = re.compile(r"^[a-z0-9_]{1,25}$")
 APP_TOKEN = "app-token"
 USERS = [
-    ("admin", "an admin, and so premium"),
+    ("admin", "an admin"),
     ("premium", "one to make premium on the admin page"),
     ("normal", "neither admin nor premium"),
     ("sub1", "a tier 1 subscriber"),

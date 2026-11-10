@@ -288,11 +288,6 @@ pub fn device_ids(connection: &Connection, page_id: &str) -> Vec<String> {
     })
 }
 
-const PREMIUM: &str = "(premium OR EXISTS (
-    SELECT 1 FROM identities WHERE identities.account = accounts.id
-    AND platform || ':' || user_id IN (SELECT value FROM json_each(?1))
-))";
-
 const COLUMNS: &str = "id, page_id, moblin_key, sessions, merchant_id, paypal_tracking_id, stripe_account_id, stripe_ready, premium";
 
 const IDENTITIES: &str = "(SELECT json_group_array(json_object('platform', platform, 'user_id', user_id, 'login', login, 'name', name, 'avatar', avatar) ORDER BY platform = 'twitch' DESC, platform) FROM identities WHERE account = accounts.id)";
@@ -848,12 +843,10 @@ impl Accounts {
         })
     }
 
-    pub fn premium(&self, admins: &[&str]) -> Vec<Account> {
+    pub fn premium(&self) -> Vec<Account> {
         self.list(
-            &format!(
-                "{PREMIUM} ORDER BY (SELECT min(login) FROM identities WHERE account = accounts.id)"
-            ),
-            [serde_json::to_string(admins).unwrap()],
+            "premium ORDER BY (SELECT min(login) FROM identities WHERE account = accounts.id)",
+            [],
         )
     }
 
@@ -1244,16 +1237,13 @@ impl Accounts {
         Ok(account)
     }
 
-    pub fn stats(&self, admins: &[&str]) -> AccountStats {
+    pub fn stats(&self) -> AccountStats {
         self.database
             .lock()
             .query_row(
-                &format!(
-                    "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0),
-                            count(*) FILTER (WHERE {PREMIUM})
-                     FROM accounts"
-                ),
-                [serde_json::to_string(admins).unwrap()],
+                "SELECT count(*), count(merchant_id), coalesce(sum(stripe_ready), 0), coalesce(sum(premium), 0)
+                 FROM accounts",
+                [],
                 |row| {
                     Ok(AccountStats {
                         total: row.get(0)?,

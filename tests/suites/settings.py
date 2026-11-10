@@ -104,7 +104,7 @@ class SettingsAccent(TestCase):
     """Let premium streamers pick any #rrggbb accent color and others only the fixed ones."""
 
     def run(self):
-        premium = self.sign_in("admin")
+        premium = self.sign_in_premium("premiumaccent")
         settings = premium.change_settings(accent="#12ab34")
         self.assert_equal(settings["accent"], "#12ab34")
         self.assert_equal(self.frontend.viewer(settings["id"]).profile()["accent"], "#12ab34")

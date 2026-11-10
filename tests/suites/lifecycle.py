@@ -17,11 +17,11 @@ class LifecycleKeptOnRestart(TestCase):
     """Keep everything a streamer set up when the backend restarts: identities, devices, assistants, look and features."""
 
     def run(self):
-        dashboard = self.sign_in("admin")
+        dashboard = self.sign_in_premium("keptstreamer")
         settings = self.context.page_with_paypal(dashboard)
         page_id = settings["id"]
         if dashboard.account()["kick"] is None:
-            dashboard.link(self.frontend.link_token("kick", "adminkick"))
+            dashboard.link(self.frontend.link_token("kick", "keptkick"))
         dashboard.change_settings(
             effects={"price": 250},
             tips={"enabled": False, "amounts": [300]},
@@ -46,7 +46,7 @@ class LifecycleKeptOnRestart(TestCase):
         effects = viewer.effects()
         addresses = requests.get(
             f"{self.backend.url}/pages/addresses",
-            params={"logins": "twitch:admin,kick:adminkick"},
+            params={"logins": "twitch:keptstreamer,kick:keptkick"},
             timeout=10,
         ).json()
         self.backend.restart()
@@ -56,7 +56,7 @@ class LifecycleKeptOnRestart(TestCase):
         self.assert_equal(
             requests.get(
                 f"{self.backend.url}/pages/addresses",
-                params={"logins": "twitch:admin,kick:adminkick"},
+                params={"logins": "twitch:keptstreamer,kick:keptkick"},
                 timeout=10,
             ).json(),
             addresses,
@@ -65,7 +65,7 @@ class LifecycleKeptOnRestart(TestCase):
         self.assert_equal(assistant.assisted_account(page_id)["preview"], True)
 
     def teardown(self):
-        dashboard = self.sign_in("admin")
+        dashboard = self.sign_in("keptstreamer")
         dashboard.change_settings(
             effects=None, tips=None, subEffects=None, accent=None, font=None, message=None
         )

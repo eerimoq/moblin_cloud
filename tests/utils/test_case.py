@@ -18,6 +18,20 @@ class TestCase(systest.TestCase):
     def sign_in(self, login: str = "streamer") -> Dashboard:
         return self.context.sign_in(login)
 
+    def account_id_of(self, admin: Dashboard, login: str) -> str:
+        found = admin.search_accounts(login)
+        return next(
+            account["id"]
+            for account in found
+            if any(identity["login"] == login for identity in account["identities"])
+        )
+
+    def sign_in_premium(self, login: str) -> Dashboard:
+        dashboard = self.sign_in(login)
+        admin = self.sign_in("admin")
+        admin.set_premium(self.account_id_of(admin, login), True)
+        return dashboard
+
     def assert_backend_error(self, status: int, call: Callable[..., object], text: str | None = None) -> str:
         try:
             call()

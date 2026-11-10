@@ -45,13 +45,11 @@ pub(super) struct AdminAccount {
     avatar: Option<String>,
     identities: Vec<AdminIdentity>,
     premium: bool,
-    admin: bool,
 }
 
-fn admin_account(api: &Api, account: Account) -> AdminAccount {
+fn admin_account(account: Account) -> AdminAccount {
     AdminAccount {
-        premium: is_premium(api, &account),
-        admin: is_admin(api, &account),
+        premium: account.premium,
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         identities: account
@@ -69,9 +67,9 @@ fn admin_account(api: &Api, account: Account) -> AdminAccount {
 
 fn premium_accounts(api: &Api) -> Vec<AdminAccount> {
     api.accounts
-        .premium(&api.admins.iter().map(String::as_str).collect::<Vec<_>>())
+        .premium()
         .into_iter()
-        .map(|account| admin_account(api, account))
+        .map(admin_account)
         .collect()
 }
 
@@ -164,9 +162,7 @@ pub(super) fn admin_stats(api: &Api) -> AdminStatsResponse {
             },
             requests: api.requests.stats(),
         },
-        accounts: api
-            .accounts
-            .stats(&api.admins.iter().map(String::as_str).collect::<Vec<_>>()),
+        accounts: api.accounts.stats(),
         moblin: MoblinStats {
             connected_devices: api.remote_control.connected_count(),
             messages: api.remote_control.traffic.stats(),
@@ -295,7 +291,7 @@ pub(super) async fn handle_admin_accounts(
         api.accounts
             .search(&query.search)
             .into_iter()
-            .map(|account| admin_account(&api, account))
+            .map(admin_account)
             .collect(),
     ))
 }

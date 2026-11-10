@@ -28,7 +28,7 @@ async fn image(
     body: Bytes,
 ) -> Result<Json<SettingsResponse>, Failure> {
     let user = editor(api, headers, page_id)?;
-    let premium = is_premium(api, &user.streamer);
+    let premium = user.streamer.premium;
     let response = save_image(
         api,
         &user.signed_in.account.id,

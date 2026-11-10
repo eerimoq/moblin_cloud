@@ -64,14 +64,6 @@ class AccountTestCase(TestCase):
     def assert_signed_out(self, dashboard: Dashboard):
         self.assert_backend_error(401, dashboard.account, "not signed in")
 
-    def account_id_of(self, admin: Dashboard, login: str) -> str:
-        found = admin.search_accounts(login)
-        return next(
-            account["id"]
-            for account in found
-            if any(identity["login"] == login for identity in account["identities"])
-        )
-
 
 class AccountSignIn(AccountTestCase):
     """Sign in with Twitch from the dashboard and get the account with its page."""
@@ -314,9 +306,7 @@ class AccountPageLook(AccountTestCase):
     """Change the look of the page in the dashboard and see it on the page."""
 
     def run(self):
-        dashboard = self.sign_in("pagelook")
-        admin = self.sign_in("admin")
-        admin.set_premium(self.account_id_of(admin, "pagelook"), True)
+        dashboard = self.sign_in_premium("pagelook")
         page_id = dashboard.page_id()
         settings = dashboard.save_settings(message="  Thanks for watching.  ", accent="purple", font="serif")
         self.assert_equal(settings["message"], "Thanks for watching.")
@@ -359,8 +349,7 @@ class AccountPremium(AccountTestCase):
             [found[0]["identities"][0]["login"], found[0]["premium"]],
             ["premiumsearch", False],
         )
-        admin_account = admin.search_accounts("admin")[0]
-        self.assert_equal([admin_account["premium"], admin_account["admin"]], [True, True])
+        self.assert_false(admin.search_accounts("admin")[0]["premium"])
         self.assert_backend_error(403, lambda: streamer.set_premium(account_id, True), "not an admin")
         self.assert_backend_error(404, lambda: admin.set_premium("unknown", True), "No such account.")
         self.assert_backend_error(
@@ -374,7 +363,6 @@ class AccountPremium(AccountTestCase):
         self.assert_equal(streamer.save_settings(font="serif")["font"], "serif")
         listed = admin.set_premium(account_id, False)
         self.assert_not_in(account_id, [account["id"] for account in listed])
-        self.assert_in(admin_account["id"], [account["id"] for account in listed])
         account = streamer.account()
         self.assert_false(account["premium"])
         self.assert_equal(account["settings"]["font"], "serif")

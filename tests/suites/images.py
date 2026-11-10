@@ -22,10 +22,10 @@ def image(width: int, height: int, format_: str = "PNG", color: tuple = (200, 40
 
 
 class ImagesTestCase(TestCase):
-    """Banner images of premium streamers' pages. admin is an admin, and so premium."""
+    """Banner images of premium streamers' pages."""
 
     def setup(self):
-        self.premium = self.sign_in("admin")
+        self.premium = self.sign_in_premium("imagespremium")
         self.page_id = self.premium.page_id()
         self.viewer = self.frontend.viewer(self.page_id)
 
