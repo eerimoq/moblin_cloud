@@ -1062,7 +1062,11 @@ function Premium(props: {
               <AccountRow account={account}>
                 <Show
                   when={!account.premium}
-                  fallback={<span class="text-[15px] font-semibold text-muted">Premium</span>}
+                  fallback={
+                    <span class="text-[15px] font-semibold text-muted">
+                      {account.admin ? "Admin" : "Premium"}
+                    </span>
+                  }
                 >
                   {action("Make premium", false, change(account, true))}
                 </Show>
