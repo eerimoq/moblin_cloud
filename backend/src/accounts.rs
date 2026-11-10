@@ -858,7 +858,7 @@ impl Accounts {
     }
 
     pub fn search(&self, text: &str) -> Vec<Account> {
-        let text = text.trim().trim_start_matches('@');
+        let text = text.trim();
         if text.is_empty() {
             return Vec::new();
         }

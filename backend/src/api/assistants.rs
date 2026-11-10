@@ -49,11 +49,7 @@ pub(super) async fn handle_account_assistant_add(
     Json(request): Json<AssistantRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
     let (platform, SignedIn { account, .. }, broadcaster) = broadcaster(&api, &platform, &headers)?;
-    let username = request
-        .username
-        .trim()
-        .trim_start_matches('@')
-        .to_lowercase();
+    let username = request.username.trim().to_lowercase();
     let username = username.as_str();
     let (longest, allowed) = match platform {
         Platform::Twitch => (25, "_"),

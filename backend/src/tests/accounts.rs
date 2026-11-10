@@ -831,7 +831,7 @@ fn accounts_are_searched() {
         .link("3", &Identity::kick("9", "Kicker", "kickerik"))
         .unwrap();
     assert_eq!(ids("erik"), ["1", "2", "3"]);
-    assert_eq!(ids(" @ERIK "), ["1", "2", "3"]);
+    assert_eq!(ids(" ERIK "), ["1", "2", "3"]);
     assert_eq!(ids("kick"), ["3"]);
     assert_eq!(ids("derik"), ["2"]);
     assert_eq!(ids("fourth"), ["4"]);
@@ -840,7 +840,7 @@ fn accounts_are_searched() {
     assert_eq!(ids("9"), ["3"]);
     assert_eq!(ids("1"), ["1"]);
     assert!(ids("").is_empty());
-    assert!(ids("@").is_empty());
+    assert!(ids(" ").is_empty());
     assert!(ids("nobody").is_empty());
     for id in 10..40 {
         let id = id.to_string();

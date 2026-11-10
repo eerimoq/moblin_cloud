@@ -149,7 +149,7 @@ async fn admins_make_accounts_premium() {
     let response = premium(admin.clone(), "2", true).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(response.text().await.unwrap(), "No such account.");
-    let found: Value = search(admin.clone(), "@ERI")
+    let found: Value = search(admin.clone(), "ERI")
         .await
         .unwrap()
         .json()

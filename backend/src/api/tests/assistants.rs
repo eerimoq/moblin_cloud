@@ -84,7 +84,7 @@ async fn kick_assistants_are_an_allow_list() {
         account_of(&address, &session).await["kickAssistants"],
         json!([])
     );
-    let response = add(&session, " @Bob ").await;
+    let response = add(&session, " Bob ").await;
     assert_eq!(response.status(), StatusCode::OK);
     let account: Value = response.json().await.unwrap();
     assert_eq!(
@@ -227,7 +227,7 @@ async fn twitch_assistants_are_added_by_username() {
         assert_eq!(response.status(), status, "{username}");
         assert_eq!(response.text().await.unwrap(), text);
     }
-    let response = add(" @Bob ").await;
+    let response = add(" Bob ").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.json::<Value>().await.unwrap()["twitchAssistants"],

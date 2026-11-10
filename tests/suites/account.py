@@ -352,7 +352,7 @@ class AccountPremium(AccountTestCase):
         streamer = self.sign_in("premiumsearch")
         admin = self.sign_in("admin")
         self.assert_backend_error(403, lambda: streamer.search_accounts("premiumsearch"), "not an admin")
-        found = admin.search_accounts("@PREMIUMSEARCH")
+        found = admin.search_accounts("PREMIUMSEARCH")
         self.assert_equal(len(found), 1)
         account_id = found[0]["id"]
         self.assert_equal(
