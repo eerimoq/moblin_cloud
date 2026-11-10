@@ -1236,7 +1236,7 @@ function Loaded(props: {
       ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
       [
         "Premium",
-        "Signed in accounts with the premium features, the admins among them.",
+        "Signed in accounts with the premium features, including the admins.",
         props.stats.accounts.premium,
       ],
       ...(props.stats.server.integrations.paypal
