@@ -183,7 +183,7 @@ class SignInOnlyAllowed(SignInTestCase):
         self.assert_backend_error(403, lambda: before.restrict_sign_in(True), "not an admin")
         state = admin.restrict_sign_in(True)
         self.assert_true(state["restricted"])
-        allowed = [(person["platform"], person["userId"]) for person in state["allowed"]]
+        allowed = [(person["platform"], person["userId"]) for people in state["allowed"] for person in people]
         self.assert_in(("twitch", user_id_of("allowedbefore")), allowed)
         self.assert_equal(self.sign_in("allowedbefore").page_id(), before.page_id())
         admin.remove_sign_in("twitch", user_id_of("pagelook"))

@@ -854,18 +854,18 @@ function People(props: {
   title: string;
   hint: string;
   empty: string;
-  people: SignInPerson[];
+  groups: SignInPerson[][];
   children: (person: SignInPerson) => JSX.Element;
 }) {
   return (
-    <Rows title={props.title} hint={props.hint} empty={props.empty} items={props.people}>
-      {(person) => (
+    <Rows title={props.title} hint={props.hint} empty={props.empty} items={props.groups}>
+      {([person, ...linked]) => (
         <Row
           name={person.name || person.login}
           avatar={person.avatar}
-          detail={`${platformNames[person.platform]} ${person.login || person.userId}, ${new Date(
-            person.at * 1000,
-          ).toLocaleString("en")}`}
+          detail={`${[person, ...linked]
+            .map((person) => `${platformNames[person.platform]} ${person.login || person.userId}`)
+            .join(", ")}, ${new Date(person.at * 1000).toLocaleString("en")}`}
         >
           {props.children(person)}
         </Row>
@@ -947,7 +947,7 @@ function SignIn(props: {
           title="Waiting"
           hint="Who tried to sign in without being allowed, newest first. They get no account until you allow them, and then sign in again. Only the newest 100 are kept."
           empty="No one is waiting."
-          people={props.access.requests}
+          groups={props.access.requests.map((person) => [person])}
         >
           {(person) => (
             <>
@@ -968,9 +968,9 @@ function SignIn(props: {
       <Show when={props.access.restricted || props.access.allowed.length > 0}>
         <People
           title="Allowed"
-          hint="Twitch and Kick users who may sign in. An account may sign in when any of its linked identities is here. Removing one signs its account out, while its page and Moblin keep working. Admins can always sign in."
+          hint="Twitch and Kick users who may sign in, with the identities linked to one account on one row. Removing one removes its linked identities too and signs its account out, while its page and Moblin keep working. Admins can always sign in."
           empty="No one is allowed but the admins."
-          people={props.access.allowed}
+          groups={props.access.allowed}
         >
           {(person) =>
             action(

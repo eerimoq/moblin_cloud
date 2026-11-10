@@ -26,7 +26,7 @@ pub struct Person {
 #[derive(Debug, Default, PartialEq, Serialize)]
 pub struct SignInState {
     pub restricted: bool,
-    pub allowed: Vec<Person>,
+    pub allowed: Vec<Vec<Person>>,
     pub requests: Vec<Person>,
 }
 
@@ -35,25 +35,53 @@ pub struct SignInAccess {
     restricted: AtomicBool,
 }
 
-fn people(connection: &Connection, table: &str) -> rusqlite::Result<Vec<Person>> {
+fn person(row: &rusqlite::Row) -> rusqlite::Result<Person> {
+    let platform = Platform::parse(&row.get::<_, String>(0)?)
+        .ok_or_else(|| rusqlite::Error::InvalidColumnType(0, "platform".to_string(), Type::Text))?;
+    Ok(Person {
+        platform,
+        user_id: row.get(1)?,
+        login: row.get(2)?,
+        name: row.get(3)?,
+        avatar: row.get(4)?,
+        at: row.get(5)?,
+    })
+}
+
+fn requests(connection: &Connection) -> rusqlite::Result<Vec<Person>> {
     connection
-        .prepare_cached(&format!(
-            "SELECT platform, user_id, login, name, avatar, at FROM {table} ORDER BY at DESC, login"
-        ))?
-        .query_map([], |row| {
-            let platform = Platform::parse(&row.get::<_, String>(0)?).ok_or_else(|| {
-                rusqlite::Error::InvalidColumnType(0, "platform".to_string(), Type::Text)
-            })?;
-            Ok(Person {
-                platform,
-                user_id: row.get(1)?,
-                login: row.get(2)?,
-                name: row.get(3)?,
-                avatar: row.get(4)?,
-                at: row.get(5)?,
-            })
-        })?
+        .prepare_cached(
+            "SELECT platform, user_id, login, name, avatar, at FROM sign_in_requests
+             ORDER BY at DESC, login",
+        )?
+        .query_map([], person)?
         .collect()
+}
+
+fn allowed(connection: &Connection) -> rusqlite::Result<Vec<Vec<Person>>> {
+    let mut groups: Vec<(Option<String>, Vec<Person>)> = Vec::new();
+    for row in connection
+        .prepare_cached(
+            "SELECT allowed.platform, allowed.user_id, allowed.login, allowed.name,
+                    allowed.avatar, allowed.at, identities.account
+             FROM allowed_identities AS allowed LEFT JOIN identities
+             ON identities.platform = allowed.platform AND identities.user_id = allowed.user_id
+             ORDER BY allowed.at DESC, allowed.login",
+        )?
+        .query_map([], |row| {
+            Ok((person(row)?, row.get::<_, Option<String>>(6)?))
+        })?
+    {
+        let (person, account) = row?;
+        match groups
+            .iter_mut()
+            .find(|(group, _)| account.is_some() && *group == account)
+        {
+            Some((_, people)) => people.push(person),
+            None => groups.push((account, vec![person])),
+        }
+    }
+    Ok(groups.into_iter().map(|(_, people)| people).collect())
 }
 
 impl SignInAccess {
@@ -177,7 +205,11 @@ impl SignInAccess {
 
     pub fn remove(&self, platform: Platform, user_id: &str) -> rusqlite::Result<()> {
         self.database.lock().execute(
-            "DELETE FROM allowed_identities WHERE platform = ?1 AND user_id = ?2",
+            "DELETE FROM allowed_identities WHERE platform = ?1 AND user_id = ?2
+             OR (platform, user_id) IN (
+                 SELECT platform, user_id FROM identities WHERE account =
+                     (SELECT account FROM identities WHERE platform = ?1 AND user_id = ?2)
+             )",
             [platform.name(), user_id],
         )?;
         Ok(())
@@ -193,16 +225,16 @@ impl SignInAccess {
 
     pub fn state(&self) -> SignInState {
         let database = self.database.lock();
-        let read = |table| {
-            people(&database, table).unwrap_or_else(|error| {
-                warn!("failed to read {table}: {error:#}");
-                Vec::new()
-            })
-        };
         SignInState {
             restricted: self.restricted(),
-            allowed: read("allowed_identities"),
-            requests: read("sign_in_requests"),
+            allowed: allowed(&database).unwrap_or_else(|error| {
+                warn!("failed to read the allowed identities: {error:#}");
+                Vec::new()
+            }),
+            requests: requests(&database).unwrap_or_else(|error| {
+                warn!("failed to read the sign in requests: {error:#}");
+                Vec::new()
+            }),
         }
     }
 }

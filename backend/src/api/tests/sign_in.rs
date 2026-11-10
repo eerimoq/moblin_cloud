@@ -1005,6 +1005,14 @@ async fn only_allowed_accounts_sign_in_while_restricted() {
             })
             .collect::<Vec<_>>()
     };
+    let allowed_users = |groups: &Value| {
+        groups
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(users)
+            .collect::<Vec<_>>()
+    };
     let restrict = json!({"restricted": true});
     assert_eq!(
         post("/admin/sign-in", &kicker, restrict.clone()).await.0,
@@ -1019,7 +1027,7 @@ async fn only_allowed_accounts_sign_in_while_restricted() {
     let (status, state) = post("/admin/sign-in", &admin, restrict).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(state["restricted"], true);
-    let mut allowed = users(&state["allowed"]);
+    let mut allowed = allowed_users(&state["allowed"]);
     allowed.sort();
     assert_eq!(allowed, ["kick:123", "twitch:admin", "twitch:premium"]);
     assert_eq!(state["requests"], json!([]));
@@ -1078,7 +1086,7 @@ async fn only_allowed_accounts_sign_in_while_restricted() {
     let (status, state) = post("/admin/sign-in/allowed/twitch/42", &admin, Value::Null).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(state["requests"], json!([]));
-    assert!(users(&state["allowed"]).contains(&"twitch:42".to_string()));
+    assert!(allowed_users(&state["allowed"]).contains(&"twitch:42".to_string()));
     let erik = session_of(&flow.sign_in("twitch", "c").await);
     assert_eq!(status_of(&erik).await, StatusCode::OK);
     post(

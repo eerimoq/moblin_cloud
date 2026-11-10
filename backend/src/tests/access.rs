@@ -25,6 +25,10 @@ fn keys(people: &[Person]) -> Vec<(Platform, &str, &str)> {
         .collect()
 }
 
+fn allowed(state: &SignInState) -> Vec<Vec<(Platform, &str, &str)>> {
+    state.allowed.iter().map(|people| keys(people)).collect()
+}
+
 #[test]
 fn everyone_may_sign_in_until_restricted() {
     let database = Database::memory();
@@ -50,10 +54,10 @@ fn restricting_allows_the_existing_identities_and_survives_restarts() {
     assert!(!access.allows(&[Identity::twitch("2", "Twitch 2", "two")]));
     assert!(!access.allows(&[]));
     assert_eq!(
-        keys(&access.state().allowed),
+        allowed(&access.state()),
         [
-            (Platform::Twitch, "1", "erik"),
-            (Platform::Kick, "2", "kicker")
+            [(Platform::Twitch, "1", "erik")],
+            [(Platform::Kick, "2", "kicker")]
         ]
     );
     assert!(SignInAccess::new(database.clone()).restricted());
@@ -63,8 +67,8 @@ fn restricting_allows_the_existing_identities_and_survives_restarts() {
     assert_eq!(access.state().allowed.len(), 1);
     access.set_restricted(true).unwrap();
     assert_eq!(
-        keys(&access.state().allowed),
-        [(Platform::Kick, "2", "kicker")]
+        allowed(&access.state()),
+        [[(Platform::Kick, "2", "kicker")]]
     );
 }
 
@@ -102,8 +106,8 @@ fn requests_are_allowed_or_dismissed() {
     assert!(access.allow(Platform::Twitch, "9").unwrap());
     let state = access.state();
     assert_eq!(keys(&state.requests), [(Platform::Kick, "7", "alice")]);
-    assert_eq!(keys(&state.allowed), [(Platform::Twitch, "9", "bobby")]);
-    assert_eq!(state.allowed[0].name, "Bobby");
+    assert_eq!(allowed(&state), [[(Platform::Twitch, "9", "bobby")]]);
+    assert_eq!(state.allowed[0][0].name, "Bobby");
     assert!(access.allows(std::slice::from_ref(&bob)));
     access.dismiss(Platform::Kick, "7").unwrap();
     assert!(access.state().requests.is_empty());
@@ -131,4 +135,42 @@ fn only_the_newest_requests_are_kept() {
     assert_eq!(requests.len(), 100);
     assert!(requests.iter().all(|request| request.user_id != "0"));
     assert!(requests.iter().any(|request| request.user_id == "104"));
+}
+
+#[test]
+fn linked_identities_are_allowed_and_removed_together() {
+    let database = Database::memory();
+    let accounts = Accounts::new(database.clone());
+    account(&accounts, &Identity::twitch("1", "Erik", "erik"));
+    accounts
+        .link("account-1", &Identity::kick("8", "Erik", "erikkick"))
+        .unwrap();
+    account(&accounts, &Identity::twitch("2", "Adam", "adam"));
+    let access = SignInAccess::new(database.clone());
+    access.set_restricted(true).unwrap();
+    access.request(&Identity::kick("7", "Bob", "bob")).unwrap();
+    assert!(access.allow(Platform::Kick, "7").unwrap());
+    let state = access.state();
+    let mut groups = allowed(&state);
+    groups.sort_by_key(|people| people[0].2);
+    assert_eq!(
+        groups,
+        vec![
+            vec![(Platform::Twitch, "2", "adam")],
+            vec![(Platform::Kick, "7", "bob")],
+            vec![
+                (Platform::Twitch, "1", "erik"),
+                (Platform::Kick, "8", "erikkick")
+            ],
+        ]
+    );
+    access.remove(Platform::Kick, "8").unwrap();
+    assert!(!access.allows(&[Identity::twitch("1", "Erik", "erik")]));
+    assert!(!access.allows(&[Identity::kick("8", "Erik", "erikkick")]));
+    assert_eq!(access.state().allowed.len(), 2);
+    access.remove(Platform::Kick, "7").unwrap();
+    assert_eq!(
+        allowed(&access.state()),
+        [[(Platform::Twitch, "2", "adam")]]
+    );
 }

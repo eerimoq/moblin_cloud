@@ -279,7 +279,7 @@ export type SignInPerson = {
 
 export type SignInAccess = {
   restricted: boolean;
-  allowed: SignInPerson[];
+  allowed: SignInPerson[][];
   requests: SignInPerson[];
 };
 
