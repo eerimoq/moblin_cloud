@@ -1073,13 +1073,18 @@ function Premium(props: {
       </Show>
       <Rows
         title="Premium accounts"
-        hint="They can add a banner image, pick any color and choose a font. Removing one keeps the banner, color and font it has and only stops new choices. Admins are always premium."
-        empty="No one is premium but the admins."
+        hint="They can add a banner image, pick any color and choose a font. Removing one keeps the banner, color and font it has and only stops new choices. Admins are always premium and can't be removed."
+        empty="No one is premium."
         items={props.accounts}
       >
         {(account) => (
           <AccountRow account={account}>
-            {action("Remove", true, change(account, false))}
+            <Show
+              when={!account.admin}
+              fallback={<span class="text-[15px] font-semibold text-muted">Admin</span>}
+            >
+              {action("Remove", true, change(account, false))}
+            </Show>
           </AccountRow>
         )}
       </Rows>
@@ -1231,7 +1236,7 @@ function Loaded(props: {
       ["Accounts", "Twitch users who have signed in to Moblin Cloud.", props.stats.accounts.total],
       [
         "Premium",
-        "Signed in accounts with the premium features: the admins and the premium accounts below.",
+        "Signed in accounts with the premium features, the admins among them.",
         props.stats.accounts.premium,
       ],
       ...(props.stats.server.integrations.paypal

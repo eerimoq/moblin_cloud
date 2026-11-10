@@ -289,6 +289,7 @@ export type AdminAccount = {
   avatar: string | null;
   identities: { platform: Platform; userId: string; login: string }[];
   premium: boolean;
+  admin: boolean;
 };
 
 export type AdminStats = {

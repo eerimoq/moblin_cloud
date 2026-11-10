@@ -100,7 +100,16 @@ async fn admin_stats() {
                 {"name": "tipOrders", "today": 2, "week": 2, "total": 2},
             ],
             "signIn": {"restricted": false, "allowed": [], "requests": []},
-            "premium": [],
+            "premium": [
+                {
+                    "id": "admin",
+                    "name": "Admin",
+                    "avatar": null,
+                    "identities": [{"platform": "twitch", "userId": "admin", "login": "admin"}],
+                    "premium": true,
+                    "admin": true,
+                },
+            ],
         })
     );
 }
@@ -154,6 +163,7 @@ async fn admins_make_accounts_premium() {
             "avatar": null,
             "identities": [{"platform": "twitch", "userId": "1", "login": "erik"}],
             "premium": false,
+            "admin": false,
         }])
     );
     let found: Value = search(admin.clone(), "admin")
@@ -173,8 +183,11 @@ async fn admins_make_accounts_premium() {
         .json()
         .await
         .unwrap();
-    assert_eq!(listed[0]["id"], "1");
-    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["id"], "admin");
+    assert_eq!(listed[1]["id"], "1");
+    assert_eq!(listed[1]["premium"], true);
+    assert_eq!(listed[1]["admin"], false);
+    assert_eq!(listed.as_array().unwrap().len(), 2);
     assert_eq!(events.next().await.0, "account");
     assert_eq!(account_of(&address, &session).await["premium"], true);
     let stats: Value = client
@@ -197,7 +210,8 @@ async fn admins_make_accounts_premium() {
         .json()
         .await
         .unwrap();
-    assert_eq!(listed, json!([]));
+    assert_eq!(listed[0]["id"], "admin");
+    assert_eq!(listed.as_array().unwrap().len(), 1);
     assert_eq!(events.next().await.0, "account");
     let account = account_of(&address, &session).await;
     assert_eq!(account["premium"], false);

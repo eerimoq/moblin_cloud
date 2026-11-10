@@ -45,11 +45,13 @@ pub(super) struct AdminAccount {
     avatar: Option<String>,
     identities: Vec<AdminIdentity>,
     premium: bool,
+    admin: bool,
 }
 
 fn admin_account(api: &Api, account: Account) -> AdminAccount {
     AdminAccount {
         premium: is_premium(api, &account),
+        admin: is_admin(api, &account),
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         identities: account
@@ -67,7 +69,7 @@ fn admin_account(api: &Api, account: Account) -> AdminAccount {
 
 fn premium_accounts(api: &Api) -> Vec<AdminAccount> {
     api.accounts
-        .premium()
+        .premium(&api.admins.iter().map(String::as_str).collect::<Vec<_>>())
         .into_iter()
         .map(|account| admin_account(api, account))
         .collect()

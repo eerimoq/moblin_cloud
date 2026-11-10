@@ -359,7 +359,8 @@ class AccountPremium(AccountTestCase):
             [found[0]["identities"][0]["login"], found[0]["premium"]],
             ["premiumsearch", False],
         )
-        self.assert_true(admin.search_accounts("admin")[0]["premium"])
+        admin_account = admin.search_accounts("admin")[0]
+        self.assert_equal([admin_account["premium"], admin_account["admin"]], [True, True])
         self.assert_backend_error(403, lambda: streamer.set_premium(account_id, True), "not an admin")
         self.assert_backend_error(404, lambda: admin.set_premium("unknown", True), "No such account.")
         self.assert_backend_error(
@@ -373,6 +374,7 @@ class AccountPremium(AccountTestCase):
         self.assert_equal(streamer.save_settings(font="serif")["font"], "serif")
         listed = admin.set_premium(account_id, False)
         self.assert_not_in(account_id, [account["id"] for account in listed])
+        self.assert_in(admin_account["id"], [account["id"] for account in listed])
         account = streamer.account()
         self.assert_false(account["premium"])
         self.assert_equal(account["settings"]["font"], "serif")

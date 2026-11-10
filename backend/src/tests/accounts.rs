@@ -795,7 +795,7 @@ fn accounts_are_made_premium() {
     assert_eq!(accounts.set_premium("1", true), Err(AccountError::Unknown));
     sign_in(&accounts, "1", "Erik", "erik", "p", "k").unwrap();
     sign_in(&accounts, "2", "Adam", "adam", "q", "l").unwrap();
-    assert!(accounts.premium().is_empty());
+    assert!(accounts.premium(&[]).is_empty());
     assert!(accounts.set_premium("1", true).unwrap().premium);
     assert!(accounts.set_premium("2", true).unwrap().premium);
     assert!(accounts.get("1").unwrap().premium);
@@ -805,9 +805,12 @@ fn accounts_are_made_premium() {
             .map(|account| account.id)
             .collect::<Vec<_>>()
     };
-    assert_eq!(ids(accounts.premium()), ["2", "1"]);
+    assert_eq!(ids(accounts.premium(&[])), ["2", "1"]);
     assert!(!accounts.set_premium("1", false).unwrap().premium);
-    assert_eq!(ids(accounts.premium()), ["2"]);
+    assert_eq!(ids(accounts.premium(&[])), ["2"]);
+    assert_eq!(ids(accounts.premium(&["twitch:1"])), ["2", "1"]);
+    assert_eq!(ids(accounts.premium(&["twitch:2"])), ["2"]);
+    assert_eq!(ids(accounts.premium(&["kick:1"])), ["2"]);
 }
 
 #[test]
