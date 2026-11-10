@@ -26,12 +26,12 @@ pub(super) struct AdminStatsResponse {
     database: DatabaseStats,
     counters: Vec<Counter>,
     sign_in: SignInState,
-    premium: Vec<AdminAccount>,
+    premium: Vec<AccountSummary>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct AdminIdentity {
+pub(super) struct IdentitySummary {
     platform: Platform,
     user_id: String,
     login: String,
@@ -39,23 +39,23 @@ pub(super) struct AdminIdentity {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct AdminAccount {
+pub(super) struct AccountSummary {
     id: String,
     name: String,
     avatar: Option<String>,
-    identities: Vec<AdminIdentity>,
+    identities: Vec<IdentitySummary>,
     premium: bool,
 }
 
-fn admin_account(account: Account) -> AdminAccount {
-    AdminAccount {
+fn account_summary(account: Account) -> AccountSummary {
+    AccountSummary {
         premium: account.premium,
         name: account.name().to_string(),
         avatar: account.avatar().map(str::to_string),
         identities: account
             .identities
             .into_iter()
-            .map(|identity| AdminIdentity {
+            .map(|identity| IdentitySummary {
                 platform: identity.platform,
                 user_id: identity.user_id,
                 login: identity.login,
@@ -65,11 +65,11 @@ fn admin_account(account: Account) -> AdminAccount {
     }
 }
 
-fn premium_accounts(api: &Api) -> Vec<AdminAccount> {
+fn premium_accounts(api: &Api) -> Vec<AccountSummary> {
     api.accounts
         .premium()
         .into_iter()
-        .map(admin_account)
+        .map(account_summary)
         .collect()
 }
 
@@ -285,13 +285,13 @@ pub(super) async fn handle_admin_accounts(
     State(api): State<Arc<Api>>,
     Query(query): Query<AccountsQuery>,
     headers: HeaderMap,
-) -> Result<Json<Vec<AdminAccount>>, (StatusCode, String)> {
+) -> Result<Json<Vec<AccountSummary>>, (StatusCode, String)> {
     admin(&api, &headers)?;
     Ok(Json(
         api.accounts
             .search(&query.search)
             .into_iter()
-            .map(admin_account)
+            .map(account_summary)
             .collect(),
     ))
 }
@@ -306,7 +306,7 @@ pub(super) async fn handle_admin_account_premium(
     Path(id): Path<String>,
     headers: HeaderMap,
     Json(request): Json<PremiumRequest>,
-) -> Result<Json<Vec<AdminAccount>>, (StatusCode, String)> {
+) -> Result<Json<Vec<AccountSummary>>, (StatusCode, String)> {
     let admin = admin(&api, &headers)?;
     let account = api
         .accounts

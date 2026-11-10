@@ -283,7 +283,7 @@ export type SignInAccess = {
   requests: SignInPerson[];
 };
 
-export type AdminAccount = {
+export type AccountSummary = {
   id: string;
   name: string;
   avatar: string | null;
@@ -324,7 +324,7 @@ export type AdminStats = {
   database: { bytes: number; files: { name: string; bytes: number }[] };
   counters: { name: string; today: number; week: number; total: number }[];
   signIn: SignInAccess;
-  premium: AdminAccount[];
+  premium: AccountSummary[];
 };
 
 const sessionKey = "session";
@@ -480,10 +480,10 @@ export const dismissSignIn = (session: string, person: SignInPerson) =>
   call<SignInAccess>(`/admin/sign-in/requests/${personPath(person)}/remove`, session, post());
 
 export const searchAccounts = (session: string, search: string) =>
-  call<AdminAccount[]>(`/admin/accounts?${new URLSearchParams({ search })}`, session);
+  call<AccountSummary[]>(`/admin/accounts?${new URLSearchParams({ search })}`, session);
 
 export const setPremium = (session: string, id: string, premium: boolean) =>
-  call<AdminAccount[]>(
+  call<AccountSummary[]>(
     `/admin/accounts/${encodeURIComponent(id)}/premium`,
     session,
     post({ premium }),

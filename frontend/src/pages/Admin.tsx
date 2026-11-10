@@ -22,7 +22,7 @@ import {
   restrictSignIn,
   searchAccounts,
   setPremium,
-  type AdminAccount,
+  type AccountSummary,
   type AdminStats,
   type SignInAccess,
   type SignInPerson,
@@ -985,12 +985,12 @@ function SignIn(props: {
   );
 }
 
-const identitiesText = (account: AdminAccount) =>
+const identitiesText = (account: AccountSummary) =>
   account.identities
     .map((identity) => `${platformNames[identity.platform]} ${identity.login || identity.userId}`)
     .join(", ");
 
-function AccountRow(props: { account: AdminAccount; children: JSX.Element }) {
+function AccountRow(props: { account: AccountSummary; children: JSX.Element }) {
   return (
     <Row
       name={props.account.name || props.account.id}
@@ -1004,12 +1004,12 @@ function AccountRow(props: { account: AdminAccount; children: JSX.Element }) {
 
 function Premium(props: {
   session: string;
-  accounts: AdminAccount[];
-  onChange: (accounts: AdminAccount[]) => void;
+  accounts: AccountSummary[];
+  onChange: (accounts: AccountSummary[]) => void;
 }) {
   const [text, setText] = createSignal("");
   const [searched, setSearched] = createSignal<string | null>(null);
-  const [found, setFound] = createSignal<AdminAccount[]>([]);
+  const [found, setFound] = createSignal<AccountSummary[]>([]);
   const { busy, error, run, action } = createActions();
 
   const search = async (search: string) => {
@@ -1017,7 +1017,7 @@ function Premium(props: {
     setSearched(search);
   };
 
-  const change = (account: AdminAccount, premium: boolean) => async () => {
+  const change = (account: AccountSummary, premium: boolean) => async () => {
     props.onChange(await setPremium(props.session, account.id, premium));
     const last = searched();
     if (last !== null) {
@@ -1091,7 +1091,7 @@ function Loaded(props: {
   stats: AdminStats;
   session: string;
   onSignIn: (access: SignInAccess) => void;
-  onPremium: (premium: AdminAccount[]) => void;
+  onPremium: (premium: AccountSummary[]) => void;
 }) {
   const counters = () => new Counters(props.stats.counters);
   const offered = () => providerRows.filter(({ slug }) => props.stats.server.integrations[slug]);
