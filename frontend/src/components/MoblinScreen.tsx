@@ -286,7 +286,7 @@ function Segments(props: {
     <div
       role="radiogroup"
       aria-label={props.label}
-      class="flex overflow-hidden rounded-[7px] border border-phone-border bg-phone-chip"
+      class="flex overflow-hidden rounded-[7px] border border-phone-border/30 bg-phone-chip"
     >
       <For each={props.items}>
         {(item, index) => (
@@ -295,8 +295,8 @@ function Segments(props: {
             role="radio"
             aria-checked={item.id === props.selected}
             disabled={props.disabled}
-            class={`h-[40px] truncate border-phone-border px-1 text-[15px] ${
-              index() > 0 ? "border-l" : ""
+            class={`h-[40px] truncate border-phone-border/30 px-1 text-[15px] ${
+              index() < props.items.length - 1 ? "border-r" : ""
             } ${item.id === props.selected ? "bg-phone-selected" : ""}`}
             style={{ width: `${props.width}px` }}
             onClick={() => item.id !== props.selected && props.onPick(item.id)}
