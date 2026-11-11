@@ -46,6 +46,8 @@ just dev-backend    # starts the fake Twitch and Kick, then cargo run --allow-un
 just dev-frontend   # vite dev server; proxies /api -> localhost:8080
 ```
 
+The `dev` recipes are thin wrappers around `scripts/dev.py`. They run the fakes in their own process and start the backend and the frontend each in a new session, killing the whole process group on exit: killing only `cargo run` or `npm` leaves the backend or vite running.
+
 `just moblin-drift` (needs Moblin checked out at `../moblin`) lists, per port, the Moblin commits on the `remote-control-scenes-and-widgets` branch (`--ref` for another) not yet ported; `--diff` shows the Swift diffs and `--mark <file>...` marks files as ported. Only mark a file once its Swift changes are ported, never to silence the script's errors about missing files or commits. `scripts/moblin_ports.json` maps each scene editor file, the backend's `remote_control.rs` and the fake Moblin to the Swift they port, so a new scene editor file needs an entry.
 
 ## Rules across the projects

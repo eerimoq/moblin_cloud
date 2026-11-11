@@ -12,72 +12,33 @@ default:
 [group('dev')]
 [doc("Runs the backend, the frontend and the fake Moblin as the admin user's, at http://localhost:5173, with the given sign in platforms, like just dev kick, or none with just dev \"\".")]
 dev platforms="twitch,kick":
-	#!/usr/bin/env bash
-	set -euo pipefail
-	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
-	platforms="{{platforms}}"
-	PLATFORMS="$platforms" just dev-backend &
-	until curl -sf localhost:8080/icons/plain > /dev/null; do sleep 0.2; done
-	just dev-frontend &
-	platform="${platforms%%,*}"
-	if [ -n "$platform" ]; then
-		cookies=$(mktemp)
-		authorize=$(curl -sf -c "$cookies" -o /dev/null -w '%{redirect_url}' "localhost:8080/auth/$platform/login")
-		callback=$(curl -sf -o /dev/null -w '%{redirect_url}' -G "$authorize" --data-urlencode login=admin)
-		curl -sf -b "$cookies" -o /dev/null "${callback/localhost:5173\/api/localhost:8080}"
-		rm "$cookies"
-		PLATFORM="$platform" just dev-fake-moblin &
-	fi
-	wait
+	python3 -m scripts.dev all "{{platforms}}"
 
 [group('dev')]
 [doc("Runs just dev with the compact landing page and an instance name, like just dev-compact \"My workspace\" kick.")]
 dev-compact name="My workspace" platforms="twitch,kick":
-	LANDING_PAGE=compact INSTANCE_NAME="{{name}}" just dev "{{platforms}}"
+	LANDING_PAGE=compact INSTANCE_NAME="{{name}}" python3 -m scripts.dev all "{{platforms}}"
 
 [group('dev')]
-[doc("Runs the backend with the fake Twitch and Kick, or those in PLATFORMS, like PLATFORMS=kick, and an empty one none.")]
+[doc("Runs the backend with the fake Twitch and Kick, or those in --platforms, like --platforms kick, and none with --platforms \"\". Other arguments go to the backend.")]
 dev-backend *args:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	platforms=",${PLATFORMS-twitch,kick},"
-	sign_in=""
-	if [[ "$platforms" == *,twitch,* ]]; then
-		python3 -m tests.utils.fake_twitch --port 8081 &
-		sign_in+=" --twitch-sign-in-url http://localhost:8081"
-	fi
-	if [[ "$platforms" == *,kick,* ]]; then
-		python3 -m tests.utils.fake_kick --port 8082 &
-		sign_in+=" --kick-sign-in-url http://localhost:8082"
-	fi
-	trap 'trap "" INT TERM; kill $(jobs -p) 2> /dev/null' EXIT
-	cd backend
-	cargo build
-	DATABASE="${DATABASE:-./database.sqlite}" cargo run -q -- --listen 0.0.0.0:8080 --allow-unattested $sign_in --admins twitch:847161455,kick:33069881 --backend-url http://localhost:5173/api --frontend-url http://localhost:5173 {{args}} &
-	wait
+	python3 -m scripts.dev backend {{args}}
 
 [group('dev')]
 [doc("Runs the frontend's dev server at http://localhost:5173, talking to dev-backend.")]
 dev-frontend:
-	cd frontend && npm run dev
+	python3 -m scripts.dev frontend
 
 # Always connects as the same device, so the dashboard lists it once.
 [group('dev')]
-[doc("Connects the fake Moblin to dev-backend as the admin user's Moblin. Pass --device-id for another device.")]
+[doc("Connects the fake Moblin to dev-backend as the admin user's Moblin. Pass --platform kick if signed in with Kick, --device-id for another device.")]
 dev-fake-moblin *args:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	key=$(sqlite3 "backend/${DATABASE:-./database.sqlite}" "select moblin_key from accounts join identities on identities.account = accounts.id where platform = '${PLATFORM:-twitch}' and login = 'admin'")
-	if [ -z "$key" ]; then
-		echo "No Moblin Cloud key for the admin user. Sign in as admin at http://localhost:5173/dashboard/ first." >&2
-		exit 1
-	fi
-	python3 -m tests.utils.fake_moblin http://localhost:8080 --key "$key" --device-id FAKE-MOBLIN {{args}}
+	python3 -m scripts.dev fake-moblin {{args}}
 
 [group('dev')]
 [doc("Runs mobtop, the terminal dashboard, against dev-backend through dev-frontend, like the browser, so run just dev first.")]
 dev-mobtop *args:
-	cd mobtop && cargo run -q -- --backend-url http://localhost:5173/api {{args}}
+	python3 -m scripts.dev mobtop {{args}}
 
 [group('check')]
 style:
