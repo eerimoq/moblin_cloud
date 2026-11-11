@@ -73,7 +73,8 @@
       "files": [
         "frontend/src/components/sceneEditor/store.ts",
         "backend/src/remote_control.rs",
-        "tests/utils/fake_moblin.py"
+        "tests/utils/fake_moblin.py",
+        "frontend/src/components/sceneEditor/store.test.ts"
       ],
       "moblin": [
         "Moblin/RemoteControl/RemoteControl.swift",
@@ -318,6 +319,359 @@
         "Moblin/View/Settings/Scenes/Widgets/Widget/WheelOfLuck"
       ],
       "commit": "c960f2964"
+    },
+    {
+      "files": [
+        "frontend/src/data/moblinStreamSettings.ts",
+        "frontend/src/data/moblinStreamSettings.test.ts"
+      ],
+      "moblin": [
+        "Moblin/Various/Settings/SettingsStream.swift"
+      ],
+      "commit": "33acad8eb",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/data/streamUrls.ts",
+        "frontend/src/data/streamUrls.test.ts"
+      ],
+      "moblin": [
+        "Common/Various/Validate.swift",
+        "Common/Various/CommonUtils.swift"
+      ],
+      "commit": "33acad8eb",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/data/streamWizard.ts",
+        "frontend/src/data/streamWizard.test.ts"
+      ],
+      "moblin": [
+        "Moblin/Various/Model/ModelStreamWizard.swift",
+        "Moblin/Various/Model/ModelStream.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/store.ts",
+        "frontend/src/components/streamSettings/StreamsSettings.tsx",
+        "frontend/src/components/streamSettings/store.test.ts"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/StreamsSettingsView.swift",
+        "Moblin/Various/Model/ModelRemoteControlStreams.swift"
+      ],
+      "commit": "33acad8eb",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/StreamSettings.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/StreamSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Url.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Url/StreamUrlSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Srt.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Srt/StreamSrtSettingsView.swift",
+        "Moblin/View/Settings/Streams/Stream/Srt/StreamSrtAdaptiveBitrateSettingsView.swift",
+        "Moblin/View/Settings/Streams/Stream/Srt/StreamSrtConnectionPriority2View.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Rtmp.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Rtmp/StreamRtmpSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Rist.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Rist/StreamRistSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Whip.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Whip/StreamWhipSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Mobcam.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Mobcam/StreamMobcamSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/MultiStreaming.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/MultiStreaming/StreamMultiStreamingSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Video.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Video/StreamVideoSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Audio.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Audio/StreamAudioSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Recording.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Recording/StreamRecordingSettingsView.swift",
+        "Moblin/View/Settings/Streams/Stream/Recording/StreamRecordingAudioSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Snapshot.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Snapshot/StreamSnapshotSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/PreviewStream.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/PreviewStream/StreamPreviewStreamSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Replay.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Replay/StreamReplaySettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Emotes.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Chat/StreamEmotesSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/GoLiveNotification.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/GoLiveNotification/GoLiveNotificationSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/RealtimeIrl.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/RealtimeIrl/StreamRealtimeIrlSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Soop.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Soop/StreamSoopSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/OpenStreamingPlatform.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/OpenStreamingPlatform/StreamOpenStreamingPlatformSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/ObsRemoteControl.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/ObsRemoteControl/StreamObsRemoteControlSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Twitch.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Twitch/StreamTwitchSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/Kick.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Kick/StreamKickSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/YouTube.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/YouTube/StreamYouTubeSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/wizard/StreamWizard.tsx",
+        "frontend/src/components/streamSettings/wizard/shared.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/StreamWizardSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/wizard/Platforms.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Wizard/Platform/"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/wizard/Mobcam.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Wizard/StreamWizardMobcamSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/wizard/NetworkSetup.tsx",
+        "frontend/src/components/streamSettings/wizard/MyServers.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Wizard/NetworkSetup/"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/wizard/Custom.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Wizard/Custom/"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/wizard/ObsRemoteControl.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Wizard/StreamWizardObsRemoteControlSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
+    },
+    {
+      "files": [
+        "frontend/src/components/streamSettings/wizard/General.tsx"
+      ],
+      "moblin": [
+        "Moblin/View/Settings/Streams/Stream/Wizard/StreamWizardGeneralSettingsView.swift"
+      ],
+      "commit": "0292c5e7e",
+      "branch": "remote-control-streams"
     }
   ]
 }

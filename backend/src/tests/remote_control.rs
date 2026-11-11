@@ -73,8 +73,8 @@ fn messages_to_streamer_match_moblin() {
         r#"{"request":{"id":20,"data":{"getScenes":{}}}}"#
     );
     assert_eq!(
-        editor(Control::GetWidgets {}),
-        r#"{"request":{"id":20,"data":{"getWidgets":{}}}}"#
+        editor(Control::GetWidgets { secrets: true }),
+        r#"{"request":{"id":20,"data":{"getWidgets":{"secrets":true}}}}"#
     );
     assert_eq!(
         editor(Control::GetVideoSources {}),
@@ -105,17 +105,41 @@ fn messages_to_streamer_match_moblin() {
         r#"{"request":{"id":20,"data":{"deleteScene":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
     );
     assert_eq!(
+        editor(Control::GetStream { id, secrets: false }),
+        r#"{"request":{"id":20,"data":{"getStream":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b","secrets":false}}}}"#
+    );
+    assert_eq!(
+        editor(Control::CreateStream {
+            stream: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Kick"}),
+            secrets: true
+        }),
+        r#"{"request":{"id":20,"data":{"createStream":{"stream":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","name":"Kick"},"secrets":true}}}}"#
+    );
+    assert_eq!(
+        editor(Control::UpdateStream {
+            stream: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}),
+            secrets: false
+        }),
+        r#"{"request":{"id":20,"data":{"updateStream":{"stream":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"},"secrets":false}}}}"#
+    );
+    assert_eq!(
+        editor(Control::DeleteStream { id }),
+        r#"{"request":{"id":20,"data":{"deleteStream":{"id":"3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"}}}}"#
+    );
+    assert_eq!(
         editor(Control::CreateWidget {
             widget: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "type": "Text"}),
             scene_ids: vec![id],
+            secrets: true,
         }),
-        r#"{"request":{"id":20,"data":{"createWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","type":"Text"},"sceneIds":["3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"]}}}}"#
+        r#"{"request":{"id":20,"data":{"createWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","type":"Text"},"sceneIds":["3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b"],"secrets":true}}}}"#
     );
     assert_eq!(
         editor(Control::UpdateWidget {
-            widget: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"})
+            widget: serde_json::json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}),
+            secrets: false
         }),
-        r#"{"request":{"id":20,"data":{"updateWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}}}}"#
+        r#"{"request":{"id":20,"data":{"updateWidget":{"widget":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"},"secrets":false}}}}"#
     );
     assert_eq!(
         editor(Control::DeleteWidget { id }),
@@ -258,6 +282,22 @@ fn messages_to_streamer_match_moblin() {
         serde_json::from_str::<Control>(r#"{"setMoblinCloudWheelOfLuckWidget":{}}"#)
             .unwrap()
             .changes_settings()
+    );
+    assert_eq!(
+        control(
+            25,
+            Control::SetStream {
+                id: Uuid::parse_str("0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60").unwrap()
+            }
+        ),
+        r#"{"request":{"id":25,"data":{"setStream":{"id":"0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60"}}}}"#
+    );
+    assert!(
+        serde_json::from_str::<Control>(
+            r#"{"setStream":{"id":"0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60"}}"#
+        )
+        .unwrap()
+        .changes_settings()
     );
     let message = |text: &str| Control::SendMessage {
         text: text.to_string(),
@@ -434,6 +474,10 @@ fn editor_controls_are_checked() {
     ));
     assert!(!valid(r#"{"createScene":{"scene":{"name":"No id"}}}"#));
     assert!(!valid(r#"{"updateWidget":{"widget":{"id":"W1"}}}"#));
+    assert!(valid(
+        r#"{"updateStream":{"stream":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}}"#
+    ));
+    assert!(!valid(r#"{"createStream":{"stream":{"name":"No id"}}}"#));
     for upload in [
         r#"{"setWidgetImage":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","image":"iVBORw0KGgo="}}"#,
         r#"{"setVTuberModel":{"id":"3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B","type":"VRM","model":"AAAA"}}"#,
@@ -480,6 +524,7 @@ fn sent_messages_are_counted_like_unread_ones() {
         Control::SetTorch { on: true },
         Control::SetZoom { x: 1.0 },
         Control::SetZoomPreset { id },
+        Control::SetStream { id },
         Control::SetScene { id },
         Control::SetBitratePreset { id },
         Control::SetMic {
@@ -508,6 +553,16 @@ fn sent_messages_are_counted_like_unread_ones() {
         },
         Control::SetMoblinCloudAlertsWidget { id: Some(id) },
         Control::SetMoblinCloudWheelOfLuckWidget { id: None },
+        Control::GetStream { id, secrets: true },
+        Control::CreateStream {
+            stream: serde_json::json!({}),
+            secrets: false,
+        },
+        Control::UpdateStream {
+            stream: serde_json::json!({}),
+            secrets: true,
+        },
+        Control::DeleteStream { id },
     ];
     let messages = [
         MessageToStreamer::Hello {

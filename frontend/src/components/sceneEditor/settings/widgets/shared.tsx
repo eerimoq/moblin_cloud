@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js";
-import { PickerRow, Section, SliderRow, type PickerItem } from "../../Form";
+import { PickerRow, Section, SliderRow, useReadOnly, type PickerItem } from "../../Form";
 import type { Stack } from "../../Stack";
 import type { Editor } from "../../store";
 import {
@@ -190,6 +190,7 @@ export function Lines(props: {
   placeholder?: string;
   onChange: (value: string) => void;
 }) {
+  const readOnly = useReadOnly();
   const [text, setText] = createSignal<string | null>(null);
   return (
     <Section header={props.header}>
@@ -197,6 +198,7 @@ export function Lines(props: {
         class="min-h-[110px] w-full resize-none bg-transparent px-4 py-2 text-[17px] outline-none placeholder:text-phone-border"
         value={text() ?? props.value}
         placeholder={props.placeholder}
+        readOnly={readOnly()}
         onInput={(event) => setText(event.currentTarget.value)}
         onBlur={() => {
           const typed = text();

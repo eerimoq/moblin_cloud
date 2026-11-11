@@ -220,6 +220,7 @@ pub(super) async fn handle_assistant_account(
         go_live: user.rights.go_live,
         edit_tips: user.rights.edit_tips,
         remote_control: user.rights.remote_control,
+        secrets: user.rights.secrets,
         twitch_assistants: Vec::new(),
         kick_assistants: Vec::new(),
         assisting: Vec::new(),

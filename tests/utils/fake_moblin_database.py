@@ -24,8 +24,8 @@ def widget(widget_id: str, name: str, kind: str, **settings) -> dict:
 def database(ids: dict[str, str], icon: str) -> dict:
     return {
         "streams": [
-            {"id": ids["S1"], "name": "Twitch", "enabled": True},
-            {"id": ids["S2"], "name": "Kick", "enabled": False},
+            {"id": ids["S1"], "name": "Twitch", "enabled": True, "url": "srtla://belabox.example:5000"},
+            {"id": ids["S2"], "name": "Kick", "enabled": False, "url": "rtmps://kick.example/app/key"},
         ],
         "scenes": [
             {
@@ -80,7 +80,16 @@ def database(ids: dict[str, str], icon: str) -> dict:
                 "Video source",
                 videoSource={"cameraPosition": "Front", "frontCameraId": "front"},
             ),
-            widget(ids["W5"], "Alerts", "Alerts", alerts={"twitch": {}, "kick": {}}),
+            widget(
+                ids["W5"],
+                "Alerts",
+                "Alerts",
+                alerts={
+                    "twitch": {},
+                    "kick": {},
+                    "ai": {"baseUrl": "https://ai.example/v1", "apiKey": "fake-ai-key"},
+                },
+            ),
             widget(ids["W6"], "BRB inside", "Scene", scene={"sceneId": ids["C2"]}),
         ],
         "alertsMediaGallery": {

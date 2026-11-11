@@ -69,6 +69,7 @@ import {
   removeAssistant,
   signInPlatforms,
   setAssistantEditTips,
+  setAssistantSecrets,
   setAssistantGoLive,
   setAssistantPreview,
   setAssistantRemoteControl,
@@ -1358,12 +1359,14 @@ function PermissionRow(props: { title: string; children: JSX.Element }) {
     <div
       role="group"
       aria-label={props.title}
-      class="relative flex flex-wrap items-center gap-x-5 gap-y-2"
+      class="relative flex flex-wrap items-start gap-x-5 gap-y-2"
     >
-      <span class="w-36 text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
+      <span class="flex h-9 w-36 shrink-0 items-center text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
         {props.title}
       </span>
-      {props.children}
+      <div class="flex min-h-9 min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-2">
+        {props.children}
+      </div>
     </div>
   );
 }
@@ -1493,30 +1496,46 @@ function AssistantList(props: {
                         )
                       }
                     />
-                    <PermissionBox
-                      checked={assistant().preview}
-                      disabled={assistant().remoteControl === "none"}
-                      text={t("Preview")}
-                      label={t("Let {name} see the stream preview", { name: assistant().name })}
-                      help={t("See the stream preview.")}
-                      onChange={(on) =>
-                        call(() =>
-                          setAssistantPreview(props.session, props.platform, assistant().id, on),
-                        )
-                      }
-                    />
-                    <PermissionBox
-                      checked={assistant().goLive}
-                      disabled={assistant().remoteControl !== "control"}
-                      text={t("Go live")}
-                      label={t("Let {name} go live", { name: assistant().name })}
-                      help={t("Start the stream. Ending it is always allowed.")}
-                      onChange={(on) =>
-                        call(() =>
-                          setAssistantGoLive(props.session, props.platform, assistant().id, on),
-                        )
-                      }
-                    />
+                    <div class="flex basis-full flex-wrap items-center gap-x-5 gap-y-2">
+                      <PermissionBox
+                        checked={assistant().preview}
+                        disabled={assistant().remoteControl === "none"}
+                        text={t("Preview")}
+                        label={t("Let {name} see the stream preview", { name: assistant().name })}
+                        help={t("See the stream preview.")}
+                        onChange={(on) =>
+                          call(() =>
+                            setAssistantPreview(props.session, props.platform, assistant().id, on),
+                          )
+                        }
+                      />
+                      <PermissionBox
+                        checked={assistant().goLive}
+                        disabled={assistant().remoteControl !== "control"}
+                        text={t("Go live")}
+                        label={t("Let {name} go live", { name: assistant().name })}
+                        help={t("Start the stream. Ending it is always allowed.")}
+                        onChange={(on) =>
+                          call(() =>
+                            setAssistantGoLive(props.session, props.platform, assistant().id, on),
+                          )
+                        }
+                      />
+                      <PermissionBox
+                        checked={assistant().secrets}
+                        disabled={assistant().remoteControl === "none"}
+                        text={t("Secrets")}
+                        label={t("Let {name} see and change secrets", { name: assistant().name })}
+                        help={t(
+                          "See and change stream URLs, keys, passwords, webhooks and API keys in Moblin's settings.",
+                        )}
+                        onChange={(on) =>
+                          call(() =>
+                            setAssistantSecrets(props.session, props.platform, assistant().id, on),
+                          )
+                        }
+                      />
+                    </div>
                   </PermissionRow>
                 </div>
                 <button
@@ -3119,6 +3138,7 @@ function SignedIn(props: {
                         device={picked()}
                         preview={account().preview}
                         goLive={account().goLive}
+                        secrets={account().secrets}
                         remoteControl={account().remoteControl === "control"}
                         nameOf={(device) =>
                           account().devices.find((candidate) => candidate.id === device)?.name

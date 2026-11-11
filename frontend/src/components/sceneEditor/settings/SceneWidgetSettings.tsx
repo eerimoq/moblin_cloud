@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import Icon from "../../Icon";
-import { Section, ToggleRow, ValueEditCompact } from "../Form";
+import { Section, ToggleRow, useReadOnly, ValueEditCompact } from "../Form";
 import type { Stack } from "../Stack";
 import type { Editor } from "../store";
 import { WidgetSettings } from "./WidgetSettings";
@@ -30,7 +30,7 @@ const setNumericInput = (enabled: boolean) => {
   store("sceneNumericInput", enabled ? "1" : null);
 };
 
-const [savedLayout, setSavedLayout] = createSignal<Omit<
+export const [savedLayout, setSavedLayout] = createSignal<Omit<
   SettingsSceneWidget,
   "id" | "widgetId"
 > | null>(null);
@@ -50,6 +50,7 @@ export function SceneWidgetSettings(props: {
   canvas: Size;
 }) {
   const editor = props.editor;
+  const readOnly = useReadOnly();
   const scene = createMemo(() =>
     editor.state.scenes.find((candidate) => sameId(candidate.id, props.scene.id)),
   );
@@ -148,7 +149,7 @@ export function SceneWidgetSettings(props: {
                   <button
                     type="button"
                     class="rounded-[8px] bg-phone-separator px-3 py-1.5 text-[15px] text-phone-tint disabled:opacity-35"
-                    disabled={savedLayout() === null}
+                    disabled={savedLayout() === null || readOnly()}
                     onClick={() => {
                       const saved = savedLayout();
                       if (saved) {
@@ -168,7 +169,8 @@ export function SceneWidgetSettings(props: {
                           <button
                             type="button"
                             aria-label={alignmentName(alignment)}
-                            class="text-phone-tint"
+                            class="text-phone-tint disabled:opacity-50"
+                            disabled={readOnly()}
                             onClick={() =>
                               edit((draft) => {
                                 draft.alignment = alignment;
@@ -216,7 +218,8 @@ export function SceneWidgetSettings(props: {
                     <button
                       type="button"
                       aria-label={t("Positioning lock")}
-                      class="grid w-[44px] shrink-0 place-items-center text-phone-tint"
+                      class="grid w-[44px] shrink-0 place-items-center text-phone-tint disabled:opacity-50"
+                      disabled={readOnly()}
                       onClick={() =>
                         edit((draft) => {
                           draft.positioningLock = !draft.positioningLock;

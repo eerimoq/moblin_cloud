@@ -37,6 +37,15 @@ describe("normalizeWidget", () => {
     expect(normalizeWidget(roundTrip(widget))).toEqual(widget);
   });
 
+  test("enum values are Moblin's, not merged with the default case", () => {
+    const widget = normalizeWidget({
+      id: widgetId,
+      type: "Scoreboard",
+      scoreboard: { generic: { clock: { direction: { down: {} } } } },
+    });
+    expect(widget.scoreboard.generic.clock.direction).toEqual({ down: {} });
+  });
+
   test("ids derived for missing UUIDs are the same every time", () => {
     const raw = {
       id: widgetId,

@@ -37,6 +37,7 @@ export type Account = {
   goLive: boolean;
   editTips: boolean;
   remoteControl: Access;
+  secrets: boolean;
   assisting: Assisting[];
   twitchAssistants: Assistant[];
   kickAssistants: Assistant[];
@@ -53,6 +54,7 @@ export type Assistant = {
   goLive: boolean;
   editTips: boolean;
   remoteControl: Access;
+  secrets: boolean;
   lastActive: number | null;
   lastRemoteControl: number | null;
 };
@@ -124,6 +126,7 @@ export type Named = { id: string; name: string };
 
 export type DeviceSettings = {
   streams: Named[];
+  currentStreamId?: string;
   scenes: Named[];
   autoSceneSwitchers?: Named[];
   bitratePresets: { id: string; bitrate: number }[];
@@ -197,6 +200,7 @@ export type Control =
   | { setTorch: { on: boolean } }
   | { setZoom: { x: number } }
   | { setZoomPreset: { id: string } }
+  | { setStream: { id: string } }
   | { setScene: { id: string } }
   | { setBitratePreset: { id: string } }
   | { setMic: { id: string } }
@@ -228,7 +232,11 @@ export type EditorControl =
   | { updateWidget: { widget: object } }
   | { deleteWidget: { id: string } }
   | { setScoreboardPlayers: { players: object[] } }
-  | { getVideoSourceSnapshot: { id: string } };
+  | { getVideoSourceSnapshot: { id: string } }
+  | { getStream: { id: string } }
+  | { createStream: { stream: object } }
+  | { updateStream: { stream: object } }
+  | { deleteStream: { id: string } };
 
 export type MoblinFilter =
   | "pixellate"
@@ -557,6 +565,13 @@ export const setAssistantEditTips = (
   assistant: string,
   on: boolean,
 ) => assistantCall(session, platform, assistant, "edit-tips", { on });
+
+export const setAssistantSecrets = (
+  session: string,
+  platform: Platform,
+  assistant: string,
+  on: boolean,
+) => assistantCall(session, platform, assistant, "secrets", { on });
 
 export const setAssistantRemoteControl = (
   session: string,

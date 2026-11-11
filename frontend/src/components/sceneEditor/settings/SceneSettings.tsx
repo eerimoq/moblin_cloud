@@ -9,6 +9,7 @@ import {
   Section,
   TextRow,
   ToggleRow,
+  useReadOnly,
 } from "../Form";
 import { widgetIcon } from "../icons";
 import type { Stack } from "../Stack";
@@ -69,9 +70,10 @@ function DefaultMic(props: {
   micId: string;
   edit: (change: (scene: SettingsScene) => void) => void;
 }) {
+  const readOnly = useReadOnly();
   onMount(() => {
     const current = props.editor.state.currentMic;
-    if (props.micId === "" && current) {
+    if (!readOnly() && props.micId === "" && current) {
       props.edit((draft) => {
         draft.micId = current;
       });
@@ -89,6 +91,7 @@ export function SceneSettings(props: {
   onCreateWidget: () => void;
 }) {
   const editor = props.editor;
+  const readOnly = useReadOnly();
   const scene = createMemo(() =>
     editor.state.scenes.find((candidate) => sameId(candidate.id, props.sceneId)),
   );
@@ -131,6 +134,7 @@ export function SceneSettings(props: {
             <button
               type="button"
               class="flex min-h-[44px] w-full items-center gap-2 px-4 py-2 text-left text-[17px]"
+              disabled={readOnly()}
               onClick={() => {
                 if (addable().some((candidate) => sameId(candidate.id, widget.id))) {
                   edit((draft) => {
@@ -193,9 +197,10 @@ export function SceneSettings(props: {
                         role="switch"
                         aria-checked={widget().enabled}
                         aria-label={widget().name}
-                        class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors ${
+                        class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
                           widget().enabled ? "bg-phone-switch" : "bg-phone-separator"
                         }`}
+                        disabled={readOnly()}
                         onClick={() =>
                           editor.editWidget(widget().id, (draft) => {
                             draft.enabled = !draft.enabled;

@@ -13,6 +13,8 @@ A copy of Moblin's scene editor (`SceneEditorView.swift` and friends in the Mobl
 - The Numeric input toggle is kept in the browser, since the protocol does not carry Moblin's setting. `EditorOptions` carries the phone state Moblin's views read.
 - The Scene widgets quick button's panel (`SceneWidgetsPanel.tsx`, Moblin's `QuickButtonSceneWidgetsView`) shares the scene editor's `Editor` with the full screen editor: `MoblinScreen` keeps one while either is open, so opening the editor from the panel never races the panel's unsent changes, and the draft is flushed when the last of them closes. The panel lists the phone's selected scene, not the editor's `sceneId`, like Moblin.
 
+- Assistants with only `view` access open the scene editor and the Scene widgets panel read-only: `MoblinScreen` provides `ReadOnly` from `Form.tsx`, which the form rows and the forms' own controls disable themselves for while navigation stays usable. The toolbar hides what edits, the canvas only selects, the store ignores edits, and picking a scene only shows it instead of switching the phone's scene.
+
 Left out on purpose:
 
 - Controls that act on the phone's running effects rather than on settings, in the forms and in the Scene widgets panel's quick controls: text widget timers, stopwatches, checkboxes, ratings and lap times, the wheel's spin and results, the scoreboard's score and clock, the Pomodoro controls, the alert Test button, the interactive browser widgets toggle, Twitch rewards and TTS Monster and ElevenLabs voices. The wheel's shuffle and the bingo card's marks are settings, so the panel has them.

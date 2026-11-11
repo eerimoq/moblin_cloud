@@ -10,6 +10,8 @@ The router, `Api`, `Failure` and the session checks are in `../api.rs`; the hand
 - The assistant tables hold platform user ids on both sides, never account ids, so a rename changes nothing and a channel's list survives unlinking and relinking it.
 - `editTips` covers the settings and banner routes; test sends and Send again are always allowed.
 - `goLive` only limits going live: ending the stream is always allowed.
+- Controls need `remoteControl: control`, except `sendMessage` and the requests that only read Moblin's settings (`Control::reads_only`), which `view` is enough for.
+- Moblin decides what a secret is. The requests that carry stream or widget settings (`getStream`, `createStream`, `updateStream`, `getWidgets`, `createWidget`, `updateWidget`) have a `secrets` flag the backend always sets from the caller's `secrets` right, whatever the page sent: without secrets Moblin leaves them out of its answers, keeps its own values on updates and uses its defaults on creates. Moblin requires the flag, so a backend that sends it must be deployed before a Moblin that requires it is released. Moblins from before the flag ignore it and send everything, which is accepted since hardly anyone used their scene editor requests.
 - `sendMessage` only needs `view`, and its `name` is always set to the caller's account name, whatever the page sends.
 - An assistant's answers go through `without_payments`, and items in their recent list have no `provider`. `payable` is kept, so the dashboard can tell whether the page takes payments.
 - An assistant saving settings keeps the page's currency, whatever the request says.

@@ -170,6 +170,7 @@ pub struct Assistant {
     pub go_live: bool,
     pub edit_tips: bool,
     pub remote_control: Access,
+    pub secrets: bool,
     pub last_active: Option<u64>,
     pub last_remote_control: Option<u64>,
 }
@@ -185,6 +186,7 @@ impl Assistant {
             go_live: false,
             edit_tips: false,
             remote_control: Access::None,
+            secrets: false,
             last_active: None,
             last_remote_control: None,
         }
@@ -196,6 +198,7 @@ pub enum Permission {
     Preview,
     GoLive,
     EditTips,
+    Secrets,
 }
 
 impl Permission {
@@ -204,6 +207,7 @@ impl Permission {
             Self::Preview => "preview",
             Self::GoLive => "go_live",
             Self::EditTips => "edit_tips",
+            Self::Secrets => "secrets",
         }
     }
 }
@@ -233,6 +237,7 @@ pub struct Rights {
     pub go_live: bool,
     pub edit_tips: bool,
     pub remote_control: Access,
+    pub secrets: bool,
 }
 
 impl Rights {
@@ -242,6 +247,7 @@ impl Rights {
             go_live: true,
             edit_tips: true,
             remote_control: Access::Control,
+            secrets: true,
         }
     }
 
@@ -250,6 +256,7 @@ impl Rights {
             Permission::Preview => self.preview,
             Permission::GoLive => self.go_live,
             Permission::EditTips => self.edit_tips,
+            Permission::Secrets => self.secrets,
         }
     }
 
@@ -259,6 +266,7 @@ impl Rights {
             go_live: self.go_live || other.go_live,
             edit_tips: self.edit_tips || other.edit_tips,
             remote_control: self.remote_control.max(other.remote_control),
+            secrets: self.secrets || other.secrets,
         }
     }
 }
@@ -1017,7 +1025,7 @@ impl Accounts {
             let table = assistants_table(platform);
             let name = platform.name();
             format!(
-                "SELECT '{name}' AS platform, assistant, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name) AS name, identities.avatar, preview, go_live, edit_tips, remote_control, assistant_activity.at, assistant_activity.remote_control_at
+                "SELECT '{name}' AS platform, assistant, coalesce(identities.login, {table}.login), coalesce(identities.name, {table}.name) AS name, identities.avatar, preview, go_live, edit_tips, remote_control, secrets, assistant_activity.at, assistant_activity.remote_control_at
                  FROM {table}
                  LEFT JOIN identities ON identities.platform = '{name}' AND identities.user_id = assistant
                  LEFT JOIN assistant_activity ON assistant_activity.account = identities.account
@@ -1050,8 +1058,9 @@ impl Accounts {
                                 go_live: row.get(6)?,
                                 edit_tips: row.get(7)?,
                                 remote_control: Access::of(row.get(8)?),
-                                last_active: row.get(9)?,
-                                last_remote_control: row.get(10)?,
+                                secrets: row.get(9)?,
+                                last_active: row.get(10)?,
+                                last_remote_control: row.get(11)?,
                             },
                         ))
                     })?
@@ -1078,7 +1087,7 @@ impl Accounts {
             .lock()
             .query_row(
                 &format!(
-                    "SELECT preview, go_live, edit_tips, remote_control FROM {table} WHERE assistant = ?1 AND broadcaster = ?2"
+                    "SELECT preview, go_live, edit_tips, remote_control, secrets FROM {table} WHERE assistant = ?1 AND broadcaster = ?2"
                 ),
                 [assistant, broadcaster],
                 |row| {
@@ -1087,6 +1096,7 @@ impl Accounts {
                         go_live: row.get(1)?,
                         edit_tips: row.get(2)?,
                         remote_control: Access::of(row.get(3)?),
+                        secrets: row.get(4)?,
                     })
                 },
             )

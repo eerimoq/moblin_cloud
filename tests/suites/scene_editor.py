@@ -155,14 +155,19 @@ class SceneEditorChanges(SceneEditorTestCase):
 
 
 class SceneEditorNeedsControl(SceneEditorTestCase):
-    """An assistant who may only view the device gets no scenes."""
+    """An assistant who may only view the device reads the scenes but changes nothing."""
 
     def run(self):
         assistant = self.sign_in("editor_viewer")
         self.dashboard.add_assistant("twitch", "editor_viewer")
         self.dashboard.set_assistant_remote_control("twitch", user_id_of("editor_viewer"), "view")
+        scenes = assistant.control_device(self.page_id, self.device, {"getScenes": {}})["scenes"]
+        self.assert_equal([scene["name"] for scene in scenes], ["Main", "BRB", "Night"])
         self.assert_backend_error(
-            403, lambda: assistant.control_device(self.page_id, self.device, {"getScenes": {}})
+            403,
+            lambda: assistant.control_device(
+                self.page_id, self.device, {"updateScene": {"scene": {**scenes[0], "name": "Renamed"}}}
+            ),
         )
 
     def teardown(self):

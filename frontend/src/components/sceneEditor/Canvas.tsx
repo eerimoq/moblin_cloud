@@ -50,6 +50,7 @@ export default function Canvas(props: {
   onSelect: (id: string | null) => void;
   onMove: (outline: WidgetOutline, rect: Rect) => void;
   onResize: (outline: WidgetOutline, size: number) => void;
+  readOnly?: boolean;
 }) {
   const [edit, setEdit] = createSignal<Edit | null>(null);
   let lastTap: Point | null = null;
@@ -248,7 +249,7 @@ export default function Canvas(props: {
     pressed = { point: localPoint(event), moved: false };
   };
   const onPointerMove = (event: PointerEvent) => {
-    if (!pressed) {
+    if (!pressed || props.readOnly) {
       return;
     }
     const point = localPoint(event);
@@ -371,7 +372,7 @@ export default function Canvas(props: {
 
   const handlePoint = () => {
     const outline = selectedOutline();
-    if (!outline || !isResizable(outline) || edit()?.mode === "move") {
+    if (props.readOnly || !outline || !isResizable(outline) || edit()?.mode === "move") {
       return null;
     }
     return viewPoint(sceneEditorHandlePoint(currentRect(outline), outline.alignment));

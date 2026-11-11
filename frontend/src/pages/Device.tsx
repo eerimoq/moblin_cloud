@@ -23,6 +23,7 @@ export default function DeviceView(props: {
   device: string;
   preview: boolean | null;
   goLive: boolean;
+  secrets: boolean;
   remoteControl: boolean;
   nameOf: (device: string) => string | undefined;
   onSignOut: () => void;
@@ -148,6 +149,7 @@ export default function DeviceView(props: {
                     settings={feed().settings()}
                     preview={preview()}
                     goLive={props.goLive}
+                    secrets={props.secrets}
                     remoteControl={props.remoteControl}
                     connected={online()}
                     pending={feed().pending()}

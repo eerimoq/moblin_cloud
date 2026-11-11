@@ -12,6 +12,7 @@ import {
   TextEditPage,
   TextRow,
   ToggleRow,
+  useReadOnly,
 } from "../../Form";
 import { formatShortDuration, pickerItems, type WidgetFormProps } from "./shared";
 import { NameRow } from "../SceneSettings";
@@ -319,6 +320,7 @@ function PadelSections(props: WidgetFormProps) {
 }
 
 function GolfSections(props: WidgetFormProps) {
+  const readOnly = useReadOnly();
   const golf = () => props.widget.scoreboard.golf;
   const editGolf = (change: (golf: SettingsWidget["scoreboard"]["golf"]) => void) =>
     props.edit((draft) => change(draft.scoreboard.golf));
@@ -402,7 +404,8 @@ function GolfSections(props: WidgetFormProps) {
               <button
                 type="button"
                 aria-label={t("Remove")}
-                class="grid size-[44px] shrink-0 place-items-center text-phone-live"
+                class="grid size-[44px] shrink-0 place-items-center text-phone-live disabled:opacity-35"
+                disabled={readOnly()}
                 onClick={() =>
                   editGolf((draft) => {
                     draft.players = draft.players.filter(

@@ -8,6 +8,8 @@ export const panelWidth = 350;
 export type Remote = {
   state: DeviceState;
   settings: DeviceSettings | null;
+  secrets: boolean;
+  readOnly: boolean;
   disabled: (key: string) => boolean;
   control: (control: Control) => Promise<void>;
   request?: <T>(control: Control) => Promise<T>;

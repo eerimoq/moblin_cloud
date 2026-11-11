@@ -5,7 +5,7 @@
 - Build: `npm run build` (runs `tsc --noEmit` first, so type errors fail the build).
 - One test file: `npx vitest run src/data/sceneResolver.test.ts`.
 
-Tests are Vitest in Node, `src/**/*.test.ts`, only for the pure code in `src/data/`. `vitest.config.ts` is apart from `vite.config.ts` so the Solid plugin's jsdom is not needed, and `src/testSetup.ts` stubs what `i18n.ts` touches, so `t()` answers English. The scene editor's tests are Moblin's `SceneEditorGeometrySuite` and `SceneResolverSuite` ported case by case.
+Tests are Vitest in Node, `src/**/*.test.ts`, for the pure code in `src/data/` and the stream settings store, which runs against a fake `request` (Solid's stores work in Node, but memos and effects never rerun there, so only code without them can be tested). `vitest.config.ts` is apart from `vite.config.ts` so the Solid plugin's jsdom is not needed, and `src/testSetup.ts` stubs what `i18n.ts` and `links.ts` touch, so `t()` answers English. The scene editor's tests are Moblin's `SceneEditorGeometrySuite` and `SceneResolverSuite` ported case by case.
 
 ## Pages
 

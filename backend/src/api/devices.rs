@@ -38,12 +38,22 @@ fn known_device(api: &Api, page_id: &str, device: &str) -> Result<DeviceResponse
         ))
 }
 
+fn secrets_flag(user: &PageUser, control: &mut Control) {
+    if let Some(secrets) = control.secrets_mut() {
+        *secrets = user.rights.permits(Permission::Secrets);
+    }
+}
+
 fn control_failure(control: &Control, error: RequestError) -> Failure {
     if control.editor() && error == RequestError::Failed {
         return failure(
             "refused",
             StatusCode::CONFLICT,
-            "Moblin refused the change. Reload the scenes and try again.",
+            if control.streams() {
+                "Moblin refused the change. Reload the streams and try again."
+            } else {
+                "Moblin refused the change. Reload the scenes and try again."
+            },
         );
     }
     request_failure(error)
@@ -211,9 +221,12 @@ pub(super) async fn handle_device_control(
     control: Result<Json<Control>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Value>), Failure> {
     let user = watcher(&api, &headers, &page_id)?;
-    if !matches!(control, Ok(Json(Control::SendMessage { .. })))
-        && user.rights.remote_control < Access::Control
-    {
+    let needed = match &control {
+        Ok(Json(control)) if control.reads_only() => Access::View,
+        Ok(Json(Control::SendMessage { .. })) => Access::View,
+        _ => Access::Control,
+    };
+    if user.rights.remote_control < needed {
         return Err(failure(
             "no-control",
             StatusCode::FORBIDDEN,
@@ -239,6 +252,7 @@ pub(super) async fn handle_device_control(
         *name = Some(user.signed_in.account.name().to_string()).filter(|name| !name.is_empty());
     }
     known_device(&api, &page_id, &device)?;
+    secrets_flag(&user, &mut control);
     let name = control.name();
     let data = api
         .remote_control

@@ -47,6 +47,8 @@ export type Editor = {
   loadSnapshot: (widgetId: string, again?: boolean) => void;
   request: <T>(control: Control) => Promise<T>;
   send: (control: Control) => Promise<void>;
+  secrets: Accessor<boolean>;
+  readOnly: Accessor<boolean>;
   scene: Accessor<SettingsScene | undefined>;
   selectScene: (id: string) => void;
   editScene: (id: string, change: (scene: SettingsScene) => void) => void;
@@ -60,9 +62,10 @@ export type Editor = {
   dispose: () => void;
 };
 
-const clone = <T>(value: T): T => structuredClone(unwrap(value));
+export const clone = <T>(value: T): T => structuredClone(unwrap(value));
 
-const same = (first: unknown, second: unknown) => JSON.stringify(first) === JSON.stringify(second);
+export const same = (first: unknown, second: unknown) =>
+  JSON.stringify(first) === JSON.stringify(second);
 
 export const dataUrl = (data: string) => `data:image/jpeg;base64,${data}`;
 
@@ -71,10 +74,38 @@ export const errorText = (error: unknown) =>
     ? error.message
     : t("Something went wrong. Try again.");
 
+export const mergeFresh = <T extends { id: string }>(fresh: T[], draft: T[], old: T[]): T[] => {
+  const kept: T[] = [];
+  for (const item of fresh) {
+    const current = draft.find((candidate) => sameId(candidate.id, item.id));
+    const previous = old.find((candidate) => sameId(candidate.id, item.id));
+    kept.push(current && previous && !same(current, previous) ? current : item);
+  }
+  for (const item of draft) {
+    const previous = old.find((candidate) => sameId(candidate.id, item.id));
+    const inFresh = fresh.some((candidate) => sameId(candidate.id, item.id));
+    if (!inFresh && (!previous || !same(item, previous))) {
+      kept.push(item);
+    }
+  }
+  const draftOrder = draft.map((item) => item.id.toUpperCase());
+  const oldOrder = old.map((item) => item.id.toUpperCase());
+  if (!same(draftOrder, oldOrder)) {
+    kept.sort((first, second) => {
+      const a = draftOrder.indexOf(first.id.toUpperCase());
+      const b = draftOrder.indexOf(second.id.toUpperCase());
+      return (a < 0 ? Infinity : a) - (b < 0 ? Infinity : b);
+    });
+  }
+  return kept;
+};
+
 export function createEditor(
   request: <T>(control: Control) => Promise<T>,
   control: (control: Control) => Promise<void>,
   currentScene: Accessor<string | undefined>,
+  secrets: Accessor<boolean>,
+  readOnly: Accessor<boolean> = () => false,
 ): Editor {
   return createRoot((dispose) => {
     const [state, set] = createStore<EditorState>({
@@ -126,32 +157,6 @@ export function createEditor(
         gallery: gallery.gallery,
         options: options.options,
       };
-    };
-
-    const mergeFresh = <T extends { id: string }>(fresh: T[], draft: T[], old: T[]): T[] => {
-      const kept: T[] = [];
-      for (const item of fresh) {
-        const current = draft.find((candidate) => sameId(candidate.id, item.id));
-        const previous = old.find((candidate) => sameId(candidate.id, item.id));
-        kept.push(current && previous && !same(current, previous) ? current : item);
-      }
-      for (const item of draft) {
-        const previous = old.find((candidate) => sameId(candidate.id, item.id));
-        const inFresh = fresh.some((candidate) => sameId(candidate.id, item.id));
-        if (!inFresh && (!previous || !same(item, previous))) {
-          kept.push(item);
-        }
-      }
-      const draftOrder = draft.map((item) => item.id.toUpperCase());
-      const oldOrder = old.map((item) => item.id.toUpperCase());
-      if (!same(draftOrder, oldOrder)) {
-        kept.sort((first, second) => {
-          const a = draftOrder.indexOf(first.id.toUpperCase());
-          const b = draftOrder.indexOf(second.id.toUpperCase());
-          return (a < 0 ? Infinity : a) - (b < 0 ? Infinity : b);
-        });
-      }
-      return kept;
     };
 
     const reload = async () => {
@@ -413,10 +418,16 @@ export function createEditor(
       loadSnapshot,
       request,
       send: control,
+      secrets,
+      readOnly,
       scene,
       selectScene: (id) => {
         const picked = state.scenes.find((candidate) => sameId(candidate.id, id));
         if (!picked) {
+          return;
+        }
+        if (readOnly()) {
+          set("sceneId", id);
           return;
         }
         if (picked.enabled && !synced.scenes.some((scene) => sameId(scene.id, id))) {
@@ -433,6 +444,9 @@ export function createEditor(
         }
       },
       editScene: (id, change) => {
+        if (readOnly()) {
+          return;
+        }
         const index = state.scenes.findIndex((scene) => sameId(scene.id, id));
         if (index >= 0) {
           set("scenes", index, produce(change));
@@ -440,6 +454,9 @@ export function createEditor(
         }
       },
       editWidget: (id, change) => {
+        if (readOnly()) {
+          return;
+        }
         const index = state.widgets.findIndex((widget) => sameId(widget.id, id));
         if (index >= 0) {
           set("widgets", index, produce(change));
@@ -447,10 +464,16 @@ export function createEditor(
         }
       },
       addScene: (scene) => {
+        if (readOnly()) {
+          return;
+        }
         set("scenes", (scenes) => [...scenes, scene]);
         markDirty();
       },
       removeScene: (id) => {
+        if (readOnly()) {
+          return;
+        }
         const clearScene = (widgets: SettingsWidget[]) => {
           for (const widget of widgets) {
             if (sameId(widget.scene.sceneId, id)) {
@@ -469,10 +492,16 @@ export function createEditor(
         markDirty();
       },
       addWidget: (widget) => {
+        if (readOnly()) {
+          return;
+        }
         set("widgets", (widgets) => [...widgets, widget]);
         markDirty();
       },
       removeWidget: (id) => {
+        if (readOnly()) {
+          return;
+        }
         batch(() => {
           set("widgets", (widgets) => widgets.filter((widget) => !sameId(widget.id, id)));
           set(
@@ -489,6 +518,9 @@ export function createEditor(
         markDirty();
       },
       setScoreboardPlayers: (players) => {
+        if (readOnly()) {
+          return;
+        }
         set("scoreboardPlayers", players);
         markDirty();
       },

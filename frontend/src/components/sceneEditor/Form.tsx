@@ -1,9 +1,13 @@
-import { createSignal, For, Show, type JSX } from "solid-js";
+import { createContext, createSignal, For, Show, useContext, type JSX } from "solid-js";
 import Icon, { type IconName } from "../Icon";
 import { Choices, PhoneSwitch, rowClass } from "../MoblinParts";
 import type { Stack } from "./Stack";
 import { type RgbColor } from "../../data/moblinSettings";
 import { t } from "../../i18n";
+
+export const ReadOnly = createContext<() => boolean>(() => false);
+
+export const useReadOnly = () => useContext(ReadOnly);
 
 export function Section(props: { header?: string; footer?: JSX.Element; children: JSX.Element }) {
   return (
@@ -70,12 +74,13 @@ export function ToggleRow(props: {
   disabled?: boolean;
   onToggle: (on: boolean) => void;
 }) {
+  const readOnly = useReadOnly();
   return (
     <PhoneSwitch
       label={props.label}
       icon={props.icon}
       on={props.on}
-      disabled={props.disabled ?? false}
+      disabled={(props.disabled ?? false) || readOnly()}
       onToggle={props.onToggle}
     />
   );
@@ -87,11 +92,12 @@ export function ButtonRow(props: {
   disabled?: boolean;
   onClick: () => void;
 }) {
+  const readOnly = useReadOnly();
   return (
     <button
       type="button"
       class={`${rowClass} justify-center ${props.destructive ? "text-phone-live" : "text-phone-tint"}`}
-      disabled={props.disabled}
+      disabled={props.disabled || readOnly()}
       onClick={() => props.onClick()}
     >
       {props.label}
@@ -108,10 +114,11 @@ export function TextEditPage(props: {
   onSubmit: (value: string) => void;
   onDone?: () => void;
 }) {
+  const readOnly = useReadOnly();
   const [value, setValue] = createSignal(props.value);
   const error = () => props.validate?.(value().trim()) ?? null;
   const submit = () => {
-    if (error() === null && value() !== props.value) {
+    if (!readOnly() && error() === null && value() !== props.value) {
       props.onSubmit(value().trim());
     }
   };
@@ -137,6 +144,7 @@ export function TextEditPage(props: {
             value={value()}
             placeholder={props.placeholder}
             autofocus
+            readOnly={readOnly()}
             onInput={(event) => setValue(event.currentTarget.value)}
             onBlur={submit}
             onKeyDown={(event) => {
@@ -152,6 +160,7 @@ export function TextEditPage(props: {
           value={value()}
           placeholder={props.placeholder}
           autofocus
+          readOnly={readOnly()}
           onInput={(event) => setValue(event.currentTarget.value)}
           onBlur={submit}
         />
@@ -244,11 +253,12 @@ export function InlinePicker(props: {
     props.selected !== undefined && !props.items.some((item) => item.id === props.selected)
       ? [...props.items, { id: props.selected, name: t("Unknown 😢") }]
       : props.items;
+  const readOnly = useReadOnly();
   return (
     <Choices
       items={items()}
       selected={props.selected}
-      disabled={false}
+      disabled={readOnly()}
       footer={props.footers?.join("\n")}
       onPick={props.onPick}
     />
@@ -304,13 +314,14 @@ export function MenuRow(props: {
   disabled?: boolean;
   onPick: (id: string) => void;
 }) {
+  const readOnly = useReadOnly();
   return (
     <label class={`${rowClass} justify-between`}>
       <span class="min-w-0 flex-1 truncate">{props.label}</span>
       <select
         class="max-w-[50%] truncate bg-transparent text-right text-phone-border outline-none disabled:opacity-50"
         value={props.selected}
-        disabled={props.disabled}
+        disabled={props.disabled || readOnly()}
         onChange={(event) => props.onPick(event.currentTarget.value)}
       >
         <For each={props.items}>
@@ -336,29 +347,32 @@ export function SliderRow(props: {
   onChange: (value: number) => void;
   onCommit?: (value: number) => void;
 }) {
+  const readOnly = useReadOnly();
   return (
-    <div class={`${rowClass} gap-3`}>
-      <Show when={props.label}>
-        <span class="shrink-0">{props.label}</span>
-      </Show>
-      <input
-        type="range"
-        class="min-w-0 flex-1 accent-white"
-        min={props.minimum}
-        max={props.maximum}
-        step={props.step}
-        value={props.value}
-        onInput={(event) => props.onChange(Number(event.currentTarget.value))}
-        onChange={(event) => props.onCommit?.(Number(event.currentTarget.value))}
-      />
-      <Show when={props.format}>
-        {(format) => (
-          <span class="w-[56px] shrink-0 text-right text-phone-border">
-            {format()(props.value)}
-          </span>
-        )}
-      </Show>
-    </div>
+    <fieldset disabled={readOnly()} class="contents">
+      <div class={`${rowClass} gap-3`}>
+        <Show when={props.label}>
+          <span class="shrink-0">{props.label}</span>
+        </Show>
+        <input
+          type="range"
+          class="min-w-0 flex-1 accent-white"
+          min={props.minimum}
+          max={props.maximum}
+          step={props.step}
+          value={props.value}
+          onInput={(event) => props.onChange(Number(event.currentTarget.value))}
+          onChange={(event) => props.onCommit?.(Number(event.currentTarget.value))}
+        />
+        <Show when={props.format}>
+          {(format) => (
+            <span class="w-[56px] shrink-0 text-right text-phone-border">
+              {format()(props.value)}
+            </span>
+          )}
+        </Show>
+      </div>
+    </fieldset>
   );
 }
 
@@ -397,47 +411,50 @@ export function ValueEditCompact(props: {
       <Icon name={icon} class="size-[28px]" />
     </button>
   );
+  const readOnly = useReadOnly();
   return (
-    <div class="flex min-h-[44px] w-full items-center gap-2 px-4 py-1">
-      <Show
-        when={props.numericInput}
-        fallback={
+    <fieldset disabled={readOnly()} class="contents">
+      <div class="flex min-h-[44px] w-full items-center gap-2 px-4 py-1">
+        <Show
+          when={props.numericInput}
+          fallback={
+            <input
+              type="range"
+              class={`min-w-0 flex-1 accent-white ${props.mirror ? "rotate-180" : ""}`}
+              min={props.minimum}
+              max={props.maximum}
+              step={15 * props.increment}
+              value={props.value}
+              onInput={(event) => props.onChange(Number(event.currentTarget.value))}
+            />
+          }
+        >
           <input
-            type="range"
-            class={`min-w-0 flex-1 accent-white ${props.mirror ? "rotate-180" : ""}`}
-            min={props.minimum}
-            max={props.maximum}
-            step={15 * props.increment}
-            value={props.value}
-            onInput={(event) => props.onChange(Number(event.currentTarget.value))}
+            type="text"
+            inputmode="decimal"
+            class="min-w-0 flex-1 rounded-[6px] bg-phone-screen px-2 py-1 text-[17px] outline-none"
+            value={text() ?? String(props.value)}
+            onInput={(event) => setText(event.currentTarget.value)}
+            onBlur={submitText}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                submitText();
+              }
+            }}
           />
-        }
-      >
-        <input
-          type="text"
-          inputmode="decimal"
-          class="min-w-0 flex-1 rounded-[6px] bg-phone-screen px-2 py-1 text-[17px] outline-none"
-          value={text() ?? String(props.value)}
-          onInput={(event) => setText(event.currentTarget.value)}
-          onBlur={submitText}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              submitText();
-            }
-          }}
-        />
-      </Show>
-      {button(
-        props.decrementIcon,
-        props.mirror ? props.increment : -props.increment,
-        props.value === (props.mirror ? props.maximum : props.minimum),
-      )}
-      {button(
-        props.incrementIcon,
-        props.mirror ? -props.increment : props.increment,
-        props.value === (props.mirror ? props.minimum : props.maximum),
-      )}
-    </div>
+        </Show>
+        {button(
+          props.decrementIcon,
+          props.mirror ? props.increment : -props.increment,
+          props.value === (props.mirror ? props.maximum : props.minimum),
+        )}
+        {button(
+          props.incrementIcon,
+          props.mirror ? -props.increment : props.increment,
+          props.value === (props.mirror ? props.minimum : props.maximum),
+        )}
+      </div>
+    </fieldset>
   );
 }
 
@@ -450,38 +467,41 @@ export function ColorRow(props: {
   opacity?: boolean;
   onChange: (color: RgbColor) => void;
 }) {
+  const readOnly = useReadOnly();
   return (
-    <div class={`${rowClass} justify-between`}>
-      <span class="min-w-0 flex-1 truncate">{props.label}</span>
-      <Show when={props.opacity}>
+    <fieldset disabled={readOnly()} class="contents">
+      <div class={`${rowClass} justify-between`}>
+        <span class="min-w-0 flex-1 truncate">{props.label}</span>
+        <Show when={props.opacity}>
+          <input
+            type="range"
+            class="w-[80px] accent-white"
+            min={0}
+            max={1}
+            step={0.01}
+            value={props.color.opacity ?? 1}
+            title={t("Opacity")}
+            onInput={(event) =>
+              props.onChange({ ...props.color, opacity: Number(event.currentTarget.value) })
+            }
+          />
+        </Show>
         <input
-          type="range"
-          class="w-[80px] accent-white"
-          min={0}
-          max={1}
-          step={0.01}
-          value={props.color.opacity ?? 1}
-          title={t("Opacity")}
-          onInput={(event) =>
-            props.onChange({ ...props.color, opacity: Number(event.currentTarget.value) })
-          }
+          type="color"
+          class="size-[28px] shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0"
+          value={toHex(props.color)}
+          onInput={(event) => {
+            const hex = event.currentTarget.value;
+            props.onChange({
+              ...props.color,
+              red: parseInt(hex.slice(1, 3), 16),
+              green: parseInt(hex.slice(3, 5), 16),
+              blue: parseInt(hex.slice(5, 7), 16),
+            });
+          }}
         />
-      </Show>
-      <input
-        type="color"
-        class="size-[28px] shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0"
-        value={toHex(props.color)}
-        onInput={(event) => {
-          const hex = event.currentTarget.value;
-          props.onChange({
-            ...props.color,
-            red: parseInt(hex.slice(1, 3), 16),
-            green: parseInt(hex.slice(3, 5), 16),
-            blue: parseInt(hex.slice(5, 7), 16),
-          });
-        }}
-      />
-    </div>
+      </div>
+    </fieldset>
   );
 }
 
@@ -492,13 +512,14 @@ export function ReorderableList<T extends { id: string }>(props: {
   onDelete?: (item: T) => void;
   deleteDisabled?: (item: T) => boolean;
 }) {
+  const readOnly = useReadOnly();
   const [dragging, setDragging] = createSignal<number | null>(null);
   return (
     <For each={props.items}>
       {(item, index) => (
         <div
           class={`flex min-h-[44px] items-center ${dragging() === index() ? "opacity-50" : ""}`}
-          draggable={props.onMove !== undefined}
+          draggable={props.onMove !== undefined && !readOnly()}
           onDragStart={(event) => {
             setDragging(index());
             event.dataTransfer?.setData("text/plain", String(index()));
@@ -526,7 +547,7 @@ export function ReorderableList<T extends { id: string }>(props: {
                 type="button"
                 aria-label={t("Remove")}
                 class="grid size-[44px] shrink-0 place-items-center text-phone-live disabled:opacity-35"
-                disabled={props.deleteDisabled?.(item)}
+                disabled={readOnly() || props.deleteDisabled?.(item)}
                 onClick={() => onDelete()(item)}
               >
                 <Icon name="trash" class="size-[18px]" />
@@ -541,6 +562,14 @@ export function ReorderableList<T extends { id: string }>(props: {
 
 export function PlainRow(props: { children: JSX.Element }) {
   return <div class={rowClass}>{props.children}</div>;
+}
+
+export function Secret(props: { allowed: boolean; label: string; children: JSX.Element }) {
+  return (
+    <Show when={props.allowed} fallback={<ValueRow label={props.label} value={t("Hidden")} />}>
+      {props.children}
+    </Show>
+  );
 }
 
 export function ValueRow(props: { label: string; value: string }) {

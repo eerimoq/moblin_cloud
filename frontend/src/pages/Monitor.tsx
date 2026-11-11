@@ -599,6 +599,7 @@ function PhonePanel(props: {
           settings={props.feed.settings()}
           preview={props.feed.connected() ? (previewFeed()?.() ?? null) : null}
           goLive={props.account.goLive}
+          secrets={props.account.secrets}
           remoteControl={control()}
           connected={online()}
           pending={props.feed.pending()}

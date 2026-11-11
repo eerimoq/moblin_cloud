@@ -1143,17 +1143,24 @@ export const newWidget = (type: SettingsWidgetType): SettingsWidget => {
   return widget;
 };
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const merged = <T>(defaults: T, raw: unknown): T => {
+const isEnumCase = (value: Record<string, unknown>) => {
+  const cases = Object.values(value);
+  return cases.length === 1 && isPlainObject(cases[0]) && Object.keys(cases[0]).length === 0;
+};
+
+export const merged = <T>(defaults: T, raw: unknown): T => {
   if (!isPlainObject(defaults)) {
     return (raw === undefined ? defaults : raw) as T;
   }
   const result: Record<string, unknown> = { ...(isPlainObject(raw) ? raw : {}) };
   for (const [key, value] of Object.entries(defaults)) {
     const given = isPlainObject(raw) ? raw[key] : undefined;
-    if (isPlainObject(value)) {
+    if (isPlainObject(value) && isEnumCase(value) && isPlainObject(given)) {
+      result[key] = given;
+    } else if (isPlainObject(value)) {
       result[key] = merged(value, isPlainObject(given) ? given : undefined);
     } else if (given === undefined) {
       result[key] = value;
@@ -1162,7 +1169,7 @@ const merged = <T>(defaults: T, raw: unknown): T => {
   return result as T;
 };
 
-const mergedList = <T>(
+export const mergedList = <T>(
   items: unknown,
   defaultsOf: (item: Record<string, unknown>, index: number) => T,
 ) =>
@@ -1170,7 +1177,7 @@ const mergedList = <T>(
     ? items.map((item, index) => merged(defaultsOf(isPlainObject(item) ? item : {}, index), item))
     : [];
 
-const idOf = (item: Record<string, unknown>, seed: string) =>
+export const idOf = (item: Record<string, unknown>, seed: string) =>
   typeof item.id === "string" ? item.id : derivedId(seed);
 
 export const normalizeScene = (raw: Record<string, unknown>): SettingsScene => {

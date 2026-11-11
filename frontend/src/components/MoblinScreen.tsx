@@ -12,6 +12,7 @@ import Icon, { type IconName } from "./Icon";
 import { ask, rickRoll } from "./Modal";
 import { PanelButtons, panelWidth, type Remote } from "./MoblinParts";
 import Panels, { type Panel } from "./MoblinPanels";
+import { ReadOnly } from "./sceneEditor/Form";
 import SceneEditor from "./sceneEditor/SceneEditor";
 import { createEditor, type Editor } from "./sceneEditor/store";
 import {
@@ -375,6 +376,7 @@ export default function MoblinScreen(props: {
   settings: DeviceSettings | null;
   preview: string | null;
   goLive: boolean;
+  secrets: boolean;
   remoteControl: boolean;
   connected: boolean;
   pending: string[];
@@ -393,7 +395,15 @@ export default function MoblinScreen(props: {
       (needed) => {
         const current = editor();
         if (needed && !current && props.onRequest) {
-          setEditor(createEditor(props.onRequest, props.onControl, () => props.state.scene));
+          setEditor(
+            createEditor(
+              props.onRequest,
+              props.onControl,
+              () => props.state.scene,
+              () => props.secrets,
+              () => !props.remoteControl,
+            ),
+          );
         } else if (!needed && current) {
           setEditor(null);
           void current.flush().finally(() => current.dispose());
@@ -475,6 +485,12 @@ export default function MoblinScreen(props: {
     },
     get settings() {
       return props.settings;
+    },
+    get secrets() {
+      return props.secrets;
+    },
+    get readOnly() {
+      return !props.remoteControl;
     },
     disabled,
     control: (control: Control) => props.onControl(control),
@@ -582,8 +598,7 @@ export default function MoblinScreen(props: {
         disabled={
           !props.connected ||
           (action()?.key ? disabled(action()!.key) : false) ||
-          ((button.type === "Scene editor" || button.type === "Widgets") &&
-            (!props.onRequest || !props.remoteControl))
+          ((button.type === "Scene editor" || button.type === "Widgets") && !props.onRequest)
         }
         nameWidth={nameWidth}
         onPress={() => action()?.run()}
@@ -674,15 +689,17 @@ export default function MoblinScreen(props: {
           >
             <Show when={sceneEditorOpen() && editor()}>
               {(editor) => (
-                <SceneEditor
-                  editor={editor()}
-                  preview={props.preview}
-                  state={props.state}
-                  settings={props.settings}
-                  width={shownWidth()}
-                  height={shownHeight()}
-                  onClose={() => setSceneEditorOpen(false)}
-                />
+                <ReadOnly.Provider value={() => !props.remoteControl}>
+                  <SceneEditor
+                    editor={editor()}
+                    preview={props.preview}
+                    state={props.state}
+                    settings={props.settings}
+                    width={shownWidth()}
+                    height={shownHeight()}
+                    onClose={() => setSceneEditorOpen(false)}
+                  />
+                </ReadOnly.Provider>
               )}
             </Show>
             <Show when={!sceneEditorOpen()}>
@@ -727,12 +744,14 @@ export default function MoblinScreen(props: {
                     style={{ width: `${shownPanelWidth()}px` }}
                   >
                     <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
-                      <Panels
-                        panel={shown()}
-                        remote={remote}
-                        editor={editor()}
-                        onOpenSceneEditor={openSceneEditor}
-                      />
+                      <ReadOnly.Provider value={() => !props.remoteControl}>
+                        <Panels
+                          panel={shown()}
+                          remote={remote}
+                          editor={editor()}
+                          onOpenSceneEditor={openSceneEditor}
+                        />
+                      </ReadOnly.Provider>
                     </div>
                     <Show when={!panelHidden()}>{panelButtons()}</Show>
                   </div>

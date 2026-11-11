@@ -420,6 +420,44 @@ async fn scene_editor_requests_answer_moblins_data() {
         response.text().await.unwrap(),
         "Moblin refused the change. Reload the scenes and try again."
     );
+    let stream = json!({"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B", "name": "Kick"});
+    let call = tokio::spawn(control(
+        json!({"updateStream": {"stream": stream, "secrets": false}}),
+    ));
+    let request = receive(&mut socket).await;
+    assert_eq!(
+        request["request"]["data"],
+        json!({"updateStream": {"stream": stream, "secrets": true}})
+    );
+    socket
+        .send(Message::text(
+            json!({"response": {"id": request["request"]["id"], "result": {"error": {}}}})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+    let response = call.await.unwrap().unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response.text().await.unwrap(),
+        "Moblin refused the change. Reload the streams and try again."
+    );
+    let call = tokio::spawn(control(
+        json!({"getStream": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}),
+    ));
+    let request = receive(&mut socket).await;
+    answer(
+        &mut socket,
+        &request,
+        json!({"getStream": {"stream": stream}}),
+    )
+    .await;
+    let response = call.await.unwrap().unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.json::<Value>().await.unwrap(),
+        json!({"stream": stream})
+    );
     let response = control(json!({"createScene": {"scene": {"name": "No id"}}}))
         .await
         .unwrap();
@@ -460,14 +498,21 @@ async fn scene_editor_requests_answer_moblins_data() {
     api.accounts
         .set_assistant_access(Platform::Twitch, "1", "22", Access::View)
         .unwrap();
-    let response = client
-        .post(&url)
-        .bearer_auth(api.auth.session("22", 0))
-        .json(&json!({"getScenes": {}}))
-        .send()
-        .await
-        .unwrap();
+    let viewer = api.auth.session("22", 0);
+    let as_viewer = |body: Value| client.post(&url).bearer_auth(&viewer).json(&body).send();
+    let response =
+        as_viewer(json!({"deleteScene": {"id": "3F2B8C1E-5A4D-4E7F-9B6A-1C2D3E4F5A6B"}}))
+            .await
+            .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let call = tokio::spawn(as_viewer(json!({"getScenes": {}})));
+    let mut request = receive(&mut socket).await;
+    while request["request"]["data"] != json!({"getScenes": {}}) {
+        answer(&mut socket, &request, Value::Null).await;
+        request = receive(&mut socket).await;
+    }
+    answer(&mut socket, &request, json!({"getScenes": {"scenes": []}})).await;
+    assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -1047,4 +1092,82 @@ async fn rick_rolls_are_counted_for_the_streamer_and_assistants() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(counter(&api, "rickRolls"), 2);
+}
+
+#[tokio::test]
+async fn assistants_get_secrets_only_when_allowed() {
+    let (address, api) = start_api(None).await;
+    let client = reqwest::Client::new();
+    let (owner, moblin_cloud_key, page_id) = streamer(&api);
+    let url = format!("http://{address}/account/pages/{page_id}/devices/A/control");
+    create_account(&api, "22", "Mod", "mod");
+    api.accounts
+        .add_assistant(Platform::Twitch, "1", &twitch_assistant("22", "mod", "Mod"))
+        .unwrap();
+    api.accounts
+        .set_assistant_access(Platform::Twitch, "1", "22", Access::Control)
+        .unwrap();
+    let session = api.auth.session("22", 0);
+    let control = |body: Value| client.post(&url).bearer_auth(&session).json(&body).send();
+    let id = "3f2b8c1e-5a4d-4e7f-9b6a-1c2d3e4f5a6b";
+    let stream = json!({"id": id, "name": "Kick"});
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    for (sent, forwarded) in [
+        (
+            json!({"getStream": {"id": id, "secrets": true}}),
+            json!({"getStream": {"id": id, "secrets": false}}),
+        ),
+        (
+            json!({"updateStream": {"stream": stream}}),
+            json!({"updateStream": {"stream": stream, "secrets": false}}),
+        ),
+        (
+            json!({"createStream": {"stream": stream, "secrets": true}}),
+            json!({"createStream": {"stream": stream, "secrets": false}}),
+        ),
+        (
+            json!({"getWidgets": {}}),
+            json!({"getWidgets": {"secrets": false}}),
+        ),
+        (
+            json!({"createWidget": {"widget": stream, "sceneIds": [], "secrets": true}}),
+            json!({"createWidget": {"widget": stream, "sceneIds": [], "secrets": false}}),
+        ),
+        (
+            json!({"updateWidget": {"widget": stream}}),
+            json!({"updateWidget": {"widget": stream, "secrets": false}}),
+        ),
+    ] {
+        let call = tokio::spawn(control(sent));
+        let request = receive(&mut socket).await;
+        assert_eq!(request["request"]["data"], forwarded);
+        answer(&mut socket, &request, Value::Null).await;
+        call.await.unwrap().unwrap();
+    }
+    let response = client
+        .post(format!(
+            "http://{address}/account/assistants/twitch/22/secrets"
+        ))
+        .bearer_auth(&owner)
+        .json(&json!({"on": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["twitchAssistants"][0]["secrets"],
+        true
+    );
+    let call = tokio::spawn(control(json!({"getStream": {"id": id}})));
+    let request = receive(&mut socket).await;
+    assert_eq!(
+        request["request"]["data"],
+        json!({"getStream": {"id": id, "secrets": true}})
+    );
+    answer(&mut socket, &request, Value::Null).await;
+    call.await.unwrap().unwrap();
+    let call = tokio::spawn(control(json!({"getScenes": {}})));
+    let request = receive(&mut socket).await;
+    assert_eq!(request["request"]["data"], json!({"getScenes": {}}));
+    answer(&mut socket, &request, json!({"getScenes": {"scenes": []}})).await;
+    assert_eq!(call.await.unwrap().unwrap().status(), StatusCode::OK);
 }

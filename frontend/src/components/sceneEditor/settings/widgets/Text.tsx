@@ -9,6 +9,7 @@ import {
   Section,
   SliderRow,
   ToggleRow,
+  useReadOnly,
 } from "../../Form";
 import { FontRows, fontDesignItems, fontWeightItems, type WidgetFormProps } from "./shared";
 import type { Stack } from "../../Stack";
@@ -85,11 +86,13 @@ function VariableRow(props: {
   stack: Stack;
   onAppend: (value: string) => void;
 }) {
+  const readOnly = useReadOnly();
   return (
     <div class="flex flex-col px-4 py-2">
       <button
         type="button"
-        class="text-left text-[20px] text-phone-tint"
+        class="text-left text-[20px] text-phone-tint disabled:opacity-50"
+        disabled={readOnly()}
         onClick={() => {
           if (props.variable.units) {
             const units = props.variable.units;
@@ -102,7 +105,8 @@ function VariableRow(props: {
                     {([label, symbol]) => (
                       <button
                         type="button"
-                        class="flex min-h-[44px] w-full items-center px-4 py-2 text-left text-[17px] text-phone-tint"
+                        class="flex min-h-[44px] w-full items-center px-4 py-2 text-left text-[17px] text-phone-tint disabled:opacity-50"
+                        disabled={readOnly()}
                         onClick={() => {
                           props.onAppend(`{${name}:${symbol}}`);
                           props.stack.pop();
@@ -479,6 +483,7 @@ const setFormatString = (text: SettingsWidgetText, formatString: string) => {
 };
 
 function TextPage(props: WidgetFormProps) {
+  const readOnly = useReadOnly();
   const value = () => props.widget.text.formatString;
   const commit = (text: string) =>
     props.edit((widget) => {
@@ -495,6 +500,7 @@ function TextPage(props: WidgetFormProps) {
           autocapitalize="off"
           autocorrect="off"
           spellcheck={false}
+          readOnly={readOnly()}
           onInput={(event) => commit(event.currentTarget.value)}
         />
       </Section>
@@ -547,6 +553,7 @@ export function SuggestionsRow(props: {
   isPhone: boolean;
   onPick: (text: string) => void;
 }) {
+  const readOnly = useReadOnly();
   return (
     <Section>
       <LinkRow
@@ -561,7 +568,8 @@ export function SuggestionsRow(props: {
                     <div class="flex flex-col px-4 py-2">
                       <button
                         type="button"
-                        class="text-left text-[20px] text-phone-tint"
+                        class="text-left text-[20px] text-phone-tint disabled:opacity-50"
+                        disabled={readOnly()}
                         onClick={async () => {
                           if (
                             props.value === "" ||

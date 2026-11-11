@@ -198,6 +198,7 @@ export default function SceneEditor(props: {
               onSelect={(id) => editor.set("selection", id)}
               onMove={onMove}
               onResize={onResize}
+              readOnly={editor.readOnly()}
             />
           </Show>
         </div>

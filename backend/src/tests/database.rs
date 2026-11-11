@@ -95,6 +95,35 @@ fn accounts_get_the_premium_column() {
     remove(&path);
 }
 
+#[test]
+fn assistants_get_the_secrets_column() {
+    let path = temporary_path("secrets");
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE twitch_assistants (broadcaster TEXT NOT NULL, assistant TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, preview INTEGER NOT NULL DEFAULT 0, go_live INTEGER NOT NULL DEFAULT 0, edit_tips INTEGER NOT NULL DEFAULT 0, remote_control INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (broadcaster, assistant));
+             CREATE TABLE kick_assistants (broadcaster TEXT NOT NULL, assistant TEXT NOT NULL, login TEXT NOT NULL, name TEXT NOT NULL, preview INTEGER NOT NULL DEFAULT 0, go_live INTEGER NOT NULL DEFAULT 0, edit_tips INTEGER NOT NULL DEFAULT 0, remote_control INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (broadcaster, assistant));
+             INSERT INTO twitch_assistants (broadcaster, assistant, login, name) VALUES ('1', '2', 'bob', 'Bob');
+             INSERT INTO kick_assistants (broadcaster, assistant, login, name) VALUES ('1', '2', 'bob', 'Bob');",
+        )
+        .unwrap();
+    for _ in 0..2 {
+        let database = Database::open(Some(&path)).unwrap();
+        for table in ["twitch_assistants", "kick_assistants"] {
+            let secrets: bool = database
+                .lock()
+                .query_row(
+                    &format!("SELECT secrets FROM {table} WHERE assistant = '2'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(!secrets);
+        }
+    }
+    remove(&path);
+}
+
 impl Database {
     pub fn memory() -> Arc<Self> {
         Self::open(None).unwrap()

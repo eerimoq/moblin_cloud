@@ -90,6 +90,7 @@ class AccountSignIn(AccountTestCase):
                 "goLive": True,
                 "editTips": True,
                 "remoteControl": "control",
+                "secrets": True,
                 "assisting": [],
                 "twitchAssistants": [],
                 "kickAssistants": [],

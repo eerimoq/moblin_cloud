@@ -198,6 +198,10 @@ pub fn router(api: Arc<Api>) -> Router {
             assistant_permission(Permission::EditTips),
         )
         .route(
+            "/account/assistants/{platform}/{assistant}/secrets",
+            assistant_permission(Permission::Secrets),
+        )
+        .route(
             "/account/assistants/{platform}/{assistant}/remote-control",
             post(handle_account_assistant_remote_control),
         )

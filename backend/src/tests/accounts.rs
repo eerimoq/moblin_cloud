@@ -180,6 +180,7 @@ fn assistants_are_kept_per_platform() {
         go_live: false,
         edit_tips: false,
         remote_control: Access::None,
+        secrets: false,
         last_active: None,
         last_remote_control: None,
     };
@@ -225,6 +226,7 @@ fn assistants_are_an_allow_list() {
         go_live: false,
         edit_tips: false,
         remote_control: Access::None,
+        secrets: false,
         last_active: None,
         last_remote_control: None,
     };
@@ -295,6 +297,7 @@ fn assistants_have_permissions_only_when_allowed() {
         go_live: false,
         edit_tips: false,
         remote_control: Access::None,
+        secrets: false,
         last_active: None,
         last_remote_control: None,
     };
@@ -305,6 +308,7 @@ fn assistants_have_permissions_only_when_allowed() {
         Permission::Preview,
         Permission::GoLive,
         Permission::EditTips,
+        Permission::Secrets,
     ] {
         assert!(!accounts.permits(Platform::Twitch, "1", "42", permission));
         assert_eq!(
@@ -364,6 +368,7 @@ fn assistants_get_remote_control_access_only_when_allowed() {
         go_live: false,
         edit_tips: false,
         remote_control: Access::None,
+        secrets: false,
         last_active: None,
         last_remote_control: None,
     };
@@ -425,6 +430,7 @@ fn kick_assistants_keep_access_when_renamed_and_follow_the_kick_identity() {
                 go_live: false,
                 edit_tips: false,
                 remote_control: Access::None,
+                secrets: false,
                 last_active: None,
                 last_remote_control: None,
             },
@@ -453,6 +459,7 @@ fn kick_assistants_keep_access_when_renamed_and_follow_the_kick_identity() {
             go_live: false,
             edit_tips: false,
             remote_control: Access::None,
+            secrets: false,
             last_active: None,
             last_remote_control: None,
         }]
@@ -483,6 +490,7 @@ fn kick_assistants_keep_access_when_renamed_and_follow_the_kick_identity() {
                 go_live: false,
                 edit_tips: false,
                 remote_control: Access::None,
+                secrets: false,
                 last_active: None,
                 last_remote_control: None,
             },

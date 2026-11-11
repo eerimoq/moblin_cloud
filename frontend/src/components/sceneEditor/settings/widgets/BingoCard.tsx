@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import Icon from "../../../Icon";
-import { ButtonRow, ColorRow, Section } from "../../Form";
+import { ButtonRow, ColorRow, Section, useReadOnly } from "../../Form";
 import { Lines, type WidgetFormProps } from "./shared";
 import { newUuid, type SettingsWidget } from "../../../../data/moblinSettings";
 import { t } from "../../../../i18n";
@@ -11,6 +11,7 @@ export function BingoCardQuickControls(props: {
   widget: SettingsWidget;
   edit: (change: (widget: SettingsWidget) => void) => void;
 }) {
+  const readOnly = useReadOnly();
   const squares = () => props.widget.bingoCard.squares;
   const side = () => bingoCardSide(squares().length);
   const indexes = (row: number) =>
@@ -31,7 +32,8 @@ export function BingoCardQuickControls(props: {
                       type="button"
                       aria-label={square().text}
                       aria-pressed={square().checked}
-                      class="text-phone-tint"
+                      class="text-phone-tint disabled:opacity-50"
+                      disabled={readOnly()}
                       onClick={() =>
                         props.edit((draft) => {
                           const target = draft.bingoCard.squares[index];
@@ -58,6 +60,7 @@ export function BingoCardQuickControls(props: {
 }
 
 export function BingoCardForm(props: WidgetFormProps) {
+  const readOnly = useReadOnly();
   const bingo = () => props.widget.bingoCard;
   return (
     <>
@@ -88,7 +91,8 @@ export function BingoCardForm(props: WidgetFormProps) {
             <span class="min-w-0 flex-1 truncate">{square.text}</span>
             <button
               type="button"
-              class="text-phone-tint"
+              class="text-phone-tint disabled:opacity-50"
+              disabled={readOnly()}
               onClick={() =>
                 props.edit((draft) => {
                   const target = draft.bingoCard.squares.find(

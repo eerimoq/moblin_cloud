@@ -12,6 +12,10 @@ COVERED = [
     "frontend/src/data/sceneResolver.ts",
     "frontend/src/data/widgetOutlines.ts",
     "frontend/src/data/sceneEditorGeometry.ts",
+    "frontend/src/components/streamSettings",
+    "frontend/src/data/moblinStreamSettings.ts",
+    "frontend/src/data/streamUrls.ts",
+    "frontend/src/data/streamWizard.ts",
 ]
 
 
@@ -27,7 +31,11 @@ def save(data: dict) -> None:
     PORTS.write_text(json.dumps(data, indent=2) + "\n")
 
 
-def problems(data: dict, repository: Path, ref: str) -> list[str]:
+def port_ref(data: dict, port: dict, ref: str | None) -> str:
+    return ref or port.get("branch", data["branch"])
+
+
+def problems(data: dict, repository: Path, given: str | None) -> list[str]:
     found = []
     mapped = {file for port in data["ports"] for file in port["files"]}
     for path in COVERED:
@@ -41,6 +49,7 @@ def problems(data: dict, repository: Path, ref: str) -> list[str]:
         if not (ROOT / file).exists():
             found.append(f"{file} does not exist")
     for port in data["ports"]:
+        ref = port_ref(data, port, given)
         for path in port["moblin"]:
             if git(repository, "cat-file", "-e", f"{ref}:{path}", check=False).returncode != 0:
                 found.append(f"{path} is not in Moblin's {ref}")
@@ -51,9 +60,10 @@ def problems(data: dict, repository: Path, ref: str) -> list[str]:
     return found
 
 
-def report(data: dict, repository: Path, ref: str, diff: bool) -> int:
+def report(data: dict, repository: Path, given: str | None, diff: bool) -> int:
     changed = 0
     for port in data["ports"]:
+        ref = port_ref(data, port, given)
         span = f"{port['commit']}..{ref}"
         log = git(repository, "log", "--oneline", span, "--", *port["moblin"]).stdout.strip()
         if not log:
@@ -65,24 +75,24 @@ def report(data: dict, repository: Path, ref: str, diff: bool) -> int:
             print(git(repository, "diff", span, "--", *port["moblin"]).stdout)
         print()
     if changed == 0:
-        print(f"Everything is ported up to Moblin's {ref}.")
+        print("Everything is ported.")
     return changed
 
 
-def mark(data: dict, repository: Path, ref: str, files: list[str]) -> list[str]:
-    head = git(repository, "rev-parse", "--short", ref).stdout.strip()
+def mark(data: dict, repository: Path, given: str | None, files: list[str]) -> list[str]:
     wanted = {(Path.cwd() / file).resolve().relative_to(ROOT).as_posix() for file in files}
     marked = []
     for port in data["ports"]:
         if wanted & set(port["files"]):
-            port["commit"] = head
+            ref = port_ref(data, port, given)
+            port["commit"] = git(repository, "rev-parse", "--short", ref).stdout.strip()
             marked.extend(port["files"])
     return marked
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Lists the Moblin commits not yet ported to the scene editor."
+        description="Lists the Moblin commits not yet ported to the scene editor and stream settings."
     )
     parser.add_argument("--ref", help="the Moblin branch or commit to compare with")
     parser.add_argument("--diff", action="store_true", help="also show the Swift diffs")
@@ -95,7 +105,7 @@ def main() -> None:
     args = parser.parse_args()
     data = load()
     repository = (ROOT / data["repository"]).resolve()
-    ref = args.ref or data["branch"]
+    ref = args.ref
     if not (repository / ".git").exists():
         sys.exit(f"Moblin is not checked out at {repository}.")
     if args.mark:

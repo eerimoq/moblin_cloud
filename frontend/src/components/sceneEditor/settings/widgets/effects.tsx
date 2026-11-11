@@ -11,6 +11,7 @@ import {
   SliderRow,
   TextEditPage,
   ToggleRow,
+  useReadOnly,
 } from "../../Form";
 import { MaskCanvas, maskMinimumPoints } from "./MaskCanvas";
 import { PositioningRectangle } from "./PositioningRectangle";
@@ -50,6 +51,7 @@ const swiftDouble = (value: number) =>
   Number.isInteger(value) && Math.abs(value) < 1e16 ? `${value}.0` : String(value);
 
 function EffectPage(props: WidgetFormProps & { effectId: string }) {
+  const readOnly = useReadOnly();
   const effect = () => props.widget.effects.find((candidate) => candidate.id === props.effectId);
   const edit = (change: (effect: SettingsVideoEffect) => void) =>
     props.edit((draft) => {
@@ -170,7 +172,8 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
                 <Icon name="arrow-left" class="size-[18px] shrink-0" />
                 <input
                   type="range"
-                  class="min-w-0 flex-1 accent-white"
+                  class="min-w-0 flex-1 accent-white disabled:opacity-50"
+                  disabled={readOnly()}
                   min={-180}
                   max={180}
                   step={1}
@@ -187,7 +190,8 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
                 <Icon name="arrow-down" class="size-[18px] shrink-0" />
                 <input
                   type="range"
-                  class="min-w-0 flex-1 accent-white"
+                  class="min-w-0 flex-1 accent-white disabled:opacity-50"
+                  disabled={readOnly()}
                   min={-90}
                   max={90}
                   step={1}
@@ -204,7 +208,8 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
                 <Icon name="zoom-out" class="size-[18px] shrink-0" />
                 <input
                   type="range"
-                  class="min-w-0 flex-1 accent-white"
+                  class="min-w-0 flex-1 accent-white disabled:opacity-50"
+                  disabled={readOnly()}
                   min={30}
                   max={170}
                   step={1}
@@ -263,7 +268,8 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
               {[{ id: "", name: t("-- None --") }, ...luts()].map((lut) => (
                 <button
                   type="button"
-                  class="flex min-h-[44px] w-full items-center gap-3 px-4 py-2 text-left text-[17px]"
+                  class="flex min-h-[44px] w-full items-center gap-3 px-4 py-2 text-left text-[17px] disabled:opacity-50"
+                  disabled={readOnly()}
                   onClick={() =>
                     edit((draft) => {
                       draft.lut.lut = lut.id === "" ? null : lut.id;
@@ -329,6 +335,7 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
                           type="text"
                           inputmode="decimal"
                           class="min-w-0 flex-1 bg-transparent text-right outline-none"
+                          disabled={readOnly()}
                           value={point()[axis].toFixed(1)}
                           onChange={(event) => {
                             const value = Number(event.currentTarget.value);
@@ -344,7 +351,8 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
                         />
                         <button
                           type="button"
-                          class="text-phone-tint"
+                          class="text-phone-tint disabled:opacity-50"
+                          disabled={readOnly()}
                           onClick={() =>
                             edit((draft) => {
                               const target = draft.mask.points[selectedPoint()!]!;
@@ -356,7 +364,8 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
                         </button>
                         <button
                           type="button"
-                          class="text-phone-tint"
+                          class="text-phone-tint disabled:opacity-50"
+                          disabled={readOnly()}
                           onClick={() =>
                             edit((draft) => {
                               const target = draft.mask.points[selectedPoint()!]!;
@@ -469,6 +478,7 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
 }
 
 export function EffectsSection(props: WidgetFormProps) {
+  const readOnly = useReadOnly();
   const openEffect = (effect: SettingsVideoEffect) =>
     props.stack.push({
       title: effectTypeName(effect.type),
@@ -499,9 +509,10 @@ export function EffectsSection(props: WidgetFormProps) {
               role="switch"
               aria-checked={effect.enabled}
               aria-label={effectTypeName(effect.type)}
-              class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors ${
+              class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
                 effect.enabled ? "bg-phone-switch" : "bg-phone-separator"
               }`}
+              disabled={readOnly()}
               onClick={() =>
                 props.edit((draft) => {
                   const target = draft.effects.find((candidate) => candidate.id === effect.id);

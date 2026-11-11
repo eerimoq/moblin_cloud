@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { useReadOnly } from "../../Form";
 import { clamped } from "../../../../data/sceneEditorGeometry";
 
 export type Fraction = { x: number; y: number; width: number; height: number };
@@ -100,6 +101,7 @@ export function PositioningRectangle(props: {
   rect: Fraction;
   onChange: (rect: Fraction) => void;
 }) {
+  const readOnly = useReadOnly();
   let surface: HTMLDivElement | undefined;
   let drag: { anchor: Anchor | null; offset: { width: number; height: number } } | null = null;
   const size = () => ({ width: surface?.clientWidth ?? 1, height: surface?.clientHeight ?? 1 });
@@ -120,9 +122,12 @@ export function PositioningRectangle(props: {
   return (
     <div
       ref={(element) => (surface = element)}
-      class="relative w-full touch-none overflow-hidden bg-phone-preview-dark select-none"
+      class={`relative w-full overflow-hidden bg-phone-preview-dark select-none ${readOnly() ? "" : "touch-none"}`}
       style={{ "aspect-ratio": props.aspect ?? (props.portrait ? "9 / 16" : "16 / 9") }}
       onPointerDown={(event) => {
+        if (readOnly()) {
+          return;
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
         const [anchor, offset] = anchorAt(local(event), size(), props.rect);
         drag = { anchor, offset };

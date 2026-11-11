@@ -8,6 +8,7 @@ import {
   Section,
   TextRow,
   ToggleRow,
+  useReadOnly,
 } from "../../Form";
 import { Lines, pickerItems, type WidgetFormProps } from "./shared";
 import {
@@ -23,13 +24,15 @@ import { t } from "../../../../i18n";
 export function WheelOfLuckQuickControls(props: {
   edit: (change: (widget: SettingsWidget) => void) => void;
 }) {
+  const readOnly = useReadOnly();
   return (
     <div class="flex justify-end px-4 py-2">
       <button
         type="button"
         aria-label={t("Shuffle")}
         title={t("Shuffle")}
-        class="text-phone-tint"
+        class="text-phone-tint disabled:opacity-50"
+        disabled={readOnly()}
         onClick={() =>
           props.edit((draft) => {
             const options = draft.wheelOfLuck.options;
@@ -116,6 +119,7 @@ const sameOptions = (first: WheelOfLuckOption[], second: WheelOfLuckOption[]) =>
   });
 
 function SimpleOptions(props: WidgetFormProps) {
+  const readOnly = useReadOnly();
   const wheel = () => props.widget.wheelOfLuck;
   const text = () =>
     wheel()
@@ -129,13 +133,18 @@ function SimpleOptions(props: WidgetFormProps) {
       });
     }
   };
-  onMount(() => setText(text()));
+  onMount(() => {
+    if (!readOnly()) {
+      setText(text());
+    }
+  });
   return (
     <Lines header={t("Options")} value={text()} placeholder={t("My text")} onChange={setText} />
   );
 }
 
 export function WheelOfLuckForm(props: WidgetFormProps) {
+  const readOnly = useReadOnly();
   const wheel = () => props.widget.wheelOfLuck;
   const totalWeight = () =>
     Math.max(
@@ -189,8 +198,9 @@ export function WheelOfLuckForm(props: WidgetFormProps) {
                   <label class="flex min-h-[44px] w-full items-center gap-3 px-4 py-2 text-[17px]">
                     <span class="min-w-0 flex-1 truncate">{t("Function")}</span>
                     <select
-                      class="max-w-[50%] truncate bg-transparent text-right text-phone-border outline-none"
+                      class="max-w-[50%] truncate bg-transparent text-right text-phone-border outline-none disabled:opacity-50"
                       value={current().function}
+                      disabled={readOnly()}
                       onChange={(event) =>
                         editOption(optionId, (option) => {
                           option.function = event.currentTarget.value;

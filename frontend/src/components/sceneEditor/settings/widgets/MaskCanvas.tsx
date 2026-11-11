@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import Icon from "../../../Icon";
+import { useReadOnly } from "../../Form";
 import { clamped } from "../../../../data/sceneEditorGeometry";
 import { t } from "../../../../i18n";
 
@@ -60,6 +61,7 @@ export function MaskCanvas(props: {
   onChange: (points: MaskPoint[]) => void;
   onRefresh: () => void;
 }) {
+  const readOnly = useReadOnly();
   let surface: HTMLDivElement | undefined;
   const [size, setSize] = createSignal({ width: 1, height: 1 });
   let gesture: {
@@ -148,10 +150,13 @@ export function MaskCanvas(props: {
     <div class="flex flex-col gap-2">
       <div
         ref={(element) => (surface = element)}
-        class={`relative w-full touch-none overflow-hidden bg-phone-preview-dark select-none ${
+        class={`relative w-full overflow-hidden bg-phone-preview-dark select-none ${
           props.portrait ? "aspect-9/16" : "aspect-video"
-        }`}
+        } ${readOnly() ? "" : "touch-none"}`}
         onPointerDown={(event) => {
+          if (readOnly()) {
+            return;
+          }
           event.currentTarget.setPointerCapture(event.pointerId);
           const start = local(event);
           const index = closestPoint(start);
@@ -255,10 +260,22 @@ export function MaskCanvas(props: {
         ))}
       </div>
       <div class="flex items-center gap-3 px-1 text-phone-tint">
-        <button type="button" aria-label={t("Smaller")} onClick={() => resize(1 / 1.1)}>
+        <button
+          type="button"
+          aria-label={t("Smaller")}
+          class="disabled:opacity-50"
+          disabled={readOnly()}
+          onClick={() => resize(1 / 1.1)}
+        >
           <Icon name="resize-down" class="size-[26px]" />
         </button>
-        <button type="button" aria-label={t("Bigger")} onClick={() => resize(1.1)}>
+        <button
+          type="button"
+          aria-label={t("Bigger")}
+          class="disabled:opacity-50"
+          disabled={readOnly()}
+          onClick={() => resize(1.1)}
+        >
           <Icon name="resize-up" class="size-[26px]" />
         </button>
         <button type="button" aria-label={t("Refresh")} onClick={() => props.onRefresh()}>

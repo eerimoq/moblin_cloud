@@ -240,6 +240,7 @@ class KickAssistants(KickTestCase):
                     "goLive": False,
                     "editTips": False,
                     "remoteControl": "none",
+                    "secrets": False,
                     "lastActive": None,
                     "lastRemoteControl": None,
                 }

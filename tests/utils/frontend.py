@@ -404,6 +404,9 @@ class Dashboard(Client):
     def set_assistant_edit_tips(self, platform: str, assistant: str, on: bool) -> dict:
         return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/edit-tips", {"on": on})
 
+    def set_assistant_secrets(self, platform: str, assistant: str, on: bool) -> dict:
+        return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/secrets", {"on": on})
+
     def upload_image(self, data: bytes, page_id: str | None = None) -> dict:
         path = f"{self.page_path(page_id)}/image"
         response = self.request("POST", path, data=data, headers={"content-type": "application/octet-stream"})

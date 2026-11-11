@@ -1,7 +1,7 @@
 import { createMemo, For, Match, Show, Switch } from "solid-js";
 import Icon from "../Icon";
 import { Empty, Loading, rowClass, Toggle } from "../MoblinParts";
-import { ButtonRow, ErrorText, Section } from "./Form";
+import { ButtonRow, ErrorText, ReadOnly, Section } from "./Form";
 import { widgetIcon } from "./icons";
 import { SceneWidgetSettings } from "./settings/SceneWidgetSettings";
 import { BingoCardQuickControls } from "./settings/widgets/BingoCard";
@@ -89,7 +89,7 @@ export default function SceneWidgetsPanel(props: {
                     <Toggle
                       label={resolved.widget.name}
                       on={resolved.widget.enabled}
-                      disabled={false}
+                      disabled={editor.readOnly()}
                       onToggle={(on) =>
                         edit(resolved.widget.id)((draft) => {
                           draft.enabled = on;
@@ -116,9 +116,11 @@ export default function SceneWidgetsPanel(props: {
             </For>
           </Section>
         </Show>
-        <Section>
-          <ButtonRow label={t("Scene editor")} onClick={() => props.onOpenSceneEditor()} />
-        </Section>
+        <ReadOnly.Provider value={() => false}>
+          <Section>
+            <ButtonRow label={t("Scene editor")} onClick={() => props.onOpenSceneEditor()} />
+          </Section>
+        </ReadOnly.Provider>
         <ErrorText text={editor.state.error} />
       </Show>
     ),

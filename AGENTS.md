@@ -19,6 +19,7 @@ Read the file for the part you are working on before changing it:
 
 - `frontend/AGENTS.md` — the frontend's tests, build and rules.
 - `frontend/src/components/sceneEditor/AGENTS.md` — the scene editor.
+- `frontend/src/components/streamSettings/AGENTS.md` — the stream settings.
 - `backend/AGENTS.md` — the backend's modules, payments, Moblin sessions, sign in and running a single test.
 - `backend/src/api/AGENTS.md` — the routes and who may call them.
 - `mobtop/AGENTS.md` — running mobtop and its pitfalls.
@@ -48,7 +49,7 @@ just dev-frontend   # vite dev server; proxies /api -> localhost:8080
 
 The `dev` recipes are thin wrappers around `scripts/dev.py`. They run the fakes in their own process and start the backend and the frontend each in a new session, killing the whole process group on exit: killing only `cargo run` or `npm` leaves the backend or vite running.
 
-`just moblin-drift` (needs Moblin checked out at `../moblin`) lists, per port, the Moblin commits on the `remote-control-scenes-and-widgets` branch (`--ref` for another) not yet ported; `--diff` shows the Swift diffs and `--mark <file>...` marks files as ported. Only mark a file once its Swift changes are ported, never to silence the script's errors about missing files or commits. `scripts/moblin_ports.json` maps each scene editor file, the backend's `remote_control.rs` and the fake Moblin to the Swift they port, so a new scene editor file needs an entry.
+`just moblin-drift` (needs Moblin checked out at `../moblin`) lists, per port, the Moblin commits on the `remote-control-scenes-and-widgets` branch (`--ref` for another) not yet ported; `--diff` shows the Swift diffs and `--mark <file>...` marks files as ported. Only mark a file once its Swift changes are ported, never to silence the script's errors about missing files or commits. `scripts/moblin_ports.json` maps each scene editor and stream settings file, the backend's `remote_control.rs` and the fake Moblin to the Swift they port, so a new file in either needs an entry. A port with its own `branch` is compared with that Moblin branch instead of the default one.
 
 ## Rules across the projects
 

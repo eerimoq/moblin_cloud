@@ -7,10 +7,12 @@ import {
   MenuRow,
   PlainRow,
   ReorderableList,
+  Secret,
   Section,
   SliderRow,
   TextRow,
   ToggleRow,
+  useReadOnly,
   ValueRow,
 } from "../../Form";
 import { fontDesignItems, fontWeightItems, validUrl, type WidgetFormProps } from "./shared";
@@ -110,6 +112,7 @@ function MediaGalleryPage(props: AlertProps & { kind: "images" | "sounds" }) {
 }
 
 function ImageSelectorPage(props: AlertProps) {
+  const readOnly = useReadOnly();
   const alert = () => props.alert(props.widget)!;
   const images = () => {
     const current = gallery(props.editor);
@@ -122,7 +125,8 @@ function ImageSelectorPage(props: AlertProps) {
           {(image) => (
             <button
               type="button"
-              class="flex min-h-[54px] w-full items-center gap-3 px-4 py-2 text-left text-[17px]"
+              class="flex min-h-[54px] w-full items-center gap-3 px-4 py-2 text-left text-[17px] disabled:opacity-50"
+              disabled={readOnly()}
               onClick={() =>
                 editAlert(props, (draft) => {
                   draft.imageId = image.id;
@@ -168,6 +172,7 @@ function ImageSelectorPage(props: AlertProps) {
 }
 
 function SoundSelectorPage(props: AlertProps) {
+  const readOnly = useReadOnly();
   const alert = () => props.alert(props.widget)!;
   const sounds = () => {
     const current = gallery(props.editor);
@@ -181,7 +186,8 @@ function SoundSelectorPage(props: AlertProps) {
             <div class="flex min-h-[44px] items-center gap-3 px-4 py-2 text-[17px]">
               <button
                 type="button"
-                class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                class="flex min-w-0 flex-1 items-center gap-3 text-left disabled:opacity-50"
+                disabled={readOnly()}
                 onClick={() =>
                   editAlert(props, (draft) => {
                     draft.soundId = sound.id;
@@ -413,6 +419,7 @@ const selectedVoiceName = (
 };
 
 function VoicesPage(props: AlertProps) {
+  const readOnly = useReadOnly();
   const alert = () => props.alert(props.widget)!;
   const languages = () => props.editor.state.options?.appleVoices ?? [];
   return (
@@ -435,7 +442,8 @@ function VoicesPage(props: AlertProps) {
                         {(voice) => (
                           <button
                             type="button"
-                            class="flex min-h-[44px] w-full items-center gap-3 px-4 py-2 text-left text-[17px]"
+                            class="flex min-h-[44px] w-full items-center gap-3 px-4 py-2 text-left text-[17px] disabled:opacity-50"
+                            disabled={readOnly()}
                             onClick={() =>
                               editAlert(props, (draft) => {
                                 draft.textToSpeechLanguageVoices[entry.language] = {
@@ -923,28 +931,32 @@ function AiPage(props: WidgetFormProps) {
   const ai = () => props.widget.alerts.ai;
   return (
     <Section header={t("OpenAI compatible service")}>
-      <TextRow
-        stack={props.stack}
-        label={t("Base URL")}
-        value={ai().baseUrl}
-        validate={validUrl}
-        onSubmit={(value) =>
-          props.edit((draft) => {
-            draft.alerts.ai.baseUrl = value;
-          })
-        }
-      />
-      <TextRow
-        stack={props.stack}
-        label={t("API key")}
-        value={ai().apiKey}
-        masked
-        onSubmit={(value) =>
-          props.edit((draft) => {
-            draft.alerts.ai.apiKey = value;
-          })
-        }
-      />
+      <Secret allowed={props.editor.secrets()} label={t("Base URL")}>
+        <TextRow
+          stack={props.stack}
+          label={t("Base URL")}
+          value={ai().baseUrl}
+          validate={validUrl}
+          onSubmit={(value) =>
+            props.edit((draft) => {
+              draft.alerts.ai.baseUrl = value;
+            })
+          }
+        />
+      </Secret>
+      <Secret allowed={props.editor.secrets()} label={t("API key")}>
+        <TextRow
+          stack={props.stack}
+          label={t("API key")}
+          value={ai().apiKey}
+          masked
+          onSubmit={(value) =>
+            props.edit((draft) => {
+              draft.alerts.ai.apiKey = value;
+            })
+          }
+        />
+      </Secret>
       <TextRow
         stack={props.stack}
         label={t("Model")}

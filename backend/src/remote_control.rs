@@ -248,6 +248,9 @@ pub enum Control {
     SetZoomPreset {
         id: Uuid,
     },
+    SetStream {
+        id: Uuid,
+    },
     SetScene {
         id: Uuid,
     },
@@ -293,7 +296,15 @@ pub enum Control {
         name: Option<String>,
     },
     GetScenes {},
-    GetWidgets {},
+    GetWidgets {
+        #[serde(default)]
+        secrets: bool,
+    },
+    GetStream {
+        id: Uuid,
+        #[serde(default)]
+        secrets: bool,
+    },
     GetVideoSources {},
     GetAlertsMediaGallery {},
     GetEditorOptions {},
@@ -306,13 +317,30 @@ pub enum Control {
     DeleteScene {
         id: Uuid,
     },
+    CreateStream {
+        stream: Value,
+        #[serde(default)]
+        secrets: bool,
+    },
+    UpdateStream {
+        stream: Value,
+        #[serde(default)]
+        secrets: bool,
+    },
+    DeleteStream {
+        id: Uuid,
+    },
     CreateWidget {
         widget: Value,
         #[serde(rename = "sceneIds")]
         scene_ids: Vec<Uuid>,
+        #[serde(default)]
+        secrets: bool,
     },
     UpdateWidget {
         widget: Value,
+        #[serde(default)]
+        secrets: bool,
     },
     DeleteWidget {
         id: Uuid,
@@ -371,6 +399,7 @@ impl Control {
             Self::SetTorch { .. } => "setTorch",
             Self::SetZoom { .. } => "setZoom",
             Self::SetZoomPreset { .. } => "setZoomPreset",
+            Self::SetStream { .. } => "setStream",
             Self::SetScene { .. } => "setScene",
             Self::SetBitratePreset { .. } => "setBitratePreset",
             Self::SetMic { .. } => "setMic",
@@ -386,13 +415,17 @@ impl Control {
             Self::SetGimbalTracking { .. } => "setGimbalTracking",
             Self::SendMessage { .. } => "sendMessage",
             Self::GetScenes {} => "getScenes",
-            Self::GetWidgets {} => "getWidgets",
+            Self::GetWidgets { .. } => "getWidgets",
+            Self::GetStream { .. } => "getStream",
             Self::GetVideoSources {} => "getVideoSources",
             Self::GetAlertsMediaGallery {} => "getAlertsMediaGallery",
             Self::GetEditorOptions {} => "getEditorOptions",
             Self::CreateScene { .. } => "createScene",
             Self::UpdateScene { .. } => "updateScene",
             Self::DeleteScene { .. } => "deleteScene",
+            Self::CreateStream { .. } => "createStream",
+            Self::UpdateStream { .. } => "updateStream",
+            Self::DeleteStream { .. } => "deleteStream",
             Self::CreateWidget { .. } => "createWidget",
             Self::UpdateWidget { .. } => "updateWidget",
             Self::DeleteWidget { .. } => "deleteWidget",
@@ -410,8 +443,10 @@ impl Control {
             }
             Self::CreateScene { scene: object }
             | Self::UpdateScene { scene: object }
+            | Self::CreateStream { stream: object, .. }
+            | Self::UpdateStream { stream: object, .. }
             | Self::CreateWidget { widget: object, .. }
-            | Self::UpdateWidget { widget: object } => has_uuid_id(object),
+            | Self::UpdateWidget { widget: object, .. } => has_uuid_id(object),
             Self::SetScoreboardPlayers { players } => players
                 .as_array()
                 .is_some_and(|players| players.iter().all(has_uuid_id)),
@@ -422,7 +457,8 @@ impl Control {
     pub(crate) fn answers(&self) -> Option<&'static str> {
         match self {
             Self::GetScenes {} => Some("scenes"),
-            Self::GetWidgets {} => Some("widgets"),
+            Self::GetWidgets { .. } => Some("widgets"),
+            Self::GetStream { .. } => Some("stream"),
             Self::GetVideoSources {} => Some("videoSources"),
             Self::GetAlertsMediaGallery {} => Some("gallery"),
             Self::GetEditorOptions {} => Some("options"),
@@ -435,18 +471,56 @@ impl Control {
         matches!(
             self,
             Self::GetScenes {}
-                | Self::GetWidgets {}
+                | Self::GetWidgets { .. }
+                | Self::GetStream { .. }
                 | Self::GetVideoSources {}
                 | Self::GetAlertsMediaGallery {}
                 | Self::GetEditorOptions {}
                 | Self::CreateScene { .. }
                 | Self::UpdateScene { .. }
                 | Self::DeleteScene { .. }
+                | Self::CreateStream { .. }
+                | Self::UpdateStream { .. }
+                | Self::DeleteStream { .. }
                 | Self::CreateWidget { .. }
                 | Self::UpdateWidget { .. }
                 | Self::DeleteWidget { .. }
                 | Self::SetScoreboardPlayers { .. }
                 | Self::GetVideoSourceSnapshot { .. }
+        )
+    }
+
+    pub(crate) fn secrets_mut(&mut self) -> Option<&mut bool> {
+        match self {
+            Self::GetStream { secrets, .. }
+            | Self::CreateStream { secrets, .. }
+            | Self::UpdateStream { secrets, .. }
+            | Self::GetWidgets { secrets }
+            | Self::CreateWidget { secrets, .. }
+            | Self::UpdateWidget { secrets, .. } => Some(secrets),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn reads_only(&self) -> bool {
+        matches!(
+            self,
+            Self::GetScenes {}
+                | Self::GetWidgets { .. }
+                | Self::GetStream { .. }
+                | Self::GetVideoSources {}
+                | Self::GetAlertsMediaGallery {}
+                | Self::GetEditorOptions {}
+        )
+    }
+
+    pub(crate) fn streams(&self) -> bool {
+        matches!(
+            self,
+            Self::GetStream { .. }
+                | Self::CreateStream { .. }
+                | Self::UpdateStream { .. }
+                | Self::DeleteStream { .. }
         )
     }
 
@@ -460,11 +534,15 @@ impl Control {
     fn changes_settings(&self) -> bool {
         matches!(
             self,
-            Self::SetSrtConnectionPriority { .. }
+            Self::SetStream { .. }
+                | Self::SetSrtConnectionPriority { .. }
                 | Self::SetSrtConnectionPrioritiesEnabled { .. }
                 | Self::CreateScene { .. }
                 | Self::UpdateScene { .. }
                 | Self::DeleteScene { .. }
+                | Self::CreateStream { .. }
+                | Self::UpdateStream { .. }
+                | Self::DeleteStream { .. }
                 | Self::SetMoblinCloudAlertsWidget { .. }
                 | Self::SetMoblinCloudWheelOfLuckWidget { .. }
         )

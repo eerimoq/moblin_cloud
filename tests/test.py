@@ -20,6 +20,7 @@ from .suites import robustness
 from .suites import scene_editor
 from .suites import settings
 from .suites import sign_in
+from .suites import stream_settings
 from .suites import stripe
 from .suites import subscribers
 from .utils.runner import create_parser
@@ -31,6 +32,7 @@ def create_suites(context):
         account.tests(context),
         remote_control.tests(context),
         scene_editor.tests(context),
+        stream_settings.tests(context),
         paypal.tests(context),
         stripe.tests(context),
         payments.tests(context),

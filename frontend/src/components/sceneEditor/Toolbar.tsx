@@ -246,24 +246,40 @@ export default function Toolbar(props: {
               when={props.selected}
               fallback={
                 <>
-                  <PopoverButton
-                    icon="plus"
-                    label={t("Add widget")}
-                    vertical={props.vertical}
-                    onOpen={openAt("add")}
-                  />
+                  <Show when={!props.editor.readOnly()}>
+                    <PopoverButton
+                      icon="plus"
+                      label={t("Add widget")}
+                      vertical={props.vertical}
+                      onOpen={openAt("add")}
+                    />
+                  </Show>
                   <ToolButton icon="sliders" label={t("Scene settings")} onClick={toggleSettings} />
-                  <ToolButton
-                    icon="trash"
-                    label={t("Delete scene")}
-                    red
-                    onClick={() => void deleteScene()}
-                  />
+                  <Show when={!props.editor.readOnly()}>
+                    <ToolButton
+                      icon="trash"
+                      label={t("Delete scene")}
+                      red
+                      onClick={() => void deleteScene()}
+                    />
+                  </Show>
                 </>
               }
             >
               {(selected) => (
-                <>
+                <Show
+                  when={!props.editor.readOnly()}
+                  fallback={
+                    <>
+                      <Divider vertical={props.vertical} />
+                      <ToolButton
+                        icon="sliders"
+                        label={t("Widget settings")}
+                        onClick={toggleSettings}
+                      />
+                    </>
+                  }
+                >
                   <Divider vertical={props.vertical} />
                   <ToolButton
                     icon={selected().widget.enabled ? "eye" : "eye-off"}
@@ -306,7 +322,7 @@ export default function Toolbar(props: {
                     onClick={() => void removeWidget()}
                   />
                   <span class="hidden">{scene().id}</span>
-                </>
+                </Show>
               )}
             </Show>
           )}
@@ -318,16 +334,18 @@ export default function Toolbar(props: {
       >
         <Popover open={open() === "scenes"} side={side()} onClose={close}>
           <PopoverList>
-            <PopoverRow
-              icon="plus-square-dashed"
-              text={t("Create scene")}
-              tinted
-              onClick={() => {
-                close();
-                props.onCreateScene();
-              }}
-            />
-            <PopoverDivider />
+            <Show when={!props.editor.readOnly()}>
+              <PopoverRow
+                icon="plus-square-dashed"
+                text={t("Create scene")}
+                tinted
+                onClick={() => {
+                  close();
+                  props.onCreateScene();
+                }}
+              />
+              <PopoverDivider />
+            </Show>
             <For each={props.editor.state.scenes}>
               {(scene) => (
                 <PopoverRow

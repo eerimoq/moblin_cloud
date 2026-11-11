@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+import copy
 import io
 import json
 import logging
@@ -26,6 +27,46 @@ LOGGER = logging.getLogger(__name__)
 
 OK: dict = {"ok": {}}
 ERROR: dict = {"error": {}}
+
+
+STREAM_SECRETS = [
+    ["url"],
+    ["obsWebSocketUrl"],
+    ["obsWebSocketPassword"],
+    ["realtimeIrlBaseUrl"],
+    ["realtimeIrlPushKey"],
+    ["discordSnapshotWebhook"],
+    ["discordChatBotSnapshotWebhook"],
+    ["goLiveNotificationDiscordWebhookUrl"],
+    ["whip", "headers"],
+    ["previewStream", "url"],
+]
+WIDGET_SECRETS = [
+    ["alerts", "ai", "baseUrl"],
+    ["alerts", "ai", "apiKey"],
+    ["alerts", "ttsMonster", "apiToken"],
+]
+
+
+def get_path(item: dict, path: list[str]) -> Any:
+    for key in path:
+        if not isinstance(item, dict) or key not in item:
+            return None
+        item = item[key]
+    return item
+
+
+def set_path(item: dict, path: list[str], value: Any):
+    for key in path[:-1]:
+        if not isinstance(item.get(key), dict):
+            if value is None:
+                return
+            item[key] = {}
+        item = item[key]
+    if value is None:
+        item.pop(path[-1], None)
+    else:
+        item[path[-1]] = value
 
 
 def same_id(first: str, second: str) -> bool:
@@ -224,7 +265,10 @@ class FakeMoblin:
         for text in websocket:
             message = json.loads(text)
             if "hello" in message:
-                self.send(websocket, {"identify": {"streamerId": self.device_id, "authentication": "fake"}})
+                self.send(
+                    websocket,
+                    {"identify": {"streamerId": self.device_id, "authentication": "fake"}},
+                )
             elif "identified" in message:
                 if name == "cloud":
                     self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel()}}}})
@@ -322,7 +366,16 @@ class FakeMoblin:
     def scene_request(self, kind: str, body: dict) -> tuple[dict, dict | None] | None:
         handlers = {
             "getScenes": lambda: (OK, {"getScenes": {"scenes": self.database["scenes"]}}),
-            "getWidgets": lambda: (OK, {"getWidgets": {"widgets": self.database["widgets"]}}),
+            "getWidgets": lambda: (
+                OK,
+                {
+                    "getWidgets": {
+                        "widgets": [
+                            self.shown(WIDGET_SECRETS, widget, body) for widget in self.database["widgets"]
+                        ]
+                    }
+                },
+            ),
             "getVideoSources": lambda: (OK, {"getVideoSources": {"videoSources": video_sources()}}),
             "getAlertsMediaGallery": lambda: (OK, {"getAlertsMediaGallery": {"gallery": self.gallery()}}),
             "getEditorOptions": lambda: (
@@ -330,9 +383,16 @@ class FakeMoblin:
                 {"getEditorOptions": {"options": editor_options(self.ids, self.database)}},
             ),
             "createScene": lambda: self.create_item("scenes", body["scene"]),
-            "createWidget": lambda: self.create_widget(body["widget"], body["sceneIds"]),
+            "createWidget": lambda: self.create_widget(
+                self.created(WIDGET_SECRETS, body["widget"], body), body["sceneIds"]
+            ),
             "updateScene": lambda: self.update_item("scenes", body["scene"]),
-            "updateWidget": lambda: self.update_item("widgets", body["widget"]),
+            "updateWidget": lambda: self.update_item(
+                "widgets",
+                self.kept(
+                    WIDGET_SECRETS, body["widget"], find(self.database["widgets"], body["widget"]["id"]), body
+                ),
+            ),
             "deleteScene": lambda: self.delete_item("scenes", body["id"]),
             "deleteWidget": lambda: self.delete_item("widgets", body["id"]),
             "setScoreboardPlayers": lambda: self.set_scoreboard_players(body["players"]),
@@ -340,9 +400,98 @@ class FakeMoblin:
                 OK,
                 {"getVideoSourceSnapshot": optional("image", self.video_source_snapshot(body["id"]))},
             ),
+            **self.stream_handlers(body),
         }
         handler = handlers.get(kind)
         return handler() if handler is not None else None
+
+    def stream_handlers(self, body: dict) -> dict:
+        return {
+            "getStream": lambda: self.get_stream(body["id"], body),
+            "createStream": lambda: self.create_stream(self.created(STREAM_SECRETS, body["stream"], body)),
+            "updateStream": lambda: self.update_stream(
+                self.kept(
+                    STREAM_SECRETS, body["stream"], find(self.database["streams"], body["stream"]["id"]), body
+                )
+            ),
+            "deleteStream": lambda: self.delete_stream(body["id"]),
+        }
+
+    def get_stream(self, stream_id: str, body: dict) -> tuple[dict, dict | None]:
+        stream = find(self.database["streams"], stream_id)
+        if stream is None:
+            return ERROR, None
+        return OK, {"getStream": {"stream": self.shown(STREAM_SECRETS, stream, body)}}
+
+    @staticmethod
+    def shown(secrets: list[list[str]], item: dict, body: dict) -> dict:
+        if body["secrets"]:
+            return item
+        shown = copy.deepcopy(item)
+        for path in secrets:
+            set_path(shown, path, None)
+        for path in [["url"], ["previewStream", "url"]]:
+            url = get_path(item, path)
+            if isinstance(url, str) and "://" in url:
+                set_path(shown, path, url.split("://")[0] + "://")
+        for destination in get_path(shown, ["multiStreaming", "destinations"]) or []:
+            url = destination.get("url")
+            destination["url"] = url.split("://")[0] + "://" if isinstance(url, str) and "://" in url else ""
+        return shown
+
+    @staticmethod
+    def kept(secrets: list[list[str]], item: dict, old: dict | None, body: dict) -> dict:
+        if body["secrets"]:
+            return item
+        kept = copy.deepcopy(item)
+        for path in secrets:
+            set_path(kept, path, get_path(old or {}, path))
+        return kept
+
+    @staticmethod
+    def created(secrets: list[list[str]], item: dict, body: dict) -> dict:
+        created = FakeMoblin.kept(secrets, item, None, body)
+        if not body["secrets"] and secrets is STREAM_SECRETS:
+            created["url"] = "srt://my_public_ip:4000"
+        return created
+
+    def stream_name_taken(self, stream: dict) -> bool:
+        return any(
+            other["name"] == stream["name"] and not same_id(other["id"], stream["id"])
+            for other in self.database["streams"]
+        )
+
+    def create_stream(self, stream: dict) -> tuple[dict, dict | None]:
+        streams = self.database["streams"]
+        if find(streams, stream["id"]) is not None or self.stream_name_taken(stream):
+            return ERROR, None
+        name = stream.get("name") or "My stream"
+        number = 1
+        while any(other["name"] == name for other in streams):
+            name = f"My stream {number}"
+            number += 1
+        streams.append({**stream, "name": name, "enabled": False})
+        return OK, None
+
+    def update_stream(self, stream: dict) -> tuple[dict, dict | None]:
+        streams = self.database["streams"]
+        index = index_of(streams, stream["id"])
+        if index is None or not stream.get("name") or self.stream_name_taken(stream):
+            return ERROR, None
+        old = streams[index]
+        busy = self.state["streaming"] or self.state["recording"]
+        if busy and stream.get("url", old.get("url")) != old.get("url"):
+            return ERROR, None
+        streams[index] = {**stream, "id": old["id"], "enabled": old["enabled"]}
+        return OK, None
+
+    def delete_stream(self, stream_id: str) -> tuple[dict, dict | None]:
+        streams = self.database["streams"]
+        stream = find(streams, stream_id)
+        if stream is None or stream["enabled"]:
+            return ERROR, None
+        streams.remove(stream)
+        return OK, None
 
     def gallery(self) -> dict:
         return self.database["alertsMediaGallery"]
@@ -417,6 +566,7 @@ class FakeMoblin:
     def settings(self) -> dict:
         return {
             "streams": [{"id": stream["id"], "name": stream["name"]} for stream in self.database["streams"]],
+            "currentStreamId": self.enabled_stream()["id"],
             "scenes": [{"id": scene["id"], "name": scene["name"]} for scene in self.enabled_scenes()],
             "autoSceneSwitchers": [
                 {"id": switcher["id"], "name": switcher["name"]}
@@ -606,6 +756,11 @@ class FakeMoblin:
                 self.database["moblinCloud"][key] = None if widget_id is None else widget_id.upper()
                 if wheel:
                     self.send_wheel()
+        elif kind == "setStream":
+            stream = find(self.database["streams"], body["id"])
+            if stream is not None and not self.state["streaming"] and not self.state["recording"]:
+                for item in self.database["streams"]:
+                    item["enabled"] = item is stream
         elif kind == "setSrtConnectionPrioritiesEnabled":
             self.priorities_enabled = body["enabled"]
         elif kind == "setSrtConnectionPriority":
@@ -684,7 +839,10 @@ class FakeMoblin:
                 "isMuted": self.state["muted"],
             },
             "topLeft": {
-                "stream": {"message": self.enabled_stream()["name"], "ok": True},
+                "stream": {
+                    "message": f"{self.enabled_stream()['name']} (1080p, 30, SRT, H.265 VBR 5 Mbps, AAC 128 Kbps)",
+                    "ok": True,
+                },
                 "camera": {"message": "Back", "ok": True},
                 "mic": {"message": "Built-in" if self.state["mic"] == "built-in" else "Headset", "ok": True},
                 "zoom": {"message": f"{self.state['zoom']:.1f}x", "ok": True},

@@ -23,6 +23,21 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    for table in ["twitch_assistants", "kick_assistants"] {
+        let secrets = connection
+            .query_row(
+                &format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = 'secrets'"),
+                [],
+                |_| Ok(()),
+            )
+            .optional()?;
+        if secrets.is_none() {
+            connection.execute(
+                &format!("ALTER TABLE {table} ADD COLUMN secrets INTEGER NOT NULL DEFAULT 0"),
+                [],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -67,6 +82,7 @@ impl Database {
                      go_live INTEGER NOT NULL DEFAULT 0,
                      edit_tips INTEGER NOT NULL DEFAULT 0,
                      remote_control INTEGER NOT NULL DEFAULT 0,
+                     secrets INTEGER NOT NULL DEFAULT 0,
                      PRIMARY KEY (broadcaster, assistant)
                  );
                  CREATE INDEX IF NOT EXISTS twitch_assistants_assistant ON twitch_assistants (assistant);
@@ -158,6 +174,7 @@ impl Database {
                      go_live INTEGER NOT NULL DEFAULT 0,
                      edit_tips INTEGER NOT NULL DEFAULT 0,
                      remote_control INTEGER NOT NULL DEFAULT 0,
+                     secrets INTEGER NOT NULL DEFAULT 0,
                      PRIMARY KEY (broadcaster, assistant)
                  );
                  CREATE INDEX IF NOT EXISTS kick_assistants_assistant ON kick_assistants (assistant);

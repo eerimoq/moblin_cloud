@@ -12,6 +12,7 @@ import {
   rowClass,
 } from "./MoblinParts";
 import SceneWidgetsPanel from "./sceneEditor/SceneWidgetsPanel";
+import StreamsSettings from "./streamSettings/StreamsSettings";
 import type { Editor } from "./sceneEditor/store";
 import type { Control, Named } from "../data/account";
 import { formatBits } from "../data/moblin";
@@ -292,12 +293,13 @@ function MoblinCloud(props: {
   );
 }
 
-type SettingsPage = "root" | "macros" | "moblinCloud" | "alerts" | "wheelOfLuck";
+type SettingsPage = "root" | "streams" | "macros" | "moblinCloud" | "alerts" | "wheelOfLuck";
 
 function Settings(props: { remote: Remote }) {
   const [page, setPage] = createSignal<SettingsPage>("root");
   const titles = (): Record<SettingsPage, string> => ({
     root: t("Settings"),
+    streams: t("Streams"),
     macros: t("Macros"),
     moblinCloud: t("Moblin Cloud"),
     alerts: t("Message"),
@@ -305,6 +307,7 @@ function Settings(props: { remote: Remote }) {
   });
   const parents: Record<SettingsPage, SettingsPage> = {
     root: "root",
+    streams: "root",
     macros: "root",
     moblinCloud: "root",
     alerts: "moblinCloud",
@@ -325,45 +328,55 @@ function Settings(props: { remote: Remote }) {
   );
   const loaded = (): CloudWidgets => (widgets.error ? undefined : widgets.latest);
   return (
-    <PanelView
-      title={titles()[page()]}
-      back={
-        page() === "root"
-          ? undefined
-          : { label: titles()[parent()], onBack: () => setPage(parent()) }
-      }
+    <Show
+      when={page() !== "streams"}
+      fallback={<StreamsSettings remote={props.remote} onBack={() => setPage("root")} />}
     >
-      <Switch>
-        <Match when={page() === "root"}>
-          <Group footer={t("Only the settings Moblin shares over remote control are here.")}>
-            <NavRow icon="list" label={t("Macros")} onClick={() => setPage("macros")} />
-            <NavRow icon="cloud" label={t("Moblin Cloud")} onClick={() => setPage("moblinCloud")} />
-          </Group>
-        </Match>
-        <Match when={page() === "macros"}>
-          <Macros remote={props.remote} />
-        </Match>
-        <Match when={page() === "moblinCloud"}>
-          <MoblinCloud remote={props.remote} widgets={loaded()} onOpen={setPage} />
-        </Match>
-        <Match when={page() === "alerts"}>
-          <CloudWidgetChoices
-            remote={props.remote}
-            kind="alerts"
-            widgets={loaded()}
-            failed={widgets.error !== undefined}
-          />
-        </Match>
-        <Match when={page() === "wheelOfLuck"}>
-          <CloudWidgetChoices
-            remote={props.remote}
-            kind="wheelOfLuck"
-            widgets={loaded()}
-            failed={widgets.error !== undefined}
-          />
-        </Match>
-      </Switch>
-    </PanelView>
+      <PanelView
+        title={titles()[page()]}
+        back={
+          page() === "root"
+            ? undefined
+            : { label: titles()[parent()], onBack: () => setPage(parent()) }
+        }
+      >
+        <Switch>
+          <Match when={page() === "root"}>
+            <Group footer={t("Only the settings Moblin shares over remote control are here.")}>
+              <NavRow icon="broadcast" label={t("Streams")} onClick={() => setPage("streams")} />
+              <NavRow icon="list" label={t("Macros")} onClick={() => setPage("macros")} />
+              <NavRow
+                icon="cloud"
+                label={t("Moblin Cloud")}
+                onClick={() => setPage("moblinCloud")}
+              />
+            </Group>
+          </Match>
+          <Match when={page() === "macros"}>
+            <Macros remote={props.remote} />
+          </Match>
+          <Match when={page() === "moblinCloud"}>
+            <MoblinCloud remote={props.remote} widgets={loaded()} onOpen={setPage} />
+          </Match>
+          <Match when={page() === "alerts"}>
+            <CloudWidgetChoices
+              remote={props.remote}
+              kind="alerts"
+              widgets={loaded()}
+              failed={widgets.error !== undefined}
+            />
+          </Match>
+          <Match when={page() === "wheelOfLuck"}>
+            <CloudWidgetChoices
+              remote={props.remote}
+              kind="wheelOfLuck"
+              widgets={loaded()}
+              failed={widgets.error !== undefined}
+            />
+          </Match>
+        </Switch>
+      </PanelView>
+    </Show>
   );
 }
 

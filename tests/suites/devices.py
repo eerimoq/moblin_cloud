@@ -395,6 +395,7 @@ class DevicesEveryControl(DevicesTestCase):
             {"setTorch": {"on": True}},
             {"setZoom": {"x": 2.5}},
             {"setZoomPreset": {"id": some_id}},
+            {"setStream": {"id": some_id}},
             {"setScene": {"id": some_id}},
             {"setBitratePreset": {"id": some_id}},
             {"setMic": {"id": "builtin"}},

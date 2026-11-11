@@ -96,6 +96,7 @@ class AssistantsAdded(AssistantsTestCase):
                     "goLive": False,
                     "editTips": False,
                     "remoteControl": "none",
+                    "secrets": False,
                     "lastActive": None,
                     "lastRemoteControl": None,
                 }
