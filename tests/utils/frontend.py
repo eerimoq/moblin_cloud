@@ -311,7 +311,7 @@ class Dashboard(Client):
         return self.post(f"{self.page_path(page_id)}/test/spin", {"message": message})
 
     def admin_stats(self) -> dict:
-        return self.get("/admin/stats")
+        return self.get("/admin/overview")
 
     def restrict_sign_in(self, restricted: bool) -> dict:
         return self.post("/admin/sign-in", {"restricted": restricted})

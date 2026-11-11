@@ -136,10 +136,10 @@ class EventsAdminStats(EventsTestCase):
     login = "eventsnotadmin"
 
     def run(self):
-        self.assert_backend_error(403, lambda: EventStream(self.dashboard, "/admin/stats/events"))
-        self.assert_backend_error(401, lambda: EventStream(self.frontend, "/admin/stats/events"))
+        self.assert_backend_error(403, lambda: EventStream(self.dashboard, "/admin/overview/events"))
+        self.assert_backend_error(401, lambda: EventStream(self.frontend, "/admin/overview/events"))
         admin = self.sign_in("admin")
-        with EventStream(admin, "/admin/stats/events") as events:
+        with EventStream(admin, "/admin/overview/events") as events:
             started = time.monotonic()
             name, stats = events.next(2)
             self.assert_equal(name, "stats")
@@ -163,7 +163,7 @@ class EventsEndOnShutdown(EventsTestCase):
             self.page_events(),
             self.account_events(),
             EventStream(self.dashboard, f"/account/pages/{self.page_id}/devices/ES1/events"),
-            EventStream(self.sign_in("admin"), "/admin/stats/events"),
+            EventStream(self.sign_in("admin"), "/admin/overview/events"),
         ]
         started = time.monotonic()
         self.backend.restart(graceful=True)

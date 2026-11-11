@@ -15,7 +15,7 @@ import SectionMenu, {
   type Section as MenuItem,
 } from "../components/SectionMenu";
 import {
-  adminStatsEventsUrl,
+  adminOverviewEventsUrl,
   allowSignIn,
   dismissSignIn,
   removeSignIn,
@@ -1524,7 +1524,7 @@ function Stats(props: { session: string; onSignOut: () => void }) {
 
   onMount(() => {
     onCleanup(
-      subscribe(adminStatsEventsUrl, props.session, {
+      subscribe(adminOverviewEventsUrl, props.session, {
         onEvent: (name, data) => {
           if (name === "stats") {
             setStats(data as AdminStats);

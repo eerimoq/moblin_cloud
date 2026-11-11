@@ -7,7 +7,7 @@ use crate::api::test_utils::*;
 async fn admin_stats() {
     let (address, api) = start_api(None).await;
     let client = reqwest::Client::new();
-    let url = format!("http://{address}/admin/stats");
+    let url = format!("http://{address}/admin/overview");
     let response = client.get(&url).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let (session, moblin_cloud_key, _) = streamer(&api);
@@ -84,7 +84,7 @@ async fn admin_stats() {
             "statuses": {"101": 1, "200": 2, "401": 1, "403": 1},
             "endpoints": [
                 {"method": "GET", "path": "/account", "total": 2, "statuses": {"200": 2}},
-                {"method": "GET", "path": "/admin/stats", "total": 2, "statuses": {"401": 1, "403": 1}},
+                {"method": "GET", "path": "/admin/overview", "total": 2, "statuses": {"401": 1, "403": 1}},
                 {"method": "GET", "path": "/remote-control/streamer/{key}", "total": 1, "statuses": {"101": 1}},
             ],
         })
@@ -179,7 +179,7 @@ async fn admins_make_accounts_premium() {
     assert_eq!(events.next().await.0, "account");
     assert_eq!(account_of(&address, &session).await["premium"], true);
     let stats: Value = client
-        .get(format!("http://{address}/admin/stats"))
+        .get(format!("http://{address}/admin/overview"))
         .bearer_auth(&admin)
         .send()
         .await

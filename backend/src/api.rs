@@ -239,8 +239,8 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/pages/{id}/test/spin", post(handle_test_spin))
         .route("/account/pages/{id}/test/effect", post(handle_test_effect))
         .route("/account/pages/{id}/rick-rolls", post(handle_rick_roll))
-        .route("/admin/stats", get(handle_admin_stats))
-        .route("/admin/stats/events", get(handle_admin_stats_events))
+        .route("/admin/overview", get(handle_admin_overview))
+        .route("/admin/overview/events", get(handle_admin_overview_events))
         .route("/admin/sign-in", post(handle_admin_sign_in))
         .route(
             "/admin/sign-in/allowed/{platform}/{user_id}",

@@ -104,7 +104,7 @@ pub(super) async fn handle_public_page_events(
     Ok(until_stopping(&api, stream))
 }
 
-pub(super) async fn handle_admin_stats_events(
+pub(super) async fn handle_admin_overview_events(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)> {

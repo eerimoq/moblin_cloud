@@ -189,7 +189,7 @@ async fn admins_get_the_stats_streamed() {
     let (address, api) = start_api(None).await;
     let client = reqwest::Client::new();
     let (session, _, _) = streamer(&api);
-    let url = format!("http://{address}/admin/stats/events");
+    let url = format!("http://{address}/admin/overview/events");
     let response = client.get(&url).bearer_auth(&session).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     create_account(&api, "admin", "Admin", "admin");

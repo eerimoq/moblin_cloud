@@ -135,7 +135,7 @@ pub(super) struct PendingStats {
     deliveries: usize,
 }
 
-pub(super) async fn handle_admin_stats(
+pub(super) async fn handle_admin_overview(
     State(api): State<Arc<Api>>,
     headers: HeaderMap,
 ) -> Result<Json<AdminStatsResponse>, (StatusCode, String)> {

@@ -462,7 +462,7 @@ export const postRickRoll = (session: string, page: string) =>
 export const fetchAccount = (session: string, page?: string) =>
   call<Account>(accountPath(page), session);
 
-export const adminStatsEventsUrl = `${backendUrl}/admin/stats/events`;
+export const adminOverviewEventsUrl = `${backendUrl}/admin/overview/events`;
 
 export const restrictSignIn = (session: string, restricted: boolean) =>
   call<SignInAccess>("/admin/sign-in", session, post({ restricted }));
