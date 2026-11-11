@@ -436,6 +436,7 @@ class AccountAdmin(AccountTestCase):
         server = stats["server"]
         self.assert_equal(sorted(server), ["integrations", "memory", "now", "requests", "started", "version"])
         self.assert_true(0 < server["started"] <= server["now"])
+        self.assert_true(server["memory"] > 0)
         served = server["requests"]
         self.assert_equal(sorted(served), ["endpoints", "statuses", "total"])
         self.assert_equal(sum(endpoint["total"] for endpoint in served["endpoints"]), served["total"])

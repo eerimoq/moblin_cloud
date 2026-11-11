@@ -1402,7 +1402,7 @@ function Loaded(props: {
             <Tile
               label="Memory"
               value={server().memory === null ? "–" : formatBytes(server().memory ?? 0)}
-              hint="Resident memory of the backend process. Only known on Linux."
+              hint="Resident memory of the backend process."
             />
           </div>
           <div

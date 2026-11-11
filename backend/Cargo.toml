@@ -14,6 +14,7 @@ env_logger = "0.11"
 futures-util = "0.3"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 log = "0.4"
+memory-stats = "1.2.0"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
 ring = "0.17"
 rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }

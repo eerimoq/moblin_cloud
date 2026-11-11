@@ -95,10 +95,7 @@ pub(super) struct Integrations {
 }
 
 fn resident_memory() -> Option<u64> {
-    let status = std::fs::read_to_string("/proc/self/status").ok()?;
-    let line = status.lines().find(|line| line.starts_with("VmRSS:"))?;
-    let kilobytes = line.split_whitespace().nth(1)?.parse::<u64>().ok()?;
-    Some(kilobytes * 1024)
+    memory_stats::memory_stats().map(|stats| stats.physical_mem as u64)
 }
 
 #[derive(Serialize)]
