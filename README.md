@@ -26,8 +26,8 @@ just dev
 
 and open http://localhost:5173. It runs the backend, the frontend and a fake
 Moblin. Signing in goes through a fake Twitch and Kick that
-take any login: `admin` is an admin, `premium` a premium account and a login
-ending in 1, 2 or 3 a subscriber. Run `just` for the other recipes.
+take any login: `admin` is an admin, `premium` one to make premium on the admin
+page and a login ending in 1, 2 or 3 a subscriber. Run `just` for the other recipes.
 
 ## Checks
 

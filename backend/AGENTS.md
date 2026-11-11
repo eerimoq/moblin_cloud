@@ -97,5 +97,5 @@ Stripe:
 
 - The currency only changes while tips, the wheel and effects are all off, so their amounts never silently switch currency.
 - Each `Feature` has `enabled` next to its values, so turning one off keeps them. It defaults to true, so settings saved before the flag are on.
-- Only premium accounts upload a banner and pick a font or custom color. Premium is a flag on the account set on the admin page, admins included. Taking it away keeps what they have and only stops new choices.
+- Only premium accounts upload a banner and pick a font or custom color. Premium is a flag on the account set on the admin page, and admins only have it when made premium there too. Taking it away keeps what they have and only stops new choices.
 - `banner` re-encodes every upload, so nothing but pixels is kept.
