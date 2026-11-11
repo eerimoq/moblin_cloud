@@ -1,6 +1,5 @@
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -9,7 +8,7 @@ use futures_util::stream::unfold;
 use futures_util::{Stream, StreamExt};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::time::{Instant, sleep, sleep_until};
+use tokio::time::{Instant, sleep_until};
 
 use super::*;
 
@@ -101,28 +100,6 @@ pub(super) async fn handle_public_page_events(
             }
         }
     });
-    Ok(until_stopping(&api, stream))
-}
-
-pub(super) async fn handle_admin_overview_events(
-    State(api): State<Arc<Api>>,
-    headers: HeaderMap,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)> {
-    admin(&api, &headers)?;
-    let stream = unfold(
-        (api.clone(), headers, true),
-        |(api, headers, first)| async move {
-            if !first {
-                sleep(Duration::from_secs(2)).await;
-                admin(&api, &headers).ok()?;
-            }
-            let event = Event::default()
-                .event("stats")
-                .json_data(admin_stats(&api))
-                .ok()?;
-            Some((event, (api, headers, false)))
-        },
-    );
     Ok(until_stopping(&api, stream))
 }
 

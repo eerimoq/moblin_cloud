@@ -183,19 +183,3 @@ async fn tip_pages_hear_about_changes() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
-
-#[tokio::test]
-async fn admins_get_the_stats_streamed() {
-    let (address, api) = start_api(None).await;
-    let client = reqwest::Client::new();
-    let (session, _, _) = streamer(&api);
-    let url = format!("http://{address}/admin/overview/events");
-    let response = client.get(&url).bearer_auth(&session).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    create_account(&api, "admin", "Admin", "admin");
-    let mut events = Events::open(&client, &url, &api.auth.session("admin", 0)).await;
-    let (name, stats) = events.next().await;
-    assert_eq!(name, "stats");
-    assert_eq!(stats["accounts"]["total"], 2);
-    assert_eq!(stats["server"]["version"], "dev");
-}

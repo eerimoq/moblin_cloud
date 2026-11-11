@@ -130,27 +130,6 @@ class EventsRecent(EventsTestCase):
         self.dashboard.change_settings(tips=None)
 
 
-class EventsAdminStats(EventsTestCase):
-    """Push the operator's statistics to an admin at once and every two seconds, and to nobody else."""
-
-    login = "eventsnotadmin"
-
-    def run(self):
-        self.assert_backend_error(403, lambda: EventStream(self.dashboard, "/admin/overview/events"))
-        self.assert_backend_error(401, lambda: EventStream(self.frontend, "/admin/overview/events"))
-        admin = self.sign_in("admin")
-        with EventStream(admin, "/admin/overview/events") as events:
-            started = time.monotonic()
-            name, stats = events.next(2)
-            self.assert_equal(name, "stats")
-            assert isinstance(stats, dict)
-            self.assert_equal(sorted(stats), sorted(admin.admin_stats()))
-            events.wait_for("stats", 4)
-            events.wait_for("stats", 4)
-            took = time.monotonic() - started
-            self.assert_true(3 <= took <= 7, f"two more after {took:.1f} seconds")
-
-
 class EventsEndOnShutdown(EventsTestCase):
     """End every open stream when the backend shuts down, so a restart is not held up by them."""
 
@@ -163,7 +142,6 @@ class EventsEndOnShutdown(EventsTestCase):
             self.page_events(),
             self.account_events(),
             EventStream(self.dashboard, f"/account/pages/{self.page_id}/devices/ES1/events"),
-            EventStream(self.sign_in("admin"), "/admin/overview/events"),
         ]
         started = time.monotonic()
         self.backend.restart(graceful=True)
@@ -180,6 +158,5 @@ def tests(context: Context):
         EventsPageIcon(context),
         EventsAccount(context),
         EventsRecent(context),
-        EventsAdminStats(context),
         EventsEndOnShutdown(context),
     ]

@@ -1,6 +1,5 @@
-import { createSignal, For, Index, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createSignal, For, Index, onMount, Show, type JSX } from "solid-js";
 import Icon, { type IconName } from "../components/Icon";
-import { subscribe } from "../sse";
 import { Avatar } from "../components/HeaderPickers";
 import {
   buttonClass,
@@ -15,9 +14,9 @@ import SectionMenu, {
   type Section as MenuItem,
 } from "../components/SectionMenu";
 import {
-  adminOverviewEventsUrl,
   allowSignIn,
   dismissSignIn,
+  fetchAdminOverview,
   removeSignIn,
   restrictSignIn,
   searchAccounts,
@@ -1522,28 +1521,20 @@ function Stats(props: { session: string; onSignOut: () => void }) {
   const [stats, setStats] = createSignal<AdminStats | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
-  onMount(() => {
-    onCleanup(
-      subscribe(adminOverviewEventsUrl, props.session, {
-        onEvent: (name, data) => {
-          if (name === "stats") {
-            setStats(data as AdminStats);
-            setError(null);
-          }
-        },
-        onError: (status) => {
-          if (status === 401) {
-            props.onSignOut();
-            return;
-          }
-          setError(
-            status === 403
-              ? "This account is not an admin."
-              : "The statistics could not be loaded.",
-          );
-        },
-      }),
-    );
+  onMount(async () => {
+    try {
+      setStats(await fetchAdminOverview(props.session));
+    } catch (error) {
+      if (error instanceof BackendError && error.status === 401) {
+        props.onSignOut();
+        return;
+      }
+      setError(
+        error instanceof BackendError && error.status === 403
+          ? "This account is not an admin."
+          : "The statistics could not be loaded.",
+      );
+    }
   });
 
   return (
