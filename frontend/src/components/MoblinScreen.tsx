@@ -28,7 +28,7 @@ import {
   type TopRightItem,
 } from "../data/account";
 import { moblinIconUrl } from "../data/backend";
-import { filtersOf } from "../data/moblin";
+import { filtersOf, quickButtonNameMatchesFilter } from "../data/moblin";
 import { streamerProfile } from "../data/remoteControl";
 import { t } from "../i18n";
 import { readStored, store } from "../storage";
@@ -344,7 +344,11 @@ function QuickButtonView(props: {
     return Math.max(5, Math.min(10, props.nameWidth / (longest * 0.58), twoLines));
   };
   return (
-    <div class="flex flex-col items-center" style={{ width: `${props.nameWidth}px` }}>
+    <div
+      class="flex flex-col items-center"
+      style={{ width: `${props.nameWidth}px` }}
+      data-quick-button={props.button.type}
+    >
       <button
         type="button"
         aria-label={props.button.name}
@@ -422,6 +426,8 @@ export default function MoblinScreen(props: {
   const [panelHidden, setPanelHidden] = createSignal(false);
   const [page, setPage] = createSignal(1);
   const [allPages, setAllPages] = createSignal(readStored("quickButtonsExpanded") === "1");
+  const [filtering, setFiltering] = createSignal(false);
+  const [filter, setFilter] = createSignal("");
   const [icon] = createResource(
     () => props.page,
     (id) => {
@@ -517,8 +523,7 @@ export default function MoblinScreen(props: {
     }
   };
   const pageStride = (element: HTMLElement) => element.clientWidth + 8;
-  const rows = (page: number) => {
-    const buttons = quickButtons().filter((button) => button.page === page);
+  const rows = (buttons: QuickButton[]) => {
     const pairs: (QuickButton | null)[][] = [];
     for (let index = 0; index < buttons.length; index += 2) {
       pairs.push(
@@ -528,6 +533,36 @@ export default function MoblinScreen(props: {
       );
     }
     return pairs;
+  };
+  const pageRows = (page: number) => rows(quickButtons().filter((button) => button.page === page));
+  const filteredRows = () =>
+    rows(quickButtons().filter((button) => quickButtonNameMatchesFilter(button.name, filter())));
+  const startFiltering = (event: MouseEvent) => {
+    if (filtering() || (event.target as Element).closest("button, input")) {
+      return;
+    }
+    setFilter("");
+    setFiltering(true);
+  };
+  const showButton = (button: QuickButton) => {
+    setFiltering(false);
+    if (!pager) {
+      return;
+    }
+    const index = pages().indexOf(button.page);
+    if (!allPages()) {
+      setPage(button.page);
+      pager.scrollTo({ left: index * pageStride(pager) });
+    }
+    const shown = pager.children[index]?.querySelector<HTMLElement>(
+      `[data-quick-button="${button.type}"]`,
+    );
+    const scroller = shown?.closest<HTMLElement>("[data-quick-buttons]");
+    if (shown && scroller) {
+      scroller.scrollTop +=
+        (shown.getBoundingClientRect().top - scroller.getBoundingClientRect().top) / scale() -
+        (scroller.clientHeight - shown.offsetHeight) / 2;
+    }
   };
 
   const isOn = (button: QuickButton) => {
@@ -600,7 +635,7 @@ export default function MoblinScreen(props: {
     return undefined;
   };
 
-  const quickButton = (button: QuickButton, nameWidth: number) => {
+  const quickButton = (button: QuickButton, nameWidth: number, onPressed?: () => void) => {
     const action = () => actionOf(button);
     return (
       <QuickButtonView
@@ -613,7 +648,10 @@ export default function MoblinScreen(props: {
           ((button.type === "Scene editor" || button.type === "Widgets") && !props.onRequest)
         }
         nameWidth={nameWidth}
-        onPress={() => action()?.run()}
+        onPress={() => {
+          onPressed?.();
+          action()?.run();
+        }}
       />
     );
   };
@@ -770,8 +808,9 @@ export default function MoblinScreen(props: {
                 )}
               </Show>
               <div
-                class="flex h-full shrink-0 bg-phone-screen"
+                class="relative flex h-full shrink-0 bg-phone-screen"
                 style={{ width: `${controlBarWidth()}px` }}
+                onDblClick={startFiltering}
               >
                 <div
                   class="ml-[6px] flex h-full flex-col pt-[6px] pb-[14px]"
@@ -848,8 +887,11 @@ export default function MoblinScreen(props: {
                               </button>
                             </div>
                           </Show>
-                          <div class="flex min-h-0 flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]">
-                            <For each={rows(number)}>
+                          <div
+                            data-quick-buttons
+                            class="flex min-h-0 flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]"
+                          >
+                            <For each={pageRows(number)}>
                               {(row) => (
                                 <div class="flex items-start justify-end gap-[8px]">
                                   <For each={row}>
@@ -936,6 +978,48 @@ export default function MoblinScreen(props: {
                     </div>
                   </Show>
                 </div>
+                <Show when={filtering()}>
+                  <div
+                    class="absolute inset-0 z-10 flex flex-col bg-phone-screen pt-[6px]"
+                    onMouseDown={(event) =>
+                      event.target instanceof HTMLInputElement || event.preventDefault()
+                    }
+                  >
+                    <div class="ml-[6px] flex min-h-0 w-[100px] flex-1 flex-col-reverse gap-[8px] overflow-y-auto pt-[4px] pr-[10px] pl-[5px] [scrollbar-width:none]">
+                      <For each={filteredRows()}>
+                        {(row) => (
+                          <div class="flex items-start justify-end gap-[8px]">
+                            <For each={row}>
+                              {(button) =>
+                                button ? (
+                                  quickButton(button, 40, () => showButton(button))
+                                ) : (
+                                  <span style={{ width: `${40}px` }} />
+                                )
+                              }
+                            </For>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                    <input
+                      ref={(element) =>
+                        queueMicrotask(() => element.focus({ preventScroll: true }))
+                      }
+                      type="text"
+                      placeholder={t("Filter")}
+                      aria-label={t("Filter quick buttons")}
+                      autocomplete="off"
+                      autocapitalize="off"
+                      spellcheck={false}
+                      class="m-[5px] min-w-0 rounded-[5px] border border-phone-separator bg-phone-row px-[6px] py-[4px] text-[17px] leading-tight text-white outline-none placeholder:text-phone-border"
+                      value={filter()}
+                      onInput={(event) => setFilter(event.currentTarget.value)}
+                      onKeyDown={(event) => event.key === "Escape" && setFiltering(false)}
+                      onBlur={() => setFiltering(false)}
+                    />
+                  </div>
+                </Show>
               </div>
             </Show>
           </div>

@@ -350,6 +350,8 @@
   "Feet": "피트",
   "Field of view": "시야각",
   "Fill frame": "프레임 채우기",
+  "Filter": "필터",
+  "Filter quick buttons": "빠른 버튼 필터",
   "Filters": "필터",
   "Find your channel name (myChannelName) and video id (myVideoId) in your stream's URL.": "채널 이름(myChannelName)과 영상 ID(myVideoId)는 방송 URL에서 확인할 수 있어요.",
   "Finding good parameters is hard. You are on you own! =)": "좋은 파라미터를 찾는 건 어려워요. 알아서 해보세요! =)",

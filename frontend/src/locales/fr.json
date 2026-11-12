@@ -350,6 +350,8 @@
   "Feet": "Pieds",
   "Field of view": "Champ de vision",
   "Fill frame": "Remplir le cadre",
+  "Filter": "Filtrer",
+  "Filter quick buttons": "Filtrer les boutons rapides",
   "Filters": "Filtres",
   "Find your channel name (myChannelName) and video id (myVideoId) in your stream's URL.": "Trouve le nom de ta chaîne (myChannelName) et l'identifiant de ta vidéo (myVideoId) dans l'URL de ton stream.",
   "Finding good parameters is hard. You are on you own! =)": "Trouver de bons paramètres, c'est dur. Tu es seul(e) ! =)",

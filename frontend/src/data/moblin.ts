@@ -18,3 +18,15 @@ export const formatBits = (bitsPerSecond: number) =>
   bitsPerSecond >= 1_000_000
     ? `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbps`
     : `${Math.round(bitsPerSecond / 1000)} kbps`;
+
+export const quickButtonNameMatchesFilter = (name: string, filter: string) => {
+  const words = (text: string) => text.toLowerCase().split(/\s+/).filter(Boolean);
+  const filterWords = words(filter);
+  const nameWords = words(name);
+  for (let start = 0; start <= nameWords.length - filterWords.length; start++) {
+    if (filterWords.every((word, index) => nameWords[start + index]!.startsWith(word))) {
+      return true;
+    }
+  }
+  return false;
+};

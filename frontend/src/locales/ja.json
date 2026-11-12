@@ -350,6 +350,8 @@
   "Feet": "フィート",
   "Field of view": "視野角",
   "Fill frame": "フレームいっぱいに表示",
+  "Filter": "フィルター",
+  "Filter quick buttons": "クイックボタンをフィルター",
   "Filters": "フィルター",
   "Find your channel name (myChannelName) and video id (myVideoId) in your stream's URL.": "チャンネル名(myChannelName)と動画ID(myVideoId)は、配信のURLで確認できます。",
   "Finding good parameters is hard. You are on you own! =)": "良いパラメーターを見つけるのは大変です。自力で頑張ってください! =)",

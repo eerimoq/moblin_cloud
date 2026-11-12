@@ -350,6 +350,8 @@
   "Feet": "Jalat",
   "Field of view": "Näkökenttä",
   "Fill frame": "Täytä kuva",
+  "Filter": "Suodata",
+  "Filter quick buttons": "Suodata pikapainikkeet",
   "Filters": "Suodattimet",
   "Find your channel name (myChannelName) and video id (myVideoId) in your stream's URL.": "Löydät kanavasi nimen (myChannelName) ja videon tunnuksen (myVideoId) lähetyksesi URL-osoitteesta.",
   "Finding good parameters is hard. You are on you own! =)": "Hyvien parametrien löytäminen on vaikeaa. Olet omillasi! =)",
