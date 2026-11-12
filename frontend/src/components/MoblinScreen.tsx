@@ -421,6 +421,7 @@ export default function MoblinScreen(props: {
   const [verbose, setVerbose] = createSignal(readStored("statusCollapsed") !== "1");
   const [panelHidden, setPanelHidden] = createSignal(false);
   const [page, setPage] = createSignal(1);
+  const [allPages, setAllPages] = createSignal(readStored("quickButtonsExpanded") === "1");
   const [icon] = createResource(
     () => props.page,
     (id) => {
@@ -499,11 +500,22 @@ export default function MoblinScreen(props: {
     },
   };
 
-  const controlBarWidth = () => (props.window ? 106 : 150);
   const filterOn = () => filtersOf(props.state.filters);
   const pages = () =>
     [1, 2, 3].filter((number) => quickButtons().some((button) => button.page === number));
+  const quickButtonsWidth = () =>
+    allPages() ? pages().length * 100 + (pages().length - 1) * 8 : 100;
+  const controlBarWidth = () => (props.window ? 106 : 150) + quickButtonsWidth() - 100;
   let pager: HTMLDivElement | undefined;
+  const toggleAllPages = () => {
+    const next = !allPages();
+    setAllPages(next);
+    store("quickButtonsExpanded", next ? "1" : null);
+    if (!next) {
+      setPage(pages()[0] ?? 1);
+      pager?.scrollTo({ left: 0 });
+    }
+  };
   const pageStride = (element: HTMLElement) => element.clientWidth + 8;
   const rows = (page: number) => {
     const buttons = quickButtons().filter((button) => button.page === page);
@@ -761,8 +773,11 @@ export default function MoblinScreen(props: {
                 class="flex h-full shrink-0 bg-phone-screen"
                 style={{ width: `${controlBarWidth()}px` }}
               >
-                <div class="ml-[6px] flex h-full w-[100px] flex-col pt-[6px] pb-[14px]">
-                  <div class="flex h-[16px] items-center justify-between pr-[18px] pl-[4px]">
+                <div
+                  class="ml-[6px] flex h-full flex-col pt-[6px] pb-[14px]"
+                  style={{ width: `${quickButtonsWidth()}px` }}
+                >
+                  <div class="flex h-[16px] w-[100px] items-center justify-between pr-[18px] pl-[4px]">
                     <Battery
                       level={props.status.general.batteryLevel}
                       charging={props.status.general.batteryCharging}
@@ -785,8 +800,13 @@ export default function MoblinScreen(props: {
                   </div>
                   <div
                     ref={(element) => (pager = element)}
-                    class="flex min-h-0 flex-1 snap-x snap-mandatory gap-[8px] overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
+                    class={`flex min-h-0 flex-1 gap-[8px] ${
+                      allPages()
+                        ? "overflow-hidden"
+                        : "snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
+                    }`}
                     onScroll={(event) =>
+                      !allPages() &&
                       setPage(
                         pages()[
                           Math.round(
@@ -798,7 +818,11 @@ export default function MoblinScreen(props: {
                   >
                     <For each={pages()}>
                       {(number) => (
-                        <div class="flex h-full w-full shrink-0 snap-start snap-always flex-col">
+                        <div
+                          class={`flex h-full shrink-0 flex-col ${
+                            allPages() ? "w-[100px]" : "w-full snap-start snap-always"
+                          }`}
+                        >
                           <Show when={number === 1}>
                             <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
                               <button
@@ -879,8 +903,8 @@ export default function MoblinScreen(props: {
                     </For>
                   </div>
                   <Show when={pages().length > 1}>
-                    <div class="flex justify-center gap-[3px] pt-[6px] pr-[10px]">
-                      <For each={pages()}>
+                    <div class="flex items-center justify-center gap-[3px] pt-[6px] pr-[10px]">
+                      <For each={allPages() ? [] : pages()}>
                         {(number, index) => (
                           <button
                             type="button"
@@ -897,6 +921,18 @@ export default function MoblinScreen(props: {
                           />
                         )}
                       </For>
+                      <button
+                        type="button"
+                        aria-label={allPages() ? t("Show one page") : t("Show all pages")}
+                        title={allPages() ? t("Show one page") : t("Show all pages")}
+                        class="ml-[3px] grid size-[10px] place-items-center"
+                        onClick={toggleAllPages}
+                      >
+                        <Icon
+                          name={allPages() ? "chevron-right" : "chevron-left"}
+                          class="size-[10px]"
+                        />
+                      </button>
                     </div>
                   </Show>
                 </div>
