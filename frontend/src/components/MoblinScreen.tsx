@@ -537,12 +537,14 @@ export default function MoblinScreen(props: {
   const pageRows = (page: number) => rows(quickButtons().filter((button) => button.page === page));
   const filteredRows = () =>
     rows(quickButtons().filter((button) => quickButtonNameMatchesFilter(button.name, filter())));
-  const startFiltering = (event: MouseEvent) => {
-    if (filtering() || (event.target as Element).closest("button, input")) {
-      return;
-    }
+  const startFiltering = () => {
     setFilter("");
     setFiltering(true);
+  };
+  const startFilteringOnDoubleClick = (event: MouseEvent) => {
+    if (!filtering() && !(event.target as Element).closest("button, input")) {
+      startFiltering();
+    }
   };
   const showButton = (button: QuickButton) => {
     setFiltering(false);
@@ -810,7 +812,7 @@ export default function MoblinScreen(props: {
               <div
                 class="relative flex h-full shrink-0 bg-phone-screen"
                 style={{ width: `${controlBarWidth()}px` }}
-                onDblClick={startFiltering}
+                onDblClick={startFilteringOnDoubleClick}
               >
                 <div
                   class="ml-[6px] flex h-full flex-col pt-[6px] pb-[14px]"
@@ -946,6 +948,15 @@ export default function MoblinScreen(props: {
                   </div>
                   <Show when={pages().length > 1}>
                     <div class="flex items-center justify-center gap-[3px] pt-[6px] pr-[10px]">
+                      <button
+                        type="button"
+                        aria-label={t("Filter quick buttons")}
+                        title={t("Filter quick buttons")}
+                        class="mr-[3px] grid size-[10px] place-items-center"
+                        onClick={startFiltering}
+                      >
+                        <Icon name="search" class="size-[10px]" />
+                      </button>
                       <For each={allPages() ? [] : pages()}>
                         {(number, index) => (
                           <button
