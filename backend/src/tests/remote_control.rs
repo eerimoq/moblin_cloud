@@ -230,8 +230,21 @@ fn messages_to_streamer_match_moblin() {
         }),
         r#"{"request":{"id":24,"data":{"startPreview":{}}}}"#
     );
+    assert_eq!(
+        control(
+            26,
+            Control::TriggerReaction {
+                reaction: Reaction::PizzaChef {}
+            }
+        ),
+        r#"{"request":{"id":26,"data":{"triggerReaction":{"reaction":{"pizzaChef":{}}}}}}"#
+    );
     assert!(
         serde_json::from_str::<Control>(r#"{"setFilter":{"filter":"movie","on":true}}"#).is_err()
+    );
+    assert!(
+        serde_json::from_str::<Control>(r#"{"triggerReaction":{"reaction":{"hearts":{}}}}"#)
+            .is_err()
     );
     assert!(serde_json::from_str::<Control>(r#"{"setStream":{"id":"A"}}"#).is_err());
     assert!(serde_json::from_str::<Control>(r#"{"setScene":{"id":"C2"}}"#).is_err());
@@ -543,6 +556,9 @@ fn sent_messages_are_counted_like_unread_ones() {
         Control::SetFilter {
             filter: Filter::Crt {},
             on: true,
+        },
+        Control::TriggerReaction {
+            reaction: Reaction::Sparkle {},
         },
         Control::StartMacro { id },
         Control::StopMacro { id },

@@ -58,6 +58,10 @@ export type IconName =
   | "split-2x2"
   | "moonphase"
   | "mouth"
+  | "sunglasses"
+  | "poop"
+  | "mitre"
+  | "chef-hat"
   | "wand-stars"
   | "memories"
   | "autostartstop"
@@ -411,6 +415,24 @@ export default function Icon(props: Props) {
         <Match when={props.name === "mouth"}>
           <path d="M2 12c2-2.5 4.5-5 7-5 1.3 0 2.2.7 3 1.5.8-.8 1.7-1.5 3-1.5 2.5 0 5 2.5 7 5-2.5 3.5-6 6-10 6S4.5 15.5 2 12Z" />
           <path d="M2 12c3 1.2 6.5 1.8 10 1.8s7-.6 10-1.8" />
+        </Match>
+        <Match when={props.name === "sunglasses"}>
+          <path d="M2.5 9h19" />
+          <path
+            d="M3.5 9H10v2.5a3.25 3.25 0 0 1-6.5 0ZM14 9h6.5v2.5a3.25 3.25 0 0 1-6.5 0Z"
+            fill="currentColor"
+          />
+        </Match>
+        <Match when={props.name === "poop"}>
+          <path d="M6.5 20h11a2.5 2.5 0 0 0 0-5h-2a2.5 2.5 0 0 0 0-5H15c0-2.5-1.5-4.5-3.5-5.5.5 2-1 3-2.5 3.5a2 2 0 0 0 0 2h-.5a2.5 2.5 0 0 0 0 5h-2a2.5 2.5 0 0 0 0 5Z" />
+        </Match>
+        <Match when={props.name === "mitre"}>
+          <path d="M6 21V10c0-3 3-5.5 6-8 3 2.5 6 5 6 8v11Z" />
+          <path d="M6 17h12M12 7v6M9.5 9.5h5" />
+        </Match>
+        <Match when={props.name === "chef-hat"}>
+          <path d="M7 20v-6a3.5 3.5 0 0 1 1-6.8 4 4 0 0 1 8 0 3.5 3.5 0 0 1 1 6.8v6Z" />
+          <path d="M7 17h10" />
         </Match>
         <Match when={props.name === "wand-stars"}>
           <path d="M12.8 10.8 20.5 20M10.3 7.8l.9 1.1" />

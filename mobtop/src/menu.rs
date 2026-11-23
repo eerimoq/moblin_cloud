@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::app::Monitor;
-use crate::controls::{self, Control, FILTERS};
+use crate::controls::{self, Control, FILTERS, REACTIONS};
 use crate::feed::Feed;
 use crate::layout::{Direction, Leaf, Pane, Panel};
 use crate::panes::format_bits;
@@ -22,6 +22,7 @@ pub enum MenuKind {
     Switchers,
     Macros,
     Filters,
+    Reactions,
     MoblinCloud,
     CloudAlerts,
     CloudWheel,
@@ -580,6 +581,18 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
             None,
             None,
         ),
+        MenuKind::Reactions => (
+            "Reactions",
+            REACTIONS
+                .into_iter()
+                .map(|(key, label)| {
+                    Item::new(label, Action::Send(controls::reaction(key)))
+                        .enabled(free("triggerReaction"))
+                })
+                .collect(),
+            None,
+            None,
+        ),
         MenuKind::Priorities => {
             let srt = settings.map(|settings| &settings["srt"]);
             let enabled = srt
@@ -724,6 +737,7 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
                 Item::new("Filters", Action::Open(MenuKind::Filters))
                     .detail((filters_on > 0).then(|| format!("{filters_on} on")))
                     .mark(Mark::Open),
+                Item::new("Reactions", Action::Open(MenuKind::Reactions)).mark(Mark::Open),
                 Item::new(
                     "Instant replay",
                     Action::Send(controls::action("instantReplay")),

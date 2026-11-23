@@ -16,6 +16,10 @@ fn controls_match_the_backend_shapes() {
         json!({"setFilter": {"filter": {"grayScale": {}}, "on": false}})
     );
     assert_eq!(
+        reaction("pizzaChef").body,
+        json!({"triggerReaction": {"reaction": {"pizzaChef": {}}}})
+    );
+    assert_eq!(
         optional("setAutoSceneSwitcher", None).body,
         json!({"setAutoSceneSwitcher": {}})
     );

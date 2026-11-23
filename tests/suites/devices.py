@@ -407,6 +407,7 @@ class DevicesEveryControl(DevicesTestCase):
             {"setAutoSceneSwitcher": {}},
             {"setPreviewStream": {"on": True}},
             {"setFilter": {"filter": {"pixellate": {}}, "on": True}},
+            {"triggerReaction": {"reaction": {"pizzaChef": {}}}},
             {"startMacro": {"id": some_id}},
             {"stopMacro": {"id": some_id}},
             {"setGimbalTracking": {"on": True}},

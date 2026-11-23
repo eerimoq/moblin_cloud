@@ -281,6 +281,9 @@ pub enum Control {
         filter: Filter,
         on: bool,
     },
+    TriggerReaction {
+        reaction: Reaction,
+    },
     StartMacro {
         id: Uuid,
     },
@@ -389,6 +392,16 @@ pub enum Filter {
     CameraMan {},
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Reaction {
+    Glasses {},
+    Sparkle {},
+    Pope {},
+    PizzaChef {},
+    Poop {},
+}
+
 impl Control {
     pub(crate) fn name(&self) -> &'static str {
         match self {
@@ -410,6 +423,7 @@ impl Control {
             Self::SetAutoSceneSwitcher { .. } => "setAutoSceneSwitcher",
             Self::SetPreviewStream { .. } => "setPreviewStream",
             Self::SetFilter { .. } => "setFilter",
+            Self::TriggerReaction { .. } => "triggerReaction",
             Self::StartMacro { .. } => "startMacro",
             Self::StopMacro { .. } => "stopMacro",
             Self::SetGimbalTracking { .. } => "setGimbalTracking",

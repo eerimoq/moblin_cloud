@@ -22,6 +22,7 @@ import {
   type DeviceState,
   type DeviceStatus,
   type MoblinFilter,
+  type MoblinReaction,
   type Named,
   type StatusItem,
   type TopLeftItem,
@@ -85,6 +86,11 @@ const quickButtons = (): QuickButton[] => [
   { type: "Whirlpool", name: t("Whirlpool"), page: 2 },
   { type: "Blur faces", name: t("Blur faces"), page: 2 },
   { type: "Privacy", name: t("Privacy"), page: 2 },
+  { type: "Glasses", name: t("Glasses"), page: 2 },
+  { type: "Sparkle", name: t("Sparkle"), page: 2 },
+  { type: "Poop", name: t("Poop"), page: 2 },
+  { type: "Pope", name: t("Pope"), page: 2 },
+  { type: "Pizza chef", name: t("Pizza chef"), page: 2 },
   { type: "Movie", name: t("Movie"), page: 2 },
   { type: "4:3", name: "4:3", page: 2 },
   { type: "CRT", name: "CRT", page: 2 },
@@ -135,6 +141,11 @@ const buttonIcons: Record<string, IconName> = {
   "Preview stream": "video-circle",
   "Camera man": "video",
   "Moblin in mouth": "mouth",
+  Glasses: "sunglasses",
+  Sparkle: "eye",
+  Poop: "poop",
+  Pope: "mitre",
+  "Pizza chef": "chef-hat",
 };
 
 const filters: Record<string, MoblinFilter> = {
@@ -154,6 +165,14 @@ const filters: Record<string, MoblinFilter> = {
   "Beauty filter": "beauty",
   "Moblin in mouth": "moblinInMouth",
   "Camera man": "cameraMan",
+};
+
+const reactions: Record<string, MoblinReaction> = {
+  Glasses: "glasses",
+  Sparkle: "sparkle",
+  Poop: "poop",
+  Pope: "pope",
+  "Pizza chef": "pizzaChef",
 };
 
 const panels: Record<string, Panel> = {
@@ -628,6 +647,12 @@ export default function MoblinScreen(props: {
     if (filter) {
       return send("setFilter", {
         setFilter: { filter: { [filter]: {} } as Record<MoblinFilter, object>, on: !on },
+      });
+    }
+    const reaction = reactions[button.type];
+    if (reaction) {
+      return send("triggerReaction", {
+        triggerReaction: { reaction: { [reaction]: {} } as Record<MoblinReaction, object> },
       });
     }
     const opened = panels[button.type];

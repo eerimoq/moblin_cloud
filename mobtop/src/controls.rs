@@ -19,6 +19,14 @@ pub const FILTERS: [(&str, &str); 16] = [
     ("beauty", "Beauty"),
 ];
 
+pub const REACTIONS: [(&str, &str); 5] = [
+    ("glasses", "Glasses"),
+    ("sparkle", "Sparkle"),
+    ("poop", "Poop"),
+    ("pope", "Pope"),
+    ("pizzaChef", "Pizza chef"),
+];
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Control {
     pub key: String,
@@ -55,6 +63,10 @@ pub fn action(kind: &str) -> Control {
 
 pub fn filter(key: &str, on: bool) -> Control {
     Control::new("setFilter", json!({ "filter": { key: {} }, "on": on }))
+}
+
+pub fn reaction(key: &str) -> Control {
+    Control::new("triggerReaction", json!({ "reaction": { key: {} } }))
 }
 
 pub const OPTIONAL_PICKS: [&str; 3] = [

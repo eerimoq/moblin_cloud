@@ -211,6 +211,7 @@ export type Control =
   | { setAutoSceneSwitcher: { id?: string } }
   | { setPreviewStream: { on: boolean } }
   | { setFilter: { filter: Record<MoblinFilter, object>; on: boolean } }
+  | { triggerReaction: { reaction: Record<MoblinReaction, object> } }
   | { startMacro: { id: string } }
   | { stopMacro: { id: string } }
   | { setGimbalTracking: { on: boolean } }
@@ -255,6 +256,8 @@ export type MoblinFilter =
   | "beauty"
   | "moblinInMouth"
   | "cameraMan";
+
+export type MoblinReaction = "glasses" | "sparkle" | "pope" | "pizzaChef" | "poop";
 
 export type Recent = {
   id: string;
