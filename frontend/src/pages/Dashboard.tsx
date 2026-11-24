@@ -1182,8 +1182,8 @@ function SubscriberSettings(props: {
               ? t("Effects for Twitch subscribers")
               : t("Effects for subscribers")
             : props.twitch && !props.kick
-              ? t("Videos for Twitch subscribers")
-              : t("Videos for subscribers")}
+              ? t("Media share for Twitch subscribers")
+              : t("Media share for subscribers")}
       </h2>
       <p class="text-ink-2">
         {props.perk === "spin"
@@ -1492,7 +1492,7 @@ function AssistantList(props: {
                       text={t("Edit tips")}
                       label={t("Let {name} edit your settings", { name: assistant().name })}
                       help={t(
-                        "Change the tip page, message, wheel of luck, effect and video settings.",
+                        "Change the tip page, message, wheel of luck, effect and media share settings.",
                       )}
                       onChange={(on) =>
                         call(() =>
@@ -1794,7 +1794,7 @@ function MediaSettings(props: {
 
   return (
     <form class={cardClass} onSubmit={save.submit}>
-      <h2 class="text-[23px] font-semibold">{t("Video")}</h2>
+      <h2 class="text-[23px] font-semibold">{t("Media share")}</h2>
       <p class="text-ink-2">
         {t(
           "Let viewers play a part of a YouTube video on stream. Moblin plays it in a browser " +
@@ -1837,7 +1837,7 @@ function MediaSettings(props: {
       </EnableToggle>
       <span class="text-[15px] text-muted">
         {t(
-          "You and your assistants approve or reject videos in the video queue below. A rejected " +
+          "You and your assistants approve or reject videos in the media share queue. A rejected " +
             "tip is refunded. Without approval, videos play as soon as Moblin gets them.",
         )}
       </span>
@@ -2207,7 +2207,7 @@ function Admin(props: {
     },
     {
       id: "media",
-      label: t("Video"),
+      label: t("Media share"),
       icon: kindIcons.media,
       shown: () => true,
       status: () => onOff(isOn(settings().media) || isOn(settings().subMedia)),
@@ -2427,7 +2427,7 @@ function Admin(props: {
           />
           <Show when={!paid(isOn(settings().media))}>
             <NeedsPayments
-              title={t("Video")}
+              title={t("Media share")}
               available={payments()}
               streamer={assisting() ? account().name : null}
               onConnect={() => select("payments")}

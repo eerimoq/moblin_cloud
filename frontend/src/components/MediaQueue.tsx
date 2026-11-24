@@ -145,7 +145,7 @@ export default function MediaQueue(props: {
   return (
     <section class={cardClass}>
       <div class="flex flex-col gap-1">
-        <h2 class="text-[23px] font-semibold">{t("Video queue")}</h2>
+        <h2 class="text-[23px] font-semibold">{t("Media share queue")}</h2>
         <p class="text-[15px] text-muted">
           {t("Approved videos play one at a time in the browser widget picked in Moblin.")}
         </p>
@@ -156,7 +156,7 @@ export default function MediaQueue(props: {
             <Show when={queue().device === null}>
               <Notice>
                 {t(
-                  "No Moblin is taking videos. Pick a browser widget under Videos in Moblin's " +
+                  "No Moblin is taking videos. Pick a browser widget under Media share in Moblin's " +
                     "Moblin Cloud settings and add it to the scenes you stream with.",
                 )}
               </Notice>

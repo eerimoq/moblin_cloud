@@ -77,7 +77,7 @@ pub fn draw(frame: &mut Frame, area: Rect, monitor: &Monitor, leaf: &Leaf) {
     let kinds = kinds_of(leaf);
     let [chips, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
     let mut title = vec![Span::raw(" ")];
-    for (index, label) in ["Message", "Wheel of luck", "Effect", "Video"]
+    for (index, label) in ["Message", "Wheel of luck", "Effect", "Media share"]
         .into_iter()
         .enumerate()
     {

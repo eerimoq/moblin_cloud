@@ -379,7 +379,7 @@ class MediaTestSend(MediaTestCase):
             self.assert_backend_error(
                 409,
                 self.dashboard.test_media,
-                "Pick a browser widget for videos in Moblin's Moblin Cloud settings first.",
+                "Pick a browser widget for media share in Moblin's Moblin Cloud settings first.",
             )
             device.change_media(True)
             self.wait_until(lambda: self.viewer.media()["available"], "the page to take videos")

@@ -2155,7 +2155,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
         ? [
             {
               section: "media" as const,
-              title: t("Video"),
+              title: t("Media share"),
               text: mediaJar()
                 ? t("Your tip plays a YouTube video live on stream.")
                 : t("Subscribers play a YouTube video live on stream."),

@@ -26,7 +26,7 @@ const kindNames = (): Record<RecentKind, string> => ({
   tip: t("Message"),
   spin: t("Wheel of luck"),
   effect: t("Effect"),
-  media: t("Video"),
+  media: t("Media share"),
 });
 
 type Item = Recent & { kind: RecentKind };

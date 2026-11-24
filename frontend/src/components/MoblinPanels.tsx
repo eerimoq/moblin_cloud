@@ -305,7 +305,7 @@ function MoblinCloud(props: {
               />
               <NavRow
                 icon="play-rectangle"
-                label={t("Videos")}
+                label={t("Media share")}
                 detail={name("media", cloud().mediaWidgetId)}
                 onClick={() => props.onOpen("media")}
               />
@@ -335,7 +335,7 @@ function Settings(props: { remote: Remote }) {
     moblinCloud: t("Moblin Cloud"),
     alerts: t("Message"),
     wheelOfLuck: t("Wheel of luck"),
-    media: t("Videos"),
+    media: t("Media share"),
   });
   const parents: Record<SettingsPage, SettingsPage> = {
     root: "root",

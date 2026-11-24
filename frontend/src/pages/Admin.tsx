@@ -255,7 +255,7 @@ const kinds: Kind[] = [
   },
   {
     kind: "media",
-    label: "Videos",
+    label: "Media share",
     icon: "play-rectangle",
     orders: [
       "feature-off",
@@ -1537,7 +1537,7 @@ function Loaded(props: {
         <Section
           shown={active() === "providers"}
           title="Providers"
-          hint="Payments by provider, across all kinds of tips. The failures before a provider is involved are under Messages, Wheel spins, Effects and Videos."
+          hint="Payments by provider, across all kinds of tips. The failures before a provider is involved are under Messages, Wheel spins, Effects and Media share."
         >
           <For each={offered()}>
             {(item) => (

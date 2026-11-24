@@ -188,7 +188,7 @@ async fn test_media(
             failure(
                 "no-media",
                 StatusCode::CONFLICT,
-                "Pick a browser widget for videos in Moblin's Moblin Cloud settings first.",
+                "Pick a browser widget for media share in Moblin's Moblin Cloud settings first.",
             )
         } else {
             moblin_not_connected()
