@@ -34,7 +34,7 @@ class MediaTestCase(TestCase):
             self.wait_until(lambda: self.viewer.media()["available"], "the page to take videos")
         return device
 
-    def paid(self, merchant_id: str, link: str = LINK, seconds: int = 30, **order) -> str:
+    def paid(self, merchant_id: str, link: str = LINK, seconds: int | None = 30, **order) -> str:
         order_id = self.viewer.order_media(link, seconds, **order)
         self.context.paypal.pay_with_card(order_id, merchant_id)
         self.assert_equal(self.viewer.capture_media(order_id), {})
@@ -131,7 +131,7 @@ class MediaInvalid(MediaTestCase):
             )
             device.change_media(True)
             self.wait_until(lambda: self.viewer.media()["available"], "the page to take videos")
-            not_youtube = "That is not a link to a YouTube video."
+            not_youtube = "That is not a link to a YouTube video or a Twitch clip."
             for link in [
                 "",
                 "https://vimeo.com/123",
@@ -230,6 +230,7 @@ class MediaModerated(MediaTestCase):
                     "start": 43,
                     "seconds": 30,
                     "title": f"Video {VIDEO}",
+                    "platform": "youtube",
                     "amount": 300,
                     "currency": "USD",
                 },
@@ -452,6 +453,56 @@ class MediaForSubscribers(MediaTestCase):
             self.assert_backend_error(400, lambda: tier3.play_media(LINK, 30))
 
 
+class MediaClips(MediaTestCase):
+    """Play Twitch clips whole, when they exist and are no longer than the streamer's longest video,
+    and show the dashboard where each one is from."""
+
+    login = "mediaclips"
+
+    def run(self):
+        settings = self.context.page_with_paypal(self.dashboard)
+        self.dashboard.change_settings(media={"price": 300, "seconds": 30, "moderated": False})
+        with self.device() as device:
+            self.assert_backend_error(
+                400,
+                lambda: self.viewer.order_media("https://clips.twitch.tv/MissingClip"),
+                "That clip does not exist. Pick another one.",
+            )
+            self.assert_backend_error(
+                400,
+                lambda: self.viewer.order_media("https://www.twitch.tv/someone/clip/LongClip"),
+                "That clip is 60 seconds, and the streamer plays at most 30. Pick a shorter one.",
+            )
+            for link in [
+                "https://www.twitch.tv/someone",
+                "https://kick.com/someone/clips/clip_01M86Z1Z62360AM4D5KT55H4GS",
+            ]:
+                self.assert_backend_error(400, lambda link=link: self.viewer.order_media(link))
+            clip = self.paid(settings["merchantId"], "https://www.twitch.tv/someone/clip/Funny-Clip_1", None)
+            self.wait_until(lambda: device.tip_with_id(clip) is not None, "the clip in Moblin")
+            tip = device.tip_with_id(clip)
+            assert tip is not None
+            self.assert_equal(tip["kind"], {"twitchClip": {"slug": "Funny-Clip_1", "duration": 29}})
+            self.wait_until(
+                lambda: (self.dashboard.media_queue()["playing"] or {}).get("id") == clip,
+                "the clip to play in Moblin",
+            )
+            playing = self.dashboard.media_queue()["playing"]
+            self.assert_equal(
+                [playing["platform"], playing["title"], playing["link"], playing["thumbnail"]],
+                [
+                    "twitch",
+                    "Clip Funny-Clip_1",
+                    "https://clips.twitch.tv/Funny-Clip_1",
+                    "https://static-cdn.jtvnw.net/Funny-Clip_1.jpg",
+                ],
+            )
+            self.assert_equal(self.dashboard.test_media("https://clips.twitch.tv/Test-Clip"), {})
+            self.wait_until(lambda: len(device.kinds("twitchClip")) == 2, "the test clip in Moblin")
+        items = self.dashboard.recent("media")["items"]
+        self.assert_equal([item["link"] for item in items], ["https://clips.twitch.tv/Funny-Clip_1"])
+
+
 class MediaAssistants(MediaTestCase):
     """Let an assistant see, approve and reject the held videos, and nobody else."""
 
@@ -532,6 +583,7 @@ def tests(context: Context):
         MediaUnmoderated(context),
         MediaTestSend(context),
         MediaForSubscribers(context),
+        MediaClips(context),
         MediaAssistants(context),
         MediaStatusFromMoblin(context),
     ]

@@ -274,6 +274,7 @@ export type Recent = {
   effect?: string;
   video?: string;
   title?: string;
+  link?: string;
   tier?: number;
   kickSubscriber?: boolean;
   provider?: "paypal" | "stripe";
@@ -294,6 +295,9 @@ export type QueuedMedia = {
   start: number;
   seconds: number;
   title: string;
+  platform: "youtube" | "twitch";
+  link?: string;
+  thumbnail?: string;
   amount?: number;
   currency?: string;
   tier?: number;

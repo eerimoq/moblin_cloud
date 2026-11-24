@@ -89,9 +89,9 @@ import {
   parseTime,
   timeText,
   videoLengths,
+  mediaLink,
   youTubeStart,
   youTubeThumbnail,
-  youTubeVideoId,
 } from "../data/youtube";
 import { effectCredit, effectName, playEffect, playingEffect, stopEffect } from "../data/effects";
 import { t, tRich } from "../i18n";
@@ -1276,8 +1276,19 @@ function MediaJar(props: {
     const offered = lengths();
     return offered.includes(length()) ? length() : offered[Math.min(1, offered.length - 1)];
   };
-  const video = () => youTubeVideoId(link());
+  const found = () => mediaLink(link());
+  const video = () => {
+    const current = found();
+    return current?.platform === "youtube" ? current.id : null;
+  };
+  const clip = () => {
+    const current = found();
+    return current !== null && current.platform !== "youtube";
+  };
   const request = (): VideoRequest | null => {
+    if (clip()) {
+      return { url: link().trim() };
+    }
     const url = video();
     const from = parseTime(start());
     return url !== null && from !== null ? { url, start: from, seconds: seconds() } : null;
@@ -1287,10 +1298,14 @@ function MediaJar(props: {
     draft.media = { link: link(), start: start(), seconds: seconds(), message: message() };
   });
   createEffect(() => {
-    linkInput?.setCustomValidity(video() === null ? t("Enter a link to a YouTube video.") : "");
+    linkInput?.setCustomValidity(
+      found() === null ? t("Enter a link to a YouTube video or a Twitch clip.") : "",
+    );
   });
   createEffect(() => {
-    startInput?.setCustomValidity(parseTime(start()) === null ? t("Enter a time like 1:30.") : "");
+    startInput?.setCustomValidity(
+      !clip() && parseTime(start()) === null ? t("Enter a time like 1:30.") : "",
+    );
   });
 
   const changeLink = (value: string) => {
@@ -1319,7 +1334,7 @@ function MediaJar(props: {
     order: (provider) =>
       orderMedia(
         props.id,
-        request() ?? { url: "", start: 0, seconds: 0 },
+        request() ?? { url: "" },
         props.media?.price ?? 0,
         props.name.trim(),
         message().trim(),
@@ -1361,7 +1376,9 @@ function MediaJar(props: {
       onSubmit={(event) => event.preventDefault()}
     >
       <p class="text-ink-2">
-        {t("Pick a YouTube video and the part of it to play. It plays live on stream.")}
+        {t(
+          "Pick a YouTube video and the part of it to play, or a Twitch clip. It plays live on stream.",
+        )}
         <Show when={props.offer.moderated}>
           {" "}
           {props.media
@@ -1379,7 +1396,7 @@ function MediaJar(props: {
         </Notice>
       </Show>
       <label class="flex flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">{t("YouTube link")}</span>
+        <span class="text-[15px] font-semibold text-ink-2">{t("YouTube or Twitch clip link")}</span>
         <input
           ref={(element) => (linkInput = element)}
           type="text"
@@ -1402,13 +1419,13 @@ function MediaJar(props: {
           />
         )}
       </Show>
-      <label class="flex flex-col gap-2">
+      <label class={`flex flex-col gap-2 ${clip() ? "hidden" : ""}`}>
         <span class="text-[15px] font-semibold text-ink-2">{t("Start at")}</span>
         <input
           ref={(element) => (startInput = element)}
           type="text"
           inputmode="numeric"
-          required
+          required={!clip()}
           maxLength={8}
           value={start()}
           onInput={(event) => setStart(event.currentTarget.value)}
@@ -1417,7 +1434,14 @@ function MediaJar(props: {
           class={`${inputClass} max-w-32`}
         />
       </label>
-      <Show when={lengths().length > 1}>
+      <Show when={clip()}>
+        <p class="text-[15px] text-muted">
+          {t("Clips play whole, if they are at most {length}.", {
+            length: lengthText(props.offer.seconds ?? 0),
+          })}
+        </p>
+      </Show>
+      <Show when={lengths().length > 1 && !clip()}>
         <fieldset class="flex flex-col gap-3">
           <legend class="mb-2 text-[15px] font-semibold text-ink-2">{t("Play for")}</legend>
           <div class="flex flex-wrap gap-3">
@@ -1452,9 +1476,13 @@ function MediaJar(props: {
       <Show when={props.media} keyed>
         {(media) => (
           <PayFooter
-            label={tRich("Your tip · {length}", {
-              length: <span class="font-body">{lengthText(seconds())}</span>,
-            })}
+            label={
+              clip()
+                ? undefined
+                : tRich("Your tip · {length}", {
+                    length: <span class="font-body">{lengthText(seconds())}</span>,
+                  })
+            }
             price={formatPrice({ price: media.price, currency: media.currency })}
             pay={pay}
             payment={media.payment}
@@ -2157,8 +2185,8 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
               section: "media" as const,
               title: t("Media share"),
               text: mediaJar()
-                ? t("Your tip plays a YouTube video live on stream.")
-                : t("Subscribers play a YouTube video live on stream."),
+                ? t("Your tip plays a video or clip live on stream.")
+                : t("Subscribers play a video or clip live on stream."),
               enabled: true,
             },
           ]

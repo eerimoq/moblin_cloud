@@ -55,8 +55,9 @@ Stripe:
 
 ## Videos
 
-- The backend never passes a viewer's link on: it parses the YouTube video id out of it (`youtube.rs`) and Moblin builds the address to load from the id, so Moblin only ever loads YouTube.
-- Every video is looked up at YouTube's oEmbed before an order or a subscriber's request is taken, which refuses videos that can't be embedded before any money moves and gives the title the moderators see. `--youtube-url` points it at the fake YouTube and is for the system tests only: local development looks up the real YouTube.
+- The backend never passes a viewer's link on: it parses the YouTube video id or the Twitch clip slug out of it (`youtube.rs`, `clips.rs`) and Moblin builds the address to load from that, so Moblin only ever loads YouTube and Twitch.
+- Clips play whole, so their length comes from the lookup and one longer than the page's longest video is refused. They are looked up with the Twitch sign in's app, so without it they are refused, and in local development a clip is whatever the fake Twitch makes up for a real slug.
+- Every YouTube video is looked up at YouTube's oEmbed before an order or a subscriber's request is taken, which refuses videos that can't be embedded before any money moves and gives the title the moderators see. `--youtube-url` points it at the fake YouTube and is for the system tests only: local development looks up the real YouTube.
 - A moderated video is a delivery with `held` set, saved in the same transaction as its capture, and the delivery loop skips held ones. Approving clears the flag. Rejecting refunds a paid one before removing it, and while the provider refuses or loses the refund it stays held, so a video is never dropped with the money kept. A rejected subscriber's video is not given back.
 - A held delivery is given up after 7 days like any other.
 - `media.seconds` and `media.moderated` also hold for subscribers' videos while paid videos are off, as the feature's `enabled` is only about paying.

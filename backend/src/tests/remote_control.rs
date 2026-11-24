@@ -72,6 +72,16 @@ fn messages_to_streamer_match_moblin() {
         ),
         r#"{"request":{"id":11,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"youTube":{"videoId":"dQw4w9WgXcQ","start":43,"duration":30}},"requestId":"ORDER1"}}}}"#
     );
+    assert_eq!(
+        tip(
+            15,
+            TipKind::TwitchClip {
+                slug: "Slug-1".to_string(),
+                duration: 29,
+            }
+        ),
+        r#"{"request":{"id":15,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"twitchClip":{"slug":"Slug-1","duration":29}},"requestId":"ORDER1"}}}}"#
+    );
     let request = |id, data| encode(&MessageToStreamer::Request { id, data });
     assert_eq!(
         request(12, Request::Control(Control::SkipMoblinCloudMedia {})),

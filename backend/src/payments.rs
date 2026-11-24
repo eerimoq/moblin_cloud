@@ -11,6 +11,14 @@ use crate::database::Database;
 use crate::deliveries::now;
 use crate::effects;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaPlatform {
+    #[default]
+    YouTube,
+    Twitch,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Item {
     Tip {
@@ -30,6 +38,12 @@ pub enum Item {
         seconds: u32,
         title: String,
         message: Option<String>,
+        #[serde(default)]
+        platform: MediaPlatform,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thumbnail: Option<String>,
     },
 }
 

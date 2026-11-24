@@ -158,7 +158,7 @@ export type MediaOffer = {
   connected: boolean;
 };
 
-export type VideoRequest = { url: string; start: number; seconds: number };
+export type VideoRequest = { url: string; start?: number; seconds?: number };
 
 export type PublicSpin = PublicPayment & {
   options: SpinOption[];

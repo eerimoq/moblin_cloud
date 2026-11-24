@@ -4,12 +4,14 @@ use anyhow::Result;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::accounts::Platform;
+use crate::clips;
 use crate::deliveries;
-use crate::payments::{Item, Order, Payee};
+use crate::payments::{Item, MediaPlatform, Order, Payee};
 use crate::youtube::{self, LookupError};
 
 use super::*;
@@ -19,14 +21,28 @@ pub(super) struct VideoRequest {
     url: String,
     #[serde(default)]
     start: Option<u32>,
-    seconds: u32,
+    #[serde(default)]
+    seconds: Option<u32>,
+}
+
+impl VideoRequest {
+    pub(super) fn of(url: String) -> Self {
+        Self {
+            url,
+            start: None,
+            seconds: None,
+        }
+    }
 }
 
 pub(super) struct Video {
+    pub(super) platform: MediaPlatform,
     pub(super) video: String,
     pub(super) start: u32,
     pub(super) seconds: u32,
     pub(super) title: String,
+    pub(super) link: Option<String>,
+    pub(super) thumbnail: Option<String>,
 }
 
 impl Video {
@@ -37,8 +53,33 @@ impl Video {
             seconds: self.seconds,
             title: self.title,
             message,
+            platform: self.platform,
+            link: self.link,
+            thumbnail: self.thumbnail,
         }
     }
+
+    pub(super) fn delivery(self, user: String, message: String) -> deliveries::Item {
+        deliveries::Item::Media {
+            user,
+            message,
+            video: self.video,
+            start: self.start,
+            seconds: self.seconds,
+            title: self.title,
+            platform: self.platform,
+            link: self.link,
+            thumbnail: self.thumbnail,
+        }
+    }
+}
+
+pub(super) fn invalid_video() -> Failure {
+    failure(
+        "invalid-video",
+        StatusCode::BAD_REQUEST,
+        "That is not a link to a YouTube video or a Twitch clip.",
+    )
 }
 
 pub(super) async fn video(
@@ -46,12 +87,21 @@ pub(super) async fn video(
     longest: u32,
     request: &VideoRequest,
 ) -> Result<Video, Failure> {
-    let video = youtube::video_id(&request.url).ok_or(failure(
-        "invalid-video",
-        StatusCode::BAD_REQUEST,
-        "That is not a link to a YouTube video.",
-    ))?;
-    if !(1..=longest).contains(&request.seconds) {
+    if let Some(video) = youtube::video_id(&request.url) {
+        return youtube_video(api, longest, request, video).await;
+    }
+    let slug = clips::twitch_slug(&request.url).ok_or_else(invalid_video)?;
+    clip(api, longest, slug).await
+}
+
+async fn youtube_video(
+    api: &Api,
+    longest: u32,
+    request: &VideoRequest,
+    video: String,
+) -> Result<Video, Failure> {
+    let seconds = request.seconds.unwrap_or(0);
+    if !(1..=longest).contains(&seconds) {
         return Err(failure(
             "invalid-option",
             StatusCode::BAD_REQUEST,
@@ -86,10 +136,61 @@ pub(super) async fn video(
             ),
         })?;
     Ok(Video {
+        platform: MediaPlatform::YouTube,
         video,
         start,
-        seconds: request.seconds,
+        seconds,
         title,
+        link: None,
+        thumbnail: None,
+    })
+}
+
+async fn clip(api: &Api, longest: u32, slug: String) -> Result<Video, Failure> {
+    if !api.auth.has(Platform::Twitch) {
+        return Err(failure(
+            "clips-unavailable",
+            StatusCode::BAD_REQUEST,
+            "Twitch clips can't be played here. Pick a YouTube video.",
+        ));
+    }
+    let clip = api
+        .auth
+        .twitch_clip(&slug)
+        .await
+        .map_err(|error| {
+            warn!("looking up Twitch clip {slug} failed: {error:#}");
+            failure(
+                "clip-lookup",
+                StatusCode::BAD_GATEWAY,
+                "Twitch did not answer. Try again.",
+            )
+        })?
+        .ok_or(failure(
+            "video-unavailable",
+            StatusCode::BAD_REQUEST,
+            "That clip does not exist. Pick another one.",
+        ))?;
+    if clip.seconds > longest {
+        return Err(failure(
+            "clip-too-long",
+            StatusCode::BAD_REQUEST,
+            &format!(
+                "That clip is {} seconds, and the streamer plays at most {longest}. Pick a shorter one.",
+                clip.seconds
+            ),
+        ));
+    }
+    Ok(Video {
+        platform: MediaPlatform::Twitch,
+        video: slug,
+        start: 0,
+        seconds: clip.seconds.max(1),
+        title: clip.title,
+        link: Some(clip.link),
+        thumbnail: clip
+            .thumbnail
+            .filter(|thumbnail| clips::is_https(thumbnail)),
     })
 }
 
@@ -173,6 +274,11 @@ pub(super) struct QueuedMedia {
     start: u32,
     seconds: u32,
     title: String,
+    platform: MediaPlatform,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thumbnail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     amount: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -200,6 +306,10 @@ fn queued_media(delivery: &deliveries::Delivery, order: Option<&Order>) -> Optio
         start,
         seconds,
         title,
+        platform,
+        link,
+        thumbnail,
+        ..
     } = &delivery.item
     else {
         return None;
@@ -214,6 +324,9 @@ fn queued_media(delivery: &deliveries::Delivery, order: Option<&Order>) -> Optio
         start: *start,
         seconds: *seconds,
         title: title.clone(),
+        platform: *platform,
+        link: link.clone(),
+        thumbnail: thumbnail.clone(),
         amount: paid.map(|order| order.price),
         currency: paid.map(|order| order.currency.clone()),
         tier: order.and_then(|order| match order.payee {

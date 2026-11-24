@@ -62,7 +62,7 @@ fn is_video_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn parse(link: &str) -> Option<Url> {
+pub fn parse(link: &str) -> Option<Url> {
     let link = link.trim();
     if link.starts_with("http://") || link.starts_with("https://") {
         Url::parse(link).ok()

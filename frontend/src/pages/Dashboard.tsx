@@ -1797,8 +1797,9 @@ function MediaSettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Media share")}</h2>
       <p class="text-ink-2">
         {t(
-          "Let viewers play a part of a YouTube video on stream. Moblin plays it in a browser " +
-            "widget, with the YouTube account signed in to in Moblin's browser.",
+          "Let viewers play a part of a YouTube video or a Twitch clip on stream. " +
+            "Moblin plays it in a browser widget, with the accounts signed in to in Moblin's " +
+            "browser. Clips play whole, so longer ones than the longest video are refused.",
         )}
       </p>
       <Show when={props.payable}>
@@ -2009,8 +2010,8 @@ function SendForm(props: {
           type="text"
           inputmode="url"
           maxLength={200}
-          aria-label={t("YouTube link (optional)")}
-          placeholder={t("YouTube link (optional)")}
+          aria-label={t("YouTube or Twitch clip link (optional)")}
+          placeholder={t("YouTube or Twitch clip link (optional)")}
           value={link()}
           onInput={(event) => setLink(event.currentTarget.value)}
           class={inputClass}
@@ -2064,7 +2065,7 @@ const testTexts: Record<RecentKind, { description: string; label: string }> = {
   },
   media: {
     description: t(
-      "Play 15 seconds of a YouTube video in Moblin, to check that it works. Test videos need no approval.",
+      "Play 15 seconds of a YouTube video, or a Twitch clip, in Moblin, to check that it works. Test videos need no approval.",
     ),
     label: t("Send test video"),
   },

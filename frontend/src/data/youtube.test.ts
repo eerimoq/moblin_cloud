@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mediaLink,
   parseTime,
   timeText,
   videoLengths,
@@ -105,5 +106,34 @@ describe("youTubeUrl", () => {
   it("links to the start of the video", () => {
     expect(youTubeUrl("dQw4w9WgXcQ", 0)).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     expect(youTubeUrl("dQw4w9WgXcQ", 43)).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=43s");
+  });
+});
+
+describe("mediaLink", () => {
+  it.each([
+    ["https://youtu.be/dQw4w9WgXcQ?t=43", { platform: "youtube", id: "dQw4w9WgXcQ" }],
+    ["https://clips.twitch.tv/Funny-Clip_1", { platform: "twitch", id: "Funny-Clip_1" }],
+    [" clips.twitch.tv/Funny-Clip_1?x=1 ", { platform: "twitch", id: "Funny-Clip_1" }],
+    ["https://www.twitch.tv/someone/clip/Funny-Clip_1", { platform: "twitch", id: "Funny-Clip_1" }],
+    ["https://m.twitch.tv/someone/clip/Funny-Clip_1", { platform: "twitch", id: "Funny-Clip_1" }],
+    [
+      "https://clips.twitch.tv/embed?clip=Funny-Clip_1&parent=x",
+      { platform: "twitch", id: "Funny-Clip_1" },
+    ],
+  ])("finds what %s links to", (link, found) => {
+    expect(mediaLink(link)).toEqual(found);
+  });
+
+  it.each([
+    "",
+    "https://www.twitch.tv/someone",
+    "https://www.twitch.tv/videos/123",
+    "https://clips.twitch.tv/",
+    "https://clips.twitch.tv/embed",
+    "https://clips.twitch.tv.evil.example/Slug",
+    "https://kick.com/someone/clips/clip_01M86Z1Z62360AM4D5KT55H4GS",
+    "https://vimeo.com/1",
+  ])("finds nothing in %s", (link) => {
+    expect(mediaLink(link)).toBeNull();
   });
 });

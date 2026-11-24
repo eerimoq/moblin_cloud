@@ -79,6 +79,7 @@ function ActivityRow(props: {
           {(video) => (
             <VideoLink
               video={video()}
+              link={item().link}
               title={item().title ?? video()}
               class="truncate text-ink-2"
             />

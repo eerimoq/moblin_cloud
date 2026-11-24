@@ -3,6 +3,7 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
+use crate::accounts::Platform;
 use crate::api::Api;
 use crate::api::test_utils::*;
 use crate::payments::Stage;
@@ -348,6 +349,159 @@ async fn streamers_test_their_videos() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert_eq!(api.remote_control.media_device(&page_id), None);
+}
+
+#[tokio::test]
+async fn twitch_clips_are_played_whole() {
+    let (address, api) = start_clips().await;
+    let client = reqwest::Client::new();
+    let (session, moblin_cloud_key, page_id) = streamer(&api);
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    take_videos(&mut socket, json!({"paused": false, "queued": []})).await;
+    let test = |url: &str| {
+        client
+            .post(format!(
+                "http://{address}/account/pages/{page_id}/test/media"
+            ))
+            .bearer_auth(&session)
+            .json(&json!({"url": url}))
+            .send()
+    };
+    for (url, status, text) in [
+        (
+            "https://clips.twitch.tv/Missing",
+            StatusCode::BAD_REQUEST,
+            "That clip does not exist. Pick another one.",
+        ),
+        (
+            "https://clips.twitch.tv/Broken",
+            StatusCode::BAD_GATEWAY,
+            "Twitch did not answer. Try again.",
+        ),
+        (
+            "https://kick.com/kickerik/clips/clip_01M86Z1Z62360AM4D5KT55H4GS",
+            StatusCode::BAD_REQUEST,
+            "That is not a link to a YouTube video or a Twitch clip.",
+        ),
+        (
+            "https://vimeo.com/1",
+            StatusCode::BAD_REQUEST,
+            "That is not a link to a YouTube video or a Twitch clip.",
+        ),
+    ] {
+        let response = test(url).await.unwrap();
+        assert_eq!(response.status(), status, "{url}");
+        assert_eq!(response.text().await.unwrap(), text, "{url}");
+    }
+    let response = test("https://www.twitch.tv/erik/clip/Funny-Clip_1")
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let request = receive(&mut socket).await;
+    assert_eq!(
+        request["request"]["data"]["tip"]["kind"],
+        json!({"twitchClip": {"slug": "Funny-Clip_1", "duration": 29}})
+    );
+    answer(&mut socket, &request, Value::Null).await;
+    wait_until_added(&api).await;
+    take_videos(
+        &mut socket,
+        json!({"paused": false, "playing": request["request"]["data"]["tip"]["requestId"], "queued": []}),
+    )
+    .await;
+    let queue: Value = client
+        .get(format!("http://{address}/account/pages/{page_id}/media"))
+        .bearer_auth(&session)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let playing = &queue["playing"];
+    assert_eq!(playing["platform"], "twitch");
+    assert_eq!(playing["title"], "Clip Funny-Clip_1");
+    assert_eq!(playing["seconds"], 29);
+    assert_eq!(playing["link"], "https://clips.twitch.tv/Funny-Clip_1");
+    assert_eq!(
+        playing["thumbnail"],
+        "https://static-cdn.jtvnw.net/clip.jpg"
+    );
+}
+
+#[tokio::test]
+async fn clips_need_their_platform_and_fit_the_longest_video() {
+    let (address, api, _) = start_media().await;
+    let (client, _, moblin_cloud_key, page_id) =
+        set_up(&address, &api, json!({"price": 300, "seconds": 30})).await;
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    take_videos(&mut socket, json!({"paused": false, "queued": []})).await;
+    let orders_url = format!("http://{address}/pages/{page_id}/media/orders");
+    let response = client
+        .post(&orders_url)
+        .json(&json!({"url": "https://clips.twitch.tv/Funny"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.text().await.unwrap(),
+        "Twitch clips can't be played here. Pick a YouTube video."
+    );
+    drop(socket);
+    let (address, api) = start_clips().await;
+    let (session, moblin_cloud_key, page_id) = streamer(&api);
+    let response = client
+        .post(format!("http://{address}/account/pages/{page_id}/settings"))
+        .bearer_auth(&session)
+        .json(&json!({
+            "media": {"price": 300, "seconds": 30, "enabled": false},
+            "subMedia": {"tier1": 1, "tier2": 1, "tier3": 1},
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut socket = connect(&address, &moblin_cloud_key).await;
+    take_videos(&mut socket, json!({"paused": false, "queued": []})).await;
+    let viewer = api.auth.viewer_session(
+        Platform::Twitch,
+        "42".to_string(),
+        "Fan".to_string(),
+        page_id.clone(),
+        Some(1),
+    );
+    let play = |url: &str| {
+        client
+            .post(format!("http://{address}/pages/{page_id}/media/subscriber"))
+            .bearer_auth(&viewer)
+            .json(&json!({"url": url}))
+            .send()
+    };
+    let response = play("https://clips.twitch.tv/Long").await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.text().await.unwrap(),
+        "That clip is 60 seconds, and the streamer plays at most 30. Pick a shorter one."
+    );
+    let response = play("https://clips.twitch.tv/Short").await.unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let held = api.deliveries.held(&page_id);
+    assert_eq!(held.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&held[0].item).unwrap(),
+        json!({
+            "user": "Fan",
+            "message": "",
+            "video": "Short",
+            "start": 0,
+            "seconds": 29,
+            "title": "Clip Short",
+            "platform": "twitch",
+            "link": "https://clips.twitch.tv/Short",
+            "thumbnail": "https://static-cdn.jtvnw.net/clip.jpg",
+        })
+    );
 }
 
 #[tokio::test]

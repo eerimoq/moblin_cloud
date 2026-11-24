@@ -15,6 +15,7 @@ use crate::counters;
 use crate::database::Database;
 use crate::effects;
 use crate::pages::format_price;
+use crate::payments::MediaPlatform;
 use crate::remote_control::{RequestError, Streamers, TipKind};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -72,6 +73,12 @@ pub enum Item {
         start: u32,
         seconds: u32,
         title: String,
+        #[serde(default)]
+        platform: MediaPlatform,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thumbnail: Option<String>,
     },
 }
 
@@ -513,14 +520,21 @@ async fn deliver(
             video,
             start,
             seconds,
+            platform,
             ..
         } => (
             user,
             message,
-            TipKind::YouTube {
-                video_id: video.clone(),
-                start: *start,
-                duration: *seconds,
+            match platform {
+                MediaPlatform::YouTube => TipKind::YouTube {
+                    video_id: video.clone(),
+                    start: *start,
+                    duration: *seconds,
+                },
+                MediaPlatform::Twitch => TipKind::TwitchClip {
+                    slug: video.clone(),
+                    duration: *seconds,
+                },
             },
         ),
     };

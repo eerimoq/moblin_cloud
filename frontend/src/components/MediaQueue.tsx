@@ -32,20 +32,38 @@ function Video(props: { video: QueuedMedia; children?: JSX.Element }) {
   const video = () => props.video;
   return (
     <li class="flex flex-wrap items-start gap-x-4 gap-y-2 py-3 first:pt-0 last:pb-0">
-      <img
-        src={youTubeThumbnail(video().video)}
-        alt=""
-        loading="lazy"
-        class="aspect-video w-28 shrink-0 rounded-lg border border-line bg-well object-cover"
-      />
+      <Show
+        when={
+          video().thumbnail ??
+          (video().platform === "youtube" ? youTubeThumbnail(video().video) : undefined)
+        }
+        fallback={
+          <span class="grid aspect-video w-28 shrink-0 place-items-center rounded-lg border border-line bg-well text-muted">
+            <Icon name="play-rectangle" class="size-6" />
+          </span>
+        }
+      >
+        {(thumbnail) => (
+          <img
+            src={thumbnail()}
+            alt=""
+            loading="lazy"
+            referrerpolicy="no-referrer"
+            class="aspect-video w-28 shrink-0 rounded-lg border border-line bg-well object-cover"
+          />
+        )}
+      </Show>
       <div class="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
         <VideoLink
           video={video().video}
           start={video().start}
+          link={video().link}
           title={video().title}
           class="font-semibold wrap-anywhere text-ink"
         />
         <span class="text-[15px] text-ink-2">
+          {video().platform === "youtube" ? "YouTube" : t("Twitch clip")}
+          {" · "}
           {timeText(video().start)}–{timeText(video().start + video().seconds)}
         </span>
         <span class="flex flex-wrap items-baseline gap-x-2 text-[15px]">

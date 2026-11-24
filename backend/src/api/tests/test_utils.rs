@@ -231,6 +231,20 @@ pub(crate) async fn start_media() -> (String, Arc<Api>, FakePayPal) {
     (address, api, fake)
 }
 
+pub(crate) async fn start_clips() -> (String, Arc<Api>) {
+    let twitch = start_twitch().await;
+    let mut api = build_api(
+        None,
+        None,
+        Some(twitch_app(&twitch)),
+        None,
+        None,
+        Duration::ZERO,
+    );
+    api.youtube = start_youtube().await;
+    start_api_built(api).await
+}
+
 pub(crate) async fn ponged(socket: &mut Socket) {
     socket
         .send(Message::text(json!({"ping": {}}).to_string()))

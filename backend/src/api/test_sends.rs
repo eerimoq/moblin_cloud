@@ -11,6 +11,7 @@ use serde_json::Value;
 use crate::accounts::Account;
 use crate::deliveries;
 use crate::effects::EFFECTS;
+use crate::payments::MediaPlatform;
 use crate::youtube;
 
 use super::*;
@@ -196,25 +197,25 @@ async fn test_media(
     }
     let message = viewer_message(request.message)?.unwrap_or_default();
     let link = request.url.as_deref().unwrap_or("dQw4w9WgXcQ");
-    let video = youtube::video_id(link).ok_or(failure(
-        "invalid-video",
-        StatusCode::BAD_REQUEST,
-        "That is not a link to a YouTube video.",
-    ))?;
-    let seconds = api.pages.get(&page_id).media_rules().seconds.min(15);
-    info!("queued a test video in request {request_id} for remote control streamer {page_id}");
-    api.deliveries.add_test(
-        page_id,
-        request_id,
-        deliveries::Item::Media {
-            user: account.name().to_string(),
+    let user = account.name().to_string();
+    let item = match youtube::video_id(link) {
+        Some(video) => deliveries::Item::Media {
+            user,
             message,
-            start: youtube::start(link).unwrap_or(0),
-            seconds,
-            title: "Test".to_string(),
             video,
+            start: youtube::start(link).unwrap_or(0),
+            seconds: api.pages.get(&page_id).media_rules().seconds.min(15),
+            title: "Test".to_string(),
+            platform: MediaPlatform::YouTube,
+            link: None,
+            thumbnail: None,
         },
-    );
+        None => video(api, 600, &VideoRequest::of(link.to_string()))
+            .await?
+            .delivery(user, message),
+    };
+    info!("queued a test video in request {request_id} for remote control streamer {page_id}");
+    api.deliveries.add_test(page_id, request_id, item);
     Ok(accepted())
 }
 

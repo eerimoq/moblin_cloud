@@ -55,6 +55,29 @@ pub(crate) async fn start_twitch() -> String {
             ),
         )
         .route(
+            "/clips",
+            get(
+                |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
+                    assert_eq!(headers["client-id"], "id");
+                    assert_eq!(headers[AUTHORIZATION], "Bearer app");
+                    let clip = |duration: f64| {
+                        json!({
+                            "id": query["id"],
+                            "title": format!(" Clip {} ", query["id"]),
+                            "duration": duration,
+                            "thumbnail_url": "https://static-cdn.jtvnw.net/clip.jpg",
+                        })
+                    };
+                    match query["id"].as_str() {
+                        "Missing" => Json(json!({"data": []})).into_response(),
+                        "Broken" => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                        "Long" => Json(json!({"data": [clip(60.0)]})).into_response(),
+                        _ => Json(json!({"data": [clip(28.3)]})).into_response(),
+                    }
+                },
+            ),
+        )
+        .route(
             "/subscriptions",
             get(
                 |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| async move {
@@ -81,5 +104,6 @@ pub(crate) fn twitch_app(twitch: &str) -> OAuthApp {
         token_url: format!("{twitch}/token"),
         users_url: format!("{twitch}/users"),
         subscriptions_url: format!("{twitch}/subscriptions"),
+        clips_url: format!("{twitch}/clips"),
     }
 }

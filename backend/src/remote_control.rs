@@ -888,6 +888,10 @@ pub enum TipKind {
         start: u32,
         duration: u32,
     },
+    TwitchClip {
+        slug: String,
+        duration: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

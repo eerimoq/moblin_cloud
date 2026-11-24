@@ -12,6 +12,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::accounts::{Assistant, Identity, Platform};
+use crate::clips::{self, Clip};
 
 const STATE_LIFETIME: Duration = Duration::from_secs(600);
 const CODE_LIFETIME: Duration = Duration::from_secs(60);
@@ -31,6 +32,7 @@ pub struct OAuthApp {
     pub token_url: String,
     pub users_url: String,
     pub subscriptions_url: String,
+    pub clips_url: String,
 }
 
 impl OAuthApp {
@@ -53,6 +55,7 @@ impl OAuthApp {
             token_url: format!("{id_url}/oauth2/token"),
             users_url: format!("{api_url}/helix/users"),
             subscriptions_url: format!("{api_url}/helix/subscriptions/user"),
+            clips_url: format!("{api_url}/helix/clips"),
         }
     }
 }
@@ -773,6 +776,43 @@ impl Auth {
             .badges
             .iter()
             .any(|badge| badge.kind == "subscriber" && badge.active))
+    }
+
+    pub async fn twitch_clip(&self, slug: &str) -> Result<Option<Clip>> {
+        let app = self.twitch.as_ref().context("Twitch not configured")?;
+        let token = self
+            .app_token(&app.token_url, &app.client_id, &app.client_secret)
+            .await?;
+        #[derive(Deserialize)]
+        struct Clips {
+            data: Vec<Found>,
+        }
+        #[derive(Deserialize)]
+        struct Found {
+            title: Option<String>,
+            duration: f64,
+            thumbnail_url: Option<String>,
+        }
+        let clips: Clips = self
+            .client
+            .get(&app.clips_url)
+            .query(&[("id", slug)])
+            .bearer_auth(&token)
+            .header("Client-Id", &app.client_id)
+            .send()
+            .await
+            .context("failed to get the clip")?
+            .error_for_status()
+            .context("the clip was refused")?
+            .json()
+            .await
+            .context("unexpected answer to the clip request")?;
+        Ok(clips.data.into_iter().next().map(|clip| Clip {
+            title: clips::title(clip.title),
+            seconds: clip.duration.ceil() as u32,
+            link: format!("https://clips.twitch.tv/{slug}"),
+            thumbnail: clip.thumbnail_url,
+        }))
     }
 
     async fn app_token(

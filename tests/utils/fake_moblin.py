@@ -350,7 +350,7 @@ class FakeMoblin:
                 playing = self.media_queue.pop(0)
                 self.media_playing = playing
                 if self.media_seconds is not None:
-                    seconds = min(self.media_seconds, playing["kind"]["youTube"]["duration"])
+                    seconds = min(self.media_seconds, next(iter(playing["kind"].values()))["duration"])
                     timer = threading.Timer(seconds, self.finish_media, [playing["requestId"]])
                     timer.daemon = True
                     timer.start()
@@ -776,7 +776,7 @@ class FakeMoblin:
                 if request_id is not None:
                     self.handled_request_ids.add(request_id)
                 LOGGER.debug("Got %s %s", kind, body)
-                if "youTube" in body["kind"]:
+                if any(kind in body["kind"] for kind in ("youTube", "twitchClip")):
                     with self._media_lock:
                         if len(self.media_queue) < 100:
                             self.media_queue.append(body)

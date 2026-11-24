@@ -73,3 +73,32 @@ export function videoLengths(max: number): number[] {
   const lengths = [15, 30, 60, 120, 300, 600].filter((length) => length < max);
   return [...lengths, max];
 }
+
+export type MediaLink = { platform: "youtube" | "twitch"; id: string };
+
+const isClipSlug = (slug: string) => /^[A-Za-z0-9_-]{1,100}$/.test(slug);
+
+export function mediaLink(link: string): MediaLink | null {
+  const video = youTubeVideoId(link);
+  if (video !== null) {
+    return { platform: "youtube", id: video };
+  }
+  const url = parse(link);
+  if (!url) {
+    return null;
+  }
+  const host = url.hostname.toLowerCase().replace(/^(www|m)\./, "");
+  const path = url.pathname.split("/").slice(1);
+  if (host === "clips.twitch.tv" || host === "twitch.tv") {
+    const slug =
+      host === "twitch.tv"
+        ? path[1] === "clip"
+          ? path[2]
+          : undefined
+        : path[0] === "embed"
+          ? url.searchParams.get("clip")
+          : path[0];
+    return slug && isClipSlug(slug) ? { platform: "twitch", id: slug } : null;
+  }
+  return null;
+}

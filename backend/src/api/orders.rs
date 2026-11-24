@@ -580,6 +580,9 @@ pub(super) fn delivery_item(order: &Order) -> deliveries::Item {
             seconds,
             title,
             message,
+            platform,
+            link,
+            thumbnail,
         } => deliveries::Item::Media {
             user: order.user.clone(),
             message: message.clone().unwrap_or_default(),
@@ -587,6 +590,9 @@ pub(super) fn delivery_item(order: &Order) -> deliveries::Item {
             start: *start,
             seconds: *seconds,
             title: title.clone(),
+            platform: *platform,
+            link: link.clone(),
+            thumbnail: thumbnail.clone(),
         },
     }
 }

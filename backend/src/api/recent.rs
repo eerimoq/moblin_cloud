@@ -57,6 +57,8 @@ pub(super) struct Recent {
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tier: Option<u8>,
     #[serde(rename = "kickSubscriber", skip_serializing_if = "std::ops::Not::not")]
     kick_subscriber: bool,
@@ -164,16 +166,17 @@ fn recent_list(
                 Payee::PayPal(_) | Payee::Stripe(_) if owner => Some(order.payee.slug()),
                 _ => None,
             };
-            let (message, spins, effect, video, title) = match order.item {
-                Item::Tip { message } => (message, None, None, None, None),
-                Item::Spin { spins, message } => (message, Some(spins), None, None, None),
-                Item::Effect { effect, message } => (message, None, Some(effect), None, None),
+            let (message, spins, effect, video, title, link) = match order.item {
+                Item::Tip { message } => (message, None, None, None, None, None),
+                Item::Spin { spins, message } => (message, Some(spins), None, None, None, None),
+                Item::Effect { effect, message } => (message, None, Some(effect), None, None, None),
                 Item::Media {
                     video,
                     title,
                     message,
+                    link,
                     ..
-                } => (message, None, None, Some(video), Some(title)),
+                } => (message, None, None, Some(video), Some(title), link),
             };
             Recent {
                 id,
@@ -186,6 +189,7 @@ fn recent_list(
                 effect,
                 video,
                 title,
+                link,
                 tier,
                 kick_subscriber,
                 provider,

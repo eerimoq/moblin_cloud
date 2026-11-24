@@ -61,7 +61,7 @@ The `dev` recipes are thin wrappers around `scripts/dev.py`. They run the fakes 
 - There is no fake logic in the backend: the fakes are in `tests/utils/`, and the options pointing the backend at them and shortening its timers are for local development and the system tests only.
 - Viewer-facing backend errors are full sentences the page shows as they are, and stay English like the Terms and admin pages.
 - An assistant must never get a streamer's Moblin Cloud key or payment details.
-- The `youTube` tip kind, the `media` event and the `setMoblinCloudMedia*` and `skipMoblinCloudMedia` requests need a Moblin that has them. An older Moblin never sends the `media` event, so its page takes no videos.
+- The `youTube` and `twitchClip` tip kinds, the `media` event and the `setMoblinCloudMedia*` and `skipMoblinCloudMedia` requests need a Moblin that has them. An older Moblin never sends the `media` event, so its page takes no videos.
 - A tag publishes the Docker images and a push to main deploys the frontend, so never create a tag or dispatch a deploy workflow to test a change.
 
 ## Conventions

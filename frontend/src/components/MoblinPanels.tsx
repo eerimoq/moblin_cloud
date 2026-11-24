@@ -253,7 +253,7 @@ function CloudWidgetChoices(props: {
                     "Wheel of luck widget that viewers spin. Viewers can only spin while one is picked. Create one in the scene editor and add it to the scenes you stream with.",
                   )
                 : t(
-                    "Browser widget that plays the YouTube videos viewers send, instead of its own page. Viewers can only send videos while one is picked. Create one in the scene editor and add it to the scenes you stream with.",
+                    "Browser widget that plays the YouTube videos and Twitch clips viewers send, instead of its own page. Viewers can only send videos while one is picked. Create one in the scene editor and add it to the scenes you stream with.",
                   )
           }
           onPick={(id) => void props.remote.control(cloudWidgetControl(props.kind, id))}

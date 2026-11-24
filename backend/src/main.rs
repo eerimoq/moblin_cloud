@@ -4,6 +4,7 @@ mod api;
 mod app_attest;
 mod auth;
 mod changes;
+mod clips;
 mod counters;
 mod database;
 mod deliveries;

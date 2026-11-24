@@ -35,10 +35,16 @@ export const amountLabel = (item: Recent) =>
       ? t("Tier {tier} subscriber", { tier: item.tier })
       : formatPrice({ price: item.amount, currency: item.currency });
 
-export function VideoLink(props: { video: string; start?: number; title: string; class?: string }) {
+export function VideoLink(props: {
+  video: string;
+  start?: number;
+  link?: string;
+  title: string;
+  class?: string;
+}) {
   return (
     <a
-      href={youTubeUrl(props.video, props.start ?? 0)}
+      href={props.link ?? youTubeUrl(props.video, props.start ?? 0)}
       target="_blank"
       rel="noopener noreferrer"
       class={`underline decoration-line underline-offset-2 hover:text-ink ${props.class ?? ""}`}
@@ -175,6 +181,7 @@ export function Latest(props: {
                             <Icon name="play" class="size-4 shrink-0" />
                             <VideoLink
                               video={video()}
+                              link={item.link}
                               title={item.title ?? video()}
                               class="wrap-anywhere"
                             />

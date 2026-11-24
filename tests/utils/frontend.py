@@ -522,7 +522,7 @@ class Viewer(Client):
     def order_media(
         self,
         url: str,
-        seconds: int,
+        seconds: int | None = None,
         price: int | None = None,
         user: str | None = None,
         message: str | None = None,
@@ -565,7 +565,7 @@ class Subscriber(Viewer):
     def media_allowance(self) -> dict:
         return self.get(self._path("/media/subscriber"))
 
-    def play_media(self, url: str, seconds: int, message: str | None = None) -> dict:
+    def play_media(self, url: str, seconds: int | None = None, message: str | None = None) -> dict:
         return self.post(
             self._path("/media/subscriber"), {"url": url, "seconds": seconds, "message": message}
         )
