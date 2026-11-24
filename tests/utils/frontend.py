@@ -390,6 +390,20 @@ class Dashboard(Client):
     ) -> dict:
         return self.post(f"{self.page_path(page_id)}/test/effect", {"effect": effect, "message": message})
 
+    def test_media(
+        self, url: str | None = None, message: str | None = None, page_id: str | None = None
+    ) -> dict:
+        return self.post(f"{self.page_path(page_id)}/test/media", {"url": url, "message": message})
+
+    def media_queue(self, page_id: str | None = None) -> dict:
+        return self.get(f"{self.page_path(page_id)}/media")
+
+    def approve_media(self, request_id: str, page_id: str | None = None) -> dict:
+        return self.post(f"{self.page_path(page_id)}/media/{quote(request_id, safe='')}/approve")
+
+    def reject_media(self, request_id: str, page_id: str | None = None) -> dict:
+        return self.post(f"{self.page_path(page_id)}/media/{quote(request_id, safe='')}/reject")
+
     def set_assistant_preview(self, platform: str, assistant: str, on: bool) -> dict:
         return self.post(f"/account/assistants/{platform}/{quote(assistant, safe='')}/preview", {"on": on})
 
@@ -434,6 +448,8 @@ SETTINGS_FIELDS = [
     "font",
     "subSpins",
     "subEffects",
+    "media",
+    "subMedia",
 ]
 
 
@@ -500,6 +516,33 @@ class Viewer(Client):
     def capture_effect(self, order_id: str) -> dict:
         return self.post(self._path(f"/effects/orders/{quote(order_id, safe='')}/capture"))
 
+    def media(self) -> dict:
+        return self.get(self._path("/media"))
+
+    def order_media(
+        self,
+        url: str,
+        seconds: int,
+        price: int | None = None,
+        user: str | None = None,
+        message: str | None = None,
+        start: int | None = None,
+        provider: str = "paypal",
+    ) -> str:
+        body = {
+            "url": url,
+            "seconds": seconds,
+            "start": start,
+            "price": price,
+            "user": user,
+            "message": message,
+            "provider": provider,
+        }
+        return self.post(self._path("/media/orders"), body)["orderId"]
+
+    def capture_media(self, order_id: str) -> dict:
+        return self.post(self._path(f"/media/orders/{quote(order_id, safe='')}/capture"))
+
 
 class Subscriber(Viewer):
     def __init__(self, url: str, page_id: str, token: str):
@@ -518,6 +561,14 @@ class Subscriber(Viewer):
 
     def play_effect(self, effect: str, message: str | None = None) -> dict:
         return self.post(self._path("/effects/subscriber"), {"effect": effect, "message": message})
+
+    def media_allowance(self) -> dict:
+        return self.get(self._path("/media/subscriber"))
+
+    def play_media(self, url: str, seconds: int, message: str | None = None) -> dict:
+        return self.post(
+            self._path("/media/subscriber"), {"url": url, "seconds": seconds, "message": message}
+        )
 
 
 class DeviceEvents:

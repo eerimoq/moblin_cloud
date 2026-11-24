@@ -28,6 +28,7 @@ pub struct Delivery {
     pub finished: bool,
     pub test: bool,
     pub resends: u32,
+    pub held: bool,
 }
 
 impl Delivery {
@@ -64,6 +65,14 @@ pub enum Item {
         amount: u32,
         currency: String,
     },
+    Media {
+        user: String,
+        message: String,
+        video: String,
+        start: u32,
+        seconds: u32,
+        title: String,
+    },
 }
 
 impl Item {
@@ -72,6 +81,7 @@ impl Item {
             Item::Spin { .. } => "spin",
             Item::Tip { .. } => "tip",
             Item::Effect { .. } => "effect",
+            Item::Media { .. } => "media",
         }
     }
 }
@@ -136,7 +146,7 @@ impl Deliveries {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*) FROM deliveries WHERE NOT finished AND delivered = '[]'",
+                "SELECT count(*) FROM deliveries WHERE NOT finished AND NOT held AND delivered = '[]'",
                 [],
                 |row| row.get(0),
             )
@@ -176,9 +186,34 @@ impl Deliveries {
     pub fn pending(&self) -> Vec<Delivery> {
         query(
             &self.database.lock(),
-            "SELECT * FROM deliveries WHERE NOT finished ORDER BY rowid",
+            "SELECT * FROM deliveries WHERE NOT finished AND NOT held ORDER BY rowid",
             [],
         )
+    }
+
+    pub fn held(&self, streamer: &str) -> Vec<Delivery> {
+        query(
+            &self.database.lock(),
+            "SELECT * FROM deliveries WHERE streamer = ?1 AND held AND NOT finished ORDER BY rowid",
+            [streamer],
+        )
+    }
+
+    pub fn approve(&self, streamer: &str, request_id: &str) -> rusqlite::Result<bool> {
+        let approved = self.database.lock().execute(
+            "UPDATE deliveries SET held = 0, requested_at = ?3 WHERE request_id = ?1 AND streamer = ?2 AND held",
+            params![request_id, streamer, now()],
+        )?;
+        self.notify();
+        Ok(approved == 1)
+    }
+
+    pub fn reject(&self, streamer: &str, request_id: &str) -> rusqlite::Result<bool> {
+        let rejected = self.database.lock().execute(
+            "DELETE FROM deliveries WHERE request_id = ?1 AND streamer = ?2 AND held",
+            [request_id, streamer],
+        )?;
+        Ok(rejected == 1)
     }
 
     pub fn tip_devices(&self, streamers: &Streamers, page_id: &str) -> Vec<String> {
@@ -262,6 +297,11 @@ impl Deliveries {
                     Item::Spin { .. } => {
                         let devices: Vec<String> =
                             streamers.wheel_device(page_id).into_iter().collect();
+                        (devices.clone(), devices)
+                    }
+                    Item::Media { .. } => {
+                        let devices: Vec<String> =
+                            streamers.media_device(page_id).into_iter().collect();
                         (devices.clone(), devices)
                     }
                     Item::Tip { .. } | Item::Effect { .. } => {
@@ -358,10 +398,11 @@ pub fn insert(
     streamer: &str,
     request_id: &str,
     item: &Item,
+    held: bool,
 ) -> rusqlite::Result<()> {
     connection.execute(
-        "INSERT OR IGNORE INTO deliveries (request_id, streamer, requested_at, item) VALUES (?1, ?2, ?3, ?4)",
-        params![request_id, streamer, now(), serde_json::to_string(item).unwrap()],
+        "INSERT OR IGNORE INTO deliveries (request_id, streamer, requested_at, item, held) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![request_id, streamer, now(), serde_json::to_string(item).unwrap(), held],
     )?;
     Ok(())
 }
@@ -380,6 +421,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     row.get("finished")?,
                     row.get::<_, Option<String>>("test")?.is_some(),
                     row.get("resends")?,
+                    row.get("held")?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -398,6 +440,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     finished,
                     test,
                     resends,
+                    held,
                 )| {
                     match serde_json::from_str(&item) {
                         Ok(item) => Some(Delivery {
@@ -410,6 +453,7 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                             finished,
                             test,
                             resends,
+                            held,
                         }),
                         Err(error) => {
                             warn!("failed to parse delivery {request_id}: {error}");
@@ -461,6 +505,22 @@ async fn deliver(
             TipKind::Effect {
                 sound: effects::effect(effect)
                     .map_or(effect.clone(), |effect| effect.name.to_string()),
+            },
+        ),
+        Item::Media {
+            user,
+            message,
+            video,
+            start,
+            seconds,
+            ..
+        } => (
+            user,
+            message,
+            TipKind::YouTube {
+                video_id: video.clone(),
+                start: *start,
+                duration: *seconds,
             },
         ),
     };

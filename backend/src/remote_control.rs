@@ -131,6 +131,9 @@ enum Event {
     Icon {
         id: String,
     },
+    Media {
+        media: Option<Media>,
+    },
     #[serde(rename_all = "camelCase")]
     Status {
         general: Option<Value>,
@@ -147,9 +150,27 @@ impl Event {
         match self {
             Self::WheelOfLuck { .. } => "wheelOfLuck",
             Self::Icon { .. } => "icon",
+            Self::Media { .. } => "media",
             Self::Status { .. } => "status",
             Self::State { .. } => "state",
         }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct Media {
+    #[serde(default)]
+    pub paused: bool,
+    #[serde(default)]
+    pub playing: Option<String>,
+    #[serde(default)]
+    pub queued: Vec<String>,
+}
+
+impl Media {
+    fn normalize(mut self) -> Self {
+        self.queued.truncate(100);
+        self
     }
 }
 
@@ -362,6 +383,14 @@ pub enum Control {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<Uuid>,
     },
+    SetMoblinCloudMediaWidget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Uuid>,
+    },
+    SetMoblinCloudMediaPaused {
+        on: bool,
+    },
+    SkipMoblinCloudMedia {},
 }
 
 fn has_uuid_id(object: &Value) -> bool {
@@ -447,6 +476,9 @@ impl Control {
             Self::GetVideoSourceSnapshot { .. } => "getVideoSourceSnapshot",
             Self::SetMoblinCloudAlertsWidget { .. } => "setMoblinCloudAlertsWidget",
             Self::SetMoblinCloudWheelOfLuckWidget { .. } => "setMoblinCloudWheelOfLuckWidget",
+            Self::SetMoblinCloudMediaWidget { .. } => "setMoblinCloudMediaWidget",
+            Self::SetMoblinCloudMediaPaused { .. } => "setMoblinCloudMediaPaused",
+            Self::SkipMoblinCloudMedia {} => "skipMoblinCloudMedia",
         }
     }
 
@@ -559,6 +591,7 @@ impl Control {
                 | Self::DeleteStream { .. }
                 | Self::SetMoblinCloudAlertsWidget { .. }
                 | Self::SetMoblinCloudWheelOfLuckWidget { .. }
+                | Self::SetMoblinCloudMediaWidget { .. }
         )
     }
 }
@@ -839,9 +872,22 @@ impl Drop for WatchGuard {
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TipKind {
-    Message { amount: String, currency: String },
-    Effect { sound: String },
-    WheelOfLuck { count: u32 },
+    Message {
+        amount: String,
+        currency: String,
+    },
+    Effect {
+        sound: String,
+    },
+    WheelOfLuck {
+        count: u32,
+    },
+    #[serde(rename_all = "camelCase")]
+    YouTube {
+        video_id: String,
+        start: u32,
+        duration: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -858,6 +904,7 @@ struct Session {
     next_request_id: u64,
     pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
     wheel: Option<Wheel>,
+    media: Option<Media>,
     reconnecting: bool,
     status_requested: bool,
     preview_requested: bool,
@@ -950,6 +997,13 @@ impl Sessions {
             .iter()
             .find(|session| session.wheel.is_some())
             .or(sessions.first())
+    }
+
+    fn media(&self, page_id: &str) -> Option<(&Session, &Media)> {
+        self.by_page
+            .get(page_id)?
+            .iter()
+            .find_map(|session| Some((session, session.media.as_ref()?)))
     }
 }
 
@@ -1128,6 +1182,17 @@ impl Streamers {
             .collect()
     }
 
+    pub fn media_device(&self, page_id: &str) -> Option<String> {
+        self.media(page_id).map(|(device, _)| device)
+    }
+
+    pub fn media(&self, page_id: &str) -> Option<(String, Media)> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions
+            .media(page_id)
+            .map(|(session, media)| (session.device.clone(), media.clone()))
+    }
+
     pub fn wheel_device(&self, page_id: &str) -> Option<String> {
         let sessions = self.sessions.lock().unwrap();
         sessions
@@ -1196,6 +1261,7 @@ impl Streamers {
             next_request_id: 0,
             pending: HashMap::new(),
             wheel: None,
+            media: None,
             reconnecting: false,
             status_requested: false,
             preview_requested: false,
@@ -1205,6 +1271,7 @@ impl Streamers {
         match page_sessions.iter_mut().find(|old| old.device == device) {
             Some(old) => {
                 session.wheel = old.wheel.take();
+                session.media = old.media.take();
                 *old = session;
             }
             None => page_sessions.push(session),
@@ -1401,6 +1468,19 @@ impl Streamers {
                 if let Some(session) = sessions.get_mut(page_id, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
                     self.changes.notify(page_id, Change::Page);
+                }
+            }
+            MessageToAssistant::Event {
+                data: Event::Media { media },
+            } => {
+                let mut sessions = self.sessions.lock().unwrap();
+                let available = sessions.media(page_id).is_some();
+                if let Some(session) = sessions.get_mut(page_id, device, Some(number)) {
+                    session.media = media.map(Media::normalize);
+                    if sessions.media(page_id).is_some() != available {
+                        self.changes.notify(page_id, Change::Page);
+                    }
+                    self.changes.notify(page_id, Change::Media);
                 }
             }
             MessageToAssistant::Event {

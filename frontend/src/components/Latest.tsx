@@ -1,9 +1,10 @@
 import { createSignal, For, Index, Show } from "solid-js";
 import Icon from "./Icon";
 import { cardClass, ghostButtonClass, Spinner } from "./PageParts";
-import type { Recent, RecentKind, RecentList } from "../data/account";
+import { recentKinds, type Recent, type RecentKind, type RecentList } from "../data/account";
 import { formatPrice, providerName, spinsText } from "../data/remoteControl";
 import { effectName } from "../data/effects";
+import { youTubeUrl } from "../data/youtube";
 import { language, t } from "../i18n";
 import { sameData } from "../same";
 
@@ -33,6 +34,19 @@ export const amountLabel = (item: Recent) =>
     : item.tier
       ? t("Tier {tier} subscriber", { tier: item.tier })
       : formatPrice({ price: item.amount, currency: item.currency });
+
+export function VideoLink(props: { video: string; start?: number; title: string; class?: string }) {
+  return (
+    <a
+      href={youTubeUrl(props.video, props.start ?? 0)}
+      target="_blank"
+      rel="noopener noreferrer"
+      class={`underline decoration-line underline-offset-2 hover:text-ink ${props.class ?? ""}`}
+    >
+      {props.title}
+    </a>
+  );
+}
 
 export function ReceivedDevices(props: {
   devices: NonNullable<Recent["devices"]>;
@@ -95,13 +109,19 @@ export function Latest(props: {
   const [loading, setLoading] = createSignal(false);
   const { resending, failed, resend } = createResend((item) => props.onResend(item));
   const title = () =>
-    ({ tip: t("Received messages"), spin: t("Received spins"), effect: t("Received effects") })[
-      props.kind
-    ];
+    ({
+      tip: t("Received messages"),
+      spin: t("Received spins"),
+      effect: t("Received effects"),
+      media: t("Received videos"),
+    })[props.kind];
   const empty = () =>
-    ({ tip: t("No messages yet."), spin: t("No spins yet."), effect: t("No effects yet.") })[
-      props.kind
-    ];
+    ({
+      tip: t("No messages yet."),
+      spin: t("No spins yet."),
+      effect: t("No effects yet."),
+      media: t("No videos yet."),
+    })[props.kind];
   const more = async () => {
     setLoading(true);
     try {
@@ -149,6 +169,18 @@ export function Latest(props: {
                           </span>
                         )}
                       </Show>
+                      <Show when={item.video}>
+                        {(video) => (
+                          <span class="flex items-center gap-1 text-ink-2">
+                            <Icon name="play" class="size-4 shrink-0" />
+                            <VideoLink
+                              video={video()}
+                              title={item.title ?? video()}
+                              class="wrap-anywhere"
+                            />
+                          </span>
+                        )}
+                      </Show>
                       <Show when={item.message}>
                         {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
                       </Show>
@@ -162,15 +194,20 @@ export function Latest(props: {
                         <Show when={item.status === "waiting" && !item.devices?.length}>
                           <span class="text-muted">{t("Waiting for Moblin")}</span>
                         </Show>
+                        <Show when={item.status === "held"}>
+                          <span class="text-muted">{t("Waiting for approval")}</span>
+                        </Show>
                       </div>
-                      <button
-                        type="button"
-                        class={`${ghostButtonClass} h-9! px-4! text-[15px]!`}
-                        disabled={resending() !== null}
-                        onClick={() => resend(item)}
-                      >
-                        {resending() === item.id ? t("Sending…") : t("Send again")}
-                      </button>
+                      <Show when={item.status !== "held"}>
+                        <button
+                          type="button"
+                          class={`${ghostButtonClass} h-9! px-4! text-[15px]!`}
+                          disabled={resending() !== null}
+                          onClick={() => resend(item)}
+                        >
+                          {resending() === item.id ? t("Sending…") : t("Send again")}
+                        </button>
+                      </Show>
                       <Show when={failed() === item.id}>
                         <span class="text-danger">{t("Sending did not work. Try again.")}</span>
                       </Show>
@@ -206,14 +243,8 @@ export function createRecent(
   const loadRecent = async () => {
     const shown = recent();
     try {
-      const { tip, spin, effect } = await fetchAll(
-        Math.min(
-          Math.max(
-            ...(["tip", "spin", "effect"] as const).map((kind) => shown?.[kind].items.length ?? 0),
-            5,
-          ),
-          50,
-        ),
+      const fetched = await fetchAll(
+        Math.min(Math.max(...recentKinds.map((kind) => shown?.[kind]?.items.length ?? 0), 5), 50),
       );
       const merge = (fetched: RecentList, old: RecentList | undefined) => {
         const kept = new Map(old?.items.map((item) => [item.id, item]));
@@ -231,10 +262,12 @@ export function createRecent(
         }
         return { items: [...page.items, ...old.items.slice(index + 1)], more: old.more };
       };
+      const empty: RecentList = { items: [], more: false };
       setRecent((old) => ({
-        tip: merge(tip, old?.tip),
-        spin: merge(spin, old?.spin),
-        effect: merge(effect, old?.effect),
+        tip: merge(fetched.tip, old?.tip),
+        spin: merge(fetched.spin, old?.spin),
+        effect: merge(fetched.effect, old?.effect),
+        media: merge(fetched.media ?? empty, old?.media),
       }));
     } catch (error) {
       onError(error);

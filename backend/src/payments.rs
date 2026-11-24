@@ -24,6 +24,13 @@ pub enum Item {
         effect: String,
         message: Option<String>,
     },
+    Media {
+        video: String,
+        start: u32,
+        seconds: u32,
+        title: String,
+        message: Option<String>,
+    },
 }
 
 impl Item {
@@ -32,6 +39,7 @@ impl Item {
             Item::Tip { .. } => "tip",
             Item::Spin { .. } => "spin",
             Item::Effect { .. } => "effect",
+            Item::Media { .. } => "media",
         }
     }
 }
@@ -93,6 +101,9 @@ impl Order {
                 ),
                 message.as_ref(),
             ),
+            Item::Media { message, .. } => {
+                (format!("Video request by {}", self.user), message.as_ref())
+            }
         };
         let description = match message {
             Some(message) => format!("{description}: {message}"),
@@ -394,7 +405,7 @@ impl Orders {
             "SELECT id, updated_at, details FROM (
                  SELECT id, updated_at, details, rowid AS position,
                         row_number() OVER (PARTITION BY kind ORDER BY updated_at DESC, rowid DESC) AS number
-                 FROM orders WHERE streamer = ?1 AND state = 'captured' AND kind IN ('tip', 'spin', 'effect'))
+                 FROM orders WHERE streamer = ?1 AND state = 'captured' AND kind IN ('tip', 'spin', 'effect', 'media'))
              WHERE number <= ?2 ORDER BY updated_at DESC, position DESC",
             params![streamer, limit],
         ) {

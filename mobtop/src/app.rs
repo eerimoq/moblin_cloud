@@ -156,7 +156,7 @@ pub struct Monitor {
     pub feeds: HashMap<String, Feed>,
     pub frames: HashMap<String, RgbImage>,
     pub images: RefCell<HashMap<String, Picture>>,
-    pub latest: [Option<Recent>; 3],
+    pub latest: [Option<Recent>; 4],
     pub arrived: HashMap<String, Instant>,
     pub selected: HashMap<u64, usize>,
     pub drafts: HashMap<u64, String>,
@@ -350,11 +350,11 @@ impl Monitor {
     }
 }
 
-pub fn kinds_of(leaf: &Leaf) -> [bool; 3] {
-    [leaf.shows("tip"), leaf.shows("spin"), leaf.shows("effect")]
+pub fn kinds_of(leaf: &Leaf) -> [bool; 4] {
+    Kind::ALL.map(|kind| leaf.shows(kind.name()))
 }
 
-pub fn activity(latest: &[Option<Recent>; 3], kinds: [bool; 3]) -> Vec<(Kind, &Item)> {
+pub fn activity(latest: &[Option<Recent>; 4], kinds: [bool; 4]) -> Vec<(Kind, &Item)> {
     let shown = || {
         Kind::ALL
             .into_iter()
@@ -1306,7 +1306,7 @@ impl App {
                 let selected = (monitor.selected_of(leaf.id) + 1).min(count.saturating_sub(1));
                 monitor.selected.insert(leaf.id, selected);
             }
-            (Panel::Activity, KeyCode::Char(digit @ '1'..='3')) => {
+            (Panel::Activity, KeyCode::Char(digit @ '1'..='4')) => {
                 let index = digit as usize - '1' as usize;
                 let mut kinds = kinds_of(&leaf);
                 kinds[index] = !kinds[index];

@@ -338,6 +338,49 @@ pub(super) async fn handle_effects(
 }
 
 #[derive(Serialize)]
+pub(super) struct PublicMedia {
+    price: u32,
+    #[serde(flatten)]
+    payment: PublicPayment,
+}
+
+#[derive(Serialize)]
+pub(super) struct MediaResponse {
+    media: Option<PublicMedia>,
+    #[serde(rename = "subMedia")]
+    sub_media: Option<Tiers>,
+    seconds: Option<u32>,
+    moderated: bool,
+    available: bool,
+    connected: bool,
+}
+
+pub(super) async fn handle_media(
+    State(api): State<Arc<Api>>,
+    Path(page_id): Path<String>,
+) -> Json<MediaResponse> {
+    let (account, settings) = page_settings(&api, &page_id);
+    let payment = public_payment(&api, account.as_ref(), &settings);
+    let media = settings
+        .media()
+        .zip(payment)
+        .map(|(media, payment)| PublicMedia {
+            price: media.price,
+            payment,
+        });
+    let sub_media = linked_tiers(&api, account.as_ref(), settings.sub_media());
+    let rules = (media.is_some() || sub_media.is_some()).then_some(settings.media_rules());
+    Json(MediaResponse {
+        media,
+        sub_media,
+        seconds: rules.map(|rules| rules.seconds),
+        moderated: rules.is_some_and(|rules| rules.moderated),
+        available: api.remote_control.media_device(&page_id).is_some(),
+        connected: api.remote_control.is_connected(&page_id),
+    })
+}
+
+#[derive(Serialize)]
 pub(super) struct PublicSpin {
     options: Vec<SpinOption>,
     #[serde(flatten)]

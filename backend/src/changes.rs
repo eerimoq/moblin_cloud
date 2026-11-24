@@ -8,6 +8,7 @@ pub enum Change {
     Page,
     Account,
     Recent,
+    Media,
 }
 
 #[derive(Default)]

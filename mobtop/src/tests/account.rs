@@ -10,6 +10,7 @@ fn item(id: &str) -> Item {
         message: None,
         spins: None,
         effect: None,
+        title: None,
         tier: None,
         kick_subscriber: false,
         status: "delivered".to_string(),

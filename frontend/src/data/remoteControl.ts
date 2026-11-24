@@ -18,6 +18,12 @@ export type Effects = {
   price: number;
 };
 
+export type Media = {
+  price: number;
+  seconds: number;
+  moderated: boolean;
+};
+
 export type Tiers = {
   tier1: number;
   tier2: number;
@@ -48,6 +54,8 @@ export type Settings = Page & {
   effects: Feature<Effects> | null;
   subSpins: Feature<Tiers> | null;
   subEffects: Feature<Tiers> | null;
+  media: Feature<Media> | null;
+  subMedia: Feature<Tiers> | null;
   paypal: boolean;
   merchantId: string | null;
   paypalPending: boolean;
@@ -136,6 +144,22 @@ export type PublicEffects = PublicPayment & {
 
 export type EffectOption = { id: string; kind: "sound" };
 
+export type PublicMedia = PublicPayment & {
+  price: number;
+  currency: string;
+};
+
+export type MediaOffer = {
+  media: PublicMedia | null;
+  subMedia: Tiers | null;
+  seconds: number | null;
+  moderated: boolean;
+  available: boolean;
+  connected: boolean;
+};
+
+export type VideoRequest = { url: string; start: number; seconds: number };
+
 export type PublicSpin = PublicPayment & {
   options: SpinOption[];
   currency: string;
@@ -191,7 +215,7 @@ const call = <T>(path: string, init?: RequestInit, viewer?: string) =>
 
 const pagePath = (id: string, rest = "") => `/${encodeURIComponent(id)}${rest}`;
 
-const segments = { tip: "tips", spin: "spin", effect: "effects" } as const;
+const segments = { tip: "tips", spin: "spin", effect: "effects", media: "media" } as const;
 
 export const captureOrder = async (kind: keyof typeof segments, id: string, orderId: string) => {
   const path = pagePath(id, `/${segments[kind]}/orders/${encodeURIComponent(orderId)}/capture`);
@@ -263,9 +287,9 @@ export type Allowance = {
 export const viewerSignInUrl = (platform: Platform, id: string) =>
   `${backendUrl}/auth/${platform}/login?${new URLSearchParams({ page: id })}`;
 
-export type Perk = "spin" | "effect";
+export type Perk = "spin" | "effect" | "media";
 
-const perkSegments: Record<Perk, string> = { spin: "spin", effect: "effects" };
+const perkSegments: Record<Perk, string> = { spin: "spin", effect: "effects", media: "media" };
 
 export const fetchAllowance = (id: string, perk: Perk, viewer: string) =>
   call<Allowance>(pagePath(id, `/${perkSegments[perk]}/subscriber`), undefined, viewer);
@@ -315,6 +339,33 @@ export const orderEffect = (
   call<Order>(
     pagePath(id, "/effects/orders"),
     post({ effect, price, user: user || null, message: message || null, provider }),
+  );
+
+export const streamerMedia = (id: string) => call<MediaOffer>(pagePath(id, "/media"));
+
+export const requestSubscriberMedia = (
+  id: string,
+  viewer: string,
+  video: VideoRequest,
+  message: string,
+) =>
+  call<{ left: number }>(
+    pagePath(id, "/media/subscriber"),
+    post({ ...video, message: message || null }),
+    viewer,
+  );
+
+export const orderMedia = (
+  id: string,
+  video: VideoRequest,
+  price: number,
+  user: string,
+  message: string,
+  provider: Provider,
+) =>
+  call<Order>(
+    pagePath(id, "/media/orders"),
+    post({ ...video, price, user: user || null, message: message || null, provider }),
   );
 
 export type Wheel = {

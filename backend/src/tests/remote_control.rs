@@ -61,7 +61,36 @@ fn messages_to_streamer_match_moblin() {
         tip(9, TipKind::WheelOfLuck { count: 3 }),
         r#"{"request":{"id":9,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"wheelOfLuck":{"count":3}},"requestId":"ORDER1"}}}}"#
     );
+    assert_eq!(
+        tip(
+            11,
+            TipKind::YouTube {
+                video_id: "dQw4w9WgXcQ".to_string(),
+                start: 43,
+                duration: 30,
+            }
+        ),
+        r#"{"request":{"id":11,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"youTube":{"videoId":"dQw4w9WgXcQ","start":43,"duration":30}},"requestId":"ORDER1"}}}}"#
+    );
     let request = |id, data| encode(&MessageToStreamer::Request { id, data });
+    assert_eq!(
+        request(12, Request::Control(Control::SkipMoblinCloudMedia {})),
+        r#"{"request":{"id":12,"data":{"skipMoblinCloudMedia":{}}}}"#
+    );
+    assert_eq!(
+        request(
+            13,
+            Request::Control(Control::SetMoblinCloudMediaPaused { on: true })
+        ),
+        r#"{"request":{"id":13,"data":{"setMoblinCloudMediaPaused":{"on":true}}}}"#
+    );
+    assert_eq!(
+        request(
+            14,
+            Request::Control(Control::SetMoblinCloudMediaWidget { id: None })
+        ),
+        r#"{"request":{"id":14,"data":{"setMoblinCloudMediaWidget":{}}}}"#
+    );
     assert_eq!(
         request(10, Request::GetSettings {}),
         r#"{"request":{"id":10,"data":{"getSettings":{}}}}"#
@@ -436,6 +465,34 @@ fn events_match_moblin() {
         decode(r#"{"event":{"data":{"wheelOfLuck":{}}}}"#),
         MessageToAssistant::Event {
             data: Event::WheelOfLuck { wheel: None },
+        }
+    );
+    assert_eq!(
+        decode(
+            r#"{"event":{"data":{"media":{"media":{"paused":true,"playing":"ORDER1","queued":["ORDER2"]}}}}}"#
+        ),
+        MessageToAssistant::Event {
+            data: Event::Media {
+                media: Some(Media {
+                    paused: true,
+                    playing: Some("ORDER1".to_string()),
+                    queued: vec!["ORDER2".to_string()],
+                }),
+            },
+        }
+    );
+    assert_eq!(
+        decode(r#"{"event":{"data":{"media":{"media":{"paused":false,"queued":[]}}}}}"#),
+        MessageToAssistant::Event {
+            data: Event::Media {
+                media: Some(Media::default()),
+            },
+        }
+    );
+    assert_eq!(
+        decode(r#"{"event":{"data":{"media":{}}}}"#),
+        MessageToAssistant::Event {
+            data: Event::Media { media: None },
         }
     );
     assert_eq!(

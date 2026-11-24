@@ -124,6 +124,7 @@ import {
   tierNumbers,
   type Effects,
   type Feature,
+  type Media,
   type Perk,
   type Page,
   type Settings,
@@ -135,6 +136,7 @@ import { effectName, effects } from "../data/effects";
 import { language, t, tRich } from "../i18n";
 import { sameData } from "../same";
 import CloudLanding from "../components/CloudLanding";
+import MediaQueue from "../components/MediaQueue";
 
 const DeviceView = lazy(() => import("./Device"));
 const Monitor = lazy(() => import("./Monitor"));
@@ -873,8 +875,10 @@ function GetStarted(props: {
           isOn(props.settings.tips) ||
           isOn(props.settings.spin) ||
           isOn(props.settings.effects) ||
+          isOn(props.settings.media) ||
           isOn(props.settings.subSpins) ||
-          isOn(props.settings.subEffects),
+          isOn(props.settings.subEffects) ||
+          isOn(props.settings.subMedia),
         title: t("Choose how viewers tip you"),
         text: t("Turn on at least one way to tip and set its amounts."),
         section: props.payments ? "tips" : "wheel",
@@ -1158,7 +1162,9 @@ function SubscriberSettings(props: {
         error,
         props.perk === "spin"
           ? t("Enter 0 to 100 spins per tier, and more than 0 for at least one tier.")
-          : t("Enter 0 to 100 effects per tier, and more than 0 for at least one tier."),
+          : props.perk === "effect"
+            ? t("Enter 0 to 100 effects per tier, and more than 0 for at least one tier.")
+            : t("Enter 0 to 100 videos per tier, and more than 0 for at least one tier."),
       ),
   });
   const enabled = () => form().enabled;
@@ -1171,9 +1177,13 @@ function SubscriberSettings(props: {
           ? props.twitch && !props.kick
             ? t("Spins for Twitch subscribers")
             : t("Spins for subscribers")
-          : props.twitch && !props.kick
-            ? t("Effects for Twitch subscribers")
-            : t("Effects for subscribers")}
+          : props.perk === "effect"
+            ? props.twitch && !props.kick
+              ? t("Effects for Twitch subscribers")
+              : t("Effects for subscribers")
+            : props.twitch && !props.kick
+              ? t("Videos for Twitch subscribers")
+              : t("Videos for subscribers")}
       </h2>
       <p class="text-ink-2">
         {props.perk === "spin"
@@ -1182,11 +1192,17 @@ function SubscriberSettings(props: {
                 "in on your tip page, and their spins come back on the 1st of every " +
                 "month. This works with or without tips to spin the wheel.",
             )
-          : t(
-              "Give your subscribers effects every month, without a tip. Subscribers sign in on " +
-                "your tip page, and their effects come back on the 1st of every month. This " +
-                "works with or without tips for effects.",
-            )}
+          : props.perk === "effect"
+            ? t(
+                "Give your subscribers effects every month, without a tip. Subscribers sign in on " +
+                  "your tip page, and their effects come back on the 1st of every month. This " +
+                  "works with or without tips for effects.",
+              )
+            : t(
+                "Give your subscribers videos every month, without a tip. Subscribers sign in on " +
+                  "your tip page, and their videos come back on the 1st of every month. This " +
+                  "works with or without tips for videos.",
+              )}
         <Show when={props.twitch && props.kick}>
           {" "}
           {t("Kick subscribers get the tier 1 amount.")}
@@ -1195,7 +1211,9 @@ function SubscriberSettings(props: {
       <EnableToggle checked={enabled()} onChange={(enabled) => change({ enabled })}>
         {props.perk === "spin"
           ? t("Subscribers can spin the wheel without a tip")
-          : t("Subscribers can play effects without a tip")}
+          : props.perk === "effect"
+            ? t("Subscribers can play effects without a tip")
+            : t("Subscribers can play videos without a tip")}
       </EnableToggle>
       <Show when={enabled()}>
         <div class="flex flex-wrap gap-4">
@@ -1227,7 +1245,9 @@ function SubscriberSettings(props: {
         <span class="text-[15px] text-muted">
           {props.perk === "spin"
             ? t("Spins per month for each tier.")
-            : t("Effects per month for each tier.")}
+            : props.perk === "effect"
+              ? t("Effects per month for each tier.")
+              : t("Videos per month for each tier.")}
         </span>
       </Show>
       <SaveFooter save={save} />
@@ -1471,7 +1491,9 @@ function AssistantList(props: {
                       checked={assistant().editTips}
                       text={t("Edit tips")}
                       label={t("Let {name} edit your settings", { name: assistant().name })}
-                      help={t("Change the tip page, message, wheel of luck and effect settings.")}
+                      help={t(
+                        "Change the tip page, message, wheel of luck, effect and video settings.",
+                      )}
                       onChange={(on) =>
                         call(() =>
                           setAssistantEditTips(props.session, props.platform, assistant().id, on),
@@ -1739,6 +1761,91 @@ function EffectSettings(props: {
   );
 }
 
+function MediaSettings(props: {
+  media: Feature<Media> | null;
+  currency: string;
+  payable: boolean;
+  busy: boolean;
+  onSave: (changes: { media: Feature<Media> }) => Promise<void>;
+}) {
+  const initial = () => ({
+    enabled: isOn(props.media),
+    price: amountText(props.media?.price ?? 300),
+    seconds: String(props.media?.seconds ?? 60),
+    moderated: props.media?.moderated ?? true,
+  });
+  const { form, change, save } = createFeatureSave({
+    initial,
+    value: (form): Feature<Media> => ({
+      enabled: form.enabled,
+      price: hundredths(form.price),
+      seconds: Number.parseInt(form.seconds, 10) || 0,
+      moderated: form.moderated,
+    }),
+    busy: () => props.busy,
+    save: (media) => props.onSave({ media }),
+    errorText: (error) =>
+      paymentErrorText(
+        error,
+        t("Enter a price from 0.50 to 100000 and a length from 5 to 600 seconds."),
+      ),
+  });
+  const enabled = () => form().enabled;
+
+  return (
+    <form class={cardClass} onSubmit={save.submit}>
+      <h2 class="text-[23px] font-semibold">{t("Video")}</h2>
+      <p class="text-ink-2">
+        {t(
+          "Let viewers play a part of a YouTube video on stream. Moblin plays it in a browser " +
+            "widget, with the YouTube account signed in to in Moblin's browser.",
+        )}
+      </p>
+      <Show when={props.payable}>
+        <EnableToggle checked={enabled()} onChange={(enabled) => change({ enabled })}>
+          {t("Viewers tip to play videos")}
+        </EnableToggle>
+      </Show>
+      <Show when={enabled()}>
+        <label class="flex flex-col gap-2">
+          <span class="text-[15px] font-semibold text-ink-2">
+            {t("Price per video ({currency})", { currency: props.currency })}
+          </span>
+          <MoneyInput
+            value={form().price}
+            onValue={(price) => change({ price })}
+            required
+            label={t("Price per video")}
+          />
+        </label>
+      </Show>
+      <label class="flex flex-col gap-2">
+        <span class="text-[15px] font-semibold text-ink-2">{t("Longest video (seconds)")}</span>
+        <input
+          type="number"
+          required
+          min={5}
+          max={600}
+          inputmode="numeric"
+          value={form().seconds}
+          onInput={(event) => change({ seconds: event.currentTarget.value })}
+          class={`${inputClass} max-w-32`}
+        />
+      </label>
+      <EnableToggle checked={form().moderated} onChange={(moderated) => change({ moderated })}>
+        {t("Approve every video before it plays")}
+      </EnableToggle>
+      <span class="text-[15px] text-muted">
+        {t(
+          "You and your assistants approve or reject videos in the video queue below. A rejected " +
+            "tip is refunded. Without approval, videos play as soon as Moblin gets them.",
+        )}
+      </span>
+      <SaveFooter save={save} signInAgain />
+    </form>
+  );
+}
+
 function SpinSettings(props: {
   spin: Feature<Spin> | null;
   currency: string;
@@ -1851,10 +1958,12 @@ function SendForm(props: {
   description?: string;
   label: string;
   effects?: string[];
-  send: (message: string, effect: string | undefined) => Promise<unknown>;
+  link?: boolean;
+  send: (message: string, effect: string | undefined, url: string | undefined) => Promise<unknown>;
   onSignOut: () => void;
 }) {
   const [message, setMessage] = createSignal("");
+  const [link, setLink] = createSignal("");
   const [effect, setEffect] = createSignal(props.effects?.[0]);
   const [sending, setSending] = createSignal(false);
   const [sent, flashSent] = createFlash(3000);
@@ -1868,7 +1977,7 @@ function SendForm(props: {
     setError(null);
     setSending(true);
     try {
-      await props.send(message(), effect());
+      await props.send(message(), effect(), link().trim() || undefined);
       flashSent();
     } catch (error) {
       if (isSignedOut(error)) {
@@ -1895,6 +2004,18 @@ function SendForm(props: {
         onInput={(event) => setMessage(event.currentTarget.value)}
         class={inputClass}
       />
+      <Show when={props.link}>
+        <input
+          type="text"
+          inputmode="url"
+          maxLength={200}
+          aria-label={t("YouTube link (optional)")}
+          placeholder={t("YouTube link (optional)")}
+          value={link()}
+          onInput={(event) => setLink(event.currentTarget.value)}
+          class={inputClass}
+        />
+      </Show>
       <Show when={props.effects}>
         {(effects) => (
           <select
@@ -1941,6 +2062,12 @@ const testTexts: Record<RecentKind, { description: string; label: string }> = {
     description: t("Play an effect in Moblin, to check that it works."),
     label: t("Send test effect"),
   },
+  media: {
+    description: t(
+      "Play 15 seconds of a YouTube video in Moblin, to check that it works. Test videos need no approval.",
+    ),
+    label: t("Send test video"),
+  },
 };
 
 function TestSend(props: {
@@ -1955,9 +2082,10 @@ function TestSend(props: {
       description={testTexts[props.kind].description}
       label={testTexts[props.kind].label}
       effects={props.kind === "effect" ? effects : undefined}
+      link={props.kind === "media"}
       onSignOut={props.onSignOut}
-      send={(message, effect) =>
-        sendTest(props.session, props.kind, { message, effect }, props.page)
+      send={(message, effect, url) =>
+        sendTest(props.session, props.kind, { message, effect, url }, props.page)
       }
     />
   );
@@ -1976,6 +2104,7 @@ function Admin(props: {
   account: Account;
   page?: string;
   recentChanges: number;
+  mediaChanges: number;
   onAccount: (account: Account) => void;
   onOpenDevice: (device: string) => void;
   onSignOut: () => void;
@@ -2077,6 +2206,13 @@ function Admin(props: {
       status: () => onOff(isOn(settings().effects) || isOn(settings().subEffects)),
     },
     {
+      id: "media",
+      label: t("Video"),
+      icon: kindIcons.media,
+      shown: () => true,
+      status: () => onOff(isOn(settings().media) || isOn(settings().subMedia)),
+    },
+    {
       id: "assistants",
       label: t("Assistants"),
       icon: "users",
@@ -2116,7 +2252,11 @@ function Admin(props: {
         onSelect={select}
       />
       <div class="min-w-0">
-        <Show when={!account().editTips && ["page", "tips", "wheel", "effects"].includes(active())}>
+        <Show
+          when={
+            !account().editTips && ["page", "tips", "wheel", "effects", "media"].includes(active())
+          }
+        >
           <div class="mb-6">
             <Notice>{t("The streamer has not let you edit tips.")}</Notice>
           </div>
@@ -2277,6 +2417,56 @@ function Admin(props: {
             onResend={resend}
           />
         </div>
+        <div hidden={active() !== "media"} class="flex flex-col gap-6">
+          <MediaQueue
+            session={props.session}
+            page={page()}
+            changes={props.mediaChanges + props.recentChanges}
+            control={account().remoteControl === "control"}
+            onSignOut={props.onSignOut}
+          />
+          <Show when={!paid(isOn(settings().media))}>
+            <NeedsPayments
+              title={t("Video")}
+              available={payments()}
+              streamer={assisting() ? account().name : null}
+              onConnect={() => select("payments")}
+            />
+          </Show>
+          <Editable readOnly={!account().editTips}>
+            <MediaSettings
+              media={settings().media}
+              currency={settings().currency}
+              payable={paid(isOn(settings().media))}
+              busy={busy()}
+              onSave={save}
+            />
+          </Editable>
+          <Show when={subscriberSignIn("twitch") || subscriberSignIn("kick")}>
+            <Editable readOnly={!account().editTips}>
+              <SubscriberSettings
+                perk="media"
+                tiers={settings().subMedia}
+                twitch={subscriberSignIn("twitch")}
+                kick={subscriberSignIn("kick")}
+                busy={busy()}
+                onSave={(subMedia) => save({ subMedia })}
+              />
+            </Editable>
+          </Show>
+          <TestSend
+            kind="media"
+            session={props.session}
+            page={page()}
+            onSignOut={props.onSignOut}
+          />
+          <Latest
+            kind="media"
+            list={recent()?.media}
+            onMore={() => loadMore("media")}
+            onResend={resend}
+          />
+        </div>
         <Show when={payments()}>
           <div hidden={active() !== "payments"} class="flex flex-col gap-6">
             <Show when={settings().paypal}>
@@ -2298,7 +2488,12 @@ function Admin(props: {
             <Show when={settings().payable}>
               <CurrencySettings
                 currency={settings().currency}
-                locked={isOn(settings().tips) || isOn(settings().spin) || isOn(settings().effects)}
+                locked={
+                  isOn(settings().tips) ||
+                  isOn(settings().spin) ||
+                  isOn(settings().effects) ||
+                  isOn(settings().media)
+                }
                 busy={busy()}
                 onSave={save}
               />
@@ -2910,6 +3105,7 @@ function SignedIn(props: {
   };
   const [failure, setFailure] = createSignal<{ page: string; message: string } | null>(null);
   const [recentChanges, setRecentChanges] = createSignal(0);
+  const [mediaChanges, setMediaChanges] = createSignal(0);
 
   createEffect(
     on(page, (id) => {
@@ -2943,6 +3139,7 @@ function SignedIn(props: {
           {
             account: () => void refresh(),
             recent: () => setRecentChanges((count) => count + 1),
+            media: () => setMediaChanges((count) => count + 1),
           },
           (status) => {
             if (status === 401) {
@@ -3102,6 +3299,7 @@ function SignedIn(props: {
                     account={account()}
                     page={channel() ? id : undefined}
                     recentChanges={recentChanges()}
+                    mediaChanges={mediaChanges()}
                     onAccount={update}
                     onOpenDevice={(to) => show(channel(), to)}
                     onSignOut={props.onSignOut}

@@ -29,6 +29,7 @@ use crate::remote_control::Streamers;
 use crate::requests::Requests;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
+use crate::youtube::YouTube;
 
 mod account;
 mod admin;
@@ -37,6 +38,7 @@ mod banner;
 mod devices;
 mod effects;
 mod events;
+mod media;
 mod moblin;
 mod monitor;
 mod orders;
@@ -60,6 +62,7 @@ use banner::*;
 use devices::*;
 use effects::*;
 use events::*;
+use media::*;
 use moblin::*;
 use monitor::*;
 pub use orders::settle_orders;
@@ -100,6 +103,7 @@ pub struct Api {
     pub pages: Pages,
     pub paypal: Option<PayPal>,
     pub stripe: Option<Stripe>,
+    pub youtube: YouTube,
     pub orders: Orders,
     pub allowances: Allowances,
     pub deliveries: Deliveries,
@@ -242,6 +246,16 @@ pub fn router(api: Arc<Api>) -> Router {
         .route("/account/pages/{id}/test/tip", post(handle_test_tip))
         .route("/account/pages/{id}/test/spin", post(handle_test_spin))
         .route("/account/pages/{id}/test/effect", post(handle_test_effect))
+        .route("/account/pages/{id}/test/media", post(handle_test_media))
+        .route("/account/pages/{id}/media", get(handle_media_queue))
+        .route(
+            "/account/pages/{id}/media/{request}/approve",
+            post(handle_media_approve),
+        )
+        .route(
+            "/account/pages/{id}/media/{request}/reject",
+            post(handle_media_reject),
+        )
         .route("/account/pages/{id}/rick-rolls", post(handle_rick_roll))
         .route("/admin/overview", get(handle_admin_overview))
         .route("/admin/sign-in", post(handle_admin_sign_in))
@@ -283,6 +297,16 @@ pub fn router(api: Arc<Api>) -> Router {
             capture("effect"),
         )
         .route("/effects/{id}", get(handle_effect_media))
+        .route("/pages/{id}/media", get(handle_media))
+        .route(
+            "/pages/{id}/media/subscriber",
+            get(handle_subscriber_media_allowance).post(handle_subscriber_media),
+        )
+        .route("/pages/{id}/media/orders", post(handle_media_order))
+        .route(
+            "/pages/{id}/media/orders/{order_id}/capture",
+            capture("media"),
+        )
         .route("/icons/{id}", get(handle_icon))
         .route("/pages/{id}/spin", get(handle_spin))
         .route("/pages/{id}/spin/orders", post(handle_spin_order))

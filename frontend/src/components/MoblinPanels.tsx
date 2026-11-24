@@ -187,13 +187,15 @@ function Macros(props: { remote: Remote }) {
   );
 }
 
-type CloudWidgetKind = "alerts" | "wheelOfLuck";
+type CloudWidgetKind = "alerts" | "wheelOfLuck" | "media";
 
 const cloudWidgetControl = (kind: CloudWidgetKind, id: string): Control => {
   const body = id === "" ? {} : { id };
   return kind === "alerts"
     ? { setMoblinCloudAlertsWidget: body }
-    : { setMoblinCloudWheelOfLuckWidget: body };
+    : kind === "wheelOfLuck"
+      ? { setMoblinCloudWheelOfLuckWidget: body }
+      : { setMoblinCloudMediaWidget: body };
 };
 
 type CloudWidgets = Record<CloudWidgetKind, Named[]> | undefined;
@@ -201,7 +203,11 @@ type CloudWidgets = Record<CloudWidgetKind, Named[]> | undefined;
 const cloudWidgetsOf = (widgets: { id: string; name: string; type: string }[]): CloudWidgets => {
   const ofType = (type: string) =>
     widgets.filter((widget) => widget.type === type).map(({ id, name }) => ({ id, name }));
-  return { alerts: ofType("Alerts"), wheelOfLuck: ofType("Wheel of luck") };
+  return {
+    alerts: ofType("Alerts"),
+    wheelOfLuck: ofType("Wheel of luck"),
+    media: ofType("Browser"),
+  };
 };
 
 function CloudWidgetChoices(props: {
@@ -212,9 +218,17 @@ function CloudWidgetChoices(props: {
 }) {
   const cloud = () => props.remote.settings?.moblinCloud;
   const picked = () =>
-    (props.kind === "alerts" ? cloud()?.alertsWidgetId : cloud()?.wheelOfLuckWidgetId) ?? "";
+    (props.kind === "alerts"
+      ? cloud()?.alertsWidgetId
+      : props.kind === "wheelOfLuck"
+        ? cloud()?.wheelOfLuckWidgetId
+        : cloud()?.mediaWidgetId) ?? "";
   const key = () =>
-    props.kind === "alerts" ? "setMoblinCloudAlertsWidget" : "setMoblinCloudWheelOfLuckWidget";
+    props.kind === "alerts"
+      ? "setMoblinCloudAlertsWidget"
+      : props.kind === "wheelOfLuck"
+        ? "setMoblinCloudWheelOfLuckWidget"
+        : "setMoblinCloudMediaWidget";
   return (
     <Show
       when={props.widgets}
@@ -234,9 +248,13 @@ function CloudWidgetChoices(props: {
               ? t(
                   "Alerts widget that shows messages on stream. Messages always show in chat. Create one in the scene editor and add it to the scenes you stream with.",
                 )
-              : t(
-                  "Wheel of luck widget that viewers spin. Viewers can only spin while one is picked. Create one in the scene editor and add it to the scenes you stream with.",
-                )
+              : props.kind === "wheelOfLuck"
+                ? t(
+                    "Wheel of luck widget that viewers spin. Viewers can only spin while one is picked. Create one in the scene editor and add it to the scenes you stream with.",
+                  )
+                : t(
+                    "Browser widget that plays the YouTube videos viewers send, instead of its own page. Viewers can only send videos while one is picked. Create one in the scene editor and add it to the scenes you stream with.",
+                  )
           }
           onPick={(id) => void props.remote.control(cloudWidgetControl(props.kind, id))}
         />
@@ -285,6 +303,12 @@ function MoblinCloud(props: {
                 detail={name("wheelOfLuck", cloud().wheelOfLuckWidgetId)}
                 onClick={() => props.onOpen("wheelOfLuck")}
               />
+              <NavRow
+                icon="play-rectangle"
+                label={t("Videos")}
+                detail={name("media", cloud().mediaWidgetId)}
+                onClick={() => props.onOpen("media")}
+              />
             </Group>
           )}
         </Show>
@@ -293,7 +317,14 @@ function MoblinCloud(props: {
   );
 }
 
-type SettingsPage = "root" | "streams" | "macros" | "moblinCloud" | "alerts" | "wheelOfLuck";
+type SettingsPage =
+  | "root"
+  | "streams"
+  | "macros"
+  | "moblinCloud"
+  | "alerts"
+  | "wheelOfLuck"
+  | "media";
 
 function Settings(props: { remote: Remote }) {
   const [page, setPage] = createSignal<SettingsPage>("root");
@@ -304,6 +335,7 @@ function Settings(props: { remote: Remote }) {
     moblinCloud: t("Moblin Cloud"),
     alerts: t("Message"),
     wheelOfLuck: t("Wheel of luck"),
+    media: t("Videos"),
   });
   const parents: Record<SettingsPage, SettingsPage> = {
     root: "root",
@@ -312,9 +344,10 @@ function Settings(props: { remote: Remote }) {
     moblinCloud: "root",
     alerts: "moblinCloud",
     wheelOfLuck: "moblinCloud",
+    media: "moblinCloud",
   };
   const parent = () => parents[page()];
-  const cloudPages: SettingsPage[] = ["moblinCloud", "alerts", "wheelOfLuck"];
+  const cloudPages: SettingsPage[] = ["moblinCloud", "alerts", "wheelOfLuck", "media"];
   const [widgets] = createResource(
     () => (cloudPages.includes(page()) ? props.remote.request : undefined),
     async (request) =>
@@ -370,6 +403,14 @@ function Settings(props: { remote: Remote }) {
             <CloudWidgetChoices
               remote={props.remote}
               kind="wheelOfLuck"
+              widgets={loaded()}
+              failed={widgets.error !== undefined}
+            />
+          </Match>
+          <Match when={page() === "media"}>
+            <CloudWidgetChoices
+              remote={props.remote}
+              kind="media"
               widgets={loaded()}
               failed={widgets.error !== undefined}
             />

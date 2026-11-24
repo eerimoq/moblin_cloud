@@ -1,10 +1,18 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import Icon, { kindIcons } from "./Icon";
-import { amountLabel, createRecent, createResend, ReceivedDevices, timeAgo } from "./Latest";
+import {
+  amountLabel,
+  createRecent,
+  createResend,
+  ReceivedDevices,
+  timeAgo,
+  VideoLink,
+} from "./Latest";
 import { Spinner } from "./PageParts";
 import {
   fetchMoreRecent,
   fetchRecent,
+  recentKinds,
   resendRecent,
   type Recent,
   type RecentKind,
@@ -14,12 +22,11 @@ import { effectName } from "../data/effects";
 import { providerName, spinsText } from "../data/remoteControl";
 import { t } from "../i18n";
 
-const recentKinds: RecentKind[] = ["tip", "spin", "effect"];
-
 const kindNames = (): Record<RecentKind, string> => ({
   tip: t("Message"),
   spin: t("Wheel of luck"),
   effect: t("Effect"),
+  media: t("Video"),
 });
 
 type Item = Recent & { kind: RecentKind };
@@ -61,13 +68,22 @@ function ActivityRow(props: {
             type="button"
             title={t("Send again")}
             aria-label={t("Send again")}
-            disabled={props.disabled}
+            disabled={props.disabled || item().status === "held"}
             onClick={() => props.onResend()}
             class="-my-1 grid size-7 shrink-0 place-items-center rounded-full text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink disabled:opacity-40"
           >
             <Icon name="reload" class={`size-4 ${props.resending ? "animate-spin" : ""}`} />
           </button>
         </div>
+        <Show when={item().video}>
+          {(video) => (
+            <VideoLink
+              video={video()}
+              title={item().title ?? video()}
+              class="truncate text-ink-2"
+            />
+          )}
+        </Show>
         <Show when={item().message}>
           {(message) => (
             <button
@@ -82,8 +98,10 @@ function ActivityRow(props: {
         <Show
           when={item().devices && item().devices!.length > 0 && item().devices}
           fallback={
-            <Show when={item().status === "waiting"}>
-              <span class="text-[12px] text-muted">{t("Waiting for Moblin")}</span>
+            <Show when={item().status !== "delivered"}>
+              <span class="text-[12px] text-muted">
+                {item().status === "held" ? t("Waiting for approval") : t("Waiting for Moblin")}
+              </span>
             </Show>
           }
         >

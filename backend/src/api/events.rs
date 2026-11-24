@@ -61,6 +61,7 @@ pub(super) async fn handle_page_events(
                     let name = match received {
                         Ok(Change::Page | Change::Account) => "account",
                         Ok(Change::Recent) => "recent",
+                        Ok(Change::Media) => "media",
                         Err(RecvError::Lagged(_)) => {
                             watching.lagged = true;
                             "account"
@@ -95,7 +96,7 @@ pub(super) async fn handle_public_page_events(
                 Ok(Change::Page) | Err(RecvError::Lagged(_)) => {
                     return Some((signal("page"), changes));
                 }
-                Ok(Change::Account | Change::Recent) => {}
+                Ok(Change::Account | Change::Recent | Change::Media) => {}
                 Err(RecvError::Closed) => return None,
             }
         }

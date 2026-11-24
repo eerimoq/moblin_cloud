@@ -8,7 +8,8 @@ use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::pages::{
-    CURRENCIES, Effects, FONTS, Feature, Look, Settings, SettingsError, Spin, Tiers, Tips, is_color,
+    CURRENCIES, Effects, FONTS, Feature, Look, Media, Settings, SettingsError, Spin, Tiers, Tips,
+    is_color,
 };
 use crate::stripe::Stripe;
 
@@ -26,6 +27,9 @@ pub(super) struct SettingsResponse {
     sub_spins: Option<Feature<Tiers>>,
     #[serde(rename = "subEffects")]
     sub_effects: Option<Feature<Tiers>>,
+    media: Option<Feature<Media>>,
+    #[serde(rename = "subMedia")]
+    sub_media: Option<Feature<Tiers>>,
     paypal: bool,
     #[serde(rename = "merchantId")]
     merchant_id: Option<String>,
@@ -64,6 +68,8 @@ pub(super) fn settings_response(
         effects: settings.effects,
         sub_spins: settings.sub_spins,
         sub_effects: settings.sub_effects,
+        media: settings.media,
+        sub_media: settings.sub_media,
         paypal: api.paypal.is_some(),
         merchant_id: account.merchant_id.clone(),
         paypal_pending: account.paypal_tracking_id.is_some(),
@@ -117,6 +123,10 @@ pub(super) struct SettingsRequest {
     sub_spins: Option<Feature<Tiers>>,
     #[serde(default, rename = "subEffects")]
     sub_effects: Option<Feature<Tiers>>,
+    #[serde(default)]
+    media: Option<Feature<Media>>,
+    #[serde(default, rename = "subMedia")]
+    sub_media: Option<Feature<Tiers>>,
     #[serde(default)]
     message: Option<String>,
     #[serde(default)]
@@ -217,8 +227,23 @@ async fn update_settings(
         }
         None => None,
     };
+    let media = match request.media {
+        Some(media) => {
+            let media = media
+                .normalize(Media::normalize)
+                .ok_or_else(invalid_media)?;
+            if media.enabled && current.media.as_ref() != Some(&media) {
+                check_payable(api, account)?;
+            }
+            Some(media)
+        }
+        None => None,
+    };
     if currency != current.currency()
-        && (current.tips().is_some() || current.spin().is_some() || current.effects().is_some())
+        && (current.tips().is_some()
+            || current.spin().is_some()
+            || current.effects().is_some()
+            || current.media().is_some())
     {
         return Err((
             StatusCode::CONFLICT,
@@ -236,6 +261,8 @@ async fn update_settings(
                 effects,
                 sub_spins: request.sub_spins,
                 sub_effects: request.sub_effects,
+                media,
+                sub_media: request.sub_media,
                 message: request.message,
                 accent,
                 font,
@@ -246,9 +273,10 @@ async fn update_settings(
             SettingsError::InvalidTips => invalid_tips(),
             SettingsError::InvalidSpin => invalid_spin(),
             SettingsError::InvalidEffects => invalid_effects(),
+            SettingsError::InvalidMedia => invalid_media(),
             SettingsError::InvalidTiers => (
                 StatusCode::BAD_REQUEST,
-                "subscribers' spins and effects per month must be 0 to 100 per tier, with at least one above 0"
+                "subscribers' spins, effects and videos per month must be 0 to 100 per tier, with at least one above 0"
                     .to_string(),
             ),
             SettingsError::InvalidPage => (
@@ -265,13 +293,15 @@ async fn update_settings(
             ),
         })?;
     info!(
-        "remote control streamer {page_id} set currency {}, tips {:?}, spin {:?}, effects {:?}, sub spins {:?}, sub effects {:?}, message {:?}, accent {:?} and font {:?}",
+        "remote control streamer {page_id} set currency {}, tips {:?}, spin {:?}, effects {:?}, sub spins {:?}, sub effects {:?}, media {:?}, sub media {:?}, message {:?}, accent {:?} and font {:?}",
         settings.currency(),
         settings.tips,
         settings.spin,
         settings.effects,
         settings.sub_spins,
         settings.sub_effects,
+        settings.media,
+        settings.sub_media,
         settings.message,
         settings.accent,
         settings.font
@@ -311,6 +341,13 @@ fn invalid_effects() -> (StatusCode, String) {
     (
         StatusCode::BAD_REQUEST,
         "effects need a price of 0.50 to 100000".to_string(),
+    )
+}
+
+fn invalid_media() -> (StatusCode, String) {
+    (
+        StatusCode::BAD_REQUEST,
+        "videos need a price of 0.50 to 100000 and 5 to 600 seconds".to_string(),
     )
 }
 

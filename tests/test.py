@@ -8,6 +8,7 @@ from .suites import events
 from .suites import images
 from .suites import kick
 from .suites import lifecycle
+from .suites import media
 from .suites import monitor
 from .suites import options
 from .suites import pages
@@ -41,6 +42,7 @@ def create_suites(context):
         persistence.tests(context),
         devices.tests(context),
         effects.tests(context),
+        media.tests(context),
         events.tests(context),
         received.tests(context),
         images.tests(context),

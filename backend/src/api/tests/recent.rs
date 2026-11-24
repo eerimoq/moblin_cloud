@@ -204,6 +204,7 @@ async fn recent_lists_are_paged_per_kind() {
                     message: "Go!".to_string(),
                     spins: 2,
                 },
+                false,
             )
         })
         .unwrap();

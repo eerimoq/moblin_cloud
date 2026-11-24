@@ -11,6 +11,7 @@ use serde_json::Value;
 use crate::accounts::Account;
 use crate::deliveries;
 use crate::effects::EFFECTS;
+use crate::youtube;
 
 use super::*;
 
@@ -20,6 +21,8 @@ pub(super) struct TestRequest {
     message: Option<String>,
     #[serde(default)]
     effect: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
 }
 
 fn test_page(
@@ -158,6 +161,58 @@ async fn test_effect(
             user: account.name().to_string(),
             message,
             effect,
+        },
+    );
+    Ok(accepted())
+}
+
+pub(super) async fn handle_test_media(
+    State(api): State<Arc<Api>>,
+    Path(page_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<TestRequest>,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let result = test_media(&api, &headers, &page_id, request).await;
+    counted(&api, "mediaTests", result)
+}
+
+async fn test_media(
+    api: &Api,
+    headers: &HeaderMap,
+    page_id: &str,
+    request: TestRequest,
+) -> Result<(StatusCode, Json<Value>), Failure> {
+    let (page_id, account, request_id) = test_page(api, headers, page_id)?;
+    if api.remote_control.media_device(&page_id).is_none() {
+        return Err(if api.remote_control.is_connected(&page_id) {
+            failure(
+                "no-media",
+                StatusCode::CONFLICT,
+                "Pick a browser widget for videos in Moblin's Moblin Cloud settings first.",
+            )
+        } else {
+            moblin_not_connected()
+        });
+    }
+    let message = viewer_message(request.message)?.unwrap_or_default();
+    let link = request.url.as_deref().unwrap_or("dQw4w9WgXcQ");
+    let video = youtube::video_id(link).ok_or(failure(
+        "invalid-video",
+        StatusCode::BAD_REQUEST,
+        "That is not a link to a YouTube video.",
+    ))?;
+    let seconds = api.pages.get(&page_id).media_rules().seconds.min(15);
+    info!("queued a test video in request {request_id} for remote control streamer {page_id}");
+    api.deliveries.add_test(
+        page_id,
+        request_id,
+        deliveries::Item::Media {
+            user: account.name().to_string(),
+            message,
+            start: youtube::start(link).unwrap_or(0),
+            seconds,
+            title: "Test".to_string(),
+            video,
         },
     );
     Ok(accepted())

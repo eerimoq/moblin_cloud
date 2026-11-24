@@ -633,6 +633,10 @@ async fn sessions_of_twitch_user_ids_keep_working() {
         pages: Pages::new(database.clone()),
         paypal: None,
         stripe: None,
+        youtube: crate::youtube::YouTube::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9".to_string(),
+        ),
         orders: Orders::new(database.clone(), DEADLINE),
         allowances: Allowances::new(database.clone()),
         deliveries: Deliveries::new(database.clone()),

@@ -70,7 +70,7 @@ fn only_the_5_newest_tests_per_kind_are_kept() {
     }
     deliveries.add_test("S".to_string(), "SPIN".to_string(), spin());
     deliveries.add_test("O".to_string(), "OTHER".to_string(), tip());
-    insert(&deliveries.database.lock(), "S", "PAID", &tip()).unwrap();
+    insert(&deliveries.database.lock(), "S", "PAID", &tip(), false).unwrap();
     let ids = |streamer: &str| {
         query(
             &deliveries.database.lock(),
@@ -89,7 +89,7 @@ fn only_the_5_newest_tests_per_kind_are_kept() {
 #[test]
 fn resends_start_over_with_a_new_moblin_request_id() {
     let deliveries = Deliveries::new(Database::memory());
-    insert(&deliveries.database.lock(), "S", "PAID", &tip()).unwrap();
+    insert(&deliveries.database.lock(), "S", "PAID", &tip(), false).unwrap();
     deliveries.delivered("PAID", None, "phone", &["phone".to_string()]);
     let delivery = deliveries.get("PAID").unwrap();
     assert!(delivery.finished);

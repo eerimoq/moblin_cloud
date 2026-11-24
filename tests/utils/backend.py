@@ -18,6 +18,7 @@ from .fake_paypal import FakePayPal
 from .fake_stripe import FakeStripe
 from .fake_twitch import FakeTwitch
 from .fake_twitch import user_id_of as twitch_user_id_of
+from .fake_youtube import FakeYouTube
 from .utils import FILES_DIR
 from .utils import REPO_DIR
 from .utils import wait_until
@@ -68,10 +69,12 @@ class Backend:
         self.fake_kick = FakeKick()
         self.fake_paypal = FakePayPal()
         self.fake_stripe = FakeStripe()
+        self.fake_youtube = FakeYouTube()
 
     def __enter__(self):
         self.fake_paypal.start()
         self.fake_stripe.start()
+        self.fake_youtube.start()
         self.start()
         return self
 
@@ -79,6 +82,7 @@ class Backend:
         self.stop()
         self.fake_paypal.stop()
         self.fake_stripe.stop()
+        self.fake_youtube.stop()
 
     def start(self, without: Iterable[str] = (), extra: Iterable[str] = ()):
         """Starts the backend, without the given options, like "--session-secret", and with the extra
@@ -187,6 +191,7 @@ class Backend:
             ["--stripe-url", self.fake_stripe.url],
             ["--stripe-secret-key", stripe["secret-key"]],
             ["--stripe-publishable-key", stripe["publishable-key"]],
+            ["--youtube-url", self.fake_youtube.url],
         ]
         without = set(without)
         return [argument for option in options if option[0] not in without for argument in option]

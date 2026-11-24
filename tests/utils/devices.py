@@ -66,6 +66,9 @@ class RawDevice:
     def event(self, data: dict):
         self.send({"event": {"data": data}})
 
+    def push_media(self, media: dict | None):
+        self.event({"media": {"media": media}})
+
     def push_wheel(self, texts: list[str] | None):
         wheel = None if texts is None else {"options": [{"text": text, "weight": 1} for text in texts]}
         self.event({"wheelOfLuck": {"wheel": wheel}})
@@ -96,11 +99,20 @@ class RecordingMoblin(FakeMoblin):
     """The fake Moblin's Moblin Cloud alone, connected straight to the backend as one device, keeping
     every tip request it accepted."""
 
-    def __init__(self, backend_url: str, key: str, device_id: str, wheel: list[str] | None = None):
+    def __init__(
+        self,
+        backend_url: str,
+        key: str,
+        device_id: str,
+        wheel: list[str] | None = None,
+        media: bool = False,
+    ):
         super().__init__(None, backend_url, key=key, device_id=device_id)
         self.tips: list[dict] = []
         if wheel is not None:
             self.change_wheel([{"text": text, "weight": 1} for text in wheel])
+        if media:
+            self.change_media(True)
 
     def handle(self, data: dict) -> tuple[dict, dict | None]:
         result, response = super().handle(data)

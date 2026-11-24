@@ -266,3 +266,27 @@ impl<T> Feature<T> {
         }
     }
 }
+
+#[test]
+fn videos_are_validated() {
+    let media = |price, seconds| Media {
+        price,
+        seconds,
+        moderated: true,
+    };
+    assert_eq!(media(300, 30).normalize(), Some(media(300, 30)));
+    assert_eq!(media(50, 5).normalize(), Some(media(50, 5)));
+    assert_eq!(media(300, 600).normalize(), Some(media(300, 600)));
+    assert_eq!(media(49, 30).normalize(), None);
+    assert_eq!(media(300, 4).normalize(), None);
+    assert_eq!(media(300, 601).normalize(), None);
+    let settings: Settings =
+        serde_json::from_str(r#"{"media":{"price":300,"seconds":30}}"#).unwrap();
+    assert_eq!(settings.media(), Some(&media(300, 30)));
+    let pages = Pages::new(Database::memory());
+    let invalid = Settings {
+        media: Some(Feature::on(media(300, 0))),
+        ..Settings::default()
+    };
+    assert_eq!(pages.set("a", invalid), Err(SettingsError::InvalidMedia));
+}

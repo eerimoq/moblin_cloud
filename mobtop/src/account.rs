@@ -61,16 +61,18 @@ pub enum Kind {
     Tip,
     Spin,
     Effect,
+    Media,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 3] = [Kind::Tip, Kind::Spin, Kind::Effect];
+    pub const ALL: [Kind; 4] = [Kind::Tip, Kind::Spin, Kind::Effect, Kind::Media];
 
     pub fn name(self) -> &'static str {
         match self {
             Kind::Tip => "tip",
             Kind::Spin => "spin",
             Kind::Effect => "effect",
+            Kind::Media => "media",
         }
     }
 }
@@ -86,14 +88,17 @@ pub struct AllRecent {
     pub tip: Recent,
     pub spin: Recent,
     pub effect: Recent,
+    #[serde(default)]
+    pub media: Recent,
 }
 
 impl AllRecent {
-    pub fn into_kinds(self) -> [(Kind, Recent); 3] {
+    pub fn into_kinds(self) -> [(Kind, Recent); 4] {
         [
             (Kind::Tip, self.tip),
             (Kind::Spin, self.spin),
             (Kind::Effect, self.effect),
+            (Kind::Media, self.media),
         ]
     }
 }
@@ -109,6 +114,7 @@ pub struct Item {
     pub message: Option<String>,
     pub spins: Option<u32>,
     pub effect: Option<String>,
+    pub title: Option<String>,
     pub tier: Option<u8>,
     #[serde(default)]
     pub kick_subscriber: bool,
