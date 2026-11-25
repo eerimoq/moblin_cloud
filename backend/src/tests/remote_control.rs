@@ -61,7 +61,43 @@ fn messages_to_streamer_match_moblin() {
         tip(9, TipKind::WheelOfLuck { count: 3 }),
         r#"{"request":{"id":9,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"wheelOfLuck":{"count":3}},"requestId":"ORDER1"}}}}"#
     );
+    assert_eq!(
+        tip(
+            11,
+            TipKind::MediaShare {
+                source: MediaShareSource::YouTube {
+                    video_id: "dQw4w9WgXcQ".to_string(),
+                    start: 43
+                },
+                duration: 30
+            }
+        ),
+        r#"{"request":{"id":11,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"mediaShare":{"source":{"youTube":{"videoId":"dQw4w9WgXcQ","start":43}},"duration":30}},"requestId":"ORDER1"}}}}"#
+    );
+    assert_eq!(
+        tip(
+            15,
+            TipKind::MediaShare {
+                source: MediaShareSource::TwitchClip {
+                    slug: "Slug-1".to_string()
+                },
+                duration: 29
+            }
+        ),
+        r#"{"request":{"id":15,"data":{"tip":{"name":"Erik","message":"Hi","kind":{"mediaShare":{"source":{"twitchClip":{"slug":"Slug-1"}},"duration":29}},"requestId":"ORDER1"}}}}"#
+    );
     let request = |id, data| encode(&MessageToStreamer::Request { id, data });
+    assert_eq!(
+        request(12, Request::Control(Control::SkipMoblinCloudMediaShare {})),
+        r#"{"request":{"id":12,"data":{"skipMoblinCloudMediaShare":{}}}}"#
+    );
+    assert_eq!(
+        request(
+            14,
+            Request::Control(Control::SetMoblinCloudMediaShareWidget { id: None })
+        ),
+        r#"{"request":{"id":14,"data":{"setMoblinCloudMediaShareWidget":{}}}}"#
+    );
     assert_eq!(
         request(10, Request::GetSettings {}),
         r#"{"request":{"id":10,"data":{"getSettings":{}}}}"#
@@ -436,6 +472,57 @@ fn events_match_moblin() {
         decode(r#"{"event":{"data":{"wheelOfLuck":{}}}}"#),
         MessageToAssistant::Event {
             data: Event::WheelOfLuck { wheel: None },
+        }
+    );
+    assert_eq!(
+        decode(r#"{"event":{"data":{"mediaShare":{"state":{"playing":{"requestId":"ORDER1"}}}}}}"#),
+        MessageToAssistant::Event {
+            data: Event::MediaShare {
+                state: MediaShareState::Playing {
+                    request_id: "ORDER1".to_string(),
+                },
+            },
+        }
+    );
+    assert_eq!(
+        decode(r#"{"event":{"data":{"mediaShare":{"state":{"idle":{}}}}}}"#),
+        MessageToAssistant::Event {
+            data: Event::MediaShare {
+                state: MediaShareState::Idle { last_ended: None },
+            },
+        }
+    );
+    assert_eq!(
+        decode(
+            r#"{"event":{"data":{"mediaShare":{"state":{"idle":{"lastEnded":{"requestId":"ORDER1","reason":{"failedToStart":{}}}}}}}}}"#
+        ),
+        MessageToAssistant::Event {
+            data: Event::MediaShare {
+                state: MediaShareState::Idle {
+                    last_ended: Some(MediaShareEnded {
+                        request_id: "ORDER1".to_string(),
+                        reason: MediaShareEndedReason::FailedToStart {},
+                    }),
+                },
+            },
+        }
+    );
+    assert_eq!(
+        decode(
+            r#"{"event":{"data":{"mediaShare":{"state":{"idle":{"lastEnded":{"requestId":"ORDER1","reason":{"exploded":{}}}}}}}}}"#
+        ),
+        MessageToAssistant::Event {
+            data: Event::MediaShare {
+                state: MediaShareState::Idle { last_ended: None },
+            },
+        }
+    );
+    assert_eq!(
+        decode(r#"{"event":{"data":{"mediaShare":{"state":{"unavailable":{}}}}}}"#),
+        MessageToAssistant::Event {
+            data: Event::MediaShare {
+                state: MediaShareState::Unavailable {},
+            },
         }
     );
     assert_eq!(

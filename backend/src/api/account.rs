@@ -95,6 +95,7 @@ pub(super) struct DeviceResponse {
     pub(super) connected: bool,
     reconnecting: bool,
     wheel: bool,
+    media: bool,
     last_seen: Option<u64>,
     watchers: Vec<WatcherResponse>,
 }
@@ -157,6 +158,7 @@ pub(super) fn devices(api: &Api, page_id: &str, with_watchers: bool) -> Vec<Devi
             connected: !device.reconnecting,
             reconnecting: device.reconnecting,
             wheel: device.wheel,
+            media: device.media,
             last_seen: None,
             watchers: watching.remove(&device.id).unwrap_or_default(),
         })
@@ -172,6 +174,7 @@ pub(super) fn devices(api: &Api, page_id: &str, with_watchers: bool) -> Vec<Devi
                 connected: false,
                 reconnecting: false,
                 wheel: false,
+                media: false,
                 last_seen: Some(known.last_seen),
             }),
     );

@@ -206,6 +206,10 @@ class FakeMoblin:
         self._preview_requested = threading.Event()
         self._preview_thread: threading.Thread | None = None
         self.handled_request_ids: set[str] = set()
+        self.media_playing: dict | None = None
+        self.media_last_ended: dict | None = None
+        self.media_seconds: float | None = None
+        self._media_lock = threading.RLock()
         self._stopped = threading.Event()
         self._lock = threading.Lock()
         self._websockets: dict[str, ClientConnection] = {}
@@ -273,6 +277,7 @@ class FakeMoblin:
                 if name == "cloud":
                     self.send(websocket, {"event": {"data": {"wheelOfLuck": {"wheel": self.wheel()}}}})
                     self.send(websocket, {"event": {"data": {"icon": {"id": self.icon}}}})
+                    self.send(websocket, {"event": {"data": {"mediaShare": {"state": self.media()}}}})
             elif "request" in message:
                 request = message["request"]
                 result, data = self.handle(request["data"])
@@ -312,6 +317,47 @@ class FakeMoblin:
             widget["wheelOfLuck"]["options"] = options
             cloud["wheelOfLuckWidgetId"] = widget["id"]
         self.send_wheel()
+
+    def media(self) -> dict:
+        if self.cloud_widget("Browser", "mediaShareWidgetId") is None:
+            return {"unavailable": {}}
+        with self._media_lock:
+            if self.media_playing is not None:
+                return {"playing": {"requestId": self.media_playing["requestId"]}}
+            if self.media_last_ended is not None:
+                return {"idle": {"lastEnded": self.media_last_ended}}
+            return {"idle": {}}
+
+    def send_media(self):
+        self.send_event({"mediaShare": {"state": self.media()}})
+
+    def change_media(self, on: bool):
+        widget = next((widget for widget in self.database["widgets"] if widget["type"] == "Browser"), None)
+        self.database["moblinCloud"]["mediaShareWidgetId"] = (
+            widget["id"] if on and widget is not None else None
+        )
+        self.send_media()
+
+    def play_media(self, playing: dict):
+        with self._media_lock:
+            if self.cloud_widget("Browser", "mediaShareWidgetId") is None:
+                return
+            self.media_playing = playing
+            if self.media_seconds is not None:
+                seconds = min(self.media_seconds, playing["kind"]["mediaShare"]["duration"])
+                timer = threading.Timer(seconds, self.finish_media, [playing["requestId"]])
+                timer.daemon = True
+                timer.start()
+        self.send_media()
+
+    def finish_media(self, request_id: str | None = None, reason: str = "finished"):
+        with self._media_lock:
+            playing = self.media_playing
+            if playing is None or request_id not in (None, playing["requestId"]):
+                return
+            self.media_last_ended = {"requestId": playing["requestId"], "reason": {reason: {}}}
+            self.media_playing = None
+        self.send_media()
 
     def change_icon(self, icon: str):
         self.icon = icon
@@ -550,6 +596,9 @@ class FakeMoblin:
         picked = self.database["moblinCloud"]["wheelOfLuckWidgetId"]
         if kind == "widgets" and picked is not None and same_id(picked, item_id):
             self.send_wheel()
+        picked = self.database["moblinCloud"]["mediaShareWidgetId"]
+        if kind == "widgets" and picked is not None and same_id(picked, item_id):
+            self.send_media()
 
     def video_source_snapshot(self, widget_id: str) -> bytes | None:
         found = find(self.database["widgets"], widget_id)
@@ -722,6 +771,8 @@ class FakeMoblin:
                 if request_id is not None:
                     self.handled_request_ids.add(request_id)
                 LOGGER.debug("Got %s %s", kind, body)
+                if "mediaShare" in body["kind"]:
+                    self.play_media(body)
         else:
             return self.control(kind, body)
         return {"ok": {}}, None
@@ -756,6 +807,16 @@ class FakeMoblin:
                 self.database["moblinCloud"][key] = None if widget_id is None else widget_id.upper()
                 if wheel:
                     self.send_wheel()
+        elif kind == "setMoblinCloudMediaShareWidget":
+            widget_id = body.get("id")
+            widget = None if widget_id is None else find(self.database["widgets"], widget_id)
+            if widget_id is None or (widget is not None and widget["type"] == "Browser"):
+                self.database["moblinCloud"]["mediaShareWidgetId"] = (
+                    None if widget_id is None else widget_id.upper()
+                )
+                self.send_media()
+        elif kind == "skipMoblinCloudMediaShare":
+            self.finish_media(reason="skipped")
         elif kind == "setStream":
             stream = find(self.database["streams"], body["id"])
             if stream is not None and not self.state["streaming"] and not self.state["recording"]:

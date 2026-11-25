@@ -45,6 +45,7 @@ pub(super) struct AllowanceResponse {
 pub(super) enum Perk {
     Spin,
     Effect,
+    Media,
 }
 
 impl Perk {
@@ -52,6 +53,7 @@ impl Perk {
         match self {
             Perk::Spin => "spin",
             Perk::Effect => "effect",
+            Perk::Media => "media",
         }
     }
 
@@ -59,6 +61,7 @@ impl Perk {
         match self {
             Perk::Spin => "spin the wheel",
             Perk::Effect => "play effects",
+            Perk::Media => "play videos",
         }
     }
 
@@ -73,6 +76,11 @@ impl Perk {
                 "no-effects-left",
                 StatusCode::CONFLICT,
                 "You have used all your effects this month.",
+            ),
+            Perk::Media => failure(
+                "no-videos-left",
+                StatusCode::CONFLICT,
+                "You have used all your videos this month.",
             ),
         }
     }
@@ -121,6 +129,62 @@ pub(super) async fn handle_subscriber_effect_allowance(
         Perk::Effect,
         Settings::sub_effects,
     )
+}
+
+pub(super) async fn handle_subscriber_media_allowance(
+    State(api): State<Arc<Api>>,
+    Path(page_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<AllowanceResponse>, Failure> {
+    allowance_response(&api, &headers, &page_id, Perk::Media, Settings::sub_media)
+}
+
+#[derive(Deserialize)]
+pub(super) struct SubscriberMediaRequest {
+    #[serde(flatten)]
+    video: VideoRequest,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+pub(super) async fn handle_subscriber_media(
+    State(api): State<Arc<Api>>,
+    Path(page_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<SubscriberMediaRequest>,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let result = subscriber_media(&api, page_id, &headers, request).await;
+    counted(&api, "subMedia", result)
+}
+
+async fn subscriber_media(
+    api: &Api,
+    id: String,
+    headers: &HeaderMap,
+    request: SubscriberMediaRequest,
+) -> Result<(StatusCode, Json<LeftResponse>), Failure> {
+    let (account, settings) = page_settings(api, &id);
+    let subscriber = subscriber(
+        api,
+        headers,
+        &id,
+        Perk::Media,
+        account.as_ref(),
+        settings.sub_media(),
+    )?;
+    media_available(api, &id)?;
+    let message = viewer_message(request.message)?;
+    let video = video(api, settings.media_rules().seconds, &request.video).await?;
+    let order = Order {
+        streamer: id,
+        item: video.item(message),
+        user: user_name(Some(subscriber.viewer.name.clone())),
+        payee: subscriber.payee(),
+        price: 0,
+        currency: settings.currency().to_string(),
+    };
+    let left = queue_for_subscriber(api, &subscriber, &order)?;
+    Ok((StatusCode::ACCEPTED, Json(LeftResponse { left })))
 }
 
 #[derive(Deserialize)]
@@ -222,6 +286,7 @@ pub(super) fn subscriber(
 fn queue_for_subscriber(api: &Api, subscriber: &Subscriber, order: &Order) -> Result<u32, Failure> {
     let request_id = new_request_id(api)?;
     let item = delivery_item(order);
+    let held = held(api, order);
     let left = api
         .allowances
         .take(
@@ -231,7 +296,7 @@ fn queue_for_subscriber(api: &Api, subscriber: &Subscriber, order: &Order) -> Re
             subscriber.allowance,
             |connection| {
                 insert_captured(connection, &request_id, order)?;
-                deliveries::insert(connection, &order.streamer, &request_id, &item)
+                deliveries::insert(connection, &order.streamer, &request_id, &item, held)
             },
         )
         .map_err(not_saved)?
@@ -240,6 +305,11 @@ fn queue_for_subscriber(api: &Api, subscriber: &Subscriber, order: &Order) -> Re
     api.remote_control
         .changes
         .notify(&order.streamer, Change::Recent);
+    if held {
+        api.remote_control
+            .changes
+            .notify(&order.streamer, Change::Media);
+    }
     info!(
         "queued {:?} for {} tier {} subscriber {:?} in request {request_id} for remote control streamer {}",
         order.description(),

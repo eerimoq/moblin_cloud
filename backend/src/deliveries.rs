@@ -15,7 +15,8 @@ use crate::counters;
 use crate::database::Database;
 use crate::effects;
 use crate::pages::format_price;
-use crate::remote_control::{RequestError, Streamers, TipKind};
+use crate::payments::MediaPlatform;
+use crate::remote_control::{MediaShareSource, RequestError, Streamers, TipKind};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Delivery {
@@ -28,6 +29,8 @@ pub struct Delivery {
     pub finished: bool,
     pub test: bool,
     pub resends: u32,
+    pub held: bool,
+    pub outcome: Option<String>,
 }
 
 impl Delivery {
@@ -64,6 +67,20 @@ pub enum Item {
         amount: u32,
         currency: String,
     },
+    Media {
+        user: String,
+        message: String,
+        video: String,
+        start: u32,
+        seconds: u32,
+        title: String,
+        #[serde(default)]
+        platform: MediaPlatform,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thumbnail: Option<String>,
+    },
 }
 
 impl Item {
@@ -72,6 +89,7 @@ impl Item {
             Item::Spin { .. } => "spin",
             Item::Tip { .. } => "tip",
             Item::Effect { .. } => "effect",
+            Item::Media { .. } => "media",
         }
     }
 }
@@ -121,7 +139,7 @@ impl Deliveries {
     pub fn resend(&self, streamer: &str, request_id: &str, item: &Item) -> rusqlite::Result<()> {
         self.database.lock().execute(
             "INSERT INTO deliveries (request_id, streamer, requested_at, item, resends) VALUES (?1, ?2, ?3, ?4, 1)
-             ON CONFLICT (request_id) DO UPDATE SET requested_at = excluded.requested_at, delivered = '[]', failure = NULL, finished = 0, resends = resends + 1",
+             ON CONFLICT (request_id) DO UPDATE SET requested_at = excluded.requested_at, delivered = '[]', failure = NULL, finished = 0, outcome = NULL, resends = resends + 1",
             params![request_id, streamer, now(), serde_json::to_string(item).unwrap()],
         )?;
         self.notify();
@@ -136,7 +154,7 @@ impl Deliveries {
         self.database
             .lock()
             .query_row(
-                "SELECT count(*) FROM deliveries WHERE NOT finished AND delivered = '[]'",
+                "SELECT count(*) FROM deliveries WHERE NOT finished AND NOT held AND delivered = '[]'",
                 [],
                 |row| row.get(0),
             )
@@ -176,9 +194,47 @@ impl Deliveries {
     pub fn pending(&self) -> Vec<Delivery> {
         query(
             &self.database.lock(),
-            "SELECT * FROM deliveries WHERE NOT finished ORDER BY rowid",
+            "SELECT * FROM deliveries WHERE NOT finished AND NOT held ORDER BY rowid",
             [],
         )
+    }
+
+    pub fn held(&self, streamer: &str) -> Vec<Delivery> {
+        query(
+            &self.database.lock(),
+            "SELECT * FROM deliveries WHERE streamer = ?1 AND held AND NOT finished ORDER BY rowid",
+            [streamer],
+        )
+    }
+
+    pub fn queued_media(&self, streamer: &str) -> Vec<Delivery> {
+        let mut queued: Vec<Delivery> = query(
+            &self.database.lock(),
+            "SELECT * FROM deliveries WHERE streamer = ?1 AND NOT finished AND NOT held ORDER BY rowid",
+            [streamer],
+        )
+        .into_iter()
+        .filter(|delivery| matches!(delivery.item, Item::Media { .. }))
+        .collect();
+        queued.sort_by_key(|delivery| delivery.requested_at);
+        queued
+    }
+
+    pub fn approve(&self, streamer: &str, request_id: &str) -> rusqlite::Result<bool> {
+        let approved = self.database.lock().execute(
+            "UPDATE deliveries SET held = 0, requested_at = ?3 WHERE request_id = ?1 AND streamer = ?2 AND held",
+            params![request_id, streamer, now()],
+        )?;
+        self.notify();
+        Ok(approved == 1)
+    }
+
+    pub fn reject(&self, streamer: &str, request_id: &str) -> rusqlite::Result<bool> {
+        let rejected = self.database.lock().execute(
+            "DELETE FROM deliveries WHERE request_id = ?1 AND streamer = ?2 AND held",
+            [request_id, streamer],
+        )?;
+        Ok(rejected == 1)
     }
 
     pub fn tip_devices(&self, streamers: &Streamers, page_id: &str) -> Vec<String> {
@@ -228,6 +284,21 @@ impl Deliveries {
         }
     }
 
+    fn ended(&self, streamer: &str, moblin_request_id: &str, reason: &str) -> bool {
+        let ended = self.database.lock().execute(
+            "UPDATE deliveries SET outcome = ?3 WHERE streamer = ?1 AND outcome IS NOT ?3
+             AND ?2 = CASE WHEN resends = 0 THEN request_id ELSE request_id || '-' || resends END",
+            [streamer, moblin_request_id, reason],
+        );
+        match ended {
+            Ok(ended) => ended > 0,
+            Err(error) => {
+                warn!("failed to save how request {moblin_request_id} ended: {error:#}");
+                false
+            }
+        }
+    }
+
     fn failed(&self, delivery: &Delivery, reason: &str) -> bool {
         let database = self.database.lock();
         match database.execute(
@@ -254,14 +325,44 @@ impl Deliveries {
 
     pub async fn run(&self, streamers: &Streamers, retry: Duration) {
         loop {
+            for (page_id, ended) in streamers.take_media_ended() {
+                if self.ended(&page_id, &ended.request_id, ended.reason.name()) {
+                    streamers.changes.notify(&page_id, Change::Recent);
+                }
+            }
             let mut by_device: Vec<((String, String), Vec<Targeted>)> = Vec::new();
             let mut known: HashMap<String, Vec<String>> = HashMap::new();
-            for delivery in self.pending() {
+            let pending = self.pending();
+            let mut next_media: HashMap<String, (u64, String)> = HashMap::new();
+            for delivery in &pending {
+                if matches!(delivery.item, Item::Media { .. })
+                    && next_media
+                        .get(&delivery.streamer)
+                        .is_none_or(|(requested_at, _)| delivery.requested_at < *requested_at)
+                {
+                    next_media.insert(
+                        delivery.streamer.clone(),
+                        (delivery.requested_at, delivery.request_id.clone()),
+                    );
+                }
+            }
+            for delivery in pending {
                 let page_id = &delivery.streamer;
                 let (devices, connected): (Vec<String>, Vec<String>) = match &delivery.item {
                     Item::Spin { .. } => {
                         let devices: Vec<String> =
                             streamers.wheel_device(page_id).into_iter().collect();
+                        (devices.clone(), devices)
+                    }
+                    Item::Media { .. } => {
+                        if next_media
+                            .get(page_id)
+                            .is_none_or(|(_, request_id)| *request_id != delivery.request_id)
+                        {
+                            continue;
+                        }
+                        let devices: Vec<String> =
+                            streamers.media_ready(page_id).into_iter().collect();
                         (devices.clone(), devices)
                     }
                     Item::Tip { .. } | Item::Effect { .. } => {
@@ -306,6 +407,7 @@ impl Deliveries {
             .await;
             tokio::select! {
                 _ = self.added.notified() => {}
+                _ = streamers.media_changed.notified() => {}
                 _ = sleep(retry) => {}
             }
         }
@@ -340,6 +442,12 @@ impl Deliveries {
             };
             self.delivered(&delivery.request_id, counter.as_deref(), &device, &devices);
             streamers.changes.notify(&page_id, Change::Recent);
+            if matches!(delivery.item, Item::Media { .. }) {
+                streamers.changes.notify(&page_id, Change::Media);
+                if streamers.media_ready(&page_id).is_some() {
+                    self.notify();
+                }
+            }
         }
     }
 }
@@ -358,10 +466,11 @@ pub fn insert(
     streamer: &str,
     request_id: &str,
     item: &Item,
+    held: bool,
 ) -> rusqlite::Result<()> {
     connection.execute(
-        "INSERT OR IGNORE INTO deliveries (request_id, streamer, requested_at, item) VALUES (?1, ?2, ?3, ?4)",
-        params![request_id, streamer, now(), serde_json::to_string(item).unwrap()],
+        "INSERT OR IGNORE INTO deliveries (request_id, streamer, requested_at, item, held) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![request_id, streamer, now(), serde_json::to_string(item).unwrap(), held],
     )?;
     Ok(())
 }
@@ -380,6 +489,8 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     row.get("finished")?,
                     row.get::<_, Option<String>>("test")?.is_some(),
                     row.get("resends")?,
+                    row.get("held")?,
+                    row.get("outcome")?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -398,6 +509,8 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                     finished,
                     test,
                     resends,
+                    held,
+                    outcome,
                 )| {
                     match serde_json::from_str(&item) {
                         Ok(item) => Some(Delivery {
@@ -410,6 +523,8 @@ fn query(database: &Connection, sql: &str, params: impl Params) -> Vec<Delivery>
                             finished,
                             test,
                             resends,
+                            held,
+                            outcome,
                         }),
                         Err(error) => {
                             warn!("failed to parse delivery {request_id}: {error}");
@@ -461,6 +576,30 @@ async fn deliver(
             TipKind::Effect {
                 sound: effects::effect(effect)
                     .map_or(effect.clone(), |effect| effect.name.to_string()),
+            },
+        ),
+        Item::Media {
+            user,
+            message,
+            video,
+            start,
+            seconds,
+            platform,
+            ..
+        } => (
+            user,
+            message,
+            TipKind::MediaShare {
+                source: match platform {
+                    MediaPlatform::YouTube => MediaShareSource::YouTube {
+                        video_id: video.clone(),
+                        start: *start,
+                    },
+                    MediaPlatform::Twitch => MediaShareSource::TwitchClip {
+                        slug: video.clone(),
+                    },
+                },
+                duration: *seconds,
             },
         ),
     };

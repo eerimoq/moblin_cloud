@@ -195,7 +195,7 @@ fn sanitize_at(value: &Value, depth: usize) -> Option<Pane> {
         kinds
             .iter()
             .filter_map(Value::as_str)
-            .filter(|kind| ["tip", "spin", "effect"].contains(kind))
+            .filter(|kind| ["tip", "spin", "effect", "media"].contains(kind))
             .map(str::to_string)
             .collect()
     });

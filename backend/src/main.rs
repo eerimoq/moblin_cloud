@@ -4,6 +4,7 @@ mod api;
 mod app_attest;
 mod auth;
 mod changes;
+mod clips;
 mod counters;
 mod database;
 mod deliveries;
@@ -18,6 +19,7 @@ mod requests;
 mod stripe;
 mod subscribers;
 mod traffic;
+mod youtube;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -47,6 +49,7 @@ use crate::remote_control::Streamers;
 use crate::requests::Requests;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
+use crate::youtube::YouTube;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -135,6 +138,9 @@ struct Cli {
     /// Base URL of the Stripe API to use instead of Stripe's, for a fake Stripe in tests.
     #[arg(long, value_name = "URL", requires = "stripe_secret_key")]
     stripe_url: Option<String>,
+    /// Base URL of YouTube to look videos up at instead of YouTube's, for a fake YouTube in tests.
+    #[arg(long, value_name = "URL")]
+    youtube_url: Option<String>,
     /// Session signing secret. Random without it.
     #[arg(long, env = "SESSION_SECRET", hide_env_values = true)]
     session_secret: Option<String>,
@@ -369,6 +375,12 @@ async fn main() -> Result<()> {
         pages,
         paypal,
         stripe,
+        youtube: YouTube::new(
+            http_client(),
+            cli.youtube_url
+                .inspect(|url| warn!("looking videos up at {url} instead of YouTube"))
+                .unwrap_or_else(|| youtube::URL.to_string()),
+        ),
         orders: Orders::new(database.clone(), Duration::from_secs(cli.payment_deadline)),
         allowances: Allowances::new(database.clone()),
         deliveries,

@@ -11,7 +11,7 @@ import {
   Switch,
   useContext,
 } from "solid-js";
-import type { RecentKind } from "../data/account";
+import { recentKinds, type RecentKind } from "../data/account";
 import { wide } from "../viewport";
 import { t } from "../i18n";
 
@@ -102,7 +102,7 @@ export function sanitize(value: unknown, depth = 0): Pane | null {
   }
   if (Array.isArray(pane.kinds)) {
     leaf.kinds = pane.kinds.filter((kind): kind is RecentKind =>
-      ["tip", "spin", "effect"].includes(kind as string),
+      (recentKinds as string[]).includes(kind as string),
     );
   }
   if (typeof pane.url === "string" && pane.url.startsWith("https://")) {

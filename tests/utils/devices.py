@@ -66,6 +66,9 @@ class RawDevice:
     def event(self, data: dict):
         self.send({"event": {"data": data}})
 
+    def push_media(self, state: dict):
+        self.event({"mediaShare": {"state": state}})
+
     def push_wheel(self, texts: list[str] | None):
         wheel = None if texts is None else {"options": [{"text": text, "weight": 1} for text in texts]}
         self.event({"wheelOfLuck": {"wheel": wheel}})
@@ -96,11 +99,20 @@ class RecordingMoblin(FakeMoblin):
     """The fake Moblin's Moblin Cloud alone, connected straight to the backend as one device, keeping
     every tip request it accepted."""
 
-    def __init__(self, backend_url: str, key: str, device_id: str, wheel: list[str] | None = None):
+    def __init__(
+        self,
+        backend_url: str,
+        key: str,
+        device_id: str,
+        wheel: list[str] | None = None,
+        media: bool = False,
+    ):
         super().__init__(None, backend_url, key=key, device_id=device_id)
         self.tips: list[dict] = []
         if wheel is not None:
             self.change_wheel([{"text": text, "weight": 1} for text in wheel])
+        if media:
+            self.change_media(True)
 
     def handle(self, data: dict) -> tuple[dict, dict | None]:
         result, response = super().handle(data)
@@ -110,6 +122,9 @@ class RecordingMoblin(FakeMoblin):
 
     def kinds(self, kind: str) -> list[dict]:
         return [tip for tip in list(self.tips) if kind in tip["kind"]]
+
+    def media_shares(self, source: str) -> list[dict]:
+        return [tip for tip in self.kinds("mediaShare") if source in tip["kind"]["mediaShare"]["source"]]
 
     def tip_with_id(self, request_id: str) -> dict | None:
         return next((tip for tip in list(self.tips) if tip.get("requestId") == request_id), None)

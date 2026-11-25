@@ -1,6 +1,7 @@
 Black box system tests of the backend. They build and start it, then drive its API like the
 frontend does. Everything around it is faked: PayPal (`utils/fake_paypal.py`), Stripe
-(`utils/fake_stripe.py`), Twitch (`utils/fake_twitch.py`), Kick (`utils/fake_kick.py`) and Moblin
+(`utils/fake_stripe.py`), Twitch (`utils/fake_twitch.py`), Kick (`utils/fake_kick.py`), YouTube
+(`utils/fake_youtube.py`) and Moblin
 (`utils/fake_moblin.py`). The tester acts as the fake Moblin's remote control assistant and relays
 its Moblin Cloud connection to the backend, which is how the tests see what the backend delivers.
 

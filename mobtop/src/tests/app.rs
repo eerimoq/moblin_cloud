@@ -17,6 +17,7 @@ fn activity_merges_kinds_by_time_without_gaps() {
         recent(vec![item("t3", 30), item("t1", 10)], false),
         recent(vec![item("s4", 40), item("s2", 20)], true),
         recent(vec![item("e3", 30)], false),
+        recent(vec![item("m5", 50)], false),
     ];
     let ids = |kinds| {
         activity(&latest, kinds)
@@ -24,13 +25,20 @@ fn activity_merges_kinds_by_time_without_gaps() {
             .map(|(_, item)| item.id.as_str())
             .collect::<Vec<_>>()
     };
-    assert_eq!(ids([true; 3]), ["s4", "t3", "e3", "s2"]);
-    assert_eq!(ids([true, false, true]), ["t3", "e3", "t1"]);
-    assert_eq!(activity(&latest, [false, true, false])[0].0, Kind::Spin);
+    assert_eq!(ids([true; 4]), ["m5", "s4", "t3", "e3", "s2"]);
+    assert_eq!(ids([true, false, true, false]), ["t3", "e3", "t1"]);
+    assert_eq!(
+        activity(&latest, [false, true, false, false])[0].0,
+        Kind::Spin
+    );
+    assert_eq!(
+        activity(&latest, [false, false, false, true])[0].0,
+        Kind::Media
+    );
     let mut leaf = Leaf::new(Panel::Activity);
-    assert_eq!(kinds_of(&leaf), [true; 3]);
-    leaf.kinds = Some(vec!["spin".to_string()]);
-    assert_eq!(kinds_of(&leaf), [false, true, false]);
+    assert_eq!(kinds_of(&leaf), [true; 4]);
+    leaf.kinds = Some(vec!["spin".to_string(), "media".to_string()]);
+    assert_eq!(kinds_of(&leaf), [false, true, false, true]);
 }
 
 fn account(devices: serde_json::Value) -> Account {

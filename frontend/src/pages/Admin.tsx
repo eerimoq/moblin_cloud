@@ -74,6 +74,14 @@ const reasonLabels: Record<string, string> = {
   "not-subscribed": "Viewer not subscribed on Twitch",
   "no-spins-left": "Viewer used this month's spins",
   "no-effects-left": "Viewer used this month's effects",
+  "no-videos-left": "Viewer used this month's videos",
+  "no-media": "No browser widget for videos in Moblin",
+  "invalid-video": "Not a YouTube or Twitch clip link, or a start past 24 hours",
+  "video-unavailable": "Video or clip missing or not playable",
+  youtube: "YouTube did not answer",
+  "clip-lookup": "Twitch did not answer",
+  "clips-unavailable": "Twitch clip without Twitch sign in configured",
+  "clip-too-long": "Clip longer than the page's longest video",
   "tier-excluded": "Viewer's tier gets nothing on the page",
   "not-assistant": "Not the streamer or an assistant they turned on",
 };
@@ -86,6 +94,8 @@ const problemReasons = [
   "moblin-timeout",
   "moblin-error",
   "crashed",
+  "youtube",
+  "clip-lookup",
 ];
 
 type Problem = { label: string; hint: string; matches: (name: string, reason: string) => boolean };
@@ -125,6 +135,11 @@ const problemsOf = (offered: ProviderRow[]): Problem[] => [
     label: "Moblin answered with an error",
     hint: "Moblin refused a delivery. Deliveries are retried every 10 seconds, so one stuck request counts many times.",
     matches: (_, reason) => reason === "moblin-error",
+  },
+  {
+    label: "YouTube or Twitch did not answer",
+    hint: "A requested video or clip could not be looked up, so the viewer was asked to try again.",
+    matches: (_, reason) => reason === "youtube" || reason === "clip-lookup",
   },
   {
     label: "Backend error",
@@ -240,6 +255,63 @@ const kinds: Kind[] = [
       ],
     },
     tests: ["account", "too-many-tests", "no-such-effect", "invalid-message", "crashed"],
+    deliveries: ["moblin-error"],
+  },
+  {
+    kind: "media",
+    label: "Media share",
+    icon: "play-rectangle",
+    orders: [
+      "feature-off",
+      "no-media",
+      "offline",
+      "payments-unavailable",
+      "invalid-option",
+      "invalid-video",
+      "video-unavailable",
+      "youtube",
+      "clip-lookup",
+      "clips-unavailable",
+      "clip-too-long",
+      "invalid-message",
+      "provider",
+      "not-saved",
+    ],
+    payments: ["expired", "no-media", ...captureReasons],
+    subscribers: {
+      event: "subMedia",
+      reasons: [
+        "feature-off",
+        "not-signed-in",
+        "not-subscribed",
+        "tier-excluded",
+        "no-videos-left",
+        "no-media",
+        "offline",
+        "invalid-option",
+        "invalid-video",
+        "video-unavailable",
+        "youtube",
+        "clip-lookup",
+        "clips-unavailable",
+        "clip-too-long",
+        "invalid-message",
+        "crashed",
+        "not-saved",
+      ],
+    },
+    tests: [
+      "account",
+      "too-many-tests",
+      "offline",
+      "no-media",
+      "invalid-video",
+      "video-unavailable",
+      "clip-lookup",
+      "clips-unavailable",
+      "invalid-message",
+      "crashed",
+    ],
     deliveries: ["moblin-error"],
   },
 ];
@@ -1478,7 +1550,7 @@ function Loaded(props: {
         <Section
           shown={active() === "providers"}
           title="Providers"
-          hint="Payments by provider, across all kinds of tips. The failures before a provider is involved are under Messages, Wheel spins and Effects."
+          hint="Payments by provider, across all kinds of tips. The failures before a provider is involved are under Messages, Wheel spins, Effects and Media share."
         >
           <For each={offered()}>
             {(item) => (

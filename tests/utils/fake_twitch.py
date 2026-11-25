@@ -139,6 +139,25 @@ class FakeTwitch:
                         self.json({"data": [self.user(login)]})
                     else:
                         self.json({"data": []})
+                elif parts.path == "/helix/clips":
+                    slug = query.get("id", "")
+                    if self.headers.get("authorization") != f"Bearer {APP_TOKEN}":
+                        self.json({"error": "Unauthorized", "status": 401, "message": "bad token"}, 401)
+                    elif slug.startswith("Missing"):
+                        self.json({"data": []})
+                    else:
+                        self.json(
+                            {
+                                "data": [
+                                    {
+                                        "id": slug,
+                                        "title": f"Clip {slug}",
+                                        "duration": 59.5 if slug.startswith("Long") else 28.3,
+                                        "thumbnail_url": f"https://static-cdn.jtvnw.net/{slug}.jpg",
+                                    }
+                                ]
+                            }
+                        )
                 elif parts.path == "/helix/users":
                     self.json({"data": [self.user(login) for login in [self.login()] if login]})
                 elif parts.path == "/helix/subscriptions/user":

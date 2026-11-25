@@ -19,6 +19,7 @@ export type Device = {
   connected: boolean;
   reconnecting: boolean;
   wheel: boolean;
+  media: boolean;
   lastSeen: number | null;
   watchers: { name: string; avatar: string | null }[];
 };
@@ -138,6 +139,7 @@ export type DeviceSettings = {
   moblinCloud?: {
     alertsWidgetId?: string;
     wheelOfLuckWidgetId?: string;
+    mediaShareWidgetId?: string;
   };
   zoomPresets?: { front: ZoomPreset[]; back: ZoomPreset[] };
 };
@@ -218,6 +220,8 @@ export type Control =
   | { sendMessage: { text: string } }
   | { setMoblinCloudAlertsWidget: { id?: string } }
   | { setMoblinCloudWheelOfLuckWidget: { id?: string } }
+  | { setMoblinCloudMediaShareWidget: { id?: string } }
+  | { skipMoblinCloudMediaShare: object }
   | EditorControl;
 
 export type EditorControl =
@@ -268,14 +272,46 @@ export type Recent = {
   message?: string;
   spins?: number;
   effect?: string;
+  video?: string;
+  title?: string;
+  link?: string;
   tier?: number;
   kickSubscriber?: boolean;
   provider?: "paypal" | "stripe";
-  status: "delivered" | "waiting";
+  status: "delivered" | "waiting" | "held";
+  outcome?: "finished" | "skipped" | "failedToStart" | "timedOut";
   devices?: { name: string; received: boolean }[];
 };
 
-export type RecentKind = "tip" | "spin" | "effect";
+export type RecentKind = "tip" | "spin" | "effect" | "media";
+
+export const recentKinds: RecentKind[] = ["tip", "spin", "effect", "media"];
+
+export type QueuedMedia = {
+  id: string;
+  at: number;
+  user: string;
+  message?: string;
+  video: string;
+  start: number;
+  seconds: number;
+  title: string;
+  platform: "youtube" | "twitch";
+  link?: string;
+  thumbnail?: string;
+  amount?: number;
+  currency?: string;
+  tier?: number;
+  kickSubscriber?: boolean;
+};
+
+export type MediaQueue = {
+  device: string | null;
+  paused: boolean;
+  playing: QueuedMedia | null;
+  queued: QueuedMedia[];
+  held: QueuedMedia[];
+};
 
 export type RecentList = { items: Recent[]; more: boolean };
 
@@ -523,6 +559,19 @@ export const fetchMoreRecent = (
 export const resendRecent = (session: string, id: string, page: string) =>
   call<object>(`${accountPath(page)}/recent/${encodeURIComponent(id)}/resend`, session, post());
 
+export const fetchMediaQueue = (session: string, page: string) =>
+  call<MediaQueue>(`${accountPath(page)}/media`, session);
+
+export const pauseMedia = (session: string, on: boolean, page: string) =>
+  call<object>(`${accountPath(page)}/media/pause`, session, post({ on }));
+
+export const decideMedia = (session: string, id: string, approve: boolean, page: string) =>
+  call<object>(
+    `${accountPath(page)}/media/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`,
+    session,
+    post(),
+  );
+
 export const fetchMonitorLayout = (session: string, page: string) =>
   call<{ layout: unknown }>(`${accountPath(page)}/monitor`, session);
 
@@ -697,12 +746,15 @@ export const removeImage = (session: string, page: string) =>
   call<Settings>(`${accountPath(page)}/image/remove`, session, post());
 
 export type SettingsChanges = Page &
-  Pick<Settings, "currency" | "tips" | "spin" | "effects" | "subSpins" | "subEffects">;
+  Pick<
+    Settings,
+    "currency" | "tips" | "spin" | "effects" | "subSpins" | "subEffects" | "media" | "subMedia"
+  >;
 
 export const sendTest = (
   session: string,
   kind: RecentKind,
-  body: { message?: string; effect?: string },
+  body: { message?: string; effect?: string; url?: string },
   page: string,
 ) => call<object>(`${accountPath(page)}/test/${kind}`, session, post(body));
 
@@ -717,6 +769,8 @@ export const saveAccountSettings = (session: string, settings: SettingsChanges, 
       effects: settings.effects,
       subSpins: settings.subSpins,
       subEffects: settings.subEffects,
+      media: settings.media,
+      subMedia: settings.subMedia,
       message: settings.message,
       accent: settings.accent,
       font: settings.font,

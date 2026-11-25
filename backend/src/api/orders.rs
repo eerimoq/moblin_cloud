@@ -255,6 +255,9 @@ pub(super) fn pending(provider: &str, kind: &str) -> Failure {
         "effect" => format!(
             "{provider} is still reviewing the tip, so the effect was not played yet. It will be played if {provider} approves it within half an hour, otherwise the money is refunded."
         ),
+        "media" => format!(
+            "{provider} is still reviewing the tip, so the video was not queued yet. It will be queued if {provider} approves it within half an hour, otherwise the money is refunded."
+        ),
         _ => format!(
             "{provider} is still reviewing the tip, so the wheel was not spun yet. It will be spun if {provider} approves it within half an hour, otherwise the money is refunded."
         ),
@@ -295,7 +298,20 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
         Stage::Created if saved.late => return Err(too_late()),
         Stage::Created => {}
     }
-    if kind == "spin" && api.remote_control.wheel(id).is_none() {
+    let gone = match kind {
+        "spin" if api.remote_control.wheel(id).is_none() => Some(failure(
+            "no-wheel",
+            StatusCode::NOT_FOUND,
+            "The streamer's wheel is gone, so your tip was not taken.",
+        )),
+        "media" if api.remote_control.media_device(id).is_none() => Some(failure(
+            "no-media",
+            StatusCode::NOT_FOUND,
+            "The streamer stopped taking videos, so your tip was not taken.",
+        )),
+        _ => None,
+    };
+    if let Some(gone) = gone {
         if let Payee::Stripe(_) = &order.payee
             && let Some(provider) = Provider::of(api, &order.payee)
         {
@@ -304,11 +320,7 @@ async fn capture_order(api: &Api, id: &str, order_id: &str, kind: &str) -> Resul
                 warn!("cancelling Stripe payment {order_id} failed: {error:#}");
             }
         }
-        return Err(failure(
-            "no-wheel",
-            StatusCode::NOT_FOUND,
-            "The streamer's wheel is gone, so your tip was not taken.",
-        ));
+        return Err(gone);
     }
     if let Err(error) = api
         .orders
@@ -384,6 +396,7 @@ fn settled(order: &Order, status: Option<PaymentStatus>) -> Result<(), Failure> 
                 match order.item.kind() {
                     "tip" => "the tip will still be shown",
                     "effect" => "the effect will still be played",
+                    "media" => "the video will still be queued",
                     _ => "the wheel will still be spun",
                 }
             ),
@@ -462,6 +475,52 @@ async fn refund_late(api: &Api, order_id: &str, order: &Order) -> Option<Payment
     }
 }
 
+pub(super) async fn refund_rejected(
+    api: &Api,
+    order_id: &str,
+    order: &Order,
+) -> Result<(), Failure> {
+    let Some(provider) = Provider::of(api, &order.payee) else {
+        api.orders.remove(order_id);
+        return Ok(());
+    };
+    let name = order.payee.provider();
+    let slug = order.payee.slug();
+    match provider.refund(order_id).await {
+        Ok(()) => {
+            info!(
+                "refunded {} {} to {:?} in {name} order {order_id}, as the request was rejected",
+                format_price(order.price),
+                order.currency,
+                order.user
+            );
+            api.orders.remove(order_id);
+            api.counters.bump(&format!("{}Refunds", order.item.kind()));
+            api.counters.bump(&format!("{slug}Refunds"));
+            Ok(())
+        }
+        Err(RefundError::Refused) => {
+            warn!("{name} refused to refund rejected order {order_id}");
+            api.counters.bump(&format!("{slug}RefundsFailed:provider"));
+            Err(failure(
+                "refund-refused",
+                StatusCode::CONFLICT,
+                &format!(
+                    "{name} refused to refund the tip, so the video can only be approved. Refund it at {name} to reject it."
+                ),
+            ))
+        }
+        Err(RefundError::Unknown) => {
+            api.counters.bump(&format!("{slug}RefundsFailed:unknown"));
+            Err(failure(
+                "refund-unknown",
+                StatusCode::BAD_GATEWAY,
+                &format!("{name} did not answer, so the tip was not refunded. Try again."),
+            ))
+        }
+    }
+}
+
 pub async fn settle(api: &Api, min_age: Duration) {
     for saved in api.orders.unsettled(min_age) {
         settle_one(api, &saved.id, &saved.order, saved.late).await;
@@ -515,13 +574,34 @@ pub(super) fn delivery_item(order: &Order) -> deliveries::Item {
             message: message.clone().unwrap_or_default(),
             effect: effect.clone(),
         },
+        Item::Media {
+            video,
+            start,
+            seconds,
+            title,
+            message,
+            platform,
+            link,
+            thumbnail,
+        } => deliveries::Item::Media {
+            user: order.user.clone(),
+            message: message.clone().unwrap_or_default(),
+            video: video.clone(),
+            start: *start,
+            seconds: *seconds,
+            title: title.clone(),
+            platform: *platform,
+            link: link.clone(),
+            thumbnail: thumbnail.clone(),
+        },
     }
 }
 
 fn record_capture(api: &Api, order_id: &str, order: &Order) {
     let item = delivery_item(order);
+    let held = held(api, order);
     let saved = api.orders.captured(order_id, |connection| {
-        deliveries::insert(connection, &order.streamer, order_id, &item)?;
+        deliveries::insert(connection, &order.streamer, order_id, &item, held)?;
         counters::bump(connection, &format!("{}Payments", order.item.kind()));
         counters::bump(connection, &format!("{}Payments", order.payee.slug()));
         Ok(())
@@ -533,6 +613,11 @@ fn record_capture(api: &Api, order_id: &str, order: &Order) {
             api.remote_control
                 .changes
                 .notify(&order.streamer, Change::Recent);
+            if held {
+                api.remote_control
+                    .changes
+                    .notify(&order.streamer, Change::Media);
+            }
             info!(
                 "queued {:?} in order {order_id} for remote control streamer {}",
                 order.description(),

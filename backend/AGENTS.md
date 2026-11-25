@@ -31,7 +31,7 @@ Order stages only move forward: `created`, `capturing`, `captured`.
 - A capturing order the provider has not captured stays capturing, since a lost capture may still complete after the lookup, until `settle_orders` removes it 30 minutes after creation. A pending review that completes days later still delivers.
 - An order has 30 minutes to be paid, since a tip that late is no use on stream. That deadline, the settle, delivery retry and stream recheck intervals and the wait for Moblin to answer a control have hidden options (`--payment-deadline`, `--settle-interval`, `--delivery-retry-interval`, `--access-recheck-interval`, `--moblin-answer-timeout`, in seconds) only for the system tests to shorten, so production never sets them. Money a lookup finds taken past that is refunded instead of delivered (`refund_late`). A refund the provider refuses, from a streamer who connected PayPal before the `REFUND` feature was asked for, delivers late instead, and one whose answer was lost is retried every minute.
 - Stripe payments the backend gives up on are cancelled, so the hold on the viewer's card is released.
-- Spins need Moblin's wheel both to create an order and to capture it. Tips need no connected streamer.
+- Spins need Moblin's wheel both to create an order and to capture it, and videos a Moblin that takes them. Tips need no connected streamer.
 - Tip and spin orders share `capture_order`, which refuses an order of another kind.
 
 PayPal:
@@ -50,7 +50,23 @@ Stripe:
 
 - At least once delivery to Moblin, retried until Moblin answers `ok`; Moblin's dedup on `requestId` makes the retries safe. A resend needs a new `requestId` (`<order id>-<resends>`) or the dedup swallows it.
 - Spins go to the wheel device and tips and effects to every device the page knows, so one briefly disconnected still gets it when it comes back.
+- Videos only go to the device that says it takes them (the `mediaShare` event), like spins to the wheel device, and one at a time; see Videos.
 - A delivery is only given up after 7 days, the one way a paid request is allowed to fail.
+
+## Videos
+
+- The backend never passes a viewer's link on: it parses the YouTube video id or the Twitch clip slug out of it (`youtube.rs`, `clips.rs`) and Moblin builds the address to load from that, so Moblin only ever loads YouTube and Twitch.
+- Clips play whole, so their length comes from the lookup and one longer than the page's longest video is refused. They are looked up with the Twitch sign in's app, so without it they are refused, and in local development a clip is whatever the fake Twitch makes up for a real slug.
+- Every YouTube video is looked up at YouTube's oEmbed before an order or a subscriber's request is taken, which refuses videos that can't be embedded before any money moves and gives the title the moderators see. `--youtube-url` points it at the fake YouTube and is for the system tests only: local development looks up the real YouTube.
+- A moderated video is a delivery with `held` set, saved in the same transaction as its capture, and the delivery loop skips held ones. Approving clears the flag. Rejecting refunds a paid one before removing it, and while the provider refuses or loses the refund it stays held, so a video is never dropped with the money kept. A rejected subscriber's video is not given back.
+- A held delivery is given up after 7 days like any other.
+- `media.seconds` and `media.moderated` also hold for subscribers' videos while paid videos are off, as the feature's `enabled` is only about paying.
+- The backend owns the queue: the videos that wait are the unfinished deliveries, oldest `requested_at` first, so they survive a restart of the backend or of Moblin. Moblin only ever has the one it plays.
+- The next video is sent when the device's last `mediaShare` event says it plays nothing, and the queue is not paused. Moblin sends that event before it answers the tip, so a video Moblin took but does not play (one it already had) leaves it free and the next one follows at once.
+- A video is delivered once Moblin answers `ok`, so one cut off by Moblin leaving is not played again. Moblin ends a video that never starts or never ends with its own timers, so the backend has none.
+- Pause is kept in memory per page, so a restart resumes the queue. It only stops the next video from being sent. Skip is an ordinary control to the device.
+- The `playing` state's `requestId` is Moblin's request id, so a video sent again is `<order id>-<resends>` there.
+- How a video ended is the `idle` state's `lastEnded`, saved on its delivery as `outcome` for the recent lists. A video that failed is never sent again by the backend: the next one follows, and sending it again is the streamer's or an assistant's Send again, which clears `outcome`. Moblin repeats `lastEnded` in every `idle` event, so it only counts for the delivery whose Moblin request id it names, and a reason the backend does not know is read as none.
 
 ## Moblin sessions
 

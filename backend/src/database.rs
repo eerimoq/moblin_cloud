@@ -23,6 +23,29 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    let held = connection
+        .query_row(
+            "SELECT 1 FROM pragma_table_info('deliveries') WHERE name = 'held'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?;
+    if held.is_none() {
+        connection.execute(
+            "ALTER TABLE deliveries ADD COLUMN held INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    let outcome = connection
+        .query_row(
+            "SELECT 1 FROM pragma_table_info('deliveries') WHERE name = 'outcome'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?;
+    if outcome.is_none() {
+        connection.execute("ALTER TABLE deliveries ADD COLUMN outcome TEXT", [])?;
+    }
     for table in ["twitch_assistants", "kick_assistants"] {
         let secrets = connection
             .query_row(
@@ -135,7 +158,9 @@ impl Database {
                      failure TEXT,
                      finished INTEGER NOT NULL DEFAULT 0,
                      test TEXT,
-                     resends INTEGER NOT NULL DEFAULT 0
+                     resends INTEGER NOT NULL DEFAULT 0,
+                     held INTEGER NOT NULL DEFAULT 0,
+                     outcome TEXT
                  );
                  CREATE TABLE IF NOT EXISTS subscriber_allowances (
                      page TEXT NOT NULL,

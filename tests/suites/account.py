@@ -224,6 +224,7 @@ class AccountDevices(AccountTestCase):
                         "connected": True,
                         "reconnecting": False,
                         "wheel": False,
+                        "media": False,
                         "lastSeen": None,
                         "watchers": [],
                     }

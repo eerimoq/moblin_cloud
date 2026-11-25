@@ -16,6 +16,7 @@ fn kind_glyph(kind: Kind) -> Span<'static> {
         Kind::Tip => "♥ ".fg(ACCENT),
         Kind::Spin => "◎ ".cyan(),
         Kind::Effect => "✦ ".magenta(),
+        Kind::Media => "▶ ".red(),
     }
 }
 
@@ -31,6 +32,9 @@ fn activity_item<'a>(kind: Kind, item: &'a Item, now: u64, new: bool) -> ListIte
     }
     if let Some(effect) = &item.effect {
         first.push(format!(" · {}", effect_name(effect)).into());
+    }
+    if let Some(title) = &item.title {
+        first.push(format!(" · {title}").into());
     }
     first.push(format!("  {}", ago(now.saturating_sub(item.at))).fg(MUTED));
     let mut lines = vec![Line::from(first)];
@@ -48,8 +52,10 @@ fn activity_item<'a>(kind: Kind, item: &'a Item, now: u64, new: bool) -> ListIte
     if item.devices.is_empty() {
         devices.push(match item.status.as_str() {
             "delivered" => "Delivered".fg(MUTED),
+            "held" => "Waiting for approval".yellow(),
             _ => "Waiting for Moblin".yellow(),
         });
+        devices.push("  ".into());
     } else {
         for device in &item.devices {
             devices.push(if device.received {
@@ -58,6 +64,19 @@ fn activity_item<'a>(kind: Kind, item: &'a Item, now: u64, new: bool) -> ListIte
                 format!("… {}  ", device.name).yellow()
             });
         }
+    }
+    match item.outcome.as_deref() {
+        Some("finished") => devices.push("Played".green()),
+        Some("skipped") => devices.push("Skipped".fg(MUTED)),
+        Some("failedToStart") => devices.push("Did not start playing".red()),
+        Some("timedOut") => devices.push("Stopped, as it did not end in time".red()),
+        None if kind == Kind::Media
+            && item.status != "held"
+            && (item.status == "delivered" || !item.devices.is_empty()) =>
+        {
+            devices.push("Not played yet".yellow());
+        }
+        _ => {}
     }
     lines.push(Line::from(devices));
     let item = ListItem::new(lines);
@@ -72,7 +91,7 @@ pub fn draw(frame: &mut Frame, area: Rect, monitor: &Monitor, leaf: &Leaf) {
     let kinds = kinds_of(leaf);
     let [chips, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
     let mut title = vec![Span::raw(" ")];
-    for (index, label) in ["Message", "Wheel of luck", "Effect"]
+    for (index, label) in ["Message", "Wheel of luck", "Effect", "Media share"]
         .into_iter()
         .enumerate()
     {

@@ -29,6 +29,7 @@ pub(super) enum RecentResponse {
         tip: RecentList,
         spin: RecentList,
         effect: RecentList,
+        media: RecentList,
     },
 }
 
@@ -52,12 +53,20 @@ pub(super) struct Recent {
     #[serde(skip_serializing_if = "Option::is_none")]
     effect: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    video: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tier: Option<u8>,
     #[serde(rename = "kickSubscriber", skip_serializing_if = "std::ops::Not::not")]
     kick_subscriber: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<&'static str>,
     status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outcome: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     devices: Option<Vec<RecentDevice>>,
 }
@@ -77,7 +86,7 @@ pub(super) fn recent(
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
     let known = api.accounts.known_devices(page_id);
     match query.kind.as_deref() {
-        Some(kind @ ("tip" | "spin" | "effect")) => {
+        Some(kind @ ("tip" | "spin" | "effect" | "media")) => {
             let orders = api
                 .orders
                 .recent(page_id, kind, query.before.as_deref(), limit + 1);
@@ -118,6 +127,7 @@ pub(super) fn recent(
                 tip: list("tip"),
                 spin: list("spin"),
                 effect: list("effect"),
+                media: list("media"),
             }))
         }
     }
@@ -158,10 +168,17 @@ fn recent_list(
                 Payee::PayPal(_) | Payee::Stripe(_) if owner => Some(order.payee.slug()),
                 _ => None,
             };
-            let (message, spins, effect) = match order.item {
-                Item::Tip { message } => (message, None, None),
-                Item::Spin { spins, message } => (message, Some(spins), None),
-                Item::Effect { effect, message } => (message, None, Some(effect)),
+            let (message, spins, effect, video, title, link) = match order.item {
+                Item::Tip { message } => (message, None, None, None, None, None),
+                Item::Spin { spins, message } => (message, Some(spins), None, None, None, None),
+                Item::Effect { effect, message } => (message, None, Some(effect), None, None, None),
+                Item::Media {
+                    video,
+                    title,
+                    message,
+                    link,
+                    ..
+                } => (message, None, None, Some(video), Some(title), link),
             };
             Recent {
                 id,
@@ -172,14 +189,19 @@ fn recent_list(
                 message,
                 spins,
                 effect,
+                video,
+                title,
+                link,
                 tier,
                 kick_subscriber,
                 provider,
                 status: match &delivery {
                     None => "delivered",
                     Some(delivery) if delivery.finished => "delivered",
+                    Some(delivery) if delivery.held => "held",
                     Some(_) => "waiting",
                 },
+                outcome: delivery.and_then(|delivery| delivery.outcome),
                 devices,
             }
         })
@@ -204,6 +226,11 @@ fn recent_devices(
             Item::Spin { .. } => api
                 .remote_control
                 .wheel_device(page_id)
+                .into_iter()
+                .collect(),
+            Item::Media { .. } => api
+                .remote_control
+                .media_device(page_id)
                 .into_iter()
                 .collect(),
             Item::Tip { .. } | Item::Effect { .. } => api
@@ -282,6 +309,9 @@ pub(super) fn resend(
         order.streamer
     );
     api.remote_control.changes.notify(page_id, Change::Recent);
+    if matches!(order.item, Item::Media { .. }) {
+        api.remote_control.changes.notify(page_id, Change::Media);
+    }
     Ok(accepted())
 }
 

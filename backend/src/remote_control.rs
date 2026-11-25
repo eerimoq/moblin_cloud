@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -11,7 +11,7 @@ use log::info;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use tokio::task::AbortHandle;
 use tokio::time::{Instant, sleep, timeout, timeout_at};
 use uuid::Uuid;
@@ -131,6 +131,9 @@ enum Event {
     Icon {
         id: String,
     },
+    MediaShare {
+        state: MediaShareState,
+    },
     #[serde(rename_all = "camelCase")]
     Status {
         general: Option<Value>,
@@ -147,10 +150,69 @@ impl Event {
         match self {
             Self::WheelOfLuck { .. } => "wheelOfLuck",
             Self::Icon { .. } => "icon",
+            Self::MediaShare { .. } => "mediaShare",
             Self::Status { .. } => "status",
             Self::State { .. } => "state",
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaShareState {
+    Unavailable {},
+    #[serde(rename_all = "camelCase")]
+    Idle {
+        #[serde(default, deserialize_with = "lenient_last_ended")]
+        last_ended: Option<MediaShareEnded>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Playing {
+        request_id: String,
+    },
+}
+
+impl MediaShareState {
+    fn last_ended(&self) -> Option<&MediaShareEnded> {
+        match self {
+            Self::Idle { last_ended } => last_ended.as_ref(),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaShareEnded {
+    pub request_id: String,
+    pub reason: MediaShareEndedReason,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaShareEndedReason {
+    Finished {},
+    Skipped {},
+    FailedToStart {},
+    TimedOut {},
+}
+
+impl MediaShareEndedReason {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Finished {} => "finished",
+            Self::Skipped {} => "skipped",
+            Self::FailedToStart {} => "failedToStart",
+            Self::TimedOut {} => "timedOut",
+        }
+    }
+}
+
+fn lenient_last_ended<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<MediaShareEnded>, D::Error> {
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -362,6 +424,11 @@ pub enum Control {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<Uuid>,
     },
+    SetMoblinCloudMediaShareWidget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Uuid>,
+    },
+    SkipMoblinCloudMediaShare {},
 }
 
 fn has_uuid_id(object: &Value) -> bool {
@@ -447,6 +514,8 @@ impl Control {
             Self::GetVideoSourceSnapshot { .. } => "getVideoSourceSnapshot",
             Self::SetMoblinCloudAlertsWidget { .. } => "setMoblinCloudAlertsWidget",
             Self::SetMoblinCloudWheelOfLuckWidget { .. } => "setMoblinCloudWheelOfLuckWidget",
+            Self::SetMoblinCloudMediaShareWidget { .. } => "setMoblinCloudMediaShareWidget",
+            Self::SkipMoblinCloudMediaShare {} => "skipMoblinCloudMediaShare",
         }
     }
 
@@ -559,6 +628,7 @@ impl Control {
                 | Self::DeleteStream { .. }
                 | Self::SetMoblinCloudAlertsWidget { .. }
                 | Self::SetMoblinCloudWheelOfLuckWidget { .. }
+                | Self::SetMoblinCloudMediaShareWidget { .. }
         )
     }
 }
@@ -839,9 +909,33 @@ impl Drop for WatchGuard {
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TipKind {
-    Message { amount: String, currency: String },
-    Effect { sound: String },
-    WheelOfLuck { count: u32 },
+    Message {
+        amount: String,
+        currency: String,
+    },
+    Effect {
+        sound: String,
+    },
+    WheelOfLuck {
+        count: u32,
+    },
+    MediaShare {
+        source: MediaShareSource,
+        duration: u32,
+    },
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaShareSource {
+    #[serde(rename_all = "camelCase")]
+    YouTube {
+        video_id: String,
+        start: u32,
+    },
+    TwitchClip {
+        slug: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -858,6 +952,7 @@ struct Session {
     next_request_id: u64,
     pending: HashMap<u64, oneshot::Sender<(Outcome, Option<Value>)>>,
     wheel: Option<Wheel>,
+    media: MediaShareState,
     reconnecting: bool,
     status_requested: bool,
     preview_requested: bool,
@@ -904,6 +999,8 @@ struct Sessions {
     by_page: HashMap<String, Vec<Session>>,
     monitors: HashMap<(String, String), Monitor>,
     previews: HashMap<(String, String), PreviewMonitor>,
+    media_paused: HashSet<String>,
+    media_ended: Vec<(String, MediaShareEnded)>,
 }
 
 impl Sessions {
@@ -951,12 +1048,20 @@ impl Sessions {
             .find(|session| session.wheel.is_some())
             .or(sessions.first())
     }
+
+    fn media(&self, page_id: &str) -> Option<&Session> {
+        self.by_page
+            .get(page_id)?
+            .iter()
+            .find(|session| session.media != MediaShareState::Unavailable {})
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Device {
     pub id: String,
     pub wheel: bool,
+    pub media: bool,
     pub reconnecting: bool,
 }
 
@@ -980,6 +1085,7 @@ pub struct Streamers {
     linger: Duration,
     pub traffic: Traffic,
     pub changes: Arc<Changes>,
+    pub media_changed: Notify,
 }
 
 pub struct Socket {
@@ -1033,6 +1139,7 @@ impl Streamers {
             linger,
             traffic: Traffic::default(),
             changes: Arc::default(),
+            media_changed: Notify::new(),
         }
     }
 
@@ -1103,6 +1210,7 @@ impl Streamers {
             .wheel(page_id)
             .filter(|session| session.wheel.is_some())
             .map(|session| session.number);
+        let media = sessions.media(page_id).map(|session| session.number);
         sessions
             .by_page
             .get(page_id)
@@ -1111,6 +1219,7 @@ impl Streamers {
             .map(|session| Device {
                 id: session.device.clone(),
                 wheel: wheel == Some(session.number),
+                media: media == Some(session.number),
                 reconnecting: session.reconnecting,
             })
             .collect()
@@ -1126,6 +1235,50 @@ impl Streamers {
                 (device.clone(), monitor.watchers.keys().cloned().collect())
             })
             .collect()
+    }
+
+    pub fn media_device(&self, page_id: &str) -> Option<String> {
+        self.media(page_id).map(|(device, _)| device)
+    }
+
+    pub fn media(&self, page_id: &str) -> Option<(String, MediaShareState)> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions
+            .media(page_id)
+            .map(|session| (session.device.clone(), session.media.clone()))
+    }
+
+    pub fn media_ready(&self, page_id: &str) -> Option<String> {
+        let sessions = self.sessions.lock().unwrap();
+        if sessions.media_paused.contains(page_id) {
+            return None;
+        }
+        sessions
+            .media(page_id)
+            .filter(|session| {
+                !session.reconnecting && matches!(session.media, MediaShareState::Idle { .. })
+            })
+            .map(|session| session.device.clone())
+    }
+
+    pub fn take_media_ended(&self) -> Vec<(String, MediaShareEnded)> {
+        std::mem::take(&mut self.sessions.lock().unwrap().media_ended)
+    }
+
+    pub fn media_paused(&self, page_id: &str) -> bool {
+        self.sessions.lock().unwrap().media_paused.contains(page_id)
+    }
+
+    pub fn set_media_paused(&self, page_id: &str, on: bool) {
+        let mut sessions = self.sessions.lock().unwrap();
+        if on {
+            sessions.media_paused.insert(page_id.to_string());
+        } else {
+            sessions.media_paused.remove(page_id);
+        }
+        drop(sessions);
+        self.changes.notify(page_id, Change::Media);
+        self.media_changed.notify_one();
     }
 
     pub fn wheel_device(&self, page_id: &str) -> Option<String> {
@@ -1196,6 +1349,7 @@ impl Streamers {
             next_request_id: 0,
             pending: HashMap::new(),
             wheel: None,
+            media: MediaShareState::Unavailable {},
             reconnecting: false,
             status_requested: false,
             preview_requested: false,
@@ -1205,6 +1359,7 @@ impl Streamers {
         match page_sessions.iter_mut().find(|old| old.device == device) {
             Some(old) => {
                 session.wheel = old.wheel.take();
+                session.media = old.media.clone();
                 *old = session;
             }
             None => page_sessions.push(session),
@@ -1401,6 +1556,27 @@ impl Streamers {
                 if let Some(session) = sessions.get_mut(page_id, device, Some(number)) {
                     session.wheel = wheel.and_then(Wheel::normalize);
                     self.changes.notify(page_id, Change::Page);
+                }
+            }
+            MessageToAssistant::Event {
+                data: Event::MediaShare { state },
+            } => {
+                let mut sessions = self.sessions.lock().unwrap();
+                let available = sessions.media(page_id).is_some();
+                if let Some(session) = sessions.get_mut(page_id, device, Some(number)) {
+                    let ended = state
+                        .last_ended()
+                        .filter(|ended| session.media.last_ended() != Some(ended))
+                        .cloned();
+                    session.media = state;
+                    if let Some(ended) = ended {
+                        sessions.media_ended.push((page_id.to_string(), ended));
+                    }
+                    if sessions.media(page_id).is_some() != available {
+                        self.changes.notify(page_id, Change::Page);
+                    }
+                    self.changes.notify(page_id, Change::Media);
+                    self.media_changed.notify_one();
                 }
             }
             MessageToAssistant::Event {

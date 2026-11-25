@@ -1,9 +1,10 @@
 import { createSignal, For, Index, Show } from "solid-js";
 import Icon from "./Icon";
 import { cardClass, ghostButtonClass, Spinner } from "./PageParts";
-import type { Recent, RecentKind, RecentList } from "../data/account";
+import { recentKinds, type Recent, type RecentKind, type RecentList } from "../data/account";
 import { formatPrice, providerName, spinsText } from "../data/remoteControl";
 import { effectName } from "../data/effects";
+import { youTubeUrl } from "../data/youtube";
 import { language, t } from "../i18n";
 import { sameData } from "../same";
 
@@ -34,6 +35,25 @@ export const amountLabel = (item: Recent) =>
       ? t("Tier {tier} subscriber", { tier: item.tier })
       : formatPrice({ price: item.amount, currency: item.currency });
 
+export function VideoLink(props: {
+  video: string;
+  start?: number;
+  link?: string;
+  title: string;
+  class?: string;
+}) {
+  return (
+    <a
+      href={props.link ?? youTubeUrl(props.video, props.start ?? 0)}
+      target="_blank"
+      rel="noopener noreferrer"
+      class={`underline decoration-line underline-offset-2 hover:text-ink ${props.class ?? ""}`}
+    >
+      {props.title}
+    </a>
+  );
+}
+
 export function ReceivedDevices(props: {
   devices: NonNullable<Recent["devices"]>;
   compact?: boolean;
@@ -59,6 +79,57 @@ export function ReceivedDevices(props: {
         )}
       </Index>
     </ul>
+  );
+}
+
+export function Status(props: { item: Recent; compact?: boolean }) {
+  const status = (): {
+    text: string;
+    icon: "check" | "clock" | "warning" | "close";
+    color: string;
+  } | null => {
+    const item = props.item;
+    if (item.status === "held") {
+      return { text: t("Waiting for approval"), icon: "clock", color: "bg-well text-muted" };
+    }
+    switch (item.outcome) {
+      case "finished":
+        return { text: t("Played"), icon: "check", color: "bg-well text-leaf" };
+      case "skipped":
+        return { text: t("Skipped"), icon: "close", color: "bg-well text-muted" };
+      case "failedToStart":
+        return {
+          text: t("Did not start playing"),
+          icon: "warning",
+          color: "bg-danger-bg text-danger",
+        };
+      case "timedOut":
+        return {
+          text: t("Stopped, as it did not end in time"),
+          icon: "warning",
+          color: "bg-danger-bg text-danger",
+        };
+    }
+    if (item.status === "waiting" && !item.devices?.length) {
+      return { text: t("Waiting for Moblin"), icon: "clock", color: "bg-well text-muted" };
+    }
+    return item.video
+      ? { text: t("Not played yet"), icon: "clock", color: "bg-amber-bg text-amber" }
+      : null;
+  };
+  return (
+    <Show when={status()}>
+      {(status) => (
+        <span
+          class={`inline-flex items-center self-start rounded-full font-semibold ${
+            props.compact ? "gap-1 px-2 py-0.5 text-[12px]" : "gap-1.5 px-3 py-1 text-[14px]"
+          } ${status().color}`}
+        >
+          <Icon name={status().icon} class={`${props.compact ? "size-3" : "size-4"} shrink-0`} />
+          {status().text}
+        </span>
+      )}
+    </Show>
   );
 }
 
@@ -95,13 +166,19 @@ export function Latest(props: {
   const [loading, setLoading] = createSignal(false);
   const { resending, failed, resend } = createResend((item) => props.onResend(item));
   const title = () =>
-    ({ tip: t("Received messages"), spin: t("Received spins"), effect: t("Received effects") })[
-      props.kind
-    ];
+    ({
+      tip: t("Received messages"),
+      spin: t("Received spins"),
+      effect: t("Received effects"),
+      media: t("Received videos"),
+    })[props.kind];
   const empty = () =>
-    ({ tip: t("No messages yet."), spin: t("No spins yet."), effect: t("No effects yet.") })[
-      props.kind
-    ];
+    ({
+      tip: t("No messages yet."),
+      spin: t("No spins yet."),
+      effect: t("No effects yet."),
+      media: t("No videos yet."),
+    })[props.kind];
   const more = async () => {
     setLoading(true);
     try {
@@ -122,10 +199,10 @@ export function Latest(props: {
             <ul class="flex flex-col divide-y divide-line">
               <For each={list().items}>
                 {(item) => (
-                  <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
-                    <div class="flex min-w-0 flex-col gap-0.5">
-                      <span class="flex flex-wrap items-baseline gap-x-2">
-                        <span class="font-semibold">{item.user}</span>
+                  <li class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0">
+                    <div class="flex items-baseline justify-between gap-4">
+                      <span class="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                        <span class="font-semibold wrap-anywhere">{item.user}</span>
                         <span class="text-ink-2">
                           {amountLabel(item)}
                           <Show when={item.provider}>
@@ -138,43 +215,58 @@ export function Latest(props: {
                           </Show>
                         </span>
                       </span>
-                      <Show when={item.spins}>
-                        {(spins) => <span class="text-ink-2">{spinsText(spins())}</span>}
-                      </Show>
-                      <Show when={item.effect}>
-                        {(effect) => (
-                          <span class="flex items-center gap-1 text-ink-2">
-                            <Icon name="play" class="size-4 shrink-0" />
-                            {effectName(effect())}
-                          </span>
-                        )}
-                      </Show>
-                      <Show when={item.message}>
-                        {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
-                      </Show>
-                      <Show when={item.devices && item.devices.length > 0 && item.devices}>
-                        {(devices) => <ReceivedDevices devices={devices()} />}
-                      </Show>
+                      <span class="shrink-0 text-[15px] text-muted">{timeAgo(item.at)}</span>
                     </div>
-                    <div class="flex flex-col items-end gap-1 text-[15px]">
-                      <div class="flex items-baseline gap-3">
-                        <span class="text-muted">{timeAgo(item.at)}</span>
-                        <Show when={item.status === "waiting" && !item.devices?.length}>
-                          <span class="text-muted">{t("Waiting for Moblin")}</span>
+                    <Show when={item.spins}>
+                      {(spins) => <span class="text-ink-2">{spinsText(spins())}</span>}
+                    </Show>
+                    <Show when={item.effect}>
+                      {(effect) => (
+                        <span class="flex items-center gap-1.5 text-ink-2">
+                          <Icon name="play" class="size-4 shrink-0" />
+                          {effectName(effect())}
+                        </span>
+                      )}
+                    </Show>
+                    <Show when={item.video}>
+                      {(video) => (
+                        <span class="flex items-start gap-1.5 text-ink">
+                          <Icon name="play" class="mt-1 size-4 shrink-0 text-ink-2" />
+                          <VideoLink
+                            video={video()}
+                            link={item.link}
+                            title={item.title ?? video()}
+                            class="line-clamp-2 wrap-anywhere"
+                          />
+                        </span>
+                      )}
+                    </Show>
+                    <Show when={item.message}>
+                      {(message) => <span class="text-ink-2 wrap-anywhere">{message()}</span>}
+                    </Show>
+                    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <Status item={item} />
+                        <Show when={item.devices && item.devices.length > 0 && item.devices}>
+                          {(devices) => <ReceivedDevices devices={devices()} />}
                         </Show>
                       </div>
-                      <button
-                        type="button"
-                        class={`${ghostButtonClass} h-9! px-4! text-[15px]!`}
-                        disabled={resending() !== null}
-                        onClick={() => resend(item)}
-                      >
-                        {resending() === item.id ? t("Sending…") : t("Send again")}
-                      </button>
-                      <Show when={failed() === item.id}>
-                        <span class="text-danger">{t("Sending did not work. Try again.")}</span>
+                      <Show when={item.status !== "held"}>
+                        <button
+                          type="button"
+                          class={`${ghostButtonClass} ml-auto h-9! px-4! text-[15px]!`}
+                          disabled={resending() !== null}
+                          onClick={() => resend(item)}
+                        >
+                          {resending() === item.id ? t("Sending…") : t("Send again")}
+                        </button>
                       </Show>
                     </div>
+                    <Show when={failed() === item.id}>
+                      <span class="text-[15px] text-danger">
+                        {t("Sending did not work. Try again.")}
+                      </span>
+                    </Show>
                   </li>
                 )}
               </For>
@@ -206,14 +298,8 @@ export function createRecent(
   const loadRecent = async () => {
     const shown = recent();
     try {
-      const { tip, spin, effect } = await fetchAll(
-        Math.min(
-          Math.max(
-            ...(["tip", "spin", "effect"] as const).map((kind) => shown?.[kind].items.length ?? 0),
-            5,
-          ),
-          50,
-        ),
+      const fetched = await fetchAll(
+        Math.min(Math.max(...recentKinds.map((kind) => shown?.[kind]?.items.length ?? 0), 5), 50),
       );
       const merge = (fetched: RecentList, old: RecentList | undefined) => {
         const kept = new Map(old?.items.map((item) => [item.id, item]));
@@ -231,10 +317,12 @@ export function createRecent(
         }
         return { items: [...page.items, ...old.items.slice(index + 1)], more: old.more };
       };
+      const empty: RecentList = { items: [], more: false };
       setRecent((old) => ({
-        tip: merge(tip, old?.tip),
-        spin: merge(spin, old?.spin),
-        effect: merge(effect, old?.effect),
+        tip: merge(fetched.tip, old?.tip),
+        spin: merge(fetched.spin, old?.spin),
+        effect: merge(fetched.effect, old?.effect),
+        media: merge(fetched.media ?? empty, old?.media),
       }));
     } catch (error) {
       onError(error);

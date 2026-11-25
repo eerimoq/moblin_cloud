@@ -23,6 +23,10 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub_effects: Option<Feature<Tiers>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<Feature<Media>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_media: Option<Feature<Tiers>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
@@ -66,6 +70,29 @@ pub struct Tips {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Effects {
     pub price: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Media {
+    pub price: u32,
+    pub seconds: u32,
+    #[serde(default = "enabled")]
+    pub moderated: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MediaRules {
+    pub seconds: u32,
+    pub moderated: bool,
+}
+
+impl Default for MediaRules {
+    fn default() -> Self {
+        Self {
+            seconds: 60,
+            moderated: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -138,6 +165,23 @@ impl Settings {
         active(&self.sub_effects)
     }
 
+    pub fn media(&self) -> Option<&Media> {
+        active(&self.media)
+    }
+
+    pub fn sub_media(&self) -> Option<&Tiers> {
+        active(&self.sub_media)
+    }
+
+    pub fn media_rules(&self) -> MediaRules {
+        self.media
+            .as_ref()
+            .map_or(MediaRules::default(), |media| MediaRules {
+                seconds: media.value.seconds,
+                moderated: media.value.moderated,
+            })
+    }
+
     pub fn normalize(self) -> Result<Self, SettingsError> {
         let currency = match self.currency.map(|currency| currency.trim().to_uppercase()) {
             Some(currency) if !CURRENCIES.contains(&currency.as_str()) => {
@@ -176,6 +220,15 @@ impl Settings {
         };
         let sub_spins = tiers(self.sub_spins)?;
         let sub_effects = tiers(self.sub_effects)?;
+        let sub_media = tiers(self.sub_media)?;
+        let media = match self.media {
+            Some(media) => Some(
+                media
+                    .normalize(Media::normalize)
+                    .ok_or(SettingsError::InvalidMedia)?,
+            ),
+            None => None,
+        };
         let accent = match self.accent.map(|accent| accent.to_lowercase()) {
             Some(accent) if !ACCENTS.contains(&accent.as_str()) && !is_color(&accent) => {
                 return Err(SettingsError::InvalidPage);
@@ -195,6 +248,8 @@ impl Settings {
             effects,
             sub_spins,
             sub_effects,
+            media,
+            sub_media,
             message: text(self.message, 300)?,
             accent,
             font,
@@ -239,6 +294,12 @@ impl Effects {
     }
 }
 
+impl Media {
+    pub fn normalize(self) -> Option<Self> {
+        (valid_price(self.price) && (5..=600).contains(&self.seconds)).then_some(self)
+    }
+}
+
 impl Tiers {
     pub fn normalize(self) -> Option<Self> {
         let tiers = [self.tier1, self.tier2, self.tier3];
@@ -262,6 +323,7 @@ pub enum SettingsError {
     InvalidTips,
     InvalidSpin,
     InvalidEffects,
+    InvalidMedia,
     InvalidTiers,
     InvalidPage,
     Full,

@@ -212,11 +212,11 @@ async fn up_to_5_devices_connect_with_one_key() {
     assert_eq!(
         account["devices"],
         json!([
-            {"id": "a", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
-            {"id": "b", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
-            {"id": "c", "name": "Moblin 3", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
-            {"id": "d", "name": "Moblin 4", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
-            {"id": "e", "name": "Moblin 5", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
+            {"id": "a", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "media": false, "lastSeen": null, "watchers": []},
+            {"id": "b", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": false, "media": false, "lastSeen": null, "watchers": []},
+            {"id": "c", "name": "Moblin 3", "connected": true, "reconnecting": false, "wheel": false, "media": false, "lastSeen": null, "watchers": []},
+            {"id": "d", "name": "Moblin 4", "connected": true, "reconnecting": false, "wheel": false, "media": false, "lastSeen": null, "watchers": []},
+            {"id": "e", "name": "Moblin 5", "connected": true, "reconnecting": false, "wheel": false, "media": false, "lastSeen": null, "watchers": []},
         ])
     );
     assert_eq!(api.remote_control.connected_count(), 5);
@@ -406,8 +406,8 @@ async fn spins_go_to_the_first_device_with_a_wheel_and_tips_to_all() {
     assert_eq!(
         account["devices"],
         json!([
-            {"id": "main", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "lastSeen": null, "watchers": []},
-            {"id": "other", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": true, "lastSeen": null, "watchers": []},
+            {"id": "main", "name": "Moblin 1", "connected": true, "reconnecting": false, "wheel": false, "media": false, "lastSeen": null, "watchers": []},
+            {"id": "other", "name": "Moblin 2", "connected": true, "reconnecting": false, "wheel": true, "media": false, "lastSeen": null, "watchers": []},
         ])
     );
     let spin_url = format!("http://{address}/pages/{page_id}/spin");

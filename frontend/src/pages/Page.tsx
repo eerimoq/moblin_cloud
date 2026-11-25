@@ -45,6 +45,7 @@ import {
   idOfLogin,
   loadFonts,
   orderEffect,
+  orderMedia,
   orderSpin,
   orderTip,
   pageImageUrl,
@@ -53,8 +54,10 @@ import {
   providerName,
   spinsText,
   requestSubscriberEffect,
+  requestSubscriberMedia,
   requestSubscriberSpin,
   streamerEffects,
+  streamerMedia,
   streamerProfile,
   pageEventsUrl,
   streamerSpin,
@@ -66,19 +69,23 @@ import {
   type EffectOption,
   type Perk,
   type Identity,
+  type MediaOffer,
   type Order,
   type PayPalConfig,
   type Platform,
   type Profile,
   type Provider,
   type PublicEffects,
+  type PublicMedia,
   type PublicPayment,
   type PublicSpin,
   type PublicTips,
   type StripeConfig,
   type Tiers,
+  type VideoRequest,
   type Wheel,
 } from "../data/remoteControl";
+import { parseTime, timeText, mediaLink, youTubeStart, youTubeThumbnail } from "../data/youtube";
 import { effectCredit, effectName, playEffect, playingEffect, stopEffect } from "../data/effects";
 import { t, tRich } from "../i18n";
 import { sameData } from "../same";
@@ -102,7 +109,7 @@ function takeSection(): Section {
   try {
     const section = sessionStorage.getItem(sectionKey);
     sessionStorage.removeItem(sectionKey);
-    return section === "tip" || section === "effect" ? section : "spin";
+    return section === "tip" || section === "effect" || section === "media" ? section : "spin";
   } catch {
     return "spin";
   }
@@ -135,6 +142,7 @@ type Draft = {
   tip?: { choice: number | "other"; other: string; message: string };
   spin?: { spins: number; price: number; message: string };
   effect?: { effect: string | null; message: string };
+  media?: { link: string; start: string; end: string; message: string };
 };
 
 function takeDraft(): Draft {
@@ -694,7 +702,9 @@ function SubscriberBox(props: {
       lines.push(
         props.perk === "spin"
           ? t("{counts} spins a month for tier {tiers}", values)
-          : t("{counts} effects a month for tier {tiers}", values),
+          : props.perk === "effect"
+            ? t("{counts} effects a month for tier {tiers}", values)
+            : t("{counts} videos a month for tier {tiers}", values),
       );
     }
     if (props.platforms.includes("kick") && props.tiers.tier1 > 0) {
@@ -702,7 +712,9 @@ function SubscriberBox(props: {
       lines.push(
         props.perk === "spin"
           ? t("{count} spins a month for Kick subscribers", values)
-          : t("{count} effects a month for Kick subscribers", values),
+          : props.perk === "effect"
+            ? t("{count} effects a month for Kick subscribers", values)
+            : t("{count} videos a month for Kick subscribers", values),
       );
     }
     return (
@@ -734,25 +746,35 @@ function SubscriberBox(props: {
                 <Match when={current().allowance === 0 && current().platform === "kick"}>
                   {props.perk === "spin"
                     ? t("Kick subscribers can't spin the wheel here.")
-                    : t("Kick subscribers can't play effects here.")}
+                    : props.perk === "effect"
+                      ? t("Kick subscribers can't play effects here.")
+                      : t("Kick subscribers can't play videos here.")}
                 </Match>
                 <Match when={current().allowance === 0}>
                   {props.perk === "spin"
                     ? t("Tier {tier} subscribers can't spin the wheel here.", {
                         tier: current().tier ?? 0,
                       })
-                    : t("Tier {tier} subscribers can't play effects here.", {
-                        tier: current().tier ?? 0,
-                      })}
+                    : props.perk === "effect"
+                      ? t("Tier {tier} subscribers can't play effects here.", {
+                          tier: current().tier ?? 0,
+                        })
+                      : t("Tier {tier} subscribers can't play videos here.", {
+                          tier: current().tier ?? 0,
+                        })}
                 </Match>
                 <Match when={current().left === 0}>
                   {props.perk === "spin"
                     ? t(
                         "You have used all your spins this month. New ones come on the 1st of the month.",
                       )
-                    : t(
-                        "You have used all your effects this month. New ones come on the 1st of the month.",
-                      )}
+                    : props.perk === "effect"
+                      ? t(
+                          "You have used all your effects this month. New ones come on the 1st of the month.",
+                        )
+                      : t(
+                          "You have used all your videos this month. New ones come on the 1st of the month.",
+                        )}
                 </Match>
                 <Match when={current().left > 0}>
                   {props.perk === "spin"
@@ -760,10 +782,15 @@ function SubscriberBox(props: {
                         left: current().left,
                         allowance: current().allowance,
                       })
-                    : t("{left} of {allowance} effects left this month", {
-                        left: current().left,
-                        allowance: current().allowance,
-                      })}
+                    : props.perk === "effect"
+                      ? t("{left} of {allowance} effects left this month", {
+                          left: current().left,
+                          allowance: current().allowance,
+                        })
+                      : t("{left} of {allowance} videos left this month", {
+                          left: current().left,
+                          allowance: current().allowance,
+                        })}
                 </Match>
               </Switch>
             )}
@@ -800,7 +827,11 @@ function SubscriberBox(props: {
                 onClick={() => props.onRequest()}
               >
                 <Icon name={current().platform} class={platformIconClass(current().platform)} />
-                {props.perk === "spin" ? t("Spin the wheel") : t("Play the effect")}
+                {props.perk === "spin"
+                  ? t("Spin the wheel")
+                  : props.perk === "effect"
+                    ? t("Play the effect")
+                    : t("Play the video")}
               </button>
             </Show>
             <p class="text-center text-sm text-muted">
@@ -1189,6 +1220,324 @@ function EffectJar(props: {
             signedIn={props.viewer !== null}
             paid={props.effects !== null}
             disabled={pay.busy() || effect() === null}
+            result={pay.result()}
+            onCloseResult={pay.closeResult}
+            onSignIn={props.onSignIn}
+            onSignOut={props.onSignOut}
+            onRequest={playAsSubscriber}
+          />
+        )}
+      </Show>
+    </form>
+  );
+}
+
+const lengthText = (seconds: number) =>
+  seconds === 60
+    ? t("1 minute")
+    : seconds % 60 === 0
+      ? t("{count} minutes", { count: seconds / 60 })
+      : t("{count} seconds", { count: seconds });
+
+function MediaJar(props: {
+  id: string;
+  offer: MediaOffer;
+  media: (PublicMedia & { payment: Payment }) | null;
+  platforms: Platform[];
+  allowance: Allowance | null;
+  viewer: string | null;
+  name: string;
+  onName: (name: string) => void;
+  onError: (error: unknown) => void;
+  onPaid: (text: string, title?: string) => void;
+  onSignIn: (platform: Platform) => void;
+  onSignOut: () => void;
+  onAllowance: (left?: number) => void;
+  signInFailed: string | null;
+}) {
+  const saved = restored(props.id).media;
+  const [link, setLink] = createSignal(saved?.link ?? "");
+  const [start, setStart] = createSignal(saved?.start ?? "0:00");
+  const longest = () => props.offer.seconds ?? 0;
+  const [end, setEnd] = createSignal(
+    saved?.end ?? timeText((parseTime(start()) ?? 0) + Math.min(30, longest())),
+  );
+  const [message, setMessage] = createSignal(saved?.message ?? "");
+  let form: HTMLFormElement | undefined;
+  let linkInput: HTMLInputElement | undefined;
+  let startInput: HTMLInputElement | undefined;
+  let endInput: HTMLInputElement | undefined;
+
+  const seconds = () => {
+    const from = parseTime(start());
+    const to = parseTime(end());
+    return from !== null && to !== null && to > from ? to - from : null;
+  };
+  let length = seconds() ?? Math.min(30, longest());
+  const endError = () => {
+    if (clip()) {
+      return "";
+    }
+    const to = parseTime(end());
+    if (to === null) {
+      return t("Enter a time like 1:30.");
+    }
+    const from = parseTime(start());
+    if (from === null) {
+      return "";
+    }
+    if (to <= from) {
+      return t("Enter an end time after the start time.");
+    }
+    return to - from > longest()
+      ? t("The streamer plays at most {length}.", { length: lengthText(longest()) })
+      : "";
+  };
+  const found = () => mediaLink(link());
+  const video = () => {
+    const current = found();
+    return current?.platform === "youtube" ? current.id : null;
+  };
+  const clip = () => {
+    const current = found();
+    return current !== null && current.platform !== "youtube";
+  };
+  const request = (): VideoRequest | null => {
+    if (clip()) {
+      return { url: link().trim() };
+    }
+    const url = video();
+    const from = parseTime(start());
+    const played = seconds();
+    return url !== null && from !== null && played !== null && played <= longest()
+      ? { url, start: from, seconds: played }
+      : null;
+  };
+
+  createEffect(() => {
+    draft.media = { link: link(), start: start(), end: end(), message: message() };
+  });
+  createEffect(() => {
+    linkInput?.setCustomValidity(
+      found() === null ? t("Enter a link to a YouTube video or a Twitch clip.") : "",
+    );
+  });
+  createEffect(() => {
+    startInput?.setCustomValidity(
+      !clip() && parseTime(start()) === null ? t("Enter a time like 1:30.") : "",
+    );
+  });
+  createEffect(() => {
+    endInput?.setCustomValidity(endError());
+  });
+
+  const changeStart = (value: string) => {
+    setStart(value);
+    const from = parseTime(value);
+    if (from !== null) {
+      setEnd(timeText(from + length));
+    }
+  };
+
+  const changeEnd = (value: string) => {
+    setEnd(value);
+    length = seconds() ?? length;
+  };
+
+  const changeLink = (value: string) => {
+    setLink(value);
+    const from = youTubeStart(value);
+    if (from !== null) {
+      changeStart(timeText(from));
+    }
+  };
+
+  const sentText = () =>
+    props.offer.moderated
+      ? t("Your video plays on stream once the streamer has approved it.")
+      : t("Your video is on its way to the streamer.");
+
+  const sent = () => {
+    setLink("");
+    changeStart("0:00");
+    setMessage("");
+  };
+
+  const pay = createPay({
+    failed: props.signInFailed,
+    ready: () => !!form?.reportValidity() && request() !== null,
+    name: () => props.name,
+    order: (provider) =>
+      orderMedia(
+        props.id,
+        request() ?? { url: "" },
+        props.media?.price ?? 0,
+        props.name.trim(),
+        message().trim(),
+        provider,
+      ),
+    capture: (orderId) => captureOrder("media", props.id, orderId),
+    paid: () => {
+      props.onPaid(sentText());
+      sent();
+    },
+    cancelled: t("Tip cancelled. No video was sent."),
+    onError: (error) => props.onError(error),
+  });
+
+  const playAsSubscriber = () => {
+    const viewer = props.viewer;
+    if (!viewer || !form?.reportValidity()) {
+      return;
+    }
+    const current = request();
+    if (current === null) {
+      return;
+    }
+    void pay.request(
+      () => requestSubscriberMedia(props.id, viewer, current, message().trim()),
+      ({ left }) => {
+        props.onPaid(sentText(), t("Enjoy the video!"));
+        sent();
+        props.onAllowance(left);
+      },
+      () => props.onAllowance(),
+    );
+  };
+
+  return (
+    <form
+      ref={(element) => (form = element)}
+      class={cardClass}
+      onSubmit={(event) => event.preventDefault()}
+    >
+      <p class="text-ink-2">
+        {t(
+          "Pick a YouTube video and the part of it to play, or a Twitch clip. It plays live on stream.",
+        )}
+        <Show when={props.offer.moderated}>
+          {" "}
+          {props.media
+            ? t(
+                "The streamer approves every video first. If yours is turned down, your tip is refunded.",
+              )
+            : t("The streamer approves every video first.")}
+        </Show>
+      </p>
+      <Show when={!props.offer.available}>
+        <Notice>
+          {props.offer.connected
+            ? t("The streamer is not taking videos right now.")
+            : t("Videos are not available right now. Try again when the streamer is live.")}
+        </Notice>
+      </Show>
+      <label class="flex flex-col gap-2">
+        <span class="text-[15px] font-semibold text-ink-2">{t("YouTube or Twitch clip link")}</span>
+        <input
+          ref={(element) => (linkInput = element)}
+          type="text"
+          inputmode="url"
+          required
+          maxLength={200}
+          value={link()}
+          onInput={(event) => changeLink(event.currentTarget.value)}
+          placeholder="https://youtu.be/…"
+          autocomplete="off"
+          class={inputClass}
+        />
+      </label>
+      <Show when={video()} keyed>
+        {(id) => (
+          <img
+            src={youTubeThumbnail(id)}
+            alt=""
+            class="aspect-video w-full max-w-80 self-center rounded-2xl border-[1.5px] border-line bg-well object-cover"
+          />
+        )}
+      </Show>
+      <div class={`flex flex-col gap-2 ${clip() ? "hidden" : ""}`}>
+        <div class="flex flex-wrap gap-3">
+          <label class="flex flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">{t("Start at")}</span>
+            <input
+              ref={(element) => (startInput = element)}
+              type="text"
+              inputmode="numeric"
+              required={!clip()}
+              maxLength={8}
+              value={start()}
+              onInput={(event) => changeStart(event.currentTarget.value)}
+              placeholder="0:00"
+              autocomplete="off"
+              class={`${inputClass} max-w-32`}
+            />
+          </label>
+          <label class="flex flex-col gap-2">
+            <span class="text-[15px] font-semibold text-ink-2">{t("End at")}</span>
+            <input
+              ref={(element) => (endInput = element)}
+              type="text"
+              inputmode="numeric"
+              required={!clip()}
+              maxLength={8}
+              value={end()}
+              onInput={(event) => changeEnd(event.currentTarget.value)}
+              placeholder="0:30"
+              autocomplete="off"
+              class={`${inputClass} max-w-32`}
+            />
+          </label>
+        </div>
+        <p class="text-[15px] text-muted">
+          {t("The streamer plays at most {length}.", { length: lengthText(longest()) })}
+        </p>
+      </div>
+      <Show when={clip()}>
+        <p class="text-[15px] text-muted">
+          {t("Clips play whole, if they are at most {length}.", {
+            length: lengthText(longest()),
+          })}
+        </p>
+      </Show>
+      <NameField
+        name={props.name}
+        onName={props.onName}
+        placeholder={t("Shown with your video")}
+        hidden={!props.media}
+      />
+      <MessageField
+        message={message()}
+        onMessage={setMessage}
+        placeholder={t("You have to see this!")}
+      />
+      <Show when={props.media} keyed>
+        {(media) => (
+          <PayFooter
+            label={
+              clip() || seconds() === null
+                ? undefined
+                : tRich("Your tip · {length}", {
+                    length: <span class="font-body">{lengthText(seconds() ?? 0)}</span>,
+                  })
+            }
+            price={formatPrice({ price: media.price, currency: media.currency })}
+            pay={pay}
+            payment={media.payment}
+            disabled={pay.busy() || !props.offer.available}
+            resetKey={`${link()}\n${start()}\n${end()}\n${media.price}\n${props.name}\n${message()}`}
+          />
+        )}
+      </Show>
+      <Show when={props.offer.subMedia} keyed>
+        {(tiers) => (
+          <SubscriberBox
+            perk="media"
+            tiers={tiers}
+            platforms={props.platforms}
+            allowance={props.allowance}
+            signedIn={props.viewer !== null}
+            paid={props.media !== null}
+            disabled={pay.busy() || !props.offer.available}
             result={pay.result()}
             onCloseResult={pay.closeResult}
             onSignIn={props.onSignIn}
@@ -1695,7 +2044,7 @@ function SpinWheel(props: {
   );
 }
 
-type Section = "tip" | "spin" | "effect";
+type Section = "tip" | "spin" | "effect" | "media";
 
 type Way = {
   section: Section;
@@ -1736,7 +2085,13 @@ function WaysToTip(props: {
       </div>
       <div
         role="tablist"
-        class={`grid gap-3 ${props.ways.length > 2 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+        class={`grid gap-2 sm:gap-3 ${
+          props.ways.length > 3
+            ? "grid-cols-2 sm:grid-cols-4"
+            : props.ways.length > 2
+              ? "grid-cols-3"
+              : "grid-cols-2"
+        }`}
       >
         <For each={props.ways}>
           {(way) => {
@@ -1747,8 +2102,9 @@ function WaysToTip(props: {
                 role="tab"
                 aria-selected={selected()}
                 disabled={!way.enabled}
+                title={way.text}
                 onClick={() => props.onSection(way.section)}
-                class={`flex items-center gap-4 rounded-3xl border-[1.5px] p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 sm:flex-col sm:items-start sm:gap-3 sm:p-5 ${
+                class={`flex min-w-0 flex-col items-center gap-2 rounded-3xl border-[1.5px] px-2 py-4 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                   selected()
                     ? "border-moss bg-well"
                     : "border-line bg-card enabled:hover:border-leaf"
@@ -1765,9 +2121,8 @@ function WaysToTip(props: {
                 >
                   <Icon name={kindIcons[way.section]} class="size-6" />
                 </span>
-                <span class="flex min-w-0 flex-col gap-0.5">
-                  <span class="font-title text-xl font-semibold text-ink">{way.title}</span>
-                  <span class="text-[15px] text-ink-2">{way.text}</span>
+                <span class="font-title text-[17px] leading-tight font-semibold text-balance text-ink sm:text-lg">
+                  {way.title}
                 </span>
               </button>
             );
@@ -1793,6 +2148,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const [effectOptions, setEffectOptions] = createSignal<EffectOption[]>([], { equals: sameData });
   const [effectAllowance, setEffectAllowance] = createSignal<Allowance | null>(null);
   const [effectSignInFailed, setEffectSignInFailed] = createSignal<string | null>(null);
+  const [mediaOffer, setMediaOffer] = createSignal<MediaOffer | null>(null, { equals: sameData });
+  const [mediaAllowance, setMediaAllowance] = createSignal<Allowance | null>(null);
+  const [mediaSignInFailed, setMediaSignInFailed] = createSignal<string | null>(null);
   const [tips, setTips] = createSignal<PublicTips | null>(null);
   const [spin, setSpin] = createSignal<PublicSpin | null>(null);
   const [effects, setEffects] = createSignal<PublicEffects | null>(null);
@@ -1824,12 +2182,14 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const [dashboard, setDashboard] = createSignal<DashboardLink | null>(null);
   const [styled, setStyled] = createSignal(false);
   const [section, setSection] = createSignal<Section | null>(
-    (["tip", "spin", "effect"] as const).find((name) => location.hash === `#${name}`) ?? null,
+    (["tip", "spin", "effect", "media"] as const).find((name) => location.hash === `#${name}`) ??
+      null,
   );
   const sections = (): Section[] => [
     ...(tipJar() ? (["tip"] as const) : []),
     ...(spinnable() ? (["spin"] as const) : []),
     ...(effectsShown() ? (["effect"] as const) : []),
+    ...(mediaShown() ? (["media"] as const) : []),
   ];
   const shown = () => {
     const current = section();
@@ -1862,6 +2222,18 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
             },
           ]
         : []),
+      ...(mediaShown()
+        ? [
+            {
+              section: "media" as const,
+              title: t("Media share"),
+              text: mediaJar()
+                ? t("Your tip plays a video or clip live on stream.")
+                : t("Subscribers play a video or clip live on stream."),
+              enabled: true,
+            },
+          ]
+        : []),
     ];
   };
 
@@ -1878,6 +2250,11 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const effectJar = createMemo(() => withPayment(effects()), null, { equals: sameData });
   const effectsShown = () =>
     effectOptions().length > 0 && (effectJar() !== null || subEffects() !== null);
+  const mediaJar = createMemo(() => withPayment(mediaOffer()?.media ?? null), null, {
+    equals: sameData,
+  });
+  const subMedia = () => mediaOffer()?.subMedia ?? null;
+  const mediaShown = () => mediaJar() !== null || subMedia() !== null;
   const spinnable = () => wheel() !== null || subSpins() !== null;
   const [cheer, setCheer] = createSignal<{ title: string; text: string } | null>(null);
 
@@ -1891,6 +2268,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     setViewer(null);
     setSpinAllowance(null);
     setEffectAllowance(null);
+    setMediaAllowance(null);
   };
 
   const refreshAllowances = async (missingOnly = false) => {
@@ -1908,6 +2286,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       if (wanted(subEffects(), effectAllowance())) {
         setEffectAllowance(await fetchAllowance(current, "effect", session));
       }
+      if (wanted(subMedia(), mediaAllowance())) {
+        setMediaAllowance(await fetchAllowance(current, "media", session));
+      }
     } catch (error) {
       if (isSignedOut(error)) {
         signOutViewer();
@@ -1917,7 +2298,8 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
 
   const allowancesMissing = () =>
     (subSpins() !== null && spinAllowance() === null) ||
-    (subEffects() !== null && effectAllowance() === null);
+    (subEffects() !== null && effectAllowance() === null) ||
+    (subMedia() !== null && mediaAllowance() === null);
 
   createEffect(() => {
     if (viewer() && allowancesMissing()) {
@@ -1966,6 +2348,21 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
+  const refreshMedia = async () => {
+    const current = id();
+    if (current) {
+      try {
+        setMediaOffer(await streamerMedia(current));
+      } catch {}
+    }
+  };
+
+  const mediaError = (error: unknown) => {
+    if (error instanceof BackendError && [400, 404, 409].includes(error.status)) {
+      void refreshMedia();
+    }
+  };
+
   const refreshSpin = async () => {
     const current = id();
     if (current) {
@@ -1980,7 +2377,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   };
 
   const refreshPage = async () => {
-    await Promise.all([refreshTips(), refreshSpin(), refreshEffects()]);
+    await Promise.all([refreshTips(), refreshSpin(), refreshEffects(), refreshMedia()]);
     if (viewer()) {
       void refreshAllowances();
     }
@@ -2016,6 +2413,9 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
       if (signIn.failed && signIn.section === "effect") {
         setEffectSignInFailed(signIn.failed);
       }
+      if (signIn.failed && signIn.section === "media") {
+        setMediaSignInFailed(signIn.failed);
+      }
       Promise.all([streamerProfile(current), signedInAccount()])
         .then(([found, account]) => {
           batch(() => {
@@ -2034,6 +2434,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     void refreshTips();
     void refreshSpin();
     void refreshEffects();
+    void refreshMedia();
     if (current) {
       onCleanup(subscribeChanges(pageEventsUrl(current), null, { page: () => void refreshPage() }));
     }
@@ -2128,6 +2529,28 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
                   signInFailed={effectSignInFailed()}
                 />
               </div>
+            </Show>
+            <Show when={mediaShown() && mediaOffer()}>
+              {(offer) => (
+                <div class={shown() === "media" ? "" : "hidden"}>
+                  <MediaJar
+                    id={id() ?? ""}
+                    offer={offer()}
+                    media={mediaJar()}
+                    platforms={subPlatforms()}
+                    allowance={mediaAllowance()}
+                    viewer={viewer()}
+                    name={name()}
+                    onName={setName}
+                    onError={mediaError}
+                    onPaid={celebrate}
+                    onSignIn={(platform) => signInAsViewer(platform, id() ?? "", "media")}
+                    onSignOut={signOutViewer}
+                    onAllowance={allowanceLeft(setMediaAllowance)}
+                    signInFailed={mediaSignInFailed()}
+                  />
+                </div>
+              )}
             </Show>
           </div>
         </Show>

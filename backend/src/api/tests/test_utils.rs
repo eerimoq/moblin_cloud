@@ -23,16 +23,19 @@ use crate::remote_control::Streamers;
 use crate::requests::Requests;
 use crate::stripe::Stripe;
 use crate::subscribers::Allowances;
+use crate::youtube::YouTube;
 
 mod fake_kick;
 mod fake_paypal;
 mod fake_stripe;
 mod fake_twitch;
+mod fake_youtube;
 
 pub(crate) use fake_kick::*;
 pub(crate) use fake_paypal::*;
 pub(crate) use fake_stripe::*;
 pub(crate) use fake_twitch::*;
+pub(crate) use fake_youtube::*;
 
 pub(crate) async fn start() -> String {
     start_api(None).await.0
@@ -81,6 +84,7 @@ pub(crate) fn build_api(
         pages,
         paypal,
         stripe,
+        youtube: YouTube::new(reqwest::Client::new(), "http://127.0.0.1:9".to_string()),
         orders: Orders::new(database.clone(), DEADLINE),
         allowances: Allowances::new(database.clone()),
         deliveries: Deliveries::new(database.clone()),
@@ -210,6 +214,43 @@ pub(crate) async fn start_paid_fake() -> (String, Arc<Api>, FakePayPal) {
     let (paypal_url, fake) = start_paypal().await;
     let (address, api) = start_api(Some(new_paypal(paypal_url))).await;
     (address, api, fake)
+}
+
+pub(crate) async fn start_media() -> (String, Arc<Api>, FakePayPal) {
+    let (paypal_url, fake) = start_paypal().await;
+    let mut api = build_api(
+        Some(new_paypal(paypal_url)),
+        None,
+        None,
+        None,
+        None,
+        Duration::ZERO,
+    );
+    api.youtube = start_youtube().await;
+    let (address, api) = start_api_built(api).await;
+    (address, api, fake)
+}
+
+pub(crate) async fn start_clips() -> (String, Arc<Api>) {
+    let twitch = start_twitch().await;
+    let mut api = build_api(
+        None,
+        None,
+        Some(twitch_app(&twitch)),
+        None,
+        None,
+        Duration::ZERO,
+    );
+    api.youtube = start_youtube().await;
+    start_api_built(api).await
+}
+
+pub(crate) async fn ponged(socket: &mut Socket) {
+    socket
+        .send(Message::text(json!({"ping": {}}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(receive(socket).await, json!({"pong": {}}));
 }
 
 pub(crate) async fn paypal_tip_order_in(

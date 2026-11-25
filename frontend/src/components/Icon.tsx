@@ -156,6 +156,7 @@ export const kindIcons: Record<RecentKind, IconName> = {
   tip: "heart",
   spin: "wheel",
   effect: "sparkles",
+  media: "play-rectangle",
 };
 
 type Props = {

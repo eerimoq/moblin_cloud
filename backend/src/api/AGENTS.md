@@ -34,6 +34,8 @@ The router, `Api`, `Failure` and the session checks are in `../api.rs`; the hand
 ## Orders and sends
 
 - Viewer order routes take `provider`, PayPal by default.
+- The video queue and approving and rejecting are for every assistant, like test sends, though rejecting refunds. Skipping is a control and pausing is not, but both need `remoteControl: control`.
+- Test videos skip the approval and the YouTube lookup, but test clips are looked up, since Moblin needs what the lookup answers.
 - Test sends skip payment but run the same Moblin checks as paid ones, and are limited per page in memory (`Api::tests`). Test deliveries are not listed in recent.
 - A captured order is kept 30 days, so that is the whole history of `recent`.
 - `GET /account/pages/{id}/recent` without `kind` answers every kind in one request, which the dashboard, the Activity panel and mobtop use on every `recent` event; `before` is only for paging one kind.
