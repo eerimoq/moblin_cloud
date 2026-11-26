@@ -65,6 +65,7 @@ const generalFunctions = (): { id: string; name: string }[] => [
   { id: "Widget", name: t("Widget") },
   { id: "Macro", name: t("Macro") },
   { id: "Stream deck layout", name: t("Stream Deck layout") },
+  { id: "Play sound", name: t("Play sound") },
   { id: "Instant replay", name: t("Instant replay") },
   { id: "Stop replay", name: t("Stop replay") },
   { id: "Snapshot", name: t("Snapshot") },
@@ -114,7 +115,8 @@ const sameOptions = (first: WheelOfLuckOption[], second: WheelOfLuckOption[]) =>
       option.gimbalPresetId === other.gimbalPresetId &&
       Object.keys(option.gimbalMotion)[0] === Object.keys(other.gimbalMotion)[0] &&
       option.macroId === other.macroId &&
-      option.streamDeckLayoutId === other.streamDeckLayoutId
+      option.streamDeckLayoutId === other.streamDeckLayoutId &&
+      option.soundId === other.soundId
     );
   });
 
@@ -159,6 +161,10 @@ export function WheelOfLuckForm(props: WidgetFormProps) {
       }
     });
   const noneItem = { id: "", name: t("-- None --") };
+  const sounds = () => {
+    const gallery = props.editor.state.gallery;
+    return gallery ? [...gallery.bundledSounds, ...gallery.customSounds] : [];
+  };
   const openOption = (optionId: string) =>
     props.stack.push({
       title: t("Option"),
@@ -292,6 +298,18 @@ export function WheelOfLuckForm(props: WidgetFormProps) {
                       onPick={(id) =>
                         editOption(optionId, (option) => {
                           option.streamDeckLayoutId = id === "" ? null : id;
+                        })
+                      }
+                    />
+                  </Show>
+                  <Show when={current().function === "Play sound"}>
+                    <MenuRow
+                      label={t("Sound")}
+                      items={[noneItem, ...sounds()]}
+                      selected={current().soundId ?? ""}
+                      onPick={(id) =>
+                        editOption(optionId, (option) => {
+                          option.soundId = id === "" ? null : id;
                         })
                       }
                     />

@@ -62,6 +62,21 @@ describe("normalizeWidget", () => {
     expect(first.effects).toHaveLength(1);
   });
 
+  test("a wheel option's sound is kept, and none when missing", () => {
+    const soundId = "5F0E6F0C-6F5B-4C0E-9A57-3C1D6E2B7A11";
+    const widget = normalizeWidget({
+      id: widgetId,
+      type: "Wheel of luck",
+      wheelOfLuck: {
+        options: [{ text: "One", function: "Play sound", soundId }, { text: "Two" }],
+      },
+    });
+    const [one, two] = widget.wheelOfLuck.options;
+    expect(one!.function).toBe("Play sound");
+    expect(one!.soundId).toBe(soundId);
+    expect(two!.soundId).toBeNull();
+  });
+
   test("keeps fields it does not know", () => {
     const widget = normalizeWidget({
       id: widgetId,

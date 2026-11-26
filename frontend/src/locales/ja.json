@@ -713,6 +713,7 @@
   "Play": "再生",
   "Play 15 seconds of a YouTube video, or a Twitch clip, in Moblin, to check that it works. Test videos need no approval.": "YouTube動画またはTwitchクリップの15秒をMoblinで再生して、動作を確認します。テスト動画は承認不要です。",
   "Play an effect in Moblin, to check that it works.": "Moblinでエフェクトを再生して、動作を確認します。",
+  "Play sound": "サウンドを再生",
   "Play the effect": "エフェクトを再生",
   "Play the video": "動画を再生",
   "Play {name}": "{name}を再生",

@@ -527,6 +527,7 @@ export type WheelOfLuckOption = {
   gimbalMotion: GimbalMotion;
   macroId: string | null;
   streamDeckLayoutId: string | null;
+  soundId: string | null;
 };
 
 export type SettingsWidgetWheelOfLuck = {
@@ -916,6 +917,7 @@ export const defaultWheelOption = (id: string, text = ""): WheelOfLuckOption => 
   gimbalMotion: { kapow: {} },
   macroId: null,
   streamDeckLayoutId: null,
+  soundId: null,
 });
 
 const defaultClock = (): ScoreboardClock => ({ maximum: 45, direction: { up: {} } });

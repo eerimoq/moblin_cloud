@@ -713,6 +713,7 @@
   "Play": "재생",
   "Play 15 seconds of a YouTube video, or a Twitch clip, in Moblin, to check that it works. Test videos need no approval.": "Moblin에서 YouTube 영상이나 Twitch 클립을 15초 재생해 제대로 작동하는지 확인해요. 테스트 영상은 승인이 필요 없어요.",
   "Play an effect in Moblin, to check that it works.": "Moblin에서 효과를 재생해 제대로 작동하는지 확인하세요.",
+  "Play sound": "사운드 재생",
   "Play the effect": "효과 재생",
   "Play the video": "영상 재생",
   "Play {name}": "{name} 재생",

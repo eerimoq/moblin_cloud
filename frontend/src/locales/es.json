@@ -713,6 +713,7 @@
   "Play": "Reproducir",
   "Play 15 seconds of a YouTube video, or a Twitch clip, in Moblin, to check that it works. Test videos need no approval.": "Reproduce 15 segundos de un vídeo de YouTube o un clip de Twitch en Moblin para comprobar que funciona. Los vídeos de prueba no necesitan aprobación.",
   "Play an effect in Moblin, to check that it works.": "Reproduce un efecto en Moblin para comprobar que funciona.",
+  "Play sound": "Reproducir sonido",
   "Play the effect": "Reproducir el efecto",
   "Play the video": "Reproducir el vídeo",
   "Play {name}": "Reproducir {name}",
