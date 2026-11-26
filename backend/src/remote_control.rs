@@ -424,11 +424,19 @@ pub enum Control {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<Uuid>,
     },
-    SetMoblinCloudMediaShareWidget {
+    SetTipsAlertsWidget {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<Uuid>,
     },
-    SkipMoblinCloudMediaShare {},
+    SetTipsWheelOfLuckWidget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Uuid>,
+    },
+    SetTipsMediaShareWidget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Uuid>,
+    },
+    SkipMediaShare {},
 }
 
 fn has_uuid_id(object: &Value) -> bool {
@@ -514,8 +522,10 @@ impl Control {
             Self::GetVideoSourceSnapshot { .. } => "getVideoSourceSnapshot",
             Self::SetMoblinCloudAlertsWidget { .. } => "setMoblinCloudAlertsWidget",
             Self::SetMoblinCloudWheelOfLuckWidget { .. } => "setMoblinCloudWheelOfLuckWidget",
-            Self::SetMoblinCloudMediaShareWidget { .. } => "setMoblinCloudMediaShareWidget",
-            Self::SkipMoblinCloudMediaShare {} => "skipMoblinCloudMediaShare",
+            Self::SetTipsAlertsWidget { .. } => "setTipsAlertsWidget",
+            Self::SetTipsWheelOfLuckWidget { .. } => "setTipsWheelOfLuckWidget",
+            Self::SetTipsMediaShareWidget { .. } => "setTipsMediaShareWidget",
+            Self::SkipMediaShare {} => "skipMediaShare",
         }
     }
 
@@ -628,7 +638,9 @@ impl Control {
                 | Self::DeleteStream { .. }
                 | Self::SetMoblinCloudAlertsWidget { .. }
                 | Self::SetMoblinCloudWheelOfLuckWidget { .. }
-                | Self::SetMoblinCloudMediaShareWidget { .. }
+                | Self::SetTipsAlertsWidget { .. }
+                | Self::SetTipsWheelOfLuckWidget { .. }
+                | Self::SetTipsMediaShareWidget { .. }
         )
     }
 }

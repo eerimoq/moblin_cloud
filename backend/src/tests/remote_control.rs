@@ -88,15 +88,15 @@ fn messages_to_streamer_match_moblin() {
     );
     let request = |id, data| encode(&MessageToStreamer::Request { id, data });
     assert_eq!(
-        request(12, Request::Control(Control::SkipMoblinCloudMediaShare {})),
-        r#"{"request":{"id":12,"data":{"skipMoblinCloudMediaShare":{}}}}"#
+        request(12, Request::Control(Control::SkipMediaShare {})),
+        r#"{"request":{"id":12,"data":{"skipMediaShare":{}}}}"#
     );
     assert_eq!(
         request(
             14,
-            Request::Control(Control::SetMoblinCloudMediaShareWidget { id: None })
+            Request::Control(Control::SetTipsMediaShareWidget { id: None })
         ),
-        r#"{"request":{"id":14,"data":{"setMoblinCloudMediaShareWidget":{}}}}"#
+        r#"{"request":{"id":14,"data":{"setTipsMediaShareWidget":{}}}}"#
     );
     assert_eq!(
         request(10, Request::GetSettings {}),
@@ -322,6 +322,28 @@ fn messages_to_streamer_match_moblin() {
             }
         ),
         r#"{"request":{"id":24,"data":{"setMoblinCloudAlertsWidget":{"id":"0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60"}}}}"#
+    );
+    assert_eq!(
+        control(
+            25,
+            serde_json::from_str(r#"{"setTipsWheelOfLuckWidget":{}}"#).unwrap()
+        ),
+        r#"{"request":{"id":25,"data":{"setTipsWheelOfLuckWidget":{}}}}"#
+    );
+    assert_eq!(
+        control(
+            26,
+            serde_json::from_str(
+                r#"{"setTipsAlertsWidget":{"id":"0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60"}}"#
+            )
+            .unwrap()
+        ),
+        r#"{"request":{"id":26,"data":{"setTipsAlertsWidget":{"id":"0c4a1f9e-6b1d-4d8a-9f3e-2a7c5b8d1e60"}}}}"#
+    );
+    assert!(
+        serde_json::from_str::<Control>(r#"{"setTipsAlertsWidget":{}}"#)
+            .unwrap()
+            .changes_settings()
     );
     assert!(
         serde_json::from_str::<Control>(r#"{"setMoblinCloudWheelOfLuckWidget":{"id":"W"}}"#)
@@ -656,6 +678,10 @@ fn sent_messages_are_counted_like_unread_ones() {
         },
         Control::SetMoblinCloudAlertsWidget { id: Some(id) },
         Control::SetMoblinCloudWheelOfLuckWidget { id: None },
+        Control::SetTipsAlertsWidget { id: Some(id) },
+        Control::SetTipsWheelOfLuckWidget { id: None },
+        Control::SetTipsMediaShareWidget { id: Some(id) },
+        Control::SkipMediaShare {},
         Control::GetStream { id, secrets: true },
         Control::CreateStream {
             stream: serde_json::json!({}),

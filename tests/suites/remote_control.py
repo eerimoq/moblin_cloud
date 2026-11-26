@@ -255,7 +255,9 @@ class RemoteControlMoblinCloudSettings(RemoteControlTestCase):
         device = self.dashboard.account()["devices"][0]["id"]
         events = self.dashboard.device_events(page_id, device)
         try:
-            cloud = events.wait_for("settings")["data"]["moblinCloud"]
+            settings = events.wait_for("settings")["data"]
+            cloud = settings["tips"]
+            self.assert_equal(settings["moblinCloud"], cloud)
             wheel = cloud["wheelOfLuckWidgetId"]
             widgets = self.dashboard.control_device(page_id, device, {"getWidgets": {}})["widgets"]
             self.assert_in(wheel, [widget["id"] for widget in widgets if widget["type"] == "Wheel of luck"])
@@ -281,6 +283,15 @@ class RemoteControlMoblinCloudSettings(RemoteControlTestCase):
                 lambda: self.dashboard.control_device(
                     page_id, device, {"setMoblinCloudWheelOfLuckWidget": {"id": "W"}}
                 ),
+            )
+            self.dashboard.control_device(page_id, device, {"setTipsWheelOfLuckWidget": {}})
+            self.wait_until(lambda: self.viewer.spin()["wheel"] is None, "the wheel to be gone again")
+            self.dashboard.control_device(page_id, device, {"setTipsWheelOfLuckWidget": {"id": wheel}})
+            self.wait_until(lambda: self.viewer.spin()["wheel"] is not None, "the wheel to be back again")
+            self.dashboard.control_device(page_id, device, {"setTipsAlertsWidget": {}})
+            self.wait_until(
+                lambda: "alertsWidgetId" not in events.wait_for("settings")["data"]["moblinCloud"],
+                "the settings to show no alerts widget",
             )
         finally:
             events.close()

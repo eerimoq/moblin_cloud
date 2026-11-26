@@ -8,8 +8,8 @@
 - `utils/fake_moblin.py` follows Moblin's semantics and refusals for the status, controls, preview, scene editor and stream requests, including the `secrets` flag with its own copy of Moblin's list of secrets; `just moblin-drift` tracks it. Its made-up settings are in `utils/fake_moblin_database.py`.
 - The fake Twitch knows every clip, 28.3 seconds long, except slugs starting with `Missing`. A slug starting with `Long` is 59.5 seconds.
 - `utils/fake_youtube.py` is stdlib only and started once per run. Every video exists, titled after its id, except the ids a test adds to `unavailable`.
-- The fake Moblin takes videos once a browser widget is picked for them (`change_media` or `setMoblinCloudMediaShareWidget`), and plays the one it was sent last until the test calls `finish_media` or it is skipped, unless `media_seconds` is set.
-- The fake Moblin's wheel changes when the widget picked for Moblin Cloud changes, either through the tester's `change_wheel` or `setMoblinCloudWheelOfLuckWidget`.
+- The fake Moblin takes videos once a browser widget is picked for them (`change_media` or `setTipsMediaShareWidget`), and plays the one it was sent last until the test calls `finish_media` or it is skipped, unless `media_seconds` is set.
+- The fake Moblin's wheel changes when the widget picked for Moblin Cloud changes, either through the tester's `change_wheel`, `setTipsWheelOfLuckWidget` or the older `setMoblinCloudWheelOfLuckWidget`.
 - The relay in `utils/moblin.py` closes with 1000 when the tester changes Moblin's settings and 1001 otherwise, so its `disconnect()` acts like a dropped connection.
 - `just dev-fake-moblin` connects the fake to a running `just dev-backend` as the admin user's Moblin, with `--key` taken from the dev database, so sign in as `admin` once first.
 - The fakes only misbehave when a test tells them to, through the fake itself (`down`, `plan_capture`, `refunds`, the seller switches). They are shared by every test and outlive backend restarts, so a test that changes one calls `reset()` in its teardown.

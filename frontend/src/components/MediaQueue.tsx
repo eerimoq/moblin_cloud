@@ -248,7 +248,7 @@ export default function MediaQueue(props: {
                         type="button"
                         class={`${ghostButtonClass} ${smallButtonClass}`}
                         disabled={working() !== null || queue().playing === null}
-                        onClick={() => control("skip", { skipMoblinCloudMediaShare: {} })}
+                        onClick={() => control("skip", { skipMediaShare: {} })}
                       >
                         {t("Skip")}
                       </button>

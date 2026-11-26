@@ -613,6 +613,7 @@ class FakeMoblin:
         return OK, None
 
     def settings(self) -> dict:
+        tips = {key: value for key, value in self.database["moblinCloud"].items() if value is not None}
         return {
             "streams": [{"id": stream["id"], "name": stream["name"]} for stream in self.database["streams"]],
             "currentStreamId": self.enabled_stream()["id"],
@@ -630,9 +631,8 @@ class FakeMoblin:
                 "connectionPrioritiesEnabled": self.priorities_enabled,
                 "connectionPriorities": self.priorities,
             },
-            "moblinCloud": {
-                key: value for key, value in self.database["moblinCloud"].items() if value is not None
-            },
+            "moblinCloud": tips,
+            "tips": tips,
             "zoomPresets": {
                 camera: [
                     {"id": preset["id"], "name": preset["name"], "x": float(preset["x"])}
@@ -796,8 +796,13 @@ class FakeMoblin:
         }
         if kind in changes:
             self.change_state(**changes[kind]())
-        elif kind in ("setMoblinCloudAlertsWidget", "setMoblinCloudWheelOfLuckWidget"):
-            wheel = kind == "setMoblinCloudWheelOfLuckWidget"
+        elif kind in (
+            "setMoblinCloudAlertsWidget",
+            "setMoblinCloudWheelOfLuckWidget",
+            "setTipsAlertsWidget",
+            "setTipsWheelOfLuckWidget",
+        ):
+            wheel = kind in ("setMoblinCloudWheelOfLuckWidget", "setTipsWheelOfLuckWidget")
             widget_id = body.get("id")
             widget = None if widget_id is None else find(self.database["widgets"], widget_id)
             if widget_id is None or (
@@ -807,7 +812,7 @@ class FakeMoblin:
                 self.database["moblinCloud"][key] = None if widget_id is None else widget_id.upper()
                 if wheel:
                     self.send_wheel()
-        elif kind == "setMoblinCloudMediaShareWidget":
+        elif kind == "setTipsMediaShareWidget":
             widget_id = body.get("id")
             widget = None if widget_id is None else find(self.database["widgets"], widget_id)
             if widget_id is None or (widget is not None and widget["type"] == "Browser"):
@@ -815,7 +820,7 @@ class FakeMoblin:
                     None if widget_id is None else widget_id.upper()
                 )
                 self.send_media()
-        elif kind == "skipMoblinCloudMediaShare":
+        elif kind == "skipMediaShare":
             self.finish_media(reason="skipped")
         elif kind == "setStream":
             stream = find(self.database["streams"], body["id"])

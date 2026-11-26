@@ -141,6 +141,7 @@ export type DeviceSettings = {
     wheelOfLuckWidgetId?: string;
     mediaShareWidgetId?: string;
   };
+  tips?: DeviceSettings["moblinCloud"];
   zoomPresets?: { front: ZoomPreset[]; back: ZoomPreset[] };
 };
 
@@ -220,8 +221,8 @@ export type Control =
   | { sendMessage: { text: string } }
   | { setMoblinCloudAlertsWidget: { id?: string } }
   | { setMoblinCloudWheelOfLuckWidget: { id?: string } }
-  | { setMoblinCloudMediaShareWidget: { id?: string } }
-  | { skipMoblinCloudMediaShare: object }
+  | { setTipsMediaShareWidget: { id?: string } }
+  | { skipMediaShare: object }
   | EditorControl;
 
 export type EditorControl =

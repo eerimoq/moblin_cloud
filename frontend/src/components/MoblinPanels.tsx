@@ -195,7 +195,7 @@ const cloudWidgetControl = (kind: CloudWidgetKind, id: string): Control => {
     ? { setMoblinCloudAlertsWidget: body }
     : kind === "wheelOfLuck"
       ? { setMoblinCloudWheelOfLuckWidget: body }
-      : { setMoblinCloudMediaShareWidget: body };
+      : { setTipsMediaShareWidget: body };
 };
 
 type CloudWidgets = Record<CloudWidgetKind, Named[]> | undefined;
@@ -216,7 +216,7 @@ function CloudWidgetChoices(props: {
   widgets: CloudWidgets;
   failed: boolean;
 }) {
-  const cloud = () => props.remote.settings?.moblinCloud;
+  const cloud = () => props.remote.settings?.tips ?? props.remote.settings?.moblinCloud;
   const picked = () =>
     (props.kind === "alerts"
       ? cloud()?.alertsWidgetId
@@ -228,7 +228,7 @@ function CloudWidgetChoices(props: {
       ? "setMoblinCloudAlertsWidget"
       : props.kind === "wheelOfLuck"
         ? "setMoblinCloudWheelOfLuckWidget"
-        : "setMoblinCloudMediaShareWidget";
+        : "setTipsMediaShareWidget";
   return (
     <Show
       when={props.widgets}
@@ -282,7 +282,7 @@ function MoblinCloud(props: {
     <Show when={props.remote.settings} fallback={<Loading />}>
       {(settings) => (
         <Show
-          when={settings().moblinCloud}
+          when={settings().tips ?? settings().moblinCloud}
           fallback={
             <Empty
               text={t("This Moblin does not share its Moblin Cloud settings. Update Moblin.")}

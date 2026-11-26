@@ -393,9 +393,12 @@ fn controls_menu(monitor: &Monitor, menu: &Menu, kind: MenuKind) -> Shown {
             .map(|(_, name)| name.to_string())
     };
     let loading = settings.is_none();
-    let cloud = settings
-        .map(|settings| &settings["moblinCloud"])
-        .filter(|cloud| cloud.is_object());
+    let cloud = settings.and_then(|settings| {
+        ["tips", "moblinCloud"]
+            .into_iter()
+            .map(|key| &settings[key])
+            .find(|cloud| cloud.is_object())
+    });
     let widgets = monitor.widgets.get(device);
     let cloud_pick = |title: &'static str, widget_type: &str, key: &str, kind: &str, footer| {
         (

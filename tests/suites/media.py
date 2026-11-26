@@ -280,7 +280,7 @@ class MediaModerated(MediaTestCase):
             self.assert_equal(other.media_shares("youTube"), [], "only the picked device plays videos")
             self.assert_equal(self.dashboard.pause_media(True), {})
             self.wait_until(lambda: self.dashboard.media_queue()["paused"], "the queue to be paused")
-            self.dashboard.control_device(self.page_id, "PLAYER", {"skipMoblinCloudMediaShare": {}})
+            self.dashboard.control_device(self.page_id, "PLAYER", {"skipMediaShare": {}})
             self.wait_until(
                 lambda: self.dashboard.media_queue()["playing"] is None, "the playing video to be skipped"
             )
