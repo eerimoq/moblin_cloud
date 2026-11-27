@@ -853,103 +853,6 @@ function GuideLink(props: { text: string }) {
   );
 }
 
-function GetStarted(props: {
-  account: Account;
-  settings: Settings;
-  payments: boolean;
-  onSelect: (section: string) => void;
-}) {
-  const spin = () => isOn(props.settings.spin);
-  const steps = () =>
-    [
-      {
-        shown: props.payments,
-        done: props.settings.payable,
-        title: t("Connect {providers}", { providers: paymentProvidersText() }),
-        text: t("The money goes straight to your account."),
-        section: "payments",
-      },
-      {
-        shown: true,
-        done:
-          isOn(props.settings.tips) ||
-          isOn(props.settings.spin) ||
-          isOn(props.settings.effects) ||
-          isOn(props.settings.media) ||
-          isOn(props.settings.subSpins) ||
-          isOn(props.settings.subEffects) ||
-          isOn(props.settings.subMedia),
-        title: t("Choose how viewers tip you"),
-        text: t("Turn on at least one way to tip and set its amounts."),
-        section: props.payments ? "tips" : "wheel",
-      },
-      {
-        shown: true,
-        done: props.account.devices.length > 0,
-        title: t("Connect Moblin"),
-        text: t("Scan the QR code with the device running Moblin."),
-        section: "moblin",
-      },
-      {
-        shown: spin(),
-        done: props.account.devices.some((device) => device.wheel),
-        title: t("Pick your wheel in Moblin"),
-        text: t(
-          "Create a wheel of luck widget and pick it under Settings → Moblin Cloud → Wheel of luck.",
-        ),
-        section: "moblin",
-      },
-    ].filter((step) => step.shown);
-
-  return (
-    <Show when={steps().some((step) => !step.done)}>
-      <div class={cardClass}>
-        <h2 class="text-[23px] font-semibold">{t("Get started")}</h2>
-        <ol class="flex flex-col gap-3">
-          <Index each={steps()}>
-            {(step, index) => (
-              <li class="flex items-start gap-3">
-                <span
-                  class={`flex size-8 shrink-0 items-center justify-center rounded-full font-display font-bold ${
-                    step().done ? "bg-moss text-white" : "bg-well text-leaf"
-                  }`}
-                >
-                  <Show when={step().done} fallback={index + 1}>
-                    <Icon name="check" class="size-4" />
-                  </Show>
-                </span>
-                <span class="flex min-w-0 flex-1 flex-col">
-                  <span class={`font-semibold ${step().done ? "text-muted line-through" : ""}`}>
-                    {step().title}
-                  </span>
-                  <Show when={!step().done}>
-                    <span class="text-[15px] text-ink-2">{step().text}</span>
-                  </Show>
-                </span>
-                <Show when={!step().done}>
-                  <button
-                    type="button"
-                    class={`${smallButtonClass} shrink-0`}
-                    aria-label={step().title}
-                    onClick={() => props.onSelect(step().section)}
-                  >
-                    {t("Go")}
-                  </button>
-                </Show>
-              </li>
-            )}
-          </Index>
-        </ol>
-        <p class="text-[15px] text-ink-2">
-          {tRich("To show tips as alerts on stream, see the {guide}.", {
-            guide: <GuideLink text={t("setup guide")} />,
-          })}
-        </p>
-      </div>
-    </Show>
-  );
-}
-
 function YourPage(props: {
   account: Account;
   page: Settings;
@@ -2263,14 +2166,6 @@ function Admin(props: {
           </div>
         </Show>
         <div hidden={active() !== "page"} class="flex flex-col gap-6">
-          <Show when={!assisting()}>
-            <GetStarted
-              account={account()}
-              settings={settings()}
-              payments={payments()}
-              onSelect={select}
-            />
-          </Show>
           <Editable readOnly={!account().editTips}>
             <YourPage
               account={account()}
