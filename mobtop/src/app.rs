@@ -1372,7 +1372,7 @@ impl App {
                 let selected = (monitor.selected_of(leaf.id) + 1).min(EFFECTS.len() - 1);
                 monitor.selected.insert(leaf.id, selected);
             }
-            (Panel::Toybox, KeyCode::Char(digit @ '1'..='4')) => {
+            (Panel::Toybox, KeyCode::Char(digit @ '1'..='9')) => {
                 self.fart(leaf.id, digit as usize - '1' as usize)
             }
             (Panel::Toybox, KeyCode::Enter | KeyCode::Char('f')) => {

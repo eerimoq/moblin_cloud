@@ -164,7 +164,21 @@ pub fn price(amount: u32, currency: &str) -> String {
     format!("{}.{:02} {currency}", amount / 100, amount % 100)
 }
 
-pub const EFFECTS: [&str; 4] = ["fart", "fart-2", "bad-chili-fart", "perfect-fart"];
+pub const EFFECTS: [&str; 13] = [
+    "fart",
+    "fart-2",
+    "bad-chili-fart",
+    "perfect-fart",
+    "notification-2",
+    "boing",
+    "cash-register",
+    "dingaling",
+    "level-up",
+    "notification",
+    "sfx-magic",
+    "whoosh",
+    "coin-dropping",
+];
 
 pub fn effect_name(id: &str) -> &str {
     match id {
@@ -172,6 +186,15 @@ pub fn effect_name(id: &str) -> &str {
         "fart-2" => "Fart 2",
         "bad-chili-fart" => "Bad chili fart",
         "perfect-fart" => "Perfect fart",
+        "notification-2" => "Notification 2",
+        "boing" => "Boing",
+        "cash-register" => "Cash register",
+        "dingaling" => "Dingaling",
+        "level-up" => "Level up",
+        "notification" => "Notification",
+        "sfx-magic" => "SFX magic",
+        "whoosh" => "Whoosh",
+        "coin-dropping" => "Coin dropping",
         _ => id,
     }
 }

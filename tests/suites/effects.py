@@ -4,7 +4,21 @@ from ..utils.context import Context
 from ..utils.devices import RecordingMoblin
 from ..utils.test_case import TestCase
 
-EFFECTS = ["fart", "fart-2", "bad-chili-fart", "perfect-fart"]
+EFFECTS = [
+    "fart",
+    "fart-2",
+    "bad-chili-fart",
+    "perfect-fart",
+    "notification-2",
+    "boing",
+    "cash-register",
+    "dingaling",
+    "level-up",
+    "notification",
+    "sfx-magic",
+    "whoosh",
+    "coin-dropping",
+]
 WHEEL = ["Dance", "Sing"]
 
 

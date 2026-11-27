@@ -6,7 +6,7 @@ pub struct Effect {
     pub data: &'static [u8],
 }
 
-pub const EFFECTS: [Effect; 4] = [
+pub const EFFECTS: [Effect; 13] = [
     Effect {
         id: "fart",
         name: "Fart",
@@ -34,6 +34,69 @@ pub const EFFECTS: [Effect; 4] = [
         kind: "sound",
         content_type: "audio/mpeg",
         data: include_bytes!("effects/perfect-fart.mp3"),
+    },
+    Effect {
+        id: "notification-2",
+        name: "Notification 2",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/notification-2.mp3"),
+    },
+    Effect {
+        id: "boing",
+        name: "Boing",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/boing.mp3"),
+    },
+    Effect {
+        id: "cash-register",
+        name: "Cash register",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/cash-register.mp3"),
+    },
+    Effect {
+        id: "dingaling",
+        name: "Dingaling",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/dingaling.mp3"),
+    },
+    Effect {
+        id: "level-up",
+        name: "Level up",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/level-up.mp3"),
+    },
+    Effect {
+        id: "notification",
+        name: "Notification",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/notification.mp3"),
+    },
+    Effect {
+        id: "sfx-magic",
+        name: "SFX magic",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/sfx-magic.mp3"),
+    },
+    Effect {
+        id: "whoosh",
+        name: "Whoosh",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/whoosh.mp3"),
+    },
+    Effect {
+        id: "coin-dropping",
+        name: "Coin dropping",
+        kind: "sound",
+        content_type: "audio/mpeg",
+        data: include_bytes!("effects/coin-dropping.mp3"),
     },
 ];
 

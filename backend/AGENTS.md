@@ -76,7 +76,7 @@ Stripe:
 - Moblin pushes status only while a page is open: the first watcher sends `startStatus` and the last one's guard `stopStatus`. The periodic event only carries `topRight`, so `poll_status` sends `getStatus` every 5 s for the rest.
 - A `Monitor` outlives the device's sessions, so watchers keep it when the device reconnects, and a device connecting while watched is sent the requests again (`resume_watching`). The preview works the same way apart from the status monitors.
 - Older Moblins answer empty settings, push nothing and ignore the controls, and their settings have no `moblinCloud`.
-- A new Store icon in Moblin needs a row in `icons.rs`, or the backend ignores it. The fart sounds in `src/effects/` are copied from Moblin's `Alerts.bundle`.
+- A new Store icon in Moblin needs a row in `icons.rs`, or the backend ignores it. The sounds in `src/effects/` are copied from Moblin's `Alerts.bundle`, and Moblin only plays the ones in its `allBundledAlertsMediaGallerySounds`, by the name in `effects.rs`.
 
 ## App Attest
 

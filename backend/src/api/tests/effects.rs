@@ -28,6 +28,15 @@ async fn effects_are_played_by_moblin() {
         {"id": "fart-2", "kind": "sound"},
         {"id": "bad-chili-fart", "kind": "sound"},
         {"id": "perfect-fart", "kind": "sound"},
+        {"id": "notification-2", "kind": "sound"},
+        {"id": "boing", "kind": "sound"},
+        {"id": "cash-register", "kind": "sound"},
+        {"id": "dingaling", "kind": "sound"},
+        {"id": "level-up", "kind": "sound"},
+        {"id": "notification", "kind": "sound"},
+        {"id": "sfx-magic", "kind": "sound"},
+        {"id": "whoosh", "kind": "sound"},
+        {"id": "coin-dropping", "kind": "sound"},
     ]);
     assert_eq!(
         public().await,

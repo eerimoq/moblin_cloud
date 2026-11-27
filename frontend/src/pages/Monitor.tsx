@@ -37,7 +37,7 @@ import {
   type TrafficDirection,
 } from "../data/account";
 import { BackendError, isSignedOut } from "../data/backend";
-import { effectName, effects } from "../data/effects";
+import { effectName, effects, isFart } from "../data/effects";
 import { formatBytes } from "../format";
 import { createFlash } from "../flash";
 import { fullscreen, fullscreenOffered, toggleFullscreen } from "../viewport";
@@ -876,7 +876,54 @@ function WhoopeeCushion(props: { squished: boolean }) {
   );
 }
 
-function FartButton(props: { effect: string; onSend: (effect: string) => Promise<boolean> }) {
+function Buzzer(props: { squished: boolean }) {
+  return (
+    <svg viewBox="0 0 120 102" aria-hidden="true" class="w-24 overflow-visible">
+      <Show when={props.squished}>
+        <g
+          class="cushion-puff"
+          fill="none"
+          stroke="var(--color-muted)"
+          stroke-width="2.5"
+          stroke-linecap="round"
+        >
+          <path d="M30 22 q-8 -6 -14 -4" />
+          <path d="M60 12 v-10" />
+          <path d="M90 22 q8 -6 14 -4" />
+        </g>
+      </Show>
+      <g class={props.squished ? "cushion-squish" : ""}>
+        <path
+          d="M28 68 A32 34 0 0 1 92 68 Z"
+          fill="var(--color-leaf)"
+          stroke="var(--color-ink)"
+          stroke-width="2"
+          stroke-linejoin="round"
+        />
+        <ellipse
+          cx="46"
+          cy="46"
+          rx="9"
+          ry="4"
+          fill="var(--color-cushion-shine)"
+          transform="rotate(-30 46 46)"
+        />
+      </g>
+      <rect
+        x="14"
+        y="68"
+        width="92"
+        height="20"
+        rx="8"
+        fill="var(--color-well)"
+        stroke="var(--color-ink)"
+        stroke-width="2"
+      />
+    </svg>
+  );
+}
+
+function EffectButton(props: { effect: string; onSend: (effect: string) => Promise<boolean> }) {
   const [sending, setSending] = createSignal(false);
   const [sent, flashSent] = createFlash(3000);
   const [squished, squish] = createFlash(700);
@@ -898,7 +945,9 @@ function FartButton(props: { effect: string; onSend: (effect: string) => Promise
       }}
       class="flex w-32 flex-col items-center gap-1 rounded-2xl p-2 outline-none hover:bg-ghost focus-visible:bg-ghost disabled:opacity-70"
     >
-      <WhoopeeCushion squished={squished()} />
+      <Show when={isFart(props.effect)} fallback={<Buzzer squished={squished()} />}>
+        <WhoopeeCushion squished={squished()} />
+      </Show>
       <span
         aria-live="polite"
         class="flex items-center gap-1 text-center font-display text-[15px] font-semibold text-ink"
@@ -937,7 +986,7 @@ function ToyboxPanel(props: { session: string; page: string; onSignOut: () => vo
   return (
     <div class="flex flex-col gap-2 p-3">
       <div class="flex flex-wrap gap-2">
-        <For each={effects}>{(effect) => <FartButton effect={effect} onSend={send} />}</For>
+        <For each={effects}>{(effect) => <EffectButton effect={effect} onSend={send} />}</For>
       </div>
       <Show when={error()}>
         {(error) => (

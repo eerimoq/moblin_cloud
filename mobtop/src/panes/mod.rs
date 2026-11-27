@@ -97,7 +97,7 @@ pub fn hints(monitor: &Monitor) -> Vec<(&'static str, &'static str)> {
             ("m", "more"),
             ("1-4", "filter"),
         ],
-        Some(Panel::Toybox) => vec![("↑↓", "select"), ("enter", "fart"), ("1-4", "fart")],
+        Some(Panel::Toybox) => vec![("↑↓", "select"), ("enter", "play"), ("1-9", "play")],
         Some(Panel::Web) => vec![("enter", "address"), ("t", "Twitch chat"), ("o", "open")],
         _ => Vec::new(),
     };

@@ -1639,7 +1639,7 @@ function EffectSettings(props: {
       <h2 class="text-[23px] font-semibold">{t("Effect")}</h2>
       <p class="text-ink-2">
         {t(
-          "Let viewers tip to play an effect on stream. Viewers pick one of Moblin's fart sounds, " +
+          "Let viewers tip to play an effect on stream. Viewers pick one of Moblin's sounds, " +
             "listen to it first if they like, and add an optional message.",
         )}
       </p>

@@ -35,14 +35,27 @@ pub fn draw(frame: &mut Frame, area: Rect, monitor: &Monitor, leaf: &Leaf) {
         .is_some_and(|at| at.elapsed() < Duration::from_secs(3));
     let focused = monitor.focus == Some(leaf.id);
     let selected = monitor.selected_of(leaf.id).min(EFFECTS.len() - 1);
-    let mut lines: Vec<Line> = if squished { SQUISHED } else { CUSHION }
-        .into_iter()
-        .map(|line| Line::from(line.fg(Color::Magenta)))
-        .collect();
-    lines.push(Line::default());
+    let art = area.height as usize >= CUSHION.len() + EFFECTS.len() + 3;
+    let mut lines: Vec<Line> = Vec::new();
+    if art {
+        lines.extend(
+            if squished { SQUISHED } else { CUSHION }
+                .into_iter()
+                .map(|line| Line::from(line.fg(Color::Magenta))),
+        );
+        lines.push(Line::default());
+    }
     let first = lines.len();
-    for (index, effect) in EFFECTS.into_iter().enumerate() {
-        let name = format!(" {} {} ", index + 1, effect_name(effect));
+    let visible = (area.height as usize)
+        .saturating_sub(first + 2)
+        .clamp(1, EFFECTS.len());
+    let offset = (selected + 1).saturating_sub(visible);
+    for (index, effect) in EFFECTS.into_iter().enumerate().skip(offset).take(visible) {
+        let name = if index < 9 {
+            format!(" {} {} ", index + 1, effect_name(effect))
+        } else {
+            format!("   {} ", effect_name(effect))
+        };
         lines.push(Line::from(if index != selected {
             name.into()
         } else if focused {
@@ -55,14 +68,14 @@ pub fn draw(frame: &mut Frame, area: Rect, monitor: &Monitor, leaf: &Leaf) {
     lines.push(if queued {
         Line::from("✓ Sent".fg(ACCENT))
     } else {
-        Line::from("enter or 1-4".fg(MUTED))
+        Line::from("enter or 1-9".fg(MUTED))
     });
     let rect = centered_text(frame, area, lines);
     let mut hits = monitor.hits.borrow_mut();
-    for index in 0..EFFECTS.len() {
-        let y = rect.y + (first + index) as u16;
+    for row in 0..visible {
+        let y = rect.y + (first + row) as u16;
         if y < rect.bottom() {
-            hits.rows.push((leaf.id, y, index));
+            hits.rows.push((leaf.id, y, offset + row));
         }
     }
 }
