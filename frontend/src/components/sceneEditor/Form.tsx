@@ -1,8 +1,10 @@
-import { createContext, createSignal, For, Show, useContext, type JSX } from "solid-js";
+import { createContext, createSignal, For, onCleanup, Show, useContext, type JSX } from "solid-js";
 import Icon, { type IconName } from "../Icon";
 import { Choices, PhoneSwitch, rowClass } from "../MoblinParts";
 import type { Stack } from "./Stack";
 import { type RgbColor } from "../../data/moblinSettings";
+import { clamped } from "../../data/sceneEditorGeometry";
+import { toPixels } from "../../data/widgetOutlines";
 import { t } from "../../i18n";
 
 export const ReadOnly = createContext<() => boolean>(() => false);
@@ -376,19 +378,74 @@ export function SliderRow(props: {
   );
 }
 
+function RepeatButton(props: { icon: IconName; disabled: boolean; onAction: () => void }) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => {
+    clearTimeout(timer);
+    clearInterval(timer);
+    timer = undefined;
+  };
+  const start = () => {
+    stop();
+    props.onAction();
+    timer = setTimeout(() => {
+      timer = setInterval(() => {
+        if (props.disabled) {
+          stop();
+        } else {
+          props.onAction();
+        }
+      }, 15);
+    }, 300);
+  };
+  onCleanup(stop);
+  return (
+    <button
+      type="button"
+      class="grid size-[36px] shrink-0 touch-none place-items-center text-phone-tint disabled:opacity-35"
+      disabled={props.disabled}
+      onPointerDown={(event) => {
+        if (event.button === 0) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          start();
+        }
+      }}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onLostPointerCapture={stop}
+      onClick={(event) => {
+        if (event.detail === 0) {
+          props.onAction();
+        }
+      }}
+    >
+      <Icon name={props.icon} class="size-[28px]" />
+    </button>
+  );
+}
+
 export function ValueEditCompact(props: {
   value: number;
   minimum: number;
   maximum: number;
-  increment: number;
+  zero?: number;
+  total: number;
   mirror?: boolean;
-  numericInput: boolean;
   decrementIcon: IconName;
   incrementIcon: IconName;
   onChange: (value: number) => void;
 }) {
-  const clamp = (value: number) => Math.min(props.maximum, Math.max(props.minimum, value));
-  const add = (offset: number) => props.onChange(clamp(props.value + offset));
+  const zero = () => props.zero ?? 0;
+  const pixels = (value: number) => zero() + toPixels(value, props.total - zero());
+  const format = (value: number) => pixels(value).toFixed(2);
+  const setPixels = (value: number) => {
+    if (props.total !== zero()) {
+      props.onChange(
+        clamped(((value - zero()) * 100) / (props.total - zero()), props.minimum, props.maximum),
+      );
+    }
+  };
+  const add = (offset: number) => setPixels(pixels(props.value) + offset);
   const [text, setText] = createSignal<string | null>(null);
   const submitText = () => {
     const typed = text();
@@ -397,62 +454,37 @@ export function ValueEditCompact(props: {
     }
     const number = Number(typed.trim());
     if (!Number.isNaN(number) && typed.trim() !== "") {
-      props.onChange(clamp(number));
+      setPixels(number);
     }
     setText(null);
   };
-  const button = (icon: IconName, offset: number, disabled: boolean) => (
-    <button
-      type="button"
-      class="grid size-[36px] shrink-0 place-items-center text-phone-tint disabled:opacity-35"
-      disabled={disabled}
-      onClick={() => add(offset)}
-    >
-      <Icon name={icon} class="size-[28px]" />
-    </button>
-  );
   const readOnly = useReadOnly();
   return (
     <fieldset disabled={readOnly()} class="contents">
       <div class="flex min-h-[44px] w-full items-center gap-2 px-4 py-1">
-        <Show
-          when={props.numericInput}
-          fallback={
-            <input
-              type="range"
-              class={`min-w-0 flex-1 accent-white ${props.mirror ? "rotate-180" : ""}`}
-              min={props.minimum}
-              max={props.maximum}
-              step={15 * props.increment}
-              value={props.value}
-              onInput={(event) => props.onChange(Number(event.currentTarget.value))}
-            />
-          }
-        >
-          <input
-            type="text"
-            inputmode="decimal"
-            class="min-w-0 flex-1 rounded-[6px] bg-phone-screen px-2 py-1 text-[17px] outline-none"
-            value={text() ?? String(props.value)}
-            onInput={(event) => setText(event.currentTarget.value)}
-            onBlur={submitText}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                submitText();
-              }
-            }}
-          />
-        </Show>
-        {button(
-          props.decrementIcon,
-          props.mirror ? props.increment : -props.increment,
-          props.value === (props.mirror ? props.maximum : props.minimum),
-        )}
-        {button(
-          props.incrementIcon,
-          props.mirror ? -props.increment : props.increment,
-          props.value === (props.mirror ? props.minimum : props.maximum),
-        )}
+        <input
+          type="text"
+          inputmode="decimal"
+          class="min-w-0 flex-1 rounded-[6px] bg-phone-screen px-2 py-1 text-[17px] outline-none"
+          value={text() ?? format(props.value)}
+          onInput={(event) => setText(event.currentTarget.value)}
+          onBlur={submitText}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              submitText();
+            }
+          }}
+        />
+        <RepeatButton
+          icon={props.decrementIcon}
+          disabled={props.value === (props.mirror ? props.maximum : props.minimum)}
+          onAction={() => add(props.mirror ? 1 : -1)}
+        />
+        <RepeatButton
+          icon={props.incrementIcon}
+          disabled={props.value === (props.mirror ? props.minimum : props.maximum)}
+          onAction={() => add(props.mirror ? -1 : 1)}
+        />
       </div>
     </fieldset>
   );

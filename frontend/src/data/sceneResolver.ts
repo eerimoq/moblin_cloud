@@ -108,7 +108,6 @@ export class SceneResolver {
           y: 0,
           size: 100,
           alignment: "TopLeft",
-          positioningLock: false,
         },
       ];
     }

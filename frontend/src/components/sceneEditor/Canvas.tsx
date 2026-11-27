@@ -5,18 +5,13 @@ import {
   hasPosition,
   hasSize,
   isHorizontalCenter,
-  isLeft,
-  isTop,
   isVerticalCenter,
   type SettingsAlignment,
 } from "../../data/moblinSettings";
 import {
   clamped,
-  diagonalDirection,
-  diagonalPosition,
   distance,
   hitRect,
-  movesDiagonally,
   rectContains,
   rectMaxX,
   rectMaxY,
@@ -35,12 +30,14 @@ import type { Point, Rect, Size, WidgetOutline } from "../../data/widgetOutlines
 type Edit = {
   outline: WidgetOutline;
   mode: "move" | "resize";
+  anchor: SettingsAlignment;
   startSize: number;
   rect: Rect;
   guideX?: number;
   guideY?: number;
-  start: Point;
 };
+
+const handleAnchors: SettingsAlignment[] = ["TopLeft", "TopRight", "BottomLeft", "BottomRight"];
 
 export default function Canvas(props: {
   outlines: WidgetOutline[];
@@ -49,7 +46,7 @@ export default function Canvas(props: {
   selected: string | null;
   onSelect: (id: string | null) => void;
   onMove: (outline: WidgetOutline, rect: Rect) => void;
-  onResize: (outline: WidgetOutline, size: number) => void;
+  onResize: (outline: WidgetOutline, size: number, rect: Rect) => void;
   readOnly?: boolean;
 }) {
   const [edit, setEdit] = createSignal<Edit | null>(null);
@@ -58,7 +55,7 @@ export default function Canvas(props: {
   let pressed: { point: Point; moved: boolean } | null = null;
 
   const scale = () => props.canvas.width / props.size.width;
-  const snapThreshold = () => 8 * scale();
+  const snapThreshold = () => 4 * scale();
   const editable = () => props.outlines.filter((outline) => outline.inScene);
   const selectedOutline = createMemo(() =>
     editable().find((outline) => outline.id === props.selected),
@@ -126,9 +123,9 @@ export default function Canvas(props: {
       current = {
         outline,
         mode: "move",
+        anchor: outline.alignment,
         startSize: outline.sceneWidget.size,
         rect: outline.rect,
-        start: { x: 0, y: 0 },
       };
     }
     if (current.mode !== "move") {
@@ -138,42 +135,31 @@ export default function Canvas(props: {
     const rect = current.outline.rect;
     const position = { x: rect.x + delta.width, y: rect.y + delta.height };
     const layout = current.outline.sceneWidget;
-    const next: Edit = { ...current, guideX: undefined, guideY: undefined };
-    if (movesDiagonally(layout)) {
-      const origin = diagonalPosition(
-        layout.alignment,
-        rect,
-        position,
-        snapThreshold(),
-        props.canvas,
-      );
-      next.rect = { ...rect, x: origin.x, y: origin.y };
-    } else {
-      const others = props.outlines.filter((outline) => outline.id !== current.outline.id);
-      const x = isHorizontalCenter(layout.alignment)
-        ? { position: rect.x }
-        : sceneEditorSnapAxis(
-            position.x,
-            rect.width,
-            props.canvas.width,
-            snapThreshold(),
-            isLeft(layout.alignment),
-            others.flatMap(snapTargetsX),
-          );
-      const y = isVerticalCenter(layout.alignment)
-        ? { position: rect.y }
-        : sceneEditorSnapAxis(
-            position.y,
-            rect.height,
-            props.canvas.height,
-            snapThreshold(),
-            isTop(layout.alignment),
-            others.flatMap(snapTargetsY),
-          );
-      next.rect = { ...rect, x: x.position, y: y.position };
-      next.guideX = x.guide;
-      next.guideY = y.guide;
-    }
+    const others = props.outlines.filter((outline) => outline.id !== current.outline.id);
+    const x = isHorizontalCenter(layout.alignment)
+      ? { position: rect.x }
+      : sceneEditorSnapAxis(
+          position.x,
+          rect.width,
+          props.canvas.width,
+          snapThreshold(),
+          others.flatMap(snapTargetsX),
+        );
+    const y = isVerticalCenter(layout.alignment)
+      ? { position: rect.y }
+      : sceneEditorSnapAxis(
+          position.y,
+          rect.height,
+          props.canvas.height,
+          snapThreshold(),
+          others.flatMap(snapTargetsY),
+        );
+    const next: Edit = {
+      ...current,
+      rect: { ...rect, x: x.position, y: y.position },
+      guideX: x.guide,
+      guideY: y.guide,
+    };
     setEdit(next);
     props.onMove(current.outline, next.rect);
   };
@@ -184,12 +170,12 @@ export default function Canvas(props: {
       return;
     }
     const rect = current.outline.rect;
-    const fixed = sceneEditorFixedPoint(rect, current.outline.alignment);
+    const fixed = sceneEditorFixedPoint(rect, current.outline.alignment, current.anchor);
     const factors: [number, number] = [1 / current.startSize, 100 / current.startSize];
     let clampedFactor = clamped(factor, factors[0], factors[1]);
     const others = props.outlines.filter((outline) => outline.id !== current.outline.id);
     const threshold =
-      snapThreshold() / distance(sceneEditorHandlePoint(rect, current.outline.alignment), fixed);
+      snapThreshold() / distance(sceneEditorHandlePoint(rect, current.anchor), fixed);
     const x = sceneEditorSnapResizeAxis(
       [rect.x, rectMaxX(rect), rectMidX(rect)],
       fixed.x,
@@ -216,22 +202,22 @@ export default function Canvas(props: {
     }
     next.rect = sceneEditorResizedRect(rect, fixed, clampedFactor);
     setEdit(next);
-    props.onResize(current.outline, current.startSize * clampedFactor);
+    props.onResize(current.outline, current.startSize * clampedFactor, next.rect);
   };
 
-  const handleChanged = (outline: WidgetOutline, translation: Size) => {
+  const handleChanged = (outline: WidgetOutline, anchor: SettingsAlignment, translation: Size) => {
     if (!edit()) {
       setEdit({
         outline,
         mode: "resize",
+        anchor,
         startSize: outline.sceneWidget.size,
         rect: outline.rect,
-        start: { x: 0, y: 0 },
       });
     }
     const current = edit()!.outline;
-    const fixed = sceneEditorFixedPoint(current.rect, current.alignment);
-    const start = sceneEditorHandlePoint(current.rect, current.alignment);
+    const fixed = sceneEditorFixedPoint(current.rect, current.alignment, edit()!.anchor);
+    const start = sceneEditorHandlePoint(current.rect, edit()!.anchor);
     const delta = canvasDelta(translation);
     const point = { x: start.x + delta.width, y: start.y + delta.height };
     const startDistance = distance(start, fixed);
@@ -330,14 +316,19 @@ export default function Canvas(props: {
             }}
           />
         </Show>
-        <div
-          class={`absolute flex items-center gap-[3px] rounded-[3px] px-[4px] py-[2px] text-[13px] leading-[16px] whitespace-nowrap text-white ${
-            selected() ? "bg-phone-tint font-semibold" : "bg-black/60"
-          }`}
-          style={{ left: `${rect().x + 4}px`, top: `${labelY()}px` }}
-        >
-          <Icon name={widgetIcon(outline.widget.type)} class="size-[13px]" />
-          <span>{outline.widget.name}</span>
+        <div class="absolute inset-0 flex flex-col items-start">
+          <div class="min-h-0" style={{ flex: `0 1 ${Math.max(labelY(), 0)}px` }} />
+          <div class="flex w-full shrink-0">
+            <div class="min-w-0" style={{ flex: `0 1 ${Math.max(rect().x + 4, 0)}px` }} />
+            <div
+              class={`flex shrink-0 items-center gap-[3px] rounded-[3px] px-[4px] py-[2px] text-[13px] leading-[16px] whitespace-nowrap text-white ${
+                selected() ? "bg-phone-tint font-semibold" : "bg-black/60"
+              }`}
+            >
+              <Icon name={widgetIcon(outline.widget.type)} class="size-[13px]" />
+              <span>{outline.widget.name}</span>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -357,28 +348,54 @@ export default function Canvas(props: {
       />
     );
   };
-  const diagonalGuideLine = (alignment: SettingsAlignment) => {
-    const direction = diagonalDirection(alignment);
-    const length = Math.min(props.canvas.width, props.canvas.height);
-    const corner = {
-      x: isLeft(alignment) ? 0 : props.canvas.width,
-      y: isTop(alignment) ? 0 : props.canvas.height,
-    };
-    return guideLine(corner, {
-      x: corner.x + direction.width * length,
-      y: corner.y + direction.height * length,
-    });
-  };
-
-  const handlePoint = () => {
+  const resizedOutline = () => {
     const outline = selectedOutline();
-    if (props.readOnly || !outline || !isResizable(outline) || edit()?.mode === "move") {
-      return null;
-    }
-    return viewPoint(sceneEditorHandlePoint(currentRect(outline), outline.alignment));
+    return props.readOnly || !outline || !isResizable(outline) || edit()?.mode === "move"
+      ? undefined
+      : outline;
   };
 
-  let handlePressed: Point | null = null;
+  const handleView = (outline: () => WidgetOutline, anchor: SettingsAlignment) => {
+    const point = () => viewPoint(sceneEditorHandlePoint(currentRect(outline()), anchor));
+    let handlePressed: Point | null = null;
+    const released = () => {
+      handlePressed = null;
+      setEdit(null);
+    };
+    return (
+      <div
+        class={`absolute grid size-[44px] -translate-1/2 place-items-center ${
+          anchor === "TopLeft" || anchor === "BottomRight"
+            ? "cursor-nwse-resize"
+            : "cursor-nesw-resize"
+        }`}
+        style={{ left: `${point().x}px`, top: `${point().y}px` }}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          if (event.button !== 0) {
+            return;
+          }
+          event.currentTarget.setPointerCapture(event.pointerId);
+          handlePressed = localPoint(event);
+        }}
+        onPointerMove={(event) => {
+          if (!handlePressed) {
+            return;
+          }
+          const local = localPoint(event);
+          handleChanged(outline(), anchor, {
+            width: local.x - handlePressed.x,
+            height: local.y - handlePressed.y,
+          });
+        }}
+        onPointerUp={released}
+        onPointerCancel={released}
+      >
+        <span class="size-[20px] rounded-full border-2 border-white bg-phone-tint" />
+      </div>
+    );
+  };
+
   return (
     <div
       ref={(element) => (surface = element)}
@@ -418,51 +435,12 @@ export default function Canvas(props: {
                   { x: props.canvas.width, y: current().guideY! },
                 )}
               </Show>
-              <Show
-                when={current().mode === "move" && movesDiagonally(current().outline.sceneWidget)}
-              >
-                {diagonalGuideLine(current().outline.sceneWidget.alignment)}
-              </Show>
             </>
           )}
         </Show>
       </svg>
-      <Show when={handlePoint()}>
-        {(point) => (
-          <div
-            class="absolute grid size-[44px] -translate-1/2 cursor-nwse-resize place-items-center"
-            style={{ left: `${point().x}px`, top: `${point().y}px` }}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              if (event.button !== 0) {
-                return;
-              }
-              (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-              handlePressed = localPoint(event);
-            }}
-            onPointerMove={(event) => {
-              const outline = selectedOutline();
-              if (!handlePressed || !outline) {
-                return;
-              }
-              const local = localPoint(event);
-              handleChanged(outline, {
-                width: local.x - handlePressed.x,
-                height: local.y - handlePressed.y,
-              });
-            }}
-            onPointerUp={() => {
-              handlePressed = null;
-              setEdit(null);
-            }}
-            onPointerCancel={() => {
-              handlePressed = null;
-              setEdit(null);
-            }}
-          >
-            <span class="size-[20px] rounded-full border-2 border-white bg-phone-tint" />
-          </div>
-        )}
+      <Show when={resizedOutline()}>
+        {(outline) => <For each={handleAnchors}>{(anchor) => handleView(outline, anchor)}</For>}
       </Show>
     </div>
   );

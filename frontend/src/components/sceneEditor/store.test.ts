@@ -61,3 +61,45 @@ test("a read-only editor shows the scenes but changes and sends nothing", async 
   ]);
   editor.dispose();
 });
+
+test("an enabled scene is switched to once the device has it enabled", async () => {
+  const sent: Control[] = [];
+  const answers: Record<string, unknown> = {
+    getScenes: {
+      scenes: [
+        { id: mainId, name: "Main", widgets: [] },
+        { id: brbId, name: "BRB", enabled: false, widgets: [] },
+      ],
+    },
+    getWidgets: { widgets: [] },
+    getVideoSources: { videoSources: [] },
+    getAlertsMediaGallery: { gallery: {} },
+    getEditorOptions: { options: { scoreboardPlayers: [] } },
+  };
+  const request = async <T>(control: Control): Promise<T> => {
+    sent.push(control);
+    return (answers[Object.keys(control)[0]!] ?? {}) as T;
+  };
+  const control = async (control: Control) => {
+    sent.push(control);
+  };
+  const editor = createEditor(
+    request,
+    control,
+    () => mainId,
+    () => false,
+    () => false,
+  );
+  await vi.runAllTimersAsync();
+  sent.length = 0;
+  editor.editScene(brbId, (draft) => {
+    draft.enabled = true;
+  });
+  editor.selectScene(brbId);
+  expect(editor.state.sceneId).toBe(brbId);
+  await editor.flush();
+  await vi.runAllTimersAsync();
+  expect(sent.map((control) => Object.keys(control)[0])).toEqual(["updateScene", "setScene"]);
+  expect(editor.state.sceneId).toBeNull();
+  editor.dispose();
+});

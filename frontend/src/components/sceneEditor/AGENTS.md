@@ -10,7 +10,9 @@ A copy of Moblin's scene editor (`SceneEditorView.swift` and friends in the Mobl
 - `encodeWidget` and `encodeScene` port Moblin's hand-written encoders: they leave out what Moblin itself would not write and keep any field they do not know, so a newer Moblin's settings survive an update.
 - The canvas size comes from the editor options' `canvasSize`. The outlines are never mirrored, since the preview is the stream's own image, not the phone's mirrored front camera view.
 - Per type forms in `settings/widgets/` are one file per widget type, named like its directory in Moblin's `Settings/Scenes/Widgets/Widget/`.
-- The Numeric input toggle is kept in the browser, since the protocol does not carry Moblin's setting. `EditorOptions` carries the phone state Moblin's views read.
+- `EditorOptions` carries the phone state Moblin's views read.
+- Moblin refuses a layout `x` or `y` outside -100...100, and a Moblin without layouts in pixels refuses a negative one, so `sceneEditorLayout` clamps them and a widget dragged past the top or left edge fails to sync on an older Moblin.
+- A scene is only switched to once the device has it enabled, so `selectScene` waits for the sync after the toolbar enables one.
 - The Scene widgets quick button's panel (`SceneWidgetsPanel.tsx`, Moblin's `QuickButtonSceneWidgetsView`) shares the scene editor's `Editor` with the full screen editor: `MoblinScreen` keeps one while either is open, so opening the editor from the panel never races the panel's unsent changes, and the draft is flushed when the last of them closes. The panel lists the phone's selected scene, not the editor's `sceneId`, like Moblin.
 
 - Assistants with only `view` access open the scene editor and the Scene widgets panel read-only: `MoblinScreen` provides `ReadOnly` from `Form.tsx`, which the form rows and the forms' own controls disable themselves for while navigation stays usable. The toolbar hides what edits, the canvas only selects, the store ignores edits, and picking a scene only shows it instead of switching the phone's scene.

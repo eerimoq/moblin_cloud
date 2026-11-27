@@ -105,18 +105,7 @@ export type IconName =
   | "sliders"
   | "layers-up"
   | "layers-down"
-  | "align-TopLeft"
-  | "align-TopCenter"
-  | "align-TopRight"
-  | "align-LeftCenter"
-  | "align-Center"
-  | "align-RightCenter"
-  | "align-BottomLeft"
-  | "align-BottomCenter"
-  | "align-BottomRight"
   | "square-fill"
-  | "lock"
-  | "lock-open"
   | "square-split-diagonal"
   | "arrow-left"
   | "arrow-right"
@@ -615,14 +604,6 @@ export default function Icon(props: Props) {
         <Match when={props.name === "square-fill"}>
           <rect x="5" y="5" width="14" height="14" rx="1.5" fill="currentColor" />
         </Match>
-        <Match when={props.name === "lock"}>
-          <rect x="5" y="11" width="14" height="10" rx="2" />
-          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-        </Match>
-        <Match when={props.name === "lock-open"}>
-          <rect x="5" y="11" width="14" height="10" rx="2" />
-          <path d="M8 11V7a4 4 0 0 1 7.6-1.8" />
-        </Match>
         <Match when={props.name === "square-split-diagonal"}>
           <rect x="5" y="5" width="14" height="14" rx="1.5" />
           <path d="m5 5 14 14M19 5 5 19" />
@@ -751,105 +732,6 @@ export default function Icon(props: Props) {
         </Match>
         <Match when={props.name === "flag"}>
           <path d="M5 21V4h11l-1.5 3.5L16 11H5" />
-        </Match>
-        <Match when={props.name === "align-TopLeft"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-TopCenter"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-TopRight"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-LeftCenter"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-Center"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-RightCenter"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-BottomLeft"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-BottomCenter"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" fill="currentColor" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" />
-        </Match>
-        <Match when={props.name === "align-BottomRight"}>
-          <rect x="4" y="4" width="4" height="4" rx="0.5" />
-          <rect x="10" y="4" width="4" height="4" rx="0.5" />
-          <rect x="16" y="4" width="4" height="4" rx="0.5" />
-          <rect x="4" y="10" width="4" height="4" rx="0.5" />
-          <rect x="10" y="10" width="4" height="4" rx="0.5" />
-          <rect x="16" y="10" width="4" height="4" rx="0.5" />
-          <rect x="4" y="16" width="4" height="4" rx="0.5" />
-          <rect x="10" y="16" width="4" height="4" rx="0.5" />
-          <rect x="16" y="16" width="4" height="4" rx="0.5" fill="currentColor" />
         </Match>
       </Switch>
     </svg>

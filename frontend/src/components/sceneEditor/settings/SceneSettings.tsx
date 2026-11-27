@@ -20,7 +20,6 @@ import {
   videoSourceItems,
   videoSourceOf,
 } from "../videoSources";
-import { SceneWidgetSettings } from "./SceneWidgetSettings";
 import type { DeviceSettings } from "../../../data/account";
 import {
   defaultSceneWidget,
@@ -103,27 +102,6 @@ export function SceneSettings(props: {
   });
   const widgetOf = (widgetId: string) =>
     editor.state.widgets.find((widget) => sameId(widget.id, widgetId));
-  const openSceneWidget = (sceneWidgetId: string) => {
-    const current = scene();
-    const sceneWidget = current?.widgets.find((candidate) => candidate.id === sceneWidgetId);
-    const widget = sceneWidget ? widgetOf(sceneWidget.widgetId) : undefined;
-    if (!current || !sceneWidget || !widget) {
-      return;
-    }
-    props.stack.push({
-      title: () => widgetOf(widget.id)?.name ?? "",
-      render: () => (
-        <SceneWidgetSettings
-          editor={editor}
-          stack={props.stack}
-          scene={current}
-          sceneWidgetId={sceneWidget.id}
-          widgetId={widget.id}
-          canvas={props.canvas}
-        />
-      ),
-    });
-  };
   const showAll = () => editor.state.options?.showAllSettings ?? true;
   const addWidget = () =>
     props.stack.push({
@@ -180,18 +158,13 @@ export function SceneSettings(props: {
                 <Show when={widgetOf(sceneWidget.widgetId)}>
                   {(widget) => (
                     <div class="flex min-h-[44px] items-center gap-3 pr-2 pl-3 text-[17px]">
-                      <button
-                        type="button"
-                        class="flex min-w-0 flex-1 items-center gap-2 text-left"
-                        onClick={() => openSceneWidget(sceneWidget.id)}
-                      >
+                      <div class="flex min-w-0 flex-1 items-center gap-2">
                         <Icon
                           name={widgetIcon(widget().type)}
                           class="size-[18px] shrink-0 text-phone-tint"
                         />
                         <span class="min-w-0 flex-1 truncate">{widget().name}</span>
-                        <Icon name="chevron-right" class="size-[16px] shrink-0 text-phone-border" />
-                      </button>
+                      </div>
                       <button
                         type="button"
                         role="switch"

@@ -1,6 +1,5 @@
 import {
   isHorizontalCenter,
-  isHorizontalOrVerticalCenter,
   isLeft,
   isTop,
   isVerticalCenter,
@@ -38,10 +37,9 @@ export const sceneEditorSnapAxis = (
   length: number,
   total: number,
   threshold: number,
-  near: boolean,
   targets: number[],
 ): Snap => {
-  const [low, high] = near ? [0, total] : [-length, total - length];
+  const [low, high] = [-length, total];
   const clampedPosition = clamped(position, low, high);
   const candidates: Snap[] = [
     { position: 0 },
@@ -107,9 +105,13 @@ export const sceneEditorHandlePoint = (rect: Rect, alignment: SettingsAlignment)
   y: mirrorPositionVertically(alignment) ? rect.y : rectMaxY(rect),
 });
 
-export const sceneEditorFixedPoint = (rect: Rect, alignment: SettingsAlignment): Point => ({
-  x: isHorizontalCenter(alignment) ? rectMidX(rect) : isLeft(alignment) ? rect.x : rectMaxX(rect),
-  y: isVerticalCenter(alignment) ? rectMidY(rect) : isTop(alignment) ? rect.y : rectMaxY(rect),
+export const sceneEditorFixedPoint = (
+  rect: Rect,
+  alignment: SettingsAlignment,
+  anchor: SettingsAlignment,
+): Point => ({
+  x: isHorizontalCenter(alignment) ? rectMidX(rect) : isLeft(anchor) ? rect.x : rectMaxX(rect),
+  y: isVerticalCenter(alignment) ? rectMidY(rect) : isTop(anchor) ? rect.y : rectMaxY(rect),
 });
 
 export const sceneEditorResizedRect = (rect: Rect, fixed: Point, factor: number): Rect => ({
@@ -120,7 +122,7 @@ export const sceneEditorResizedRect = (rect: Rect, fixed: Point, factor: number)
 });
 
 const layoutOffsetFromPosition = (position: number, size: number, total: number, near: boolean) =>
-  clamped(near ? (position * 100) / total : ((total - position - size) * 100) / total, 0, 100);
+  clamped(near ? (position * 100) / total : ((total - position - size) * 100) / total, -100, 100);
 
 export const sceneEditorLayout = <T extends Layout>(layout: T, rect: Rect, canvas: Size): T => {
   const result = { ...layout };
@@ -146,11 +148,7 @@ export const sceneEditorAlignedLayout = <T extends Layout>(
 ): T => {
   const position = layoutPosition(layout, size, canvas);
   const rect = { x: position.x, y: position.y, width: size.width, height: size.height };
-  const result = { ...layout, alignment };
-  if (isHorizontalOrVerticalCenter(alignment)) {
-    result.positioningLock = false;
-  }
-  return sceneEditorLayout(result, rect, canvas);
+  return sceneEditorLayout({ ...layout, alignment }, rect, canvas);
 };
 
 export const sceneEditorTapSelection = (
@@ -166,36 +164,6 @@ export const sceneEditorTapSelection = (
     return index + 1 < hitIds.length ? hitIds[index + 1]! : null;
   }
   return index === 0 ? null : (hitIds[0] ?? null);
-};
-
-export const movesDiagonally = (layout: Layout) =>
-  layout.positioningLock && !isHorizontalOrVerticalCenter(layout.alignment);
-
-export const diagonalDirection = (alignment: SettingsAlignment): Size => ({
-  width: isLeft(alignment) ? 1 : -1,
-  height: isTop(alignment) ? 1 : -1,
-});
-
-export const diagonalPosition = (
-  alignment: SettingsAlignment,
-  size: Size,
-  position: Point,
-  threshold: number,
-  canvas: Size,
-): Point => {
-  const direction = diagonalDirection(alignment);
-  const start = {
-    x: isLeft(alignment) ? 0 : canvas.width - size.width,
-    y: isTop(alignment) ? 0 : canvas.height - size.height,
-  };
-  const maximum = Math.min(canvas.width, canvas.height);
-  let offset =
-    ((position.x - start.x) * direction.width + (position.y - start.y) * direction.height) / 2;
-  offset = clamped(offset, 0, maximum);
-  if (offset < threshold) {
-    offset = 0;
-  }
-  return { x: start.x + direction.width * offset, y: start.y + direction.height * offset };
 };
 
 export const hitRect = (rect: Rect, sized: boolean, alignment: SettingsAlignment): Rect => {

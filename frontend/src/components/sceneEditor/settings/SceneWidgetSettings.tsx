@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import Icon from "../../Icon";
-import { Section, ToggleRow, useReadOnly, ValueEditCompact } from "../Form";
+import { Section, useReadOnly, ValueEditCompact } from "../Form";
 import type { Stack } from "../Stack";
 import type { Editor } from "../store";
 import { WidgetSettings } from "./WidgetSettings";
@@ -10,7 +10,6 @@ import {
   hasPosition,
   hasSize,
   isHorizontalCenter,
-  isHorizontalOrVerticalCenter,
   isVerticalCenter,
   mirrorPositionHorizontally,
   mirrorPositionVertically,
@@ -19,27 +18,105 @@ import {
   type SettingsScene,
   type SettingsSceneWidget,
 } from "../../../data/moblinSettings";
-import type { Size } from "../../../data/widgetOutlines";
+import { sceneEditorAlignedLayout } from "../../../data/sceneEditorGeometry";
+import {
+  sceneEditorWidgetWidth,
+  widgetOutlineSize,
+  type Layout,
+  type Size,
+} from "../../../data/widgetOutlines";
 import { t } from "../../../i18n";
-import { readStored, store } from "../../../storage";
 
-const [numericInput, setNumericInputSignal] = createSignal(readStored("sceneNumericInput") === "1");
-
-const setNumericInput = (enabled: boolean) => {
-  setNumericInputSignal(enabled);
-  store("sceneNumericInput", enabled ? "1" : null);
-};
-
-export const [savedLayout, setSavedLayout] = createSignal<Omit<
-  SettingsSceneWidget,
-  "id" | "widgetId"
-> | null>(null);
+const [copiedLayout, setCopiedLayout] = createSignal<Layout | null>(null);
 
 const alignments: SettingsAlignment[][] = [
   ["TopLeft", "TopCenter", "TopRight"],
   ["LeftCenter", "Center", "RightCenter"],
   ["BottomLeft", "BottomCenter", "BottomRight"],
 ];
+
+export function AlignmentPicker(props: {
+  alignment: SettingsAlignment;
+  onChange: (alignment: SettingsAlignment) => void;
+}) {
+  const readOnly = useReadOnly();
+  return (
+    <div class="flex flex-col gap-[5px]">
+      {alignments.map((row) => (
+        <div class="flex gap-[3px]">
+          {row.map((alignment) => (
+            <button
+              type="button"
+              aria-label={alignmentName(alignment)}
+              class="text-phone-tint disabled:opacity-50"
+              disabled={readOnly()}
+              onClick={() => props.onChange(alignment)}
+            >
+              <Icon
+                name={props.alignment === alignment ? "square-fill" : "square"}
+                class="size-[26px]"
+              />
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const layoutButtonClass =
+  "min-w-0 flex-1 truncate rounded-[8px] bg-phone-separator px-3 py-1.5 text-[15px] text-phone-tint disabled:opacity-35";
+
+export function CopyLayoutButton(props: { layout: Layout }) {
+  return (
+    <button
+      type="button"
+      class={layoutButtonClass}
+      onClick={() => {
+        const { x, y, size, alignment } = props.layout;
+        setCopiedLayout({ x, y, size, alignment });
+      }}
+    >
+      {t("Copy layout")}
+    </button>
+  );
+}
+
+export function PasteLayoutButton(props: { onPaste: (layout: Layout) => void }) {
+  const readOnly = useReadOnly();
+  return (
+    <button
+      type="button"
+      class={layoutButtonClass}
+      disabled={copiedLayout() === null || readOnly()}
+      onClick={() => {
+        const copied = copiedLayout();
+        if (copied) {
+          props.onPaste(copied);
+        }
+      }}
+    >
+      {t("Paste layout")}
+    </button>
+  );
+}
+
+export function CopyPasteLayoutAndAlignment(props: {
+  layout: Layout;
+  onPaste: (layout: Layout) => void;
+  onAlignment: (alignment: SettingsAlignment) => void;
+}) {
+  return (
+    <div class="flex items-center gap-3 px-4 py-2">
+      <div class="flex flex-1 flex-col gap-2">
+        <CopyLayoutButton layout={props.layout} />
+        <PasteLayoutButton onPaste={props.onPaste} />
+      </div>
+      <div class="h-[100px] w-px bg-phone-separator" />
+      <AlignmentPicker alignment={props.layout.alignment} onChange={props.onAlignment} />
+    </div>
+  );
+}
 
 export function SceneWidgetSettings(props: {
   editor: Editor;
@@ -50,7 +127,6 @@ export function SceneWidgetSettings(props: {
   canvas: Size;
 }) {
   const editor = props.editor;
-  const readOnly = useReadOnly();
   const scene = createMemo(() =>
     editor.state.scenes.find((candidate) => sameId(candidate.id, props.scene.id)),
   );
@@ -67,200 +143,114 @@ export function SceneWidgetSettings(props: {
         change(target);
       }
     });
-  const horizontalIncrement = () => 100 / props.canvas.width;
-  const verticalIncrement = () => 100 / props.canvas.height;
-  const setYBasedOnXIfLocked = (layout: SettingsSceneWidget) => {
-    if (layout.positioningLock) {
-      layout.y = (layout.x * verticalIncrement()) / horizontalIncrement();
-    }
-  };
-  const setXBasedOnYIfLocked = (layout: SettingsSceneWidget) => {
-    if (layout.positioningLock) {
-      layout.x = (layout.y * horizontalIncrement()) / verticalIncrement();
-    }
-  };
-
-  const positionX = (layout: SettingsSceneWidget) => (
-    <ValueEditCompact
-      value={layout.x}
-      minimum={0}
-      maximum={100}
-      increment={horizontalIncrement()}
-      mirror={mirrorPositionHorizontally(layout.alignment)}
-      numericInput={numericInput()}
-      decrementIcon="arrow-left-circle"
-      incrementIcon="arrow-right-circle"
-      onChange={(value) =>
-        edit((draft) => {
-          draft.x = value;
-          setYBasedOnXIfLocked(draft);
-        })
-      }
-    />
-  );
-  const positionY = (layout: SettingsSceneWidget) => (
-    <ValueEditCompact
-      value={layout.y}
-      minimum={0}
-      maximum={100}
-      increment={verticalIncrement()}
-      mirror={mirrorPositionVertically(layout.alignment)}
-      numericInput={numericInput()}
-      decrementIcon="arrow-up-circle"
-      incrementIcon="arrow-down-circle"
-      onChange={(value) =>
-        edit((draft) => {
-          draft.y = value;
-          setXBasedOnYIfLocked(draft);
-        })
-      }
-    />
-  );
 
   return (
     <Show when={sceneWidget() && widget() && { layout: sceneWidget()!, widget: widget()! }}>
-      {(current) => (
-        <>
-          <Show
-            when={
-              hasAlignment(current().widget.type) ||
-              hasPosition(current().widget.type) ||
-              hasSize(current().widget.type)
-            }
-          >
-            <Section
-              header={t("Layout")}
-              footer={t(
-                "Use save/load layout to position a widget in the same place in multiple scenes. Alternatively, use a Scene widget to easily show the same widgets in multiple scenes.",
-              )}
+      {(current) => {
+        const paste = (layout: Layout) => edit((draft) => Object.assign(draft, layout));
+        const width = (size: number) =>
+          sceneEditorWidgetWidth(current().widget, current().layout, size, props.canvas);
+        return (
+          <>
+            <Show
+              when={
+                hasAlignment(current().widget.type) ||
+                hasPosition(current().widget.type) ||
+                hasSize(current().widget.type)
+              }
             >
-              <div class="flex items-center gap-3 px-4 py-2">
-                <div class="flex flex-1 flex-col gap-2">
-                  <button
-                    type="button"
-                    class="rounded-[8px] bg-phone-separator px-3 py-1.5 text-[15px] text-phone-tint"
-                    onClick={() => {
-                      const { x, y, size, alignment, positioningLock } = current().layout;
-                      setSavedLayout({ x, y, size, alignment, positioningLock });
-                    }}
-                  >
-                    {t("Save layout")}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-[8px] bg-phone-separator px-3 py-1.5 text-[15px] text-phone-tint disabled:opacity-35"
-                    disabled={savedLayout() === null || readOnly()}
-                    onClick={() => {
-                      const saved = savedLayout();
-                      if (saved) {
-                        edit((draft) => Object.assign(draft, saved));
-                      }
-                    }}
-                  >
-                    {t("Load layout")}
-                  </button>
-                </div>
-                <Show when={hasAlignment(current().widget.type)}>
-                  <div class="h-[100px] w-px bg-phone-separator" />
-                  <div class="flex flex-col gap-[5px]">
-                    {alignments.map((row) => (
-                      <div class="flex gap-[3px]">
-                        {row.map((alignment) => (
-                          <button
-                            type="button"
-                            aria-label={alignmentName(alignment)}
-                            class="text-phone-tint disabled:opacity-50"
-                            disabled={readOnly()}
-                            onClick={() =>
-                              edit((draft) => {
-                                draft.alignment = alignment;
-                                if (isHorizontalOrVerticalCenter(alignment)) {
-                                  draft.positioningLock = false;
-                                }
-                              })
-                            }
-                          >
-                            <Icon
-                              name={
-                                current().layout.alignment === alignment ? "square-fill" : "square"
-                              }
-                              class="size-[26px]"
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </Show>
-              </div>
-              <Show when={hasPosition(current().widget.type)}>
+              <Section
+                header={t("Layout")}
+                footer={t(
+                  "Use copy/paste layout to position a widget in the same place in multiple scenes. Alternatively, use a Scene widget to easily show the same widgets in multiple scenes.",
+                )}
+              >
                 <Show
-                  when={
-                    !isHorizontalCenter(current().layout.alignment) &&
-                    !isVerticalCenter(current().layout.alignment)
-                  }
+                  when={hasAlignment(current().widget.type)}
                   fallback={
-                    <>
-                      <Show when={!isHorizontalCenter(current().layout.alignment)}>
-                        {positionX(current().layout)}
-                      </Show>
-                      <Show when={!isVerticalCenter(current().layout.alignment)}>
-                        {positionY(current().layout)}
-                      </Show>
-                    </>
+                    <div class="flex items-center gap-2 px-4 py-2">
+                      <CopyLayoutButton layout={current().layout} />
+                      <PasteLayoutButton onPaste={paste} />
+                    </div>
                   }
                 >
-                  <div class="flex items-center">
-                    <div class="flex min-w-0 flex-1 flex-col gap-[10px]">
-                      {positionX(current().layout)}
-                      {positionY(current().layout)}
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={t("Positioning lock")}
-                      class="grid w-[44px] shrink-0 place-items-center text-phone-tint disabled:opacity-50"
-                      disabled={readOnly()}
-                      onClick={() =>
+                  <CopyPasteLayoutAndAlignment
+                    layout={current().layout}
+                    onPaste={paste}
+                    onAlignment={(alignment) =>
+                      edit((draft) =>
+                        Object.assign(
+                          draft,
+                          sceneEditorAlignedLayout(
+                            draft,
+                            alignment,
+                            widgetOutlineSize(current().widget, draft, props.canvas) ?? {
+                              width: 0,
+                              height: 0,
+                            },
+                            props.canvas,
+                          ),
+                        ),
+                      )
+                    }
+                  />
+                </Show>
+                <Show when={hasPosition(current().widget.type)}>
+                  <Show when={!isHorizontalCenter(current().layout.alignment)}>
+                    <ValueEditCompact
+                      value={current().layout.x}
+                      minimum={-100}
+                      maximum={100}
+                      total={props.canvas.width}
+                      mirror={mirrorPositionHorizontally(current().layout.alignment)}
+                      decrementIcon="arrow-left-circle"
+                      incrementIcon="arrow-right-circle"
+                      onChange={(value) =>
                         edit((draft) => {
-                          draft.positioningLock = !draft.positioningLock;
-                          setYBasedOnXIfLocked(draft);
+                          draft.x = value;
                         })
                       }
-                    >
-                      <Icon
-                        name={current().layout.positioningLock ? "lock" : "lock-open"}
-                        class="size-[26px]"
-                      />
-                    </button>
-                  </div>
+                    />
+                  </Show>
+                  <Show when={!isVerticalCenter(current().layout.alignment)}>
+                    <ValueEditCompact
+                      value={current().layout.y}
+                      minimum={-100}
+                      maximum={100}
+                      total={props.canvas.height}
+                      mirror={mirrorPositionVertically(current().layout.alignment)}
+                      decrementIcon="arrow-up-circle"
+                      incrementIcon="arrow-down-circle"
+                      onChange={(value) =>
+                        edit((draft) => {
+                          draft.y = value;
+                        })
+                      }
+                    />
+                  </Show>
                 </Show>
-              </Show>
-              <Show when={hasSize(current().widget.type)}>
-                <ValueEditCompact
-                  value={current().layout.size}
-                  minimum={1}
-                  maximum={100}
-                  increment={1 / 15}
-                  numericInput={numericInput()}
-                  decrementIcon="resize-down"
-                  incrementIcon="resize-up"
-                  onChange={(value) =>
-                    edit((draft) => {
-                      draft.size = value;
-                    })
-                  }
-                />
-              </Show>
-              <ToggleRow
-                label={t("Numeric input")}
-                on={numericInput()}
-                onToggle={setNumericInput}
-              />
-            </Section>
-          </Show>
-          <WidgetSettings editor={editor} stack={props.stack} widgetId={props.widgetId} />
-        </>
-      )}
+                <Show when={hasSize(current().widget.type)}>
+                  <ValueEditCompact
+                    value={current().layout.size}
+                    minimum={1}
+                    maximum={100}
+                    zero={width(0)}
+                    total={width(100)}
+                    decrementIcon="resize-down"
+                    incrementIcon="resize-up"
+                    onChange={(value) =>
+                      edit((draft) => {
+                        draft.size = value;
+                      })
+                    }
+                  />
+                </Show>
+              </Section>
+            </Show>
+            <WidgetSettings editor={editor} stack={props.stack} widgetId={props.widgetId} />
+          </>
+        );
+      }}
     </Show>
   );
 }

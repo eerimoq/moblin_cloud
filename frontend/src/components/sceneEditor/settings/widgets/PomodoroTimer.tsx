@@ -34,9 +34,9 @@ export function PomodoroTimerForm(props: WidgetFormProps) {
     const gallery = props.editor.state.gallery;
     return gallery ? [...gallery.bundledSounds, ...gallery.customSounds] : [];
   };
-  const soundItems = (selected: string | null) => [
-    ...(selected === null ? [{ id: "", name: t("-- None --") }] : []),
+  const soundItems = () => [
     ...sounds().map((sound) => ({ id: sound.id, name: sound.name })),
+    { id: "", name: t("-- None --") },
   ];
   return (
     <>
@@ -180,7 +180,7 @@ export function PomodoroTimerForm(props: WidgetFormProps) {
           stack={props.stack}
           label={t("Focus to break")}
           title={t("Sound")}
-          items={soundItems(timer().focusToBreakSoundId)}
+          items={soundItems()}
           selected={timer().focusToBreakSoundId ?? ""}
           onPick={(id) =>
             props.edit((draft) => {
@@ -192,7 +192,7 @@ export function PomodoroTimerForm(props: WidgetFormProps) {
           stack={props.stack}
           label={t("Break to focus")}
           title={t("Sound")}
-          items={soundItems(timer().breakToFocusSoundId)}
+          items={soundItems()}
           selected={timer().breakToFocusSoundId ?? ""}
           onPick={(id) =>
             props.edit((draft) => {

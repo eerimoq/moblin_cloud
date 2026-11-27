@@ -43,7 +43,7 @@
         "Moblin/View/ControlBar/QuickButton/SceneEditor/SceneEditorGeometry.swift",
         "MoblinTests/Moblin/View/ControlBar/QuickButton/SceneEditor/SceneEditorGeometrySuite.swift"
       ],
-      "commit": "c960f2964"
+      "commit": "002d8f540"
     },
     {
       "files": [
@@ -58,7 +58,7 @@
         "Moblin/View/ControlBar/QuickButton/SceneEditor/SceneEditorView.swift",
         "Moblin/Various/Model/ModelSceneEditor.swift"
       ],
-      "commit": "c960f2964"
+      "commit": "002d8f540"
     },
     {
       "files": [
@@ -90,7 +90,7 @@
       "moblin": [
         "Moblin/View/Utils/ValueEditView.swift"
       ],
-      "commit": "c960f2964"
+      "commit": "002d8f540"
     },
     {
       "files": [
@@ -113,7 +113,7 @@
         "Moblin/View/Utils/PositionEditView.swift",
         "Moblin/View/Utils/SizeEditView.swift"
       ],
-      "commit": "cbe4b01ab"
+      "commit": "002d8f540"
     },
     {
       "files": [
@@ -124,7 +124,7 @@
         "Moblin/View/Settings/Scenes/Widgets/Widget/WidgetSettingsView.swift",
         "Moblin/View/Settings/Scenes/Widgets/WidgetsSettingsView.swift"
       ],
-      "commit": "cbe4b01ab"
+      "commit": "002d8f540"
     },
     {
       "files": [
@@ -508,7 +508,7 @@
       "moblin": [
         "Moblin/View/Settings/Streams/Stream/Replay/StreamReplaySettingsView.swift"
       ],
-      "commit": "0292c5e7e",
+      "commit": "002d8f540",
       "branch": "remote-control-streams"
     },
     {

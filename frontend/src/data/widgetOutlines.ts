@@ -21,7 +21,6 @@ export type Layout = {
   y: number;
   size: number;
   alignment: SettingsAlignment;
-  positioningLock: boolean;
 };
 
 export type WidgetOutline = {
@@ -127,6 +126,13 @@ export const widgetOutlineSize = (
       return null;
   }
 };
+
+export const sceneEditorWidgetWidth = (
+  widget: SettingsWidget,
+  layout: Layout,
+  size: number,
+  canvas: Size,
+) => widgetOutlineSize(widget, { ...layout, size }, canvas)?.width ?? toPixels(size, canvas.width);
 
 export const widgetOutlines = (
   scene: SettingsScene | undefined,

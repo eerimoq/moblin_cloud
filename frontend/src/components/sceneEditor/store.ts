@@ -365,7 +365,10 @@ export function createEditor(
               synced.players = players;
             });
           }
-          if (pendingSwitch && synced.scenes.some((scene) => sameId(scene.id, pendingSwitch))) {
+          if (
+            pendingSwitch &&
+            synced.scenes.some((scene) => scene.enabled && sameId(scene.id, pendingSwitch))
+          ) {
             const id = pendingSwitch;
             pendingSwitch = null;
             if (sameId(state.sceneId, id)) {
@@ -430,7 +433,10 @@ export function createEditor(
           set("sceneId", id);
           return;
         }
-        if (picked.enabled && !synced.scenes.some((scene) => sameId(scene.id, id))) {
+        if (
+          picked.enabled &&
+          !synced.scenes.some((scene) => scene.enabled && sameId(scene.id, id))
+        ) {
           set("sceneId", id);
           pendingSwitch = id;
         } else if (picked.enabled) {
@@ -441,6 +447,9 @@ export function createEditor(
           }
         } else {
           set("sceneId", id);
+          if (sameId(pendingSwitch, id)) {
+            pendingSwitch = null;
+          }
         }
       },
       editScene: (id, change) => {

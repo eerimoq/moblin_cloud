@@ -1,20 +1,12 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import Icon, { type IconName } from "../Icon";
 import { ask, choose } from "../Modal";
-import { alignmentIcon, widgetIcon } from "./icons";
-import { Popover, PopoverDivider, PopoverList, PopoverRow } from "./Popover";
+import { widgetIcon } from "./icons";
+import { Popover, PopoverDivider, PopoverList, PopoverRow, PopoverTitle } from "./Popover";
 import type { Editor } from "./store";
-import {
-  alignmentName,
-  defaultSceneWidget,
-  hasAlignment,
-  sameId,
-  type SettingsAlignment,
-  type SettingsScene,
-} from "../../data/moblinSettings";
+import { defaultSceneWidget, sameId, type SettingsScene } from "../../data/moblinSettings";
 import { SceneResolver } from "../../data/sceneResolver";
-import { sceneEditorAlignedLayout } from "../../data/sceneEditorGeometry";
-import type { Size, WidgetOutline } from "../../data/widgetOutlines";
+import type { WidgetOutline } from "../../data/widgetOutlines";
 import { t } from "../../i18n";
 
 export function ToolButton(props: {
@@ -39,12 +31,6 @@ export function ToolButton(props: {
     </button>
   );
 }
-
-const alignments: SettingsAlignment[][] = [
-  ["TopLeft", "TopCenter", "TopRight"],
-  ["LeftCenter", "Center", "RightCenter"],
-  ["BottomLeft", "BottomCenter", "BottomRight"],
-];
 
 function Divider(props: { vertical: boolean }) {
   return (
@@ -87,7 +73,6 @@ export default function Toolbar(props: {
   scene: SettingsScene | undefined;
   selected: WidgetOutline | undefined;
   outlines: WidgetOutline[];
-  canvas: Size;
   vertical: boolean;
   width: number;
   height: number;
@@ -95,10 +80,10 @@ export default function Toolbar(props: {
   onCreateScene: () => void;
   onCreateWidget: () => void;
 }) {
-  const [open, setOpen] = createSignal<"scenes" | "add" | "alignment" | null>(null);
+  const [open, setOpen] = createSignal<"scenes" | "add" | "widgets" | null>(null);
   const [popoverOffset, setPopoverOffset] = createSignal(0);
   const close = () => setOpen(null);
-  const openAt = (kind: "scenes" | "add" | "alignment") => (offset: number) => {
+  const openAt = (kind: "scenes" | "add" | "widgets") => (offset: number) => {
     setPopoverOffset(
       Math.max(4, Math.min(offset, (props.vertical ? props.height : props.width) - 240)),
     );
@@ -143,25 +128,6 @@ export default function Toolbar(props: {
     });
   };
 
-  const setAlignment = (alignment: SettingsAlignment) => {
-    const selected = props.selected;
-    const scene = props.scene;
-    if (!selected || !scene) {
-      return;
-    }
-    props.editor.editScene(scene.id, (draft) => {
-      const sceneWidget = draft.widgets.find(
-        (candidate) => candidate.id === selected.sceneWidget.id,
-      );
-      if (sceneWidget) {
-        Object.assign(
-          sceneWidget,
-          sceneEditorAlignedLayout(sceneWidget, alignment, selected.rect, props.canvas),
-        );
-      }
-    });
-  };
-
   const removeWidget = async () => {
     const selected = props.selected;
     const scene = props.scene;
@@ -195,6 +161,19 @@ export default function Toolbar(props: {
       props.editor.removeScene(scene.id);
     }
   };
+
+  const toggleSceneEnabled = () => {
+    const scene = props.scene;
+    if (!scene) {
+      return;
+    }
+    props.editor.editScene(scene.id, (draft) => {
+      draft.enabled = !draft.enabled;
+    });
+    props.editor.selectScene(scene.id);
+  };
+
+  const inScene = () => props.outlines.filter((outline) => outline.inScene);
 
   const pickScene = (scene: SettingsScene) => {
     const widgetId = props.scene?.widgets.find(
@@ -247,6 +226,11 @@ export default function Toolbar(props: {
               fallback={
                 <>
                   <Show when={!props.editor.readOnly()}>
+                    <ToolButton
+                      icon={scene().enabled ? "eye" : "eye-off"}
+                      label={scene().enabled ? t("Disable scene") : t("Enable scene")}
+                      onClick={toggleSceneEnabled}
+                    />
                     <PopoverButton
                       icon="plus"
                       label={t("Add widget")}
@@ -254,6 +238,13 @@ export default function Toolbar(props: {
                       onOpen={openAt("add")}
                     />
                   </Show>
+                  <PopoverButton
+                    icon="list"
+                    label={t("Select widget")}
+                    disabled={inScene().length === 0}
+                    vertical={props.vertical}
+                    onOpen={openAt("widgets")}
+                  />
                   <ToolButton icon="sliders" label={t("Scene settings")} onClick={toggleSettings} />
                   <Show when={!props.editor.readOnly()}>
                     <ToolButton
@@ -290,14 +281,6 @@ export default function Toolbar(props: {
                       })
                     }
                   />
-                  <Show when={hasAlignment(selected().widget.type)}>
-                    <PopoverButton
-                      icon={alignmentIcon(selected().sceneWidget.alignment)}
-                      label={t("Alignment")}
-                      vertical={props.vertical}
-                      onOpen={openAt("alignment")}
-                    />
-                  </Show>
                   <ToolButton
                     icon="layers-up"
                     label={t("Move up")}
@@ -346,6 +329,7 @@ export default function Toolbar(props: {
               />
               <PopoverDivider />
             </Show>
+            <PopoverTitle text={t("Scenes")} />
             <For each={props.editor.state.scenes}>
               {(scene) => (
                 <PopoverRow
@@ -370,6 +354,12 @@ export default function Toolbar(props: {
               }}
             />
             <PopoverDivider />
+            <PopoverTitle text={t("Widgets")} />
+            <Show when={addable().length === 0}>
+              <p class="p-[11px] text-[17px] text-phone-border">
+                {t("All are already in this scene. Create a new one.")}
+              </p>
+            </Show>
             <For each={addable()}>
               {(widget) => (
                 <PopoverRow
@@ -381,38 +371,22 @@ export default function Toolbar(props: {
             </For>
           </PopoverList>
         </Popover>
-        <Popover open={open() === "alignment"} side={side()} onClose={close}>
-          <Show when={props.selected}>
-            {(selected) => (
-              <div class="flex flex-col p-[10px]">
-                <For each={alignments}>
-                  {(row) => (
-                    <div class="flex">
-                      <For each={row}>
-                        {(alignment) => (
-                          <button
-                            type="button"
-                            aria-label={alignmentName(alignment)}
-                            class="grid size-[44px] place-items-center text-phone-tint"
-                            onClick={() => setAlignment(alignment)}
-                          >
-                            <Icon
-                              name={
-                                selected().sceneWidget.alignment === alignment
-                                  ? "square-fill"
-                                  : "square"
-                              }
-                              class="size-[28px]"
-                            />
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                  )}
-                </For>
-              </div>
-            )}
-          </Show>
+        <Popover open={open() === "widgets"} side={side()} onClose={close}>
+          <PopoverList>
+            <PopoverTitle text={t("Widgets")} />
+            <For each={inScene()}>
+              {(outline) => (
+                <PopoverRow
+                  icon={widgetIcon(outline.widget.type)}
+                  text={outline.widget.name}
+                  onClick={() => {
+                    props.editor.set("selection", outline.id);
+                    close();
+                  }}
+                />
+              )}
+            </For>
+          </PopoverList>
         </Popover>
       </div>
     </div>

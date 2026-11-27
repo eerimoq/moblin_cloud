@@ -64,7 +64,7 @@ const fixAlertMedias = (editor: Editor) => {
   const missingImage = (alert: SettingsAlert) =>
     !images.some((image) => sameId(image.id, alert.imageId));
   const missingSound = (alert: SettingsAlert) =>
-    !sounds.some((sound) => sameId(sound.id, alert.soundId));
+    alert.soundId !== null && !sounds.some((sound) => sameId(sound.id, alert.soundId));
   const alertsOf = (widget: SettingsWidget) => [
     widget.alerts.twitch.follows,
     widget.alerts.twitch.subscriptions,
@@ -202,6 +202,23 @@ function SoundSelectorPage(props: AlertProps) {
             </div>
           )}
         </For>
+        <div class="flex min-h-[44px] items-center gap-3 px-4 py-2 text-[17px]">
+          <button
+            type="button"
+            class="flex min-w-0 flex-1 items-center gap-3 text-left disabled:opacity-50"
+            disabled={readOnly()}
+            onClick={() =>
+              editAlert(props, (draft) => {
+                draft.soundId = null;
+              })
+            }
+          >
+            <span class="min-w-0 flex-1 truncate">{t("-- None --")}</span>
+            <Show when={alert().soundId === null}>
+              <Icon name="check" class="size-[18px] text-phone-tint" />
+            </Show>
+          </button>
+        </div>
       </Section>
       <Section>
         <LinkRow
@@ -260,10 +277,11 @@ function AlertMedia(props: AlertProps) {
           />
           <LinkRow
             label={t("Sound")}
-            value={mediaName(
-              [...(current()?.bundledSounds ?? []), ...(current()?.customSounds ?? [])],
-              alert().soundId,
-            )}
+            value={
+              [...(current()?.bundledSounds ?? []), ...(current()?.customSounds ?? [])].find(
+                (sound) => sameId(sound.id, alert().soundId),
+              )?.name ?? t("-- None --")
+            }
             onClick={() =>
               props.stack.push({
                 title: t("Sound"),

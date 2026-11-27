@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import type { SettingsAlignment } from "./moblinSettings";
-import { isLeft, isTop } from "./moblinSettings";
 import {
   sceneEditorAlignedLayout,
   sceneEditorFixedPoint,
@@ -30,7 +29,6 @@ const makeLayout = (alignment: SettingsAlignment): Layout => ({
   y: 0,
   size: 100,
   alignment,
-  positioningLock: false,
 });
 
 const sizeOf = (rect: Rect): Size => ({ width: rect.width, height: rect.height });
@@ -100,32 +98,34 @@ describe("SceneEditorGeometrySuite", () => {
     }
   });
 
-  test("alignCenteredClearsPositioningLock", () => {
-    const layout = { ...makeLayout("TopLeft"), positioningLock: true };
-    const zero = { width: 0, height: 0 };
-    expect(sceneEditorAlignedLayout(layout, "LeftCenter", zero, canvasSize).positioningLock).toBe(
-      false,
-    );
-    expect(sceneEditorAlignedLayout(layout, "BottomRight", zero, canvasSize).positioningLock).toBe(
-      true,
-    );
-  });
-
-  test("moveWithPositioningLockKeepsCorner", () => {
-    let layout = { ...makeLayout("TopLeft"), positioningLock: true };
-    const rect = { x: 1500, y: 780, width: 400, height: 300 };
-    layout = sceneEditorLayout(layout, rect, canvasSize);
-    expect(layout.alignment).toBe("TopLeft");
-    expect(layout.positioningLock).toBe(true);
-    expectPoint(layoutPosition(layout, sizeOf(rect), canvasSize), rect);
-  });
-
   test.each(allAlignments)("resizeKeepsAlignedPoint %s", (alignment) => {
     const rect = { x: 500, y: 300, width: 400, height: 300 };
-    const fixed = sceneEditorFixedPoint(rect, alignment);
+    const fixed = sceneEditorFixedPoint(rect, alignment, alignment);
     const resized = sceneEditorResizedRect(rect, fixed, 1.5);
-    expectPoint(sceneEditorFixedPoint(resized, alignment), fixed);
+    expectPoint(sceneEditorFixedPoint(resized, alignment, alignment), fixed);
     expect(sizeOf(resized)).toEqual({ width: 600, height: 450 });
+  });
+
+  test.each<[SettingsAlignment, SettingsAlignment, Point]>([
+    ["TopLeft", "BottomRight", { x: 900, y: 600 }],
+    ["TopLeft", "TopRight", { x: 900, y: 300 }],
+    ["BottomRight", "TopLeft", { x: 500, y: 300 }],
+    ["TopCenter", "BottomRight", { x: 700, y: 600 }],
+    ["LeftCenter", "BottomRight", { x: 900, y: 450 }],
+    ["Center", "TopLeft", { x: 700, y: 450 }],
+  ])("resizeFixedPointIsOppositeHandleUnlessCentered %s %s", (alignment, anchor, expected) => {
+    const rect = { x: 500, y: 300, width: 400, height: 300 };
+    expect(sceneEditorFixedPoint(rect, alignment, anchor)).toEqual(expected);
+  });
+
+  test.each(corners)("resizeFromAnyCornerKeepsOppositeCorner %s", (anchor) => {
+    const rect = { x: 500, y: 300, width: 400, height: 300 };
+    const fixed = sceneEditorFixedPoint(rect, "TopLeft", anchor);
+    const resized = sceneEditorResizedRect(rect, fixed, 0.5);
+    const layout = sceneEditorLayout(makeLayout("TopLeft"), resized, canvasSize);
+    const position = layoutPosition(layout, sizeOf(resized), canvasSize);
+    const moved = { ...position, ...sizeOf(resized) };
+    expectPoint(sceneEditorFixedPoint(moved, "TopLeft", anchor), fixed);
   });
 
   test("handleIsOppositeAlignedCorner", () => {
@@ -137,14 +137,14 @@ describe("SceneEditorGeometrySuite", () => {
     expect(sceneEditorHandlePoint(rect, "Center")).toEqual({ x: 900, y: 600 });
   });
 
-  test("snapAxisKeepsOffsetWithinBounds", () => {
-    expect(sceneEditorSnapAxis(-300, 400, 1920, 10, true, []).position).toBe(0);
-    expect(sceneEditorSnapAxis(1800, 400, 1920, 10, true, []).position).toBe(1800);
-    expect(sceneEditorSnapAxis(2500, 400, 1920, 10, true, []).position).toBe(1920);
-    expect(sceneEditorSnapAxis(-300, 400, 1920, 10, false, []).position).toBe(-300);
-    expect(sceneEditorSnapAxis(-500, 400, 1920, 10, false, []).position).toBe(-400);
-    expect(sceneEditorSnapAxis(1800, 400, 1920, 10, false, []).position).toBe(1520);
-    expect(sceneEditorSnapAxis(300, 2000, 1920, 10, true, []).position).toBe(300);
+  test.each([
+    [-300, 400, -300],
+    [-500, 400, -400],
+    [1800, 400, 1800],
+    [2500, 400, 1920],
+    [300, 2000, 300],
+  ])("snapAxisKeepsWidgetTouchingCanvas %d %d", (position, length, expected) => {
+    expect(sceneEditorSnapAxis(position, length, 1920, 10, []).position).toBe(expected);
   });
 
   test.each(corners)("snapAxisBoundsMatchLayoutBounds %s", (alignment) => {
@@ -153,30 +153,30 @@ describe("SceneEditorGeometrySuite", () => {
       { x: -1000, y: -1000 },
       { x: 3000, y: 3000 },
     ]) {
-      const x = sceneEditorSnapAxis(position.x, size.width, 1920, 10, isLeft(alignment), []);
-      const y = sceneEditorSnapAxis(position.y, size.height, 1080, 10, isTop(alignment), []);
+      const x = sceneEditorSnapAxis(position.x, size.width, 1920, 10, []);
+      const y = sceneEditorSnapAxis(position.y, size.height, 1080, 10, []);
       const rect = { x: x.position, y: y.position, ...size };
       const layout = sceneEditorLayout(makeLayout(alignment), rect, canvasSize);
-      expectPercentage(layout.x);
-      expectPercentage(layout.y);
-      expect([0, 100]).toContain(layout.x);
-      expect([0, 100]).toContain(layout.y);
+      for (const offset of [layout.x, layout.y]) {
+        expect(offset).toBeGreaterThanOrEqual(-100);
+        expect(offset).toBeLessThanOrEqual(100);
+      }
     }
   });
 
   test("snapAxisSnapsToEdgesAndCenter", () => {
-    expect(sceneEditorSnapAxis(-5, 400, 1920, 10, true, []).position).toBe(0);
-    expect(sceneEditorSnapAxis(1525, 400, 1920, 10, true, []).position).toBe(1520);
-    const center = sceneEditorSnapAxis(765, 400, 1920, 10, true, []);
+    expect(sceneEditorSnapAxis(-5, 400, 1920, 10, []).position).toBe(0);
+    expect(sceneEditorSnapAxis(1525, 400, 1920, 10, []).position).toBe(1520);
+    const center = sceneEditorSnapAxis(765, 400, 1920, 10, []);
     expect(center.position).toBe(760);
     expect(center.guide).toBe(960);
-    const unsized = sceneEditorSnapAxis(955, 0, 1920, 10, true, []);
+    const unsized = sceneEditorSnapAxis(955, 0, 1920, 10, []);
     expect(unsized.position).toBe(960);
     expect(unsized.guide).toBe(960);
   });
 
   test("snapAxisSnapsToOtherWidgets", () => {
-    const snap = sceneEditorSnapAxis(1003, 400, 1920, 10, true, [1000]);
+    const snap = sceneEditorSnapAxis(1003, 400, 1920, 10, [1000]);
     expect(snap.position).toBe(1000);
     expect(snap.guide).toBe(1000);
   });
@@ -202,10 +202,10 @@ describe("SceneEditorGeometrySuite", () => {
 });
 
 describe("sceneEditorLayout", () => {
-  test("layoutAtFarEdgesIsNeverNegative", () => {
-    const rect = { x: 1920 - 1.1, y: 1080 - 1.1, width: 1.1, height: 1.1 };
-    const layout = sceneEditorLayout(makeLayout("BottomRight"), rect, canvasSize);
-    expect(layout.x).toBe(0);
-    expect(layout.y).toBe(0);
+  test("layoutOfWidgetLargerThanCanvasStaysWithinMoblinsBounds", () => {
+    const rect = { x: -2000, y: -1200, width: 2000, height: 1200 };
+    const layout = sceneEditorLayout(makeLayout("TopLeft"), rect, canvasSize);
+    expect(layout.x).toBe(-100);
+    expect(layout.y).toBe(-100);
   });
 });

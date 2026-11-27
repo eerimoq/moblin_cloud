@@ -79,6 +79,12 @@ export function PopoverRow(props: {
   );
 }
 
+export function PopoverTitle(props: { text: string }) {
+  return (
+    <span class="px-[11px] pt-[11px] pb-[5px] text-[13px] text-phone-border">{props.text}</span>
+  );
+}
+
 export function PopoverDivider() {
   return <div class="my-[2px] h-px bg-phone-separator" />;
 }

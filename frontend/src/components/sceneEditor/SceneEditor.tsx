@@ -93,7 +93,7 @@ export default function SceneEditor(props: {
       }
     });
   };
-  const onResize = (outline: WidgetOutline, size: number) => {
+  const onResize = (outline: WidgetOutline, size: number, rect: Rect) => {
     const edited = scene();
     if (!edited) {
       return;
@@ -103,7 +103,9 @@ export default function SceneEditor(props: {
         (candidate) => candidate.id === outline.sceneWidget.id,
       );
       if (sceneWidget) {
-        sceneWidget.size = clamped(size, 1, 100);
+        Object.assign(sceneWidget, sceneEditorLayout(sceneWidget, rect, canvas()), {
+          size: clamped(size, 1, 100),
+        });
       }
     });
   };
@@ -245,7 +247,6 @@ export default function SceneEditor(props: {
         scene={scene()}
         selected={selected()}
         outlines={outlines()}
-        canvas={canvas()}
         vertical={landscape()}
         width={props.width}
         height={props.height}

@@ -121,7 +121,6 @@ export type SettingsStreamReplay = {
   y: number;
   size: number;
   alignment: SettingsAlignment;
-  positioningLock: boolean;
 };
 
 export type MultiStreamingDestination = {
@@ -393,7 +392,6 @@ export const defaultStream = (id: string, name = "My stream"): SettingsStream =>
     y: 0,
     size: 100,
     alignment: "TopLeft",
-    positioningLock: false,
   },
   goLiveNotificationDiscordMessage: "",
   goLiveNotificationDiscordWebhookUrl: "",

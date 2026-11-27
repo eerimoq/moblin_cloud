@@ -22,8 +22,6 @@ export const isHorizontalCenter = (alignment: SettingsAlignment) =>
   alignment === "TopCenter" || alignment === "BottomCenter" || alignment === "Center";
 export const isVerticalCenter = (alignment: SettingsAlignment) =>
   alignment === "LeftCenter" || alignment === "RightCenter" || alignment === "Center";
-export const isHorizontalOrVerticalCenter = (alignment: SettingsAlignment) =>
-  isHorizontalCenter(alignment) || isVerticalCenter(alignment);
 export const isTop = (alignment: SettingsAlignment) =>
   alignment === "TopLeft" || alignment === "TopRight" || alignment === "TopCenter";
 export const mirrorPositionHorizontally = (alignment: SettingsAlignment) =>
@@ -77,7 +75,6 @@ export type SettingsSceneWidget = {
   y: number;
   size: number;
   alignment: SettingsAlignment;
-  positioningLock: boolean;
 };
 
 export type VideoStabilizationMode =
@@ -329,7 +326,7 @@ export type SettingsAlert = {
   mediaType: "gifAndSound" | "video";
   imageId: string;
   imageLoopCount: number;
-  soundId: string;
+  soundId: string | null;
   videoName: string;
   textColor: RgbColor;
   accentColor: RgbColor;
@@ -750,7 +747,6 @@ export const defaultSceneWidget = (
     y: 0,
     size: 100,
     alignment: "TopLeft",
-    positioningLock: false,
   };
   switch (type) {
     case "Image":
@@ -1192,7 +1188,6 @@ export const normalizeScene = (raw: Record<string, unknown>): SettingsScene => {
     y: 0,
     size: 100,
     alignment: "TopLeft" as SettingsAlignment,
-    positioningLock: false,
   }));
   if (!scene.enabled && typeof raw.enabled !== "boolean") {
     scene.enabled = true;

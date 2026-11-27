@@ -1,5 +1,5 @@
 import type { IconName } from "../Icon";
-import type { SettingsAlignment, SettingsWidgetType } from "../../data/moblinSettings";
+import type { SettingsWidgetType } from "../../data/moblinSettings";
 import { widgetTypeSymbol } from "../../data/moblinSettings";
 
 const symbols: Record<string, IconName> = {
@@ -43,5 +43,3 @@ const symbols: Record<string, IconName> = {
 export const symbolIcon = (symbol: string): IconName => symbols[symbol] ?? "sparkles";
 
 export const widgetIcon = (type: SettingsWidgetType) => symbolIcon(widgetTypeSymbol(type));
-
-export const alignmentIcon = (alignment: SettingsAlignment): IconName => `align-${alignment}`;
