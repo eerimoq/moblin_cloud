@@ -22,6 +22,23 @@ export const isHorizontalCenter = (alignment: SettingsAlignment) =>
   alignment === "TopCenter" || alignment === "BottomCenter" || alignment === "Center";
 export const isVerticalCenter = (alignment: SettingsAlignment) =>
   alignment === "LeftCenter" || alignment === "RightCenter" || alignment === "Center";
+export const migrateCenterOffsets = (layout: {
+  x: number;
+  y: number;
+  alignment: SettingsAlignment;
+  centerOffsetMigrated: boolean;
+}) => {
+  if (layout.centerOffsetMigrated) {
+    return;
+  }
+  if (isHorizontalCenter(layout.alignment)) {
+    layout.x = 0;
+  }
+  if (isVerticalCenter(layout.alignment)) {
+    layout.y = 0;
+  }
+  layout.centerOffsetMigrated = true;
+};
 export const isTop = (alignment: SettingsAlignment) =>
   alignment === "TopLeft" || alignment === "TopRight" || alignment === "TopCenter";
 export const mirrorPositionHorizontally = (alignment: SettingsAlignment) =>
@@ -75,6 +92,7 @@ export type SettingsSceneWidget = {
   y: number;
   size: number;
   alignment: SettingsAlignment;
+  centerOffsetMigrated: boolean;
 };
 
 export type VideoStabilizationMode =
@@ -747,6 +765,7 @@ export const defaultSceneWidget = (
     y: 0,
     size: 100,
     alignment: "TopLeft",
+    centerOffsetMigrated: true,
   };
   switch (type) {
     case "Image":
@@ -1188,7 +1207,9 @@ export const normalizeScene = (raw: Record<string, unknown>): SettingsScene => {
     y: 0,
     size: 100,
     alignment: "TopLeft" as SettingsAlignment,
+    centerOffsetMigrated: false,
   }));
+  scene.widgets.forEach(migrateCenterOffsets);
   if (!scene.enabled && typeof raw.enabled !== "boolean") {
     scene.enabled = true;
   }

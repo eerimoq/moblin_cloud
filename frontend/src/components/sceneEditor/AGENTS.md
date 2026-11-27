@@ -12,6 +12,7 @@ A copy of Moblin's scene editor (`SceneEditorView.swift` and friends in the Mobl
 - Per type forms in `settings/widgets/` are one file per widget type, named like its directory in Moblin's `Settings/Scenes/Widgets/Widget/`.
 - `EditorOptions` carries the phone state Moblin's views read.
 - Moblin refuses a layout `x` or `y` outside -100...100, and a Moblin without layouts in pixels refuses a negative one, so `sceneEditorLayout` clamps them and a widget dragged past the top or left edge fails to sync on an older Moblin.
+- A center alignment's `x` and `y` are offsets from the canvas center. A scene widget and a stream's replay without `centerOffsetMigrated` are from a Moblin that ignored them, so normalizing zeroes them like Moblin's decoder, and everything sent carries `centerOffsetMigrated`, or Moblin zeroes the offsets again. An older Moblin keeps such a widget centered whatever is sent, so the offset is back at zero on the next refetch.
 - A scene is only switched to once the device has it enabled, so `selectScene` waits for the sync after the toolbar enables one.
 - The Scene widgets quick button's panel (`SceneWidgetsPanel.tsx`, Moblin's `QuickButtonSceneWidgetsView`) shares the scene editor's `Editor` with the full screen editor: `MoblinScreen` keeps one while either is open, so opening the editor from the panel never races the panel's unsent changes, and the draft is flushed when the last of them closes. The panel lists the phone's selected scene, not the editor's `sceneId`, like Moblin.
 

@@ -10,12 +10,9 @@ import {
 import { CopyPasteLayoutAndAlignment } from "../sceneEditor/settings/SceneWidgetSettings";
 import { secondsItems } from "../sceneEditor/settings/widgets/shared";
 import type { StreamFormProps } from "./StreamsSettings";
-import {
-  isHorizontalCenter,
-  isVerticalCenter,
-  mirrorPositionHorizontally,
-  mirrorPositionVertically,
-} from "../../data/moblinSettings";
+import { mirrorPositionHorizontally, mirrorPositionVertically } from "../../data/moblinSettings";
+import { sceneEditorAlignedLayout } from "../../data/sceneEditorGeometry";
+import type { Size } from "../../data/widgetOutlines";
 import type { ReplayTransitionType, SettingsStreamReplay } from "../../data/moblinStreamSettings";
 import { t } from "../../i18n";
 
@@ -42,42 +39,43 @@ function LayoutSection(props: StreamFormProps) {
           onPaste={(layout) => edit((draft) => Object.assign(draft, layout))}
           onAlignment={(alignment) =>
             edit((draft) => {
-              draft.alignment = alignment;
+              const canvas = dimensions() as Size;
+              const size = {
+                width: (canvas.width * draft.size) / 100,
+                height: (canvas.height * draft.size) / 100,
+              };
+              Object.assign(draft, sceneEditorAlignedLayout(draft, alignment, size, canvas));
             })
           }
         />
-        <Show when={!isHorizontalCenter(replay().alignment)}>
-          <ValueEditCompact
-            value={replay().x}
-            minimum={-100}
-            maximum={100}
-            total={dimensions().width!}
-            mirror={mirrorPositionHorizontally(replay().alignment)}
-            decrementIcon="arrow-left-circle"
-            incrementIcon="arrow-right-circle"
-            onChange={(value) =>
-              edit((draft) => {
-                draft.x = value;
-              })
-            }
-          />
-        </Show>
-        <Show when={!isVerticalCenter(replay().alignment)}>
-          <ValueEditCompact
-            value={replay().y}
-            minimum={-100}
-            maximum={100}
-            total={dimensions().height!}
-            mirror={mirrorPositionVertically(replay().alignment)}
-            decrementIcon="arrow-up-circle"
-            incrementIcon="arrow-down-circle"
-            onChange={(value) =>
-              edit((draft) => {
-                draft.y = value;
-              })
-            }
-          />
-        </Show>
+        <ValueEditCompact
+          value={replay().x}
+          minimum={-100}
+          maximum={100}
+          total={dimensions().width!}
+          mirror={mirrorPositionHorizontally(replay().alignment)}
+          decrementIcon="arrow-left-circle"
+          incrementIcon="arrow-right-circle"
+          onChange={(value) =>
+            edit((draft) => {
+              draft.x = value;
+            })
+          }
+        />
+        <ValueEditCompact
+          value={replay().y}
+          minimum={-100}
+          maximum={100}
+          total={dimensions().height!}
+          mirror={mirrorPositionVertically(replay().alignment)}
+          decrementIcon="arrow-up-circle"
+          incrementIcon="arrow-down-circle"
+          onChange={(value) =>
+            edit((draft) => {
+              draft.y = value;
+            })
+          }
+        />
         <ValueEditCompact
           value={replay().size}
           minimum={1}

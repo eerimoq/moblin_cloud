@@ -12,6 +12,7 @@ def scene_widget(scene_widget_id: str, widget_id: str, **layout) -> dict:
         "y": 0.0,
         "size": 100.0,
         "alignment": "TopLeft",
+        "centerOffsetMigrated": True,
         **layout,
     }
 

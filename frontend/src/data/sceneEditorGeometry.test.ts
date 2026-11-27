@@ -66,15 +66,24 @@ describe("SceneEditorGeometrySuite", () => {
     expectPoint(layoutPosition(layout, sizeOf(rect), canvasSize), rect);
   });
 
-  test("moveKeepsCenteredAxis", () => {
-    let layout = { ...makeLayout("TopCenter"), x: 7 };
-    layout = sceneEditorLayout(layout, { x: 100, y: 200, width: 400, height: 300 }, canvasSize);
-    expect(layout.alignment).toBe("TopCenter");
-    expect(layout.x).toBe(7);
-    expectPoint(layoutPosition(layout, { width: 400, height: 300 }, canvasSize), {
-      x: 760,
-      y: 200,
-    });
+  test.each(allAlignments)("moveMatchesRect %s", (alignment) => {
+    const rect = { x: 100, y: 200, width: 400, height: 300 };
+    const layout = sceneEditorLayout(makeLayout(alignment), rect, canvasSize);
+    expect(layout.alignment).toBe(alignment);
+    expectPoint(layoutPosition(layout, sizeOf(rect), canvasSize), rect);
+  });
+
+  test("moveToCenterGivesZeroCenterOffset", () => {
+    const rect = { x: 760, y: 390, width: 400, height: 300 };
+    const layout = sceneEditorLayout(makeLayout("Center"), rect, canvasSize);
+    expect(layout.x).toBe(0);
+    expect(layout.y).toBe(0);
+  });
+
+  test("moveRightAndDownGivesPositiveCenterOffset", () => {
+    const rect = { x: 952, y: 498, width: 400, height: 300 };
+    const layout = sceneEditorLayout(makeLayout("Center"), rect, canvasSize);
+    expectPoint(layout, { x: 10, y: 10 });
   });
 
   test.each(allAlignments)("alignCenteredWidgetKeepsPosition %s", (alignment) => {
@@ -83,6 +92,21 @@ describe("SceneEditorGeometrySuite", () => {
     const aligned = sceneEditorAlignedLayout(layout, alignment, sizeOf(rect), canvasSize);
     expect(aligned.alignment).toBe(alignment);
     expect(aligned.size).toBe(layout.size);
+    expectPoint(layoutPosition(aligned, sizeOf(rect), canvasSize), rect);
+  });
+
+  test.each(allAlignments)("alignOffCenterWidgetKeepsPosition %s", (alignment) => {
+    const rect = { x: 100, y: 150, width: 400, height: 300 };
+    const layout = sceneEditorLayout(makeLayout("BottomRight"), rect, canvasSize);
+    const aligned = sceneEditorAlignedLayout(layout, alignment, sizeOf(rect), canvasSize);
+    expect(aligned.alignment).toBe(alignment);
+    expectPoint(layoutPosition(aligned, sizeOf(rect), canvasSize), rect);
+  });
+
+  test.each(allAlignments)("alignFromCenterKeepsPosition %s", (alignment) => {
+    const rect = { x: 100, y: 150, width: 400, height: 300 };
+    const layout = sceneEditorLayout(makeLayout("Center"), rect, canvasSize);
+    const aligned = sceneEditorAlignedLayout(layout, alignment, sizeOf(rect), canvasSize);
     expectPoint(layoutPosition(aligned, sizeOf(rect), canvasSize), rect);
   });
 

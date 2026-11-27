@@ -122,6 +122,25 @@ describe("normalizeScene", () => {
     expect(scene.widgets.map((widget) => widget.x)).toEqual([10, 0]);
     expect(scene.widgets[0]!.id).not.toBe(scene.widgets[1]!.id);
   });
+
+  test.each([
+    ["Center", 0, 0],
+    ["TopCenter", 0, 20],
+    ["LeftCenter", 10, 0],
+    ["BottomRight", 10, 20],
+  ])("an old Moblin's %s widget gets no center offset", (alignment, x, y) => {
+    const scene = normalizeScene({ id: sceneId, widgets: [{ widgetId, x: 10, y: 20, alignment }] });
+    expect(scene.widgets[0]).toMatchObject({ x, y, centerOffsetMigrated: true });
+  });
+
+  test("a center offset is kept once migrated", () => {
+    const scene = normalizeScene({
+      id: sceneId,
+      widgets: [{ widgetId, x: 10, y: 20, alignment: "Center", centerOffsetMigrated: true }],
+    });
+    expect(scene.widgets[0]).toMatchObject({ x: 10, y: 20 });
+    expect(normalizeScene(roundTrip(scene))).toEqual(scene);
+  });
 });
 
 test("makeUniqueName", () => {

@@ -552,7 +552,14 @@ class FakeMoblin:
         for scene in scenes:
             assert scene is not None
             scene.setdefault("widgets", []).append(
-                {"id": str(uuid.uuid4()).upper(), "widgetId": widget["id"], "x": 0.0, "y": 0.0, "size": 100.0}
+                {
+                    "id": str(uuid.uuid4()).upper(),
+                    "widgetId": widget["id"],
+                    "x": 0.0,
+                    "y": 0.0,
+                    "size": 100.0,
+                    "centerOffsetMigrated": True,
+                }
             )
         self.scenes_changed()
         return OK, None
@@ -705,13 +712,13 @@ class FakeMoblin:
         x_offset = int(width * float(scene_widget.get("x", 0)) / 100)
         y_offset = int(height * float(scene_widget.get("y", 0)) / 100)
         if alignment in ("TopCenter", "BottomCenter", "Center"):
-            left = (width - box_width) // 2
+            left = (width - box_width) // 2 + x_offset
         elif "Right" in alignment:
             left = width - x_offset - box_width
         else:
             left = x_offset
         if alignment in ("LeftCenter", "RightCenter", "Center"):
-            top = (height - box_height) // 2
+            top = (height - box_height) // 2 + y_offset
         elif "Bottom" in alignment:
             top = height - y_offset - box_height
         else:

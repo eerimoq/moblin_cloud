@@ -3,6 +3,7 @@ import {
   derivedId,
   idOf,
   isPlainObject,
+  migrateCenterOffsets,
   merged,
   mergedList,
   newUuid,
@@ -122,6 +123,7 @@ export type SettingsStreamReplay = {
   y: number;
   size: number;
   alignment: SettingsAlignment;
+  centerOffsetMigrated: boolean;
 };
 
 export type MultiStreamingDestination = {
@@ -393,6 +395,7 @@ export const defaultStream = (id: string, name = "My stream"): SettingsStream =>
     y: 0,
     size: 100,
     alignment: "TopLeft",
+    centerOffsetMigrated: true,
   },
   goLiveNotificationDiscordMessage: "",
   goLiveNotificationDiscordWebhookUrl: "",
@@ -428,6 +431,9 @@ export const normalizeStream = (raw: Record<string, unknown>): SettingsStream =>
     url: defaultRtmpStreamUrl,
     enabled: false,
   }));
+  const replay = isPlainObject(raw.replay) ? raw.replay : {};
+  stream.replay.centerOffsetMigrated = replay.centerOffsetMigrated === true;
+  migrateCenterOffsets(stream.replay);
   return stream;
 };
 

@@ -121,24 +121,40 @@ export const sceneEditorResizedRect = (rect: Rect, fixed: Point, factor: number)
   height: rect.height * factor,
 });
 
-const layoutOffsetFromPosition = (position: number, size: number, total: number, near: boolean) =>
-  clamped(near ? (position * 100) / total : ((total - position - size) * 100) / total, -100, 100);
+const layoutOffsetFromPosition = (
+  position: number,
+  size: number,
+  total: number,
+  center: boolean,
+  near: boolean,
+) =>
+  clamped(
+    center
+      ? ((position + size / 2 - total / 2) * 100) / total
+      : near
+        ? (position * 100) / total
+        : ((total - position - size) * 100) / total,
+    -100,
+    100,
+  );
 
-export const sceneEditorLayout = <T extends Layout>(layout: T, rect: Rect, canvas: Size): T => {
-  const result = { ...layout };
-  if (!isHorizontalCenter(layout.alignment)) {
-    result.x = layoutOffsetFromPosition(rect.x, rect.width, canvas.width, isLeft(layout.alignment));
-  }
-  if (!isVerticalCenter(layout.alignment)) {
-    result.y = layoutOffsetFromPosition(
-      rect.y,
-      rect.height,
-      canvas.height,
-      isTop(layout.alignment),
-    );
-  }
-  return result;
-};
+export const sceneEditorLayout = <T extends Layout>(layout: T, rect: Rect, canvas: Size): T => ({
+  ...layout,
+  x: layoutOffsetFromPosition(
+    rect.x,
+    rect.width,
+    canvas.width,
+    isHorizontalCenter(layout.alignment),
+    isLeft(layout.alignment),
+  ),
+  y: layoutOffsetFromPosition(
+    rect.y,
+    rect.height,
+    canvas.height,
+    isVerticalCenter(layout.alignment),
+    isTop(layout.alignment),
+  ),
+});
 
 export const sceneEditorAlignedLayout = <T extends Layout>(
   layout: T,

@@ -50,7 +50,7 @@ const layoutOffset = (
   near: boolean,
 ) => {
   if (center) {
-    return (total - size) / 2;
+    return (total - size) / 2 + toPixels(offset, total);
   }
   return near ? toPixels(offset, total) : total - toPixels(offset, total) - size;
 };

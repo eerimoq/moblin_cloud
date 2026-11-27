@@ -1,13 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import Icon from "../Icon";
 import { widgetIcon } from "./icons";
-import {
-  hasPosition,
-  hasSize,
-  isHorizontalCenter,
-  isVerticalCenter,
-  type SettingsAlignment,
-} from "../../data/moblinSettings";
+import { hasPosition, hasSize, type SettingsAlignment } from "../../data/moblinSettings";
 import {
   clamped,
   distance,
@@ -134,26 +128,21 @@ export default function Canvas(props: {
     const delta = canvasDelta(translation);
     const rect = current.outline.rect;
     const position = { x: rect.x + delta.width, y: rect.y + delta.height };
-    const layout = current.outline.sceneWidget;
     const others = props.outlines.filter((outline) => outline.id !== current.outline.id);
-    const x = isHorizontalCenter(layout.alignment)
-      ? { position: rect.x }
-      : sceneEditorSnapAxis(
-          position.x,
-          rect.width,
-          props.canvas.width,
-          snapThreshold(),
-          others.flatMap(snapTargetsX),
-        );
-    const y = isVerticalCenter(layout.alignment)
-      ? { position: rect.y }
-      : sceneEditorSnapAxis(
-          position.y,
-          rect.height,
-          props.canvas.height,
-          snapThreshold(),
-          others.flatMap(snapTargetsY),
-        );
+    const x = sceneEditorSnapAxis(
+      position.x,
+      rect.width,
+      props.canvas.width,
+      snapThreshold(),
+      others.flatMap(snapTargetsX),
+    );
+    const y = sceneEditorSnapAxis(
+      position.y,
+      rect.height,
+      props.canvas.height,
+      snapThreshold(),
+      others.flatMap(snapTargetsY),
+    );
     const next: Edit = {
       ...current,
       rect: { ...rect, x: x.position, y: y.position },

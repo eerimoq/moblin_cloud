@@ -27,6 +27,7 @@ const sceneWidgetOf = (widget: SettingsWidget) => ({
   y: 0,
   size: 100,
   alignment: "TopLeft" as const,
+  centerOffsetMigrated: true,
 });
 
 const makeScene = (name: string, widgets: SettingsWidget[]): SettingsScene => ({

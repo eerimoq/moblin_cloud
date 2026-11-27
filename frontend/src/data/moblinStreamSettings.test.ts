@@ -26,6 +26,14 @@ describe("normalizeStream", () => {
     expect(normalizeStream(roundTrip(encodeStream(stream)))).toEqual(stream);
   });
 
+  test("an old Moblin's centered replay gets no center offset", () => {
+    const replay = { x: 10, y: 20, alignment: "Center" };
+    expect(normalizeStream({ replay }).replay).toMatchObject({ x: 0, y: 0 });
+    expect(
+      normalizeStream({ replay: { ...replay, centerOffsetMigrated: true } }).replay,
+    ).toMatchObject({ x: 10, y: 20 });
+  });
+
   test("enum values are Moblin's, not merged with the default case", () => {
     const stream = normalizeStream({
       id: streamId,

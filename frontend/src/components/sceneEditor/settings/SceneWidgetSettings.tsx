@@ -9,8 +9,6 @@ import {
   hasAlignment,
   hasPosition,
   hasSize,
-  isHorizontalCenter,
-  isVerticalCenter,
   mirrorPositionHorizontally,
   mirrorPositionVertically,
   sameId,
@@ -196,38 +194,34 @@ export function SceneWidgetSettings(props: {
                   />
                 </Show>
                 <Show when={hasPosition(current().widget.type)}>
-                  <Show when={!isHorizontalCenter(current().layout.alignment)}>
-                    <ValueEditCompact
-                      value={current().layout.x}
-                      minimum={-100}
-                      maximum={100}
-                      total={props.canvas.width}
-                      mirror={mirrorPositionHorizontally(current().layout.alignment)}
-                      decrementIcon="arrow-left-circle"
-                      incrementIcon="arrow-right-circle"
-                      onChange={(value) =>
-                        edit((draft) => {
-                          draft.x = value;
-                        })
-                      }
-                    />
-                  </Show>
-                  <Show when={!isVerticalCenter(current().layout.alignment)}>
-                    <ValueEditCompact
-                      value={current().layout.y}
-                      minimum={-100}
-                      maximum={100}
-                      total={props.canvas.height}
-                      mirror={mirrorPositionVertically(current().layout.alignment)}
-                      decrementIcon="arrow-up-circle"
-                      incrementIcon="arrow-down-circle"
-                      onChange={(value) =>
-                        edit((draft) => {
-                          draft.y = value;
-                        })
-                      }
-                    />
-                  </Show>
+                  <ValueEditCompact
+                    value={current().layout.x}
+                    minimum={-100}
+                    maximum={100}
+                    total={props.canvas.width}
+                    mirror={mirrorPositionHorizontally(current().layout.alignment)}
+                    decrementIcon="arrow-left-circle"
+                    incrementIcon="arrow-right-circle"
+                    onChange={(value) =>
+                      edit((draft) => {
+                        draft.x = value;
+                      })
+                    }
+                  />
+                  <ValueEditCompact
+                    value={current().layout.y}
+                    minimum={-100}
+                    maximum={100}
+                    total={props.canvas.height}
+                    mirror={mirrorPositionVertically(current().layout.alignment)}
+                    decrementIcon="arrow-up-circle"
+                    incrementIcon="arrow-down-circle"
+                    onChange={(value) =>
+                      edit((draft) => {
+                        draft.y = value;
+                      })
+                    }
+                  />
                 </Show>
                 <Show when={hasSize(current().widget.type)}>
                   <ValueEditCompact
