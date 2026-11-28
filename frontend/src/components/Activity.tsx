@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, onSettled } from "solid-js";
 import Icon, { kindIcons } from "./Icon";
 import {
   amountLabel,
@@ -132,13 +132,11 @@ export default function Activity(props: {
   const arrivals = new Map<string, number>();
   const stable = new Map<string, { json: string; item: Item }>();
 
-  onMount(() => void loadRecent());
+  onSettled(() => void loadRecent());
   createEffect(
-    on(
-      () => props.recentChanges,
-      () => void loadRecent(),
-      { defer: true },
-    ),
+    () => props.recentChanges,
+    () => void loadRecent(),
+    { defer: true },
   );
 
   const shownKinds = () => props.kinds ?? recentKinds;
@@ -214,7 +212,7 @@ export default function Activity(props: {
           {(kind) => (
             <button
               type="button"
-              aria-pressed={shownKinds().includes(kind)}
+              aria-pressed={shownKinds().includes(kind) ? "true" : "false"}
               onClick={() => toggle(kind)}
               class="inline-flex h-7 items-center gap-1 rounded-full border border-line px-2.5 text-[13px] font-semibold text-muted transition-colors hover:bg-ghost aria-pressed:border-leaf/50 aria-pressed:bg-ghost aria-pressed:text-ink"
             >

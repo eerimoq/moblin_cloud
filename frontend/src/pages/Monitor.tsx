@@ -1,13 +1,5 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Index,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Activity from "../components/Activity";
 import Graphs from "../components/Graphs";
 import Icon, { type IconName } from "../components/Icon";
@@ -138,7 +130,11 @@ function PaneMenu(props: {
 }) {
   const [open, setOpen] = createSignal(false);
   const [copied, setCopied] = createSignal<string[]>([]);
-  createEffect(() => open() || setCopied([]));
+  createEffect(open, (isOpen) => {
+    if (!isOpen) {
+      setCopied([]);
+    }
+  });
   const [placement, setPlacement] = createSignal<Placement>({
     above: false,
     right: true,
@@ -147,8 +143,8 @@ function PaneMenu(props: {
   let menu: HTMLDivElement | undefined;
   let popup: HTMLDivElement | undefined;
 
-  createEffect(() => {
-    if (!open()) {
+  createEffect(open, (isOpen) => {
+    if (!isOpen) {
       return;
     }
     setPlacement(popupPlacement(menu!, popup, Infinity, true));
@@ -160,10 +156,10 @@ function PaneMenu(props: {
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKey);
-    onCleanup(() => {
+    return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKey);
-    });
+    };
   });
 
   const run = (action: () => void) => {
@@ -177,7 +173,7 @@ function PaneMenu(props: {
         type="button"
         aria-label={t("Pane menu")}
         aria-haspopup="menu"
-        aria-expanded={open()}
+        aria-expanded={open() ? "true" : "false"}
         onClick={() => setOpen(!open())}
         class="grid size-7 place-items-center rounded-full text-ink-2 transition-colors hover:bg-ghost-hover hover:text-ink aria-expanded:bg-ghost-hover"
       >
@@ -311,8 +307,8 @@ function PanePicker(props: {
     button?.focus();
   };
 
-  createEffect(() => {
-    if (!open()) {
+  createEffect(open, (isOpen) => {
+    if (!isOpen) {
       return;
     }
     setPlacement(popupPlacement(button!, list, 320, false));
@@ -324,7 +320,7 @@ function PanePicker(props: {
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
-    onCleanup(() => document.removeEventListener("pointerdown", onPointerDown));
+    return () => document.removeEventListener("pointerdown", onPointerDown);
   });
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -355,7 +351,7 @@ function PanePicker(props: {
         type="button"
         aria-label={props.label}
         aria-haspopup="listbox"
-        aria-expanded={open()}
+        aria-expanded={open() ? "true" : "false"}
         onClick={() => setOpen(!open())}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -390,7 +386,7 @@ function PanePicker(props: {
               <button
                 type="button"
                 role="option"
-                aria-selected={option.value === props.value}
+                aria-selected={option.value === props.value ? "true" : "false"}
                 onClick={() => {
                   close();
                   if (option.value !== props.value) {
@@ -492,7 +488,7 @@ function PaneFrame(props: {
         <Show when={props.leaf.panel === "phone" && props.preview}>
           <button
             type="button"
-            aria-pressed={props.leaf.hidePreview === true}
+            aria-pressed={props.leaf.hidePreview === true ? "true" : "false"}
             aria-label={
               props.leaf.hidePreview ? t("Show stream preview") : t("Hide stream preview")
             }
@@ -514,7 +510,7 @@ function PaneFrame(props: {
         <Show when={props.leaf.panel === "phone"}>
           <button
             type="button"
-            aria-pressed={props.leaf.window === true}
+            aria-pressed={props.leaf.window === true ? "true" : "false"}
             aria-label={props.leaf.window ? t("Show as a phone") : t("Show as a window")}
             title={props.leaf.window ? t("Show as a phone") : t("Show as a window")}
             onClick={() =>
@@ -529,7 +525,7 @@ function PaneFrame(props: {
           {(maximize) => (
             <button
               type="button"
-              aria-pressed={props.actions.maximized}
+              aria-pressed={props.actions.maximized ? "true" : "false"}
               aria-label={props.actions.maximized ? t("Restore pane") : t("Maximize pane")}
               title={props.actions.maximized ? t("Restore pane") : t("Maximize pane")}
               onClick={() => maximize()()}
@@ -698,9 +694,9 @@ function StatusPanel(props: { device: Device; feed: DeviceFeed }) {
       }
     >
       <ul class="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-4 gap-y-1 p-3 text-[13px]">
-        <Index each={flags()}>
+        <For keyed={false} each={flags()}>
           {(entry) => <StatusRow icon={entry().icon} item={entry().item} />}
-        </Index>
+        </For>
         <For each={left()}>
           {([key, icon]) => <StatusRow icon={icon} item={status().topLeft[key]!} />}
         </For>

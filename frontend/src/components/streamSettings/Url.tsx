@@ -109,7 +109,7 @@ export function UrlPage(props: {
           disabled={props.disabled || readOnly()}
           autocapitalize="off"
           autocorrect="off"
-          spellcheck={false}
+          spellcheck="false"
           autofocus
           onInput={(event) => {
             setValue(event.currentTarget.value.replaceAll("\n", ""));

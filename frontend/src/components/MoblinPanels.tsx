@@ -1,4 +1,5 @@
-import { createResource, createSignal, Index, Match, Show, Switch } from "solid-js";
+import { createResource } from "../resource";
+import { createSignal, Match, Show, Switch, For } from "solid-js";
 import Icon from "./Icon";
 import {
   Choices,
@@ -82,7 +83,7 @@ function Priorities(props: { remote: Remote }) {
             fallback={<Empty text={t("The stream has no connection priorities.")} />}
           >
             <Group>
-              <Index each={settings().srt.connectionPriorities}>
+              <For keyed={false} each={settings().srt.connectionPriorities}>
                 {(connection) => {
                   const key = () => `setSrtConnectionPriority:${connection().id}`;
                   return (
@@ -128,7 +129,7 @@ function Priorities(props: { remote: Remote }) {
                     </div>
                   );
                 }}
-              </Index>
+              </For>
             </Group>
           </Show>
         </>
@@ -155,7 +156,7 @@ function Macros(props: { remote: Remote }) {
   return (
     <Show when={macros().length > 0} fallback={<Empty text={t("No macros.")} />}>
       <Group>
-        <Index each={macros()}>
+        <For keyed={false} each={macros()}>
           {(macro) => (
             <div class={rowClass}>
               <Icon name="list" class="size-[18px] shrink-0 text-phone-tint" />
@@ -181,7 +182,7 @@ function Macros(props: { remote: Remote }) {
               </button>
             </div>
           )}
-        </Index>
+        </For>
       </Group>
     </Show>
   );

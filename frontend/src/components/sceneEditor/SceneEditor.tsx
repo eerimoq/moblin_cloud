@@ -63,19 +63,21 @@ export default function SceneEditor(props: {
     return { width: size.width * scale, height: size.height * scale };
   });
 
-  createEffect(() => {
-    editor.set("preview", props.preview);
-    editor.set("portrait", canvas().height > canvas().width);
-  });
-  createEffect(() => {
-    editor.set("currentMic", props.state.mic ?? null);
-  });
-  createEffect(() => {
-    editor.set(
-      "macros",
-      (props.state.macros ?? []).map((macro) => ({ id: macro.id, name: macro.name })),
-    );
-  });
+  createEffect(
+    () => ({ preview: props.preview, portrait: canvas().height > canvas().width }),
+    ({ preview, portrait }) => {
+      editor.set("preview", preview);
+      editor.set("portrait", portrait);
+    },
+  );
+  createEffect(
+    () => props.state.mic ?? null,
+    (mic) => editor.set("currentMic", mic),
+  );
+  createEffect(
+    () => (props.state.macros ?? []).map((macro) => ({ id: macro.id, name: macro.name })),
+    (macros) => editor.set("macros", macros),
+  );
 
   const [wizard, setWizard] = createSignal<"scene" | "widget" | null>(null);
 

@@ -187,7 +187,7 @@ export function WidgetWizard(props: {
                   value={widget().text.formatString}
                   placeholder={t("My text")}
                   autocapitalize="off"
-                  spellcheck={false}
+                  spellcheck="false"
                   onInput={(event) =>
                     edit((draft) => {
                       draft.text.formatString = event.currentTarget.value;

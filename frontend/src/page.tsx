@@ -1,5 +1,5 @@
 /* @refresh reload */
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 import "./index.css";
 import { asset } from "./asset";
 import { pages } from "./data/links";

@@ -1,4 +1,5 @@
-import { createEffect, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon, { type IconName } from "../Icon";
 
 export function Popover(props: {
@@ -8,30 +9,33 @@ export function Popover(props: {
   children: JSX.Element;
 }) {
   let card: HTMLDivElement | undefined;
-  createEffect(() => {
-    if (!props.open) {
-      return;
-    }
-    const onPointerDown = (event: PointerEvent) => {
-      if (card && !card.contains(event.target as Node)) {
-        props.onClose();
+  createEffect(
+    () => props.open,
+    (open) => {
+      if (!open) {
+        return;
       }
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        props.onClose();
-      }
-    };
-    const timer = setTimeout(() => {
-      document.addEventListener("pointerdown", onPointerDown, true);
-      document.addEventListener("keydown", onKey);
-    });
-    onCleanup(() => {
-      clearTimeout(timer);
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("keydown", onKey);
-    });
-  });
+      const onPointerDown = (event: PointerEvent) => {
+        if (card && !card.contains(event.target as Node)) {
+          props.onClose();
+        }
+      };
+      const onKey = (event: KeyboardEvent) => {
+        if (event.key === "Escape") {
+          props.onClose();
+        }
+      };
+      const timer = setTimeout(() => {
+        document.addEventListener("pointerdown", onPointerDown, true);
+        document.addEventListener("keydown", onKey);
+      });
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener("pointerdown", onPointerDown, true);
+        document.removeEventListener("keydown", onKey);
+      };
+    },
+  );
   return (
     <Show when={props.open}>
       <div

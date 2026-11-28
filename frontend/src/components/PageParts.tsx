@@ -1,4 +1,5 @@
-import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { asset } from "../asset";
 import { signInUrl, type SignInFailure } from "../data/account";
 import { cloudName, instanceName, pages } from "../data/links";
@@ -197,8 +198,8 @@ export function AccountMenu(props: {
   const [open, setOpen] = createSignal(false);
   let menu: HTMLDivElement | undefined;
 
-  createEffect(() => {
-    if (!open()) {
+  createEffect(open, (isOpen) => {
+    if (!isOpen) {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
@@ -213,10 +214,10 @@ export function AccountMenu(props: {
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    onCleanup(() => {
+    return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
-    });
+    };
   });
 
   return (
@@ -225,7 +226,7 @@ export function AccountMenu(props: {
         type="button"
         aria-label={t("Account")}
         aria-haspopup="menu"
-        aria-expanded={open()}
+        aria-expanded={open() ? "true" : "false"}
         class="flex size-11 items-center justify-center rounded-full transition-shadow hover:ring-2 hover:ring-ghost-line aria-expanded:ring-2 aria-expanded:ring-ghost-line"
         onClick={() => setOpen(!open())}
       >
@@ -354,7 +355,7 @@ export function Value(props: { label: string; text: string; href?: string; secre
                 ? t("Hide {label}", { label: props.label })
                 : t("Show {label}", { label: props.label })
             }
-            aria-pressed={shown()}
+            aria-pressed={shown() ? "true" : "false"}
             title={shown() ? t("Hide") : t("Show")}
             onClick={() => setShown(!shown())}
           >

@@ -62,7 +62,7 @@ export default function ConnectView(props: { session: string; onSignOut: () => v
                   placeholder="XXXX-XXXX"
                   autofocus
                   autocomplete="off"
-                  spellcheck={false}
+                  spellcheck="false"
                   onInput={(event) => setCode(event.currentTarget.value)}
                 />
               </label>

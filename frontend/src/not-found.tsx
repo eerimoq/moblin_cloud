@@ -1,6 +1,6 @@
 /* @refresh reload */
-import { lazy } from "solid-js";
-import { render } from "solid-js/web";
+import { lazy, Loading } from "solid-js";
+import { render } from "@solidjs/web";
 import "./index.css";
 import { t } from "./i18n";
 import NotFound from "./pages/NotFound";
@@ -20,13 +20,16 @@ if (streamer) {
 }
 
 render(
-  () =>
-    streamer ? (
-      <Page platform={streamer[1] as "twitch" | "kick"} login={decodeURIComponent(streamer[2])} />
-    ) : dashboard ? (
-      <DashboardPage />
-    ) : (
-      <NotFound />
-    ),
+  () => (
+    <Loading>
+      {streamer ? (
+        <Page platform={streamer[1] as "twitch" | "kick"} login={decodeURIComponent(streamer[2])} />
+      ) : dashboard ? (
+        <DashboardPage />
+      ) : (
+        <NotFound />
+      )}
+    </Loading>
+  ),
   document.getElementById("root")!,
 );

@@ -1,4 +1,5 @@
-import { createContext, createSignal, For, onCleanup, Show, useContext, type JSX } from "solid-js";
+import { createContext, createSignal, For, onCleanup, Show, useContext } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon, { type IconName } from "../Icon";
 import { Choices, PhoneSwitch, rowClass } from "../MoblinParts";
 import type { Stack } from "./Stack";
@@ -146,7 +147,7 @@ export function TextEditPage(props: {
             value={value()}
             placeholder={props.placeholder}
             autofocus
-            readOnly={readOnly()}
+            readonly={readOnly()}
             onInput={(event) => setValue(event.currentTarget.value)}
             onBlur={submit}
             onKeyDown={(event) => {
@@ -162,7 +163,7 @@ export function TextEditPage(props: {
           value={value()}
           placeholder={props.placeholder}
           autofocus
-          readOnly={readOnly()}
+          readonly={readOnly()}
           onInput={(event) => setValue(event.currentTarget.value)}
           onBlur={submit}
         />
@@ -551,7 +552,7 @@ export function ReorderableList<T extends { id: string }>(props: {
       {(item, index) => (
         <div
           class={`flex min-h-[44px] items-center ${dragging() === index() ? "opacity-50" : ""}`}
-          draggable={props.onMove !== undefined && !readOnly()}
+          draggable={props.onMove !== undefined && !readOnly() ? "true" : "false"}
           onDragStart={(event) => {
             setDragging(index());
             event.dataTransfer?.setData("text/plain", String(index()));

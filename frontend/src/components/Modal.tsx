@@ -1,5 +1,6 @@
-import { For, type JSX } from "solid-js";
-import { render } from "solid-js/web";
+import { For } from "solid-js";
+import type { JSX } from "@solidjs/web";
+import { render } from "@solidjs/web";
 import { postRickRoll, readSession } from "../data/account";
 import { links } from "../data/links";
 import { t } from "../i18n";

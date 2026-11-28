@@ -3,14 +3,12 @@ import {
   createEffect,
   createSignal,
   For,
-  Index,
-  type JSX,
   Match,
-  on,
   Show,
   Switch,
   useContext,
 } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { recentKinds, type RecentKind } from "../data/account";
 import { wide } from "../viewport";
 import { t } from "../i18n";
@@ -50,7 +48,7 @@ export type LeafActions = {
   maximized: boolean;
   maximize: (() => void) | null;
   drag: {
-    draggable: true;
+    draggable: "true";
     onDragStart: (event: DragEvent) => void;
     onDragEnd: () => void;
   };
@@ -507,7 +505,7 @@ function SplitView(props: {
       ref={(element) => (container = element)}
       class={`relative flex size-full min-h-0 min-w-0 ${row() ? "flex-row" : "flex-col"}`}
     >
-      <Index each={props.split.children}>
+      <For keyed={false} each={props.split.children}>
         {(child, index) => {
           const shown = () => {
             const maximized = maximizing.path();
@@ -529,8 +527,8 @@ function SplitView(props: {
             </div>
           );
         }}
-      </Index>
-      <Index each={maximizing.path() === null ? props.split.children.slice(1) : []}>
+      </For>
+      <For keyed={false} each={maximizing.path() === null ? props.split.children.slice(1) : []}>
         {(_, at) => {
           const index = at + 1;
           return (
@@ -559,7 +557,7 @@ function SplitView(props: {
             </div>
           );
         }}
-      </Index>
+      </For>
     </div>
   );
 }
@@ -620,7 +618,7 @@ const actionsOf = (
     return maximizing.available() ? () => maximizing.toggle(path()) : null;
   },
   drag: {
-    draggable: true,
+    draggable: "true",
     onDragStart: (event) => {
       event.dataTransfer?.setData("text/plain", t("Pane"));
       if (event.dataTransfer) {
@@ -646,11 +644,13 @@ export default function Tiles(props: {
   const [maximized, setMaximized] = createSignal<Path | null>(null);
   let changed: Pane | null = null;
   createEffect(
-    on(
-      () => props.layout,
-      (layout) => layout !== changed && setMaximized(null),
-      { defer: true },
-    ),
+    () => props.layout,
+    (layout) => {
+      if (layout !== changed) {
+        setMaximized(null);
+      }
+    },
+    { defer: true },
   );
   const maximizing: Maximizing = {
     path: () => (wide() ? maximized() : null),
@@ -689,8 +689,8 @@ export default function Tiles(props: {
   };
 
   return (
-    <DragContext.Provider value={dragging}>
-      <MaximizeContext.Provider value={maximizing}>
+    <DragContext value={dragging}>
+      <MaximizeContext value={maximizing}>
         <Show
           when={wide()}
           fallback={
@@ -720,7 +720,7 @@ export default function Tiles(props: {
             />
           </div>
         </Show>
-      </MaximizeContext.Provider>
-    </DragContext.Provider>
+      </MaximizeContext>
+    </DragContext>
   );
 }

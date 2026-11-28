@@ -1,4 +1,5 @@
-import { createSignal, Show, type JSX } from "solid-js";
+import { createSignal, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon, { type IconName } from "../Icon";
 import { rowClass, Toggle } from "../MoblinParts";
 import {

@@ -64,7 +64,7 @@ export default function MomMessage(props: {
           onInput={(event) => setText(event.currentTarget.value)}
           placeholder={t("Message to the streamer")}
           aria-label={t("Message to the streamer")}
-          maxLength={300}
+          maxlength={300}
           autocomplete="off"
           disabled={!props.enabled}
           class={`${inputClass} min-w-0 flex-1 disabled:opacity-60 ${props.compact ? "h-9! rounded-xl! px-3! text-[15px]!" : ""}`}

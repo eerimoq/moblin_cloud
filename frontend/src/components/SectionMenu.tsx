@@ -74,7 +74,7 @@ export default function SectionMenu(props: {
     >
       <button
         type="button"
-        aria-expanded={open()}
+        aria-expanded={open() ? "true" : "false"}
         onClick={() => setOpen(!open())}
         class="flex w-full items-center gap-3 px-4 py-3 text-left text-ink lg:hidden"
       >
@@ -87,8 +87,10 @@ export default function SectionMenu(props: {
         />
       </button>
       <div
-        class="divide-line flex flex-col divide-y border-t border-line lg:contents"
-        classList={{ hidden: !open() }}
+        class={[
+          "divide-line flex flex-col divide-y border-t border-line lg:contents",
+          { hidden: !open() },
+        ]}
       >
         <For each={props.sections}>
           {(section) => (
@@ -99,12 +101,14 @@ export default function SectionMenu(props: {
                 props.onSelect(section.id);
                 setOpen(false);
               }}
-              class="flex items-center gap-3 px-4 py-2.5 text-left transition-colors lg:rounded-2xl lg:border-[1.5px] lg:py-3 lg:whitespace-nowrap"
-              classList={{
-                "bg-ghost text-ink lg:border-line lg:bg-card": props.active === section.id,
-                "text-ink-2 hover:bg-ghost-hover hover:text-ink lg:border-transparent lg:hover:bg-ghost":
-                  props.active !== section.id,
-              }}
+              class={[
+                "flex items-center gap-3 px-4 py-2.5 text-left transition-colors lg:rounded-2xl lg:border-[1.5px] lg:py-3 lg:whitespace-nowrap",
+                {
+                  "bg-ghost text-ink lg:border-line lg:bg-card": props.active === section.id,
+                  "text-ink-2 hover:bg-ghost-hover hover:text-ink lg:border-transparent lg:hover:bg-ghost":
+                    props.active !== section.id,
+                },
+              ]}
             >
               <Icon name={section.icon} class="size-5 shrink-0" />
               <span class="font-display text-[16px] font-semibold lg:text-[17px]">

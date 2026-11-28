@@ -1,12 +1,14 @@
+import { createResource } from "../resource";
 import {
   createEffect,
-  createResource,
   createSignal,
   For,
-  on,
   onCleanup,
-  onMount,
   Show,
+  onSettled,
+  untrack,
+  getOwner,
+  runWithOwner,
 } from "solid-js";
 import Icon, { type IconName } from "./Icon";
 import { ask, rickRoll } from "./Modal";
@@ -312,7 +314,7 @@ function Segments(props: {
           <button
             type="button"
             role="radio"
-            aria-checked={item.id === props.selected}
+            aria-checked={item.id === props.selected ? "true" : "false"}
             disabled={props.disabled}
             class={`h-[40px] truncate border-phone-border/30 px-1 text-[15px] ${
               index() < props.items.length - 1 ? "border-r" : ""
@@ -371,7 +373,7 @@ function QuickButtonView(props: {
       <button
         type="button"
         aria-label={props.button.name}
-        aria-pressed={props.on}
+        aria-pressed={props.on ? "true" : "false"}
         title={props.button.name}
         disabled={props.disabled}
         class="relative grid size-[40px] shrink-0 place-items-center rounded-full bg-phone-button text-white"
@@ -409,30 +411,34 @@ export default function MoblinScreen(props: {
   onRequest?: <T>(control: Control) => Promise<T>;
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
+  const owner = getOwner();
   const [editor, setEditor] = createSignal<Editor | null>(null);
   const [sceneEditorOpen, setSceneEditorOpen] = createSignal(false);
   const [panel, setPanel] = createSignal<Panel | null>(null);
   createEffect(
-    on(
-      () => sceneEditorOpen() || panel() === "sceneWidgets",
-      (needed) => {
-        const current = editor();
-        if (needed && !current && props.onRequest) {
-          setEditor(
+    () => ({
+      needed: sceneEditorOpen() || panel() === "sceneWidgets",
+      current: untrack(editor),
+    }),
+    ({ needed, current }) => {
+      const request = props.onRequest;
+      if (needed && !current && request) {
+        setEditor(
+          runWithOwner(owner, () =>
             createEditor(
-              props.onRequest,
+              request,
               props.onControl,
               () => props.state.scene,
               () => props.secrets,
               () => !props.remoteControl,
             ),
-          );
-        } else if (!needed && current) {
-          setEditor(null);
-          void current.flush().finally(() => current.dispose());
-        }
-      },
-    ),
+          ),
+        );
+      } else if (!needed && current) {
+        setEditor(null);
+        void current.flush().finally(() => current.dispose());
+      }
+    },
   );
   onCleanup(() => editor()?.dispose());
   const openSceneEditor = () => {
@@ -465,7 +471,7 @@ export default function MoblinScreen(props: {
   );
   let container: HTMLDivElement | undefined;
 
-  onMount(() => {
+  onSettled(() => {
     if (!container) {
       return;
     }
@@ -479,7 +485,7 @@ export default function MoblinScreen(props: {
       }
     });
     observer.observe(container);
-    onCleanup(() => observer.disconnect());
+    return () => observer.disconnect();
   });
 
   const frame = () => (props.window ? 0 : bezel);
@@ -766,7 +772,7 @@ export default function MoblinScreen(props: {
           >
             <Show when={sceneEditorOpen() && editor()}>
               {(editor) => (
-                <ReadOnly.Provider value={() => !props.remoteControl}>
+                <ReadOnly value={() => !props.remoteControl}>
                   <SceneEditor
                     editor={editor()}
                     preview={props.preview}
@@ -776,7 +782,7 @@ export default function MoblinScreen(props: {
                     height={shownHeight()}
                     onClose={() => setSceneEditorOpen(false)}
                   />
-                </ReadOnly.Provider>
+                </ReadOnly>
               )}
             </Show>
             <Show when={!sceneEditorOpen()}>
@@ -794,8 +800,9 @@ export default function MoblinScreen(props: {
                   status={props.status}
                   verbose={verbose()}
                   onToggle={() => {
-                    setVerbose((current) => !current);
-                    store("statusCollapsed", verbose() ? null : "1");
+                    const shown = !verbose();
+                    setVerbose(shown);
+                    store("statusCollapsed", shown ? null : "1");
                   }}
                 />
                 <Show when={props.state.muted}>
@@ -821,14 +828,14 @@ export default function MoblinScreen(props: {
                     style={{ width: `${shownPanelWidth()}px` }}
                   >
                     <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
-                      <ReadOnly.Provider value={() => !props.remoteControl}>
+                      <ReadOnly value={() => !props.remoteControl}>
                         <Panels
                           panel={shown()}
                           remote={remote}
                           editor={editor()}
                           onOpenSceneEditor={openSceneEditor}
                         />
-                      </ReadOnly.Provider>
+                      </ReadOnly>
                     </div>
                     <Show when={!panelHidden()}>{panelButtons()}</Show>
                   </div>
@@ -1047,7 +1054,7 @@ export default function MoblinScreen(props: {
                       aria-label={t("Filter quick buttons")}
                       autocomplete="off"
                       autocapitalize="off"
-                      spellcheck={false}
+                      spellcheck="false"
                       class="m-[5px] min-w-0 rounded-[5px] border border-phone-separator bg-phone-row px-[6px] py-[4px] text-[17px] leading-tight text-white outline-none placeholder:text-phone-border"
                       value={filter()}
                       onInput={(event) => setFilter(event.currentTarget.value)}

@@ -2,20 +2,19 @@ import { loadCoreSdkScript, type OneTimePaymentSession } from "@paypal/paypal-js
 import type { Stripe, StripeElements, StripePaymentElement } from "@stripe/stripe-js";
 import { loadStripe } from "@stripe/stripe-js/pure";
 import {
-  batch,
   createEffect,
   createMemo,
   createSignal,
   For,
   Match,
-  on,
   onCleanup,
-  onMount,
   Show,
   Switch,
-  type JSX,
   type Setter,
+  onSettled,
+  flush,
 } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { asset } from "../asset";
 import { BackendError, isSignedOut, moblinIconUrl } from "../data/backend";
 import { fetchAccount, readSession, signInPlatforms, type Account } from "../data/account";
@@ -292,10 +291,12 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
   let session: OneTimePaymentSession | undefined;
   const [failed, setFailed] = createSignal(false);
 
-  createEffect(() => {
-    const disabled = props.disabled;
-    button?.toggleAttribute("disabled", disabled);
-  });
+  createEffect(
+    () => props.disabled,
+    (disabled) => {
+      button?.toggleAttribute("disabled", disabled);
+    },
+  );
   onCleanup(() => session?.destroy());
 
   const pay = async () => {
@@ -309,32 +310,34 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
     }
   };
 
-  onMount(async () => {
-    try {
-      const paypal = await loadCoreSdkScript({
-        environment: props.config.environment,
-      });
-      const instance = await paypal?.createInstance({
-        clientId: props.config.clientId,
-        merchantId: props.config.merchantId,
-        components: ["paypal-payments"],
-        pageType: "checkout",
-      });
-      if (!instance || !container) {
-        throw new Error("no PayPal");
+  onSettled(() => {
+    void (async () => {
+      try {
+        const paypal = await loadCoreSdkScript({
+          environment: props.config.environment,
+        });
+        const instance = await paypal?.createInstance({
+          clientId: props.config.clientId,
+          merchantId: props.config.merchantId,
+          components: ["paypal-payments"],
+          pageType: "checkout",
+        });
+        if (!instance || !container) {
+          throw new Error("no PayPal");
+        }
+        session = instance.createPayPalOneTimePaymentSession({
+          onApprove: (data) => props.options.complete(data.orderId),
+          onCancel: props.options.onCancel,
+          onError: () => props.options.onError("paypal"),
+        });
+        button = document.createElement("paypal-button");
+        button.toggleAttribute("disabled", props.disabled);
+        button.addEventListener("click", () => void pay());
+        container.append(button);
+      } catch {
+        setFailed(true);
       }
-      session = instance.createPayPalOneTimePaymentSession({
-        onApprove: (data) => props.options.complete(data.orderId),
-        onCancel: props.options.onCancel,
-        onError: () => props.options.onError("paypal"),
-      });
-      button = document.createElement("paypal-button");
-      button.toggleAttribute("disabled", props.disabled);
-      button.addEventListener("click", () => void pay());
-      container.append(button);
-    } catch {
-      setFailed(true);
-    }
+    })();
   });
 
   return (
@@ -385,7 +388,7 @@ function StripeCard(props: {
     setCardError(null);
   };
   onCleanup(close);
-  createEffect(on(() => props.resetKey, close, { defer: true }));
+  createEffect(() => props.resetKey, close, { defer: true });
 
   const appearance = () => {
     const style = getComputedStyle(container!);
@@ -615,7 +618,7 @@ function CheerCard(props: {
   let overlay: HTMLDivElement | undefined;
   let close: HTMLButtonElement | undefined;
   const onKey = (event: KeyboardEvent) => event.key === "Escape" && props.onClose();
-  onMount(() => {
+  onSettled(() => {
     if (overlay) {
       fireConfetti(overlay);
     }
@@ -928,7 +931,7 @@ function NameField(props: {
       <span class="text-[15px] font-semibold text-ink-2">{t("Your name (optional)")}</span>
       <input
         type="text"
-        maxLength={25}
+        maxlength={25}
         value={props.name}
         onInput={(event) => props.onName(event.currentTarget.value)}
         placeholder={props.placeholder}
@@ -953,7 +956,7 @@ function MessageField(props: {
         </span>
       </span>
       <textarea
-        maxLength={200}
+        maxlength={200}
         rows={3}
         value={props.message}
         onInput={(event) => props.onMessage(event.currentTarget.value)}
@@ -980,9 +983,12 @@ function TipJar(props: {
   );
   const [other, setOther] = createSignal(saved?.other ?? "");
   const [message, setMessage] = createSignal(saved?.message ?? "");
-  createEffect(() => {
-    draft.tip = { choice: choice(), other: other(), message: message() };
-  });
+  createEffect(
+    () => ({ choice: choice(), other: other(), message: message() }),
+    (tip) => {
+      draft.tip = tip;
+    },
+  );
   let form: HTMLFormElement | undefined;
 
   const amount = () => {
@@ -1087,9 +1093,12 @@ function EffectJar(props: {
   const saved = restored(props.id).effect;
   const [chosen, setChosen] = createSignal<string | null>(saved?.effect ?? null);
   const [message, setMessage] = createSignal(saved?.message ?? "");
-  createEffect(() => {
-    draft.effect = { effect: chosen(), message: message() };
-  });
+  createEffect(
+    () => ({ effect: chosen(), message: message() }),
+    (effect) => {
+      draft.effect = effect;
+    },
+  );
   let form: HTMLFormElement | undefined;
 
   const effect = () => {
@@ -1314,21 +1323,28 @@ function MediaJar(props: {
       : null;
   };
 
-  createEffect(() => {
-    draft.media = { link: link(), start: start(), end: end(), message: message() };
-  });
-  createEffect(() => {
-    linkInput?.setCustomValidity(
-      found() === null ? t("Enter a link to a YouTube video or a Twitch clip.") : "",
-    );
-  });
-  createEffect(() => {
-    startInput?.setCustomValidity(
-      !clip() && parseTime(start()) === null ? t("Enter a time like 1:30.") : "",
-    );
-  });
-  createEffect(() => {
-    endInput?.setCustomValidity(endError());
+  createEffect(
+    () => ({ link: link(), start: start(), end: end(), message: message() }),
+    (media) => {
+      draft.media = media;
+    },
+  );
+  createEffect(
+    () => found() === null,
+    (missing) => {
+      linkInput?.setCustomValidity(
+        missing ? t("Enter a link to a YouTube video or a Twitch clip.") : "",
+      );
+    },
+  );
+  createEffect(
+    () => !clip() && parseTime(start()) === null,
+    (invalid) => {
+      startInput?.setCustomValidity(invalid ? t("Enter a time like 1:30.") : "");
+    },
+  );
+  createEffect(endError, (error) => {
+    endInput?.setCustomValidity(error);
   });
 
   const changeStart = (value: string) => {
@@ -1341,6 +1357,7 @@ function MediaJar(props: {
 
   const changeEnd = (value: string) => {
     setEnd(value);
+    flush();
     length = seconds() ?? length;
   };
 
@@ -1438,7 +1455,7 @@ function MediaJar(props: {
           type="text"
           inputmode="url"
           required
-          maxLength={200}
+          maxlength={200}
           value={link()}
           onInput={(event) => changeLink(event.currentTarget.value)}
           placeholder="https://youtu.be/…"
@@ -1464,7 +1481,7 @@ function MediaJar(props: {
               type="text"
               inputmode="numeric"
               required={!clip()}
-              maxLength={8}
+              maxlength={8}
               value={start()}
               onInput={(event) => changeStart(event.currentTarget.value)}
               placeholder="0:00"
@@ -1479,7 +1496,7 @@ function MediaJar(props: {
               type="text"
               inputmode="numeric"
               required={!clip()}
-              maxLength={8}
+              maxlength={8}
               value={end()}
               onInput={(event) => changeEnd(event.currentTarget.value)}
               placeholder="0:30"
@@ -1567,7 +1584,7 @@ function SoundInfo(props: {
       <button
         type="button"
         aria-label={t("About {name}", { name: props.name })}
-        aria-expanded={open()}
+        aria-expanded={open() ? "true" : "false"}
         class="flex size-10 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:text-ink aria-expanded:text-ink"
         onClick={() => setOpen(!open())}
       >
@@ -1911,9 +1928,12 @@ function SpinWheel(props: {
       props.spin?.options[0] ?? { spins: 1, price: 0 },
   );
   const [message, setMessage] = createSignal(saved?.message ?? "");
-  createEffect(() => {
-    draft.spin = { spins: choice().spins, price: choice().price, message: message() };
-  });
+  createEffect(
+    () => ({ spins: choice().spins, price: choice().price, message: message() }),
+    (spin) => {
+      draft.spin = spin;
+    },
+  );
 
   const pay = createPay({
     failed: props.signInFailed,
@@ -2100,7 +2120,7 @@ function WaysToTip(props: {
               <button
                 type="button"
                 role="tab"
-                aria-selected={selected()}
+                aria-selected={selected() ? "true" : "false"}
                 disabled={!way.enabled}
                 title={way.text}
                 onClick={() => props.onSection(way.section)}
@@ -2137,8 +2157,8 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   const [id, setId] = createSignal(props.id);
   const [unknown, setUnknown] = createSignal(false);
   const [name, setName] = createSignal(draft.name ?? readName());
-  createEffect(() => {
-    draft.name = name();
+  createEffect(name, (name) => {
+    draft.name = name;
   });
   const [subSpins, setSubSpins] = createSignal<Tiers | null>(null, { equals: sameData });
   const [viewer, setViewer] = createSignal<string | null>(null);
@@ -2245,12 +2265,12 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     const payment = current && paymentOf(current);
     return current && payment ? { ...current, payment } : null;
   };
-  const tipJar = createMemo(() => withPayment(tips()), null, { equals: sameData });
-  const wheel = createMemo(() => withPayment(spin()), null, { equals: sameData });
-  const effectJar = createMemo(() => withPayment(effects()), null, { equals: sameData });
+  const tipJar = createMemo(() => withPayment(tips()), { equals: sameData });
+  const wheel = createMemo(() => withPayment(spin()), { equals: sameData });
+  const effectJar = createMemo(() => withPayment(effects()), { equals: sameData });
   const effectsShown = () =>
     effectOptions().length > 0 && (effectJar() !== null || subEffects() !== null);
-  const mediaJar = createMemo(() => withPayment(mediaOffer()?.media ?? null), null, {
+  const mediaJar = createMemo(() => withPayment(mediaOffer()?.media ?? null), {
     equals: sameData,
   });
   const subMedia = () => mediaOffer()?.subMedia ?? null;
@@ -2301,11 +2321,14 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     (subEffects() !== null && effectAllowance() === null) ||
     (subMedia() !== null && mediaAllowance() === null);
 
-  createEffect(() => {
-    if (viewer() && allowancesMissing()) {
-      void refreshAllowances(true);
-    }
-  });
+  createEffect(
+    () => viewer() !== null && viewer() !== "" && allowancesMissing(),
+    (missing) => {
+      if (missing) {
+        void refreshAllowances(true);
+      }
+    },
+  );
 
   const allowanceLeft = (set: Setter<Allowance | null>) => (left?: number) => {
     if (left === undefined) {
@@ -2389,55 +2412,60 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  onMount(async () => {
-    if (props.platform && props.login) {
-      try {
-        setId(await idOfLogin(props.platform, props.login));
-      } catch {
-        setUnknown(true);
+  let stopChanges: (() => void) | undefined;
+  onSettled(() => {
+    void (async () => {
+      if (props.platform && props.login) {
+        try {
+          setId(await idOfLogin(props.platform, props.login));
+          flush();
+        } catch {
+          setUnknown(true);
+        }
       }
-    }
-    const current = id();
-    if (current) {
-      const signIn = takeViewerSignIn();
-      if (signIn.viewer) {
-        saveViewer(current, signIn.viewer);
-      }
-      setViewer(readViewer(current));
-      if (signIn.viewer || signIn.failed) {
-        setSection(signIn.section);
-      }
-      if (signIn.failed && signIn.section === "spin") {
-        setSpinSignInFailed(signIn.failed);
-      }
-      if (signIn.failed && signIn.section === "effect") {
-        setEffectSignInFailed(signIn.failed);
-      }
-      if (signIn.failed && signIn.section === "media") {
-        setMediaSignInFailed(signIn.failed);
-      }
-      Promise.all([streamerProfile(current), signedInAccount()])
-        .then(([found, account]) => {
-          batch(() => {
+      const current = id();
+      if (current) {
+        const signIn = takeViewerSignIn();
+        if (signIn.viewer) {
+          saveViewer(current, signIn.viewer);
+        }
+        setViewer(readViewer(current));
+        if (signIn.viewer || signIn.failed) {
+          setSection(signIn.section);
+        }
+        if (signIn.failed && signIn.section === "spin") {
+          setSpinSignInFailed(signIn.failed);
+        }
+        if (signIn.failed && signIn.section === "effect") {
+          setEffectSignInFailed(signIn.failed);
+        }
+        if (signIn.failed && signIn.section === "media") {
+          setMediaSignInFailed(signIn.failed);
+        }
+        Promise.all([streamerProfile(current), signedInAccount()])
+          .then(([found, account]) => {
             setDashboard(dashboardLink(current, props.platform, account));
             setProfile(found);
-          });
-          loadFonts(found.font ? [found.font] : []);
-          const streamer = identityOf(found, props.platform);
-          if (streamer) {
-            document.title = `${streamer.name} – Moblin`;
-          }
-        })
-        .catch(() => {})
-        .finally(() => setStyled(true));
-    }
-    void refreshTips();
-    void refreshSpin();
-    void refreshEffects();
-    void refreshMedia();
-    if (current) {
-      onCleanup(subscribeChanges(pageEventsUrl(current), null, { page: () => void refreshPage() }));
-    }
+            loadFonts(found.font ? [found.font] : []);
+            const streamer = identityOf(found, props.platform);
+            if (streamer) {
+              document.title = `${streamer.name} – Moblin`;
+            }
+          })
+          .catch(() => {})
+          .finally(() => setStyled(true));
+      }
+      void refreshTips();
+      void refreshSpin();
+      void refreshEffects();
+      void refreshMedia();
+      if (current) {
+        stopChanges = subscribeChanges(pageEventsUrl(current), null, {
+          page: () => void refreshPage(),
+        });
+      }
+    })();
+    return () => stopChanges?.();
   });
 
   return (

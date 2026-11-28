@@ -29,7 +29,7 @@ function GoLiveNotificationDiscordSettings(props: StreamFormProps) {
           class="min-h-[110px] w-full resize-none bg-transparent px-4 py-2 text-[17px] outline-none placeholder:text-phone-border"
           value={message() ?? props.stream.goLiveNotificationDiscordMessage}
           placeholder={t("My text")}
-          readOnly={readOnly()}
+          readonly={readOnly()}
           autocapitalize="off"
           autocorrect="off"
           onInput={(event) => setMessage(event.currentTarget.value)}

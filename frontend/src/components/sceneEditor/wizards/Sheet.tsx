@@ -93,7 +93,7 @@ export function InlineField(props: {
           value={props.value}
           placeholder={props.placeholder}
           autocapitalize="off"
-          spellcheck={false}
+          spellcheck="false"
           onInput={(event) => props.onInput(event.currentTarget.value)}
         />
       </div>

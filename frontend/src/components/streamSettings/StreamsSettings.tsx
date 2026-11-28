@@ -1,4 +1,4 @@
-import { For, onCleanup, Show } from "solid-js";
+import { For, onCleanup, Show, runWithOwner } from "solid-js";
 import { Empty, Loading, PanelView, type Remote } from "../MoblinParts";
 import { ButtonRow, ErrorText, LinkRow, ReadOnly, Section } from "../sceneEditor/Form";
 import { createStack, pageTitle, type Page, type Stack } from "../sceneEditor/Stack";
@@ -49,7 +49,7 @@ export const formProps = (
 };
 
 function StreamPage(props: { streams: Streams; remote: Remote; stack: Stack; id: string }) {
-  void props.streams.load(props.id);
+  runWithOwner(null, () => void props.streams.load(props.id));
   return (
     <Show
       when={formProps(props.streams, props.remote, props.stack, props.id)}
@@ -217,7 +217,7 @@ export default function StreamsSettings(props: { remote: Remote; onBack: () => v
     void streams.flush().finally(() => streams.dispose());
   });
   return (
-    <ReadOnly.Provider value={() => props.remote.readOnly}>
+    <ReadOnly value={() => props.remote.readOnly}>
       <StackPanel
         stack={stack}
         root={{
@@ -226,6 +226,6 @@ export default function StreamsSettings(props: { remote: Remote; onBack: () => v
         }}
         back={{ label: t("Settings"), onBack: props.onBack }}
       />
-    </ReadOnly.Provider>
+    </ReadOnly>
   );
 }

@@ -31,7 +31,7 @@ export function BingoCardQuickControls(props: {
                     <button
                       type="button"
                       aria-label={square().text}
-                      aria-pressed={square().checked}
+                      aria-pressed={square().checked ? "true" : "false"}
                       class="text-phone-tint disabled:opacity-50"
                       disabled={readOnly()}
                       onClick={() =>

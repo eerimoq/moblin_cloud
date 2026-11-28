@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { asset } from "../asset";
 import type { SignInFailure } from "../data/account";
 import { cloudName, links } from "../data/links";

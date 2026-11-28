@@ -1,4 +1,4 @@
-import { createSignal, For, Index, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import Icon from "./Icon";
 import { cardClass, ghostButtonClass, Spinner } from "./PageParts";
 import { recentKinds, type Recent, type RecentKind, type RecentList } from "../data/account";
@@ -62,7 +62,7 @@ export function ReceivedDevices(props: {
     <ul
       class={`flex flex-wrap ${props.compact ? "gap-x-2.5 text-[12px]" : "gap-x-3 gap-y-0.5 text-[15px]"}`}
     >
-      <Index each={props.devices}>
+      <For keyed={false} each={props.devices}>
         {(device) => (
           <li
             class={`flex items-center ${props.compact ? "gap-0.5" : "gap-1"} ${device().received ? "text-leaf" : "text-muted"}`}
@@ -77,7 +77,7 @@ export function ReceivedDevices(props: {
             {device().name}
           </li>
         )}
-      </Index>
+      </For>
     </ul>
   );
 }

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, Show, onSettled } from "solid-js";
 import { cardClass } from "./PageParts";
 import type { Sample } from "../data/account";
 import { formatBits } from "../data/moblin";
@@ -36,7 +36,7 @@ function TimeChart(props: {
   const top = 12;
   const bottom = 24;
 
-  onMount(() => {
+  onSettled(() => {
     if (!container) {
       return;
     }
@@ -50,7 +50,7 @@ function TimeChart(props: {
       }
     });
     observer.observe(container);
-    onCleanup(() => observer.disconnect());
+    return () => observer.disconnect();
   });
 
   const end = () => props.times[props.times.length - 1] ?? Date.now();
@@ -194,7 +194,7 @@ function TimeChart(props: {
               class="stroke-line"
               stroke-width="1"
             />
-            <Index each={props.series}>
+            <For keyed={false} each={props.series}>
               {(series) => (
                 <path
                   d={path(series())}
@@ -205,7 +205,7 @@ function TimeChart(props: {
                   stroke-linecap="round"
                 />
               )}
-            </Index>
+            </For>
             <Show when={hover() !== null && props.times[hover()!] !== undefined}>
               <line
                 x1={x(props.times[hover()!]!)}
@@ -215,7 +215,7 @@ function TimeChart(props: {
                 class="stroke-muted"
                 stroke-width="1"
               />
-              <Index each={props.series}>
+              <For keyed={false} each={props.series}>
                 {(series) => (
                   <Show
                     when={
@@ -232,7 +232,7 @@ function TimeChart(props: {
                     />
                   </Show>
                 )}
-              </Index>
+              </For>
             </Show>
           </svg>
           <Show when={hover() !== null && props.times[hover()!] !== undefined}>
@@ -243,7 +243,7 @@ function TimeChart(props: {
               }}
             >
               <div class="text-muted">{formatTime(props.times[hover()!]!)}</div>
-              <Index each={props.series}>
+              <For keyed={false} each={props.series}>
                 {(series) => (
                   <div class="flex items-center gap-2">
                     <span class="size-2 rounded-full" style={{ background: series().color }} />
@@ -257,14 +257,14 @@ function TimeChart(props: {
                     </Show>
                   </div>
                 )}
-              </Index>
+              </For>
             </div>
           </Show>
         </Show>
       </div>
       <Show when={props.series.length > 1}>
         <ul class="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
-          <Index each={props.series}>
+          <For keyed={false} each={props.series}>
             {(series) => (
               <li class="flex items-center gap-2">
                 <span class="size-2.5 rounded-full" style={{ background: series().color }} />
@@ -274,7 +274,7 @@ function TimeChart(props: {
                 </span>
               </li>
             )}
-          </Index>
+          </For>
         </ul>
       </Show>
     </div>

@@ -116,11 +116,11 @@ export default function SceneWidgetsPanel(props: {
             </For>
           </Section>
         </Show>
-        <ReadOnly.Provider value={() => false}>
+        <ReadOnly value={() => false}>
           <Section>
             <ButtonRow label={t("Scene editor")} onClick={() => props.onOpenSceneEditor()} />
           </Section>
-        </ReadOnly.Provider>
+        </ReadOnly>
         <ErrorText text={editor.state.error} />
       </Show>
     ),

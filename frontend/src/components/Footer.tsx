@@ -1,4 +1,5 @@
-import { Show, type JSX } from "solid-js";
+import { Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { asset } from "../asset";
 import { links, pages } from "../data/links";
 import { language, languages, setLanguage, t } from "../i18n";

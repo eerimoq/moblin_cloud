@@ -1,4 +1,4 @@
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onSettled } from "solid-js";
 import { BackendError, backendUrl, call, isSignedOut, post } from "./backend";
 import {
   type Identity,
@@ -449,38 +449,40 @@ export function createAccountSession() {
   const [signInFailed, setSignInFailed] = createSignal<SignInFailure | null>(null);
   const [linkResult, setLinkResult] = createSignal<LinkResult | null>(null);
 
-  onMount(async () => {
-    const result = takeSignInResult();
-    if (result.session) {
-      saveSession(result.session);
-    }
-    setSignInFailed(result.failed);
-    if (result.linkFailed) {
-      setLinkResult({ linked: false, error: null });
-    }
-    const stored = readSession();
-    if (stored) {
-      try {
-        let account = await fetchAccount(stored);
-        if (result.link) {
-          try {
-            account = await linkAccount(stored, result.link);
-            setLinkResult({ linked: true });
-          } catch (error) {
-            setLinkResult({
-              linked: false,
-              error: error instanceof BackendError && error.message ? error.message : null,
-            });
+  onSettled(() => {
+    void (async () => {
+      const result = takeSignInResult();
+      if (result.session) {
+        saveSession(result.session);
+      }
+      setSignInFailed(result.failed);
+      if (result.linkFailed) {
+        setLinkResult({ linked: false, error: null });
+      }
+      const stored = readSession();
+      if (stored) {
+        try {
+          let account = await fetchAccount(stored);
+          if (result.link) {
+            try {
+              account = await linkAccount(stored, result.link);
+              setLinkResult({ linked: true });
+            } catch (error) {
+              setLinkResult({
+                linked: false,
+                error: error instanceof BackendError && error.message ? error.message : null,
+              });
+            }
+          }
+          setSession({ session: stored, account });
+        } catch (error) {
+          if (isSignedOut(error)) {
+            saveSession(null);
           }
         }
-        setSession({ session: stored, account });
-      } catch (error) {
-        if (isSignedOut(error)) {
-          saveSession(null);
-        }
       }
-    }
-    setLoading(false);
+      setLoading(false);
+    })();
   });
 
   const signOut = () => {

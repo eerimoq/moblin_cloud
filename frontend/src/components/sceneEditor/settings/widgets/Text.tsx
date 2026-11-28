@@ -1,4 +1,5 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { ask } from "../../../Modal";
 import {
   ColorRow,
@@ -499,8 +500,8 @@ function TextPage(props: WidgetFormProps) {
           placeholder={t("My text")}
           autocapitalize="off"
           autocorrect="off"
-          spellcheck={false}
-          readOnly={readOnly()}
+          spellcheck="false"
+          readonly={readOnly()}
           onInput={(event) => commit(event.currentTarget.value)}
         />
       </Section>

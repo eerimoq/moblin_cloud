@@ -1,4 +1,5 @@
-import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { Account, Device, Assisting } from "../data/account";
 import { t } from "../i18n";
 import Icon from "./Icon";
@@ -55,8 +56,8 @@ function Picker(props: {
     button?.focus();
   };
 
-  createEffect(() => {
-    if (!open()) {
+  createEffect(open, (isOpen) => {
+    if (!isOpen) {
       return;
     }
     const selected = items().findIndex((item) => item.getAttribute("aria-selected") === "true");
@@ -67,7 +68,7 @@ function Picker(props: {
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
-    onCleanup(() => document.removeEventListener("pointerdown", onPointerDown));
+    return () => document.removeEventListener("pointerdown", onPointerDown);
   });
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -98,7 +99,7 @@ function Picker(props: {
         type="button"
         aria-label={props.label}
         aria-haspopup="listbox"
-        aria-expanded={open()}
+        aria-expanded={open() ? "true" : "false"}
         title={current().label}
         onClick={() => setOpen(!open())}
         onKeyDown={(event) => {
@@ -129,7 +130,7 @@ function Picker(props: {
               <button
                 type="button"
                 role="option"
-                aria-selected={option.value === props.value}
+                aria-selected={option.value === props.value ? "true" : "false"}
                 onClick={() => {
                   close();
                   if (option.value !== props.value) {

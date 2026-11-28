@@ -4,15 +4,15 @@ import {
   createSignal,
   createUniqueId,
   For,
-  Index,
   type Accessor,
-  type JSX,
   lazy,
-  on,
   onCleanup,
-  onMount,
   Show,
+  onSettled,
+  Loading,
+  untrack,
 } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { encode } from "uqr";
 import { asset } from "../asset";
 import { createFlash } from "../flash";
@@ -295,8 +295,9 @@ function createFeatureSave<Form extends { enabled: boolean }, Value>(options: {
   save: (value: Value) => Promise<void>;
   errorText: (error: unknown) => string;
 }) {
-  const [form, setForm] = createSignal(options.initial());
-  const change = (changes: Partial<Form>) => setForm(() => ({ ...form(), ...changes }));
+  const [form, setForm] = createSignal<Form>(options.initial() as Exclude<Form, Function>);
+  const change = (changes: Partial<Form>) =>
+    setForm((previous) => ({ ...previous, ...changes }) as Exclude<Form, Function>);
   const current = () => options.value(form());
   const save = createSave(
     options.busy,
@@ -491,7 +492,7 @@ function PayPalAccount(props: {
       confirmText: t("Viewers can't tip you with PayPal until you connect a PayPal account again."),
     });
 
-  onMount(() => {
+  onSettled(() => {
     const search = new URLSearchParams(location.search);
     const returned = search.has("merchantIdInPayPal");
     if (returned) {
@@ -619,7 +620,7 @@ function StripeAccount(props: {
     setWaiting(false);
   };
 
-  onMount(() => {
+  onSettled(() => {
     const search = new URLSearchParams(location.search);
     const returned = search.has("stripe");
     if (returned) {
@@ -873,7 +874,9 @@ function YourPage(props: {
   );
   const [font, setFont] = createSignal(initial().font!);
   const current = (): Page => ({ message: message(), accent: accent(), font: font() });
-  onMount(() => loadFonts(fonts));
+  onSettled(() => {
+    loadFonts(fonts);
+  });
   const save = createSave(
     () => props.busy,
     () => !sameData(current(), initial()),
@@ -924,7 +927,7 @@ function YourPage(props: {
           {t("Message to your viewers (optional)")}
         </span>
         <textarea
-          maxLength={300}
+          maxlength={300}
           rows={3}
           value={message()}
           onInput={(event) => setMessage(event.currentTarget.value)}
@@ -1360,7 +1363,7 @@ function AssistantList(props: {
       </Show>
       <Show when={props.assistants.length > 0}>
         <ul class="rounded-2xl border-[1.5px] border-line">
-          <Index each={props.assistants}>
+          <For keyed={false} each={props.assistants}>
             {(assistant) => (
               <li class="flex items-start gap-3 border-line px-4 py-3 not-first:border-t-[1.5px] first:rounded-t-[14px] last:rounded-b-[14px] odd:bg-well even:bg-card">
                 <div class="flex min-w-0 flex-1 flex-col gap-3">
@@ -1477,7 +1480,7 @@ function AssistantList(props: {
                 </button>
               </li>
             )}
-          </Index>
+          </For>
         </ul>
       </Show>
       <Show when={props.addable}>
@@ -1488,10 +1491,10 @@ function AssistantList(props: {
             onInput={(event) => setUsername(event.currentTarget.value)}
             placeholder={placeholder()}
             aria-label={placeholder()}
-            maxLength={50}
+            maxlength={50}
             autocomplete="off"
             autocapitalize="off"
-            spellcheck={false}
+            spellcheck="false"
             class={`${inputClass} min-w-0 flex-1`}
           />
           <button type="submit" class={buttonClass} disabled={busy() || !username().trim()}>
@@ -1584,7 +1587,7 @@ function TipSettings(props: {
             {t("Suggested amounts ({currency})", { currency: props.currency })}
           </legend>
           <div class="flex flex-col items-start gap-3">
-            <Index each={amounts()}>
+            <For keyed={false} each={amounts()}>
               {(amount, index) => (
                 <div class="flex items-center gap-3">
                   <MoneyInput
@@ -1603,7 +1606,7 @@ function TipSettings(props: {
                   </Show>
                 </div>
               )}
-            </Index>
+            </For>
           </div>
           <AddRowButton rows={amounts().length} onClick={() => setAmounts([...amounts(), ""])}>
             {t("Add amount")}
@@ -1814,7 +1817,7 @@ function SpinSettings(props: {
             {t("Tips ({currency})", { currency: props.currency })}
           </legend>
           <div class="flex flex-col gap-3">
-            <Index each={options()}>
+            <For keyed={false} each={options()}>
               {(option, index) => (
                 <div class="flex items-center gap-3 text-ink-2">
                   <input
@@ -1842,7 +1845,7 @@ function SpinSettings(props: {
                   </Show>
                 </div>
               )}
-            </Index>
+            </For>
           </div>
           <AddRowButton
             rows={options().length}
@@ -1901,7 +1904,7 @@ function SendForm(props: {
       </Show>
       <input
         type="text"
-        maxLength={200}
+        maxlength={200}
         aria-label={t("Message (optional)")}
         placeholder={t("Message (optional)")}
         value={message()}
@@ -1912,7 +1915,7 @@ function SendForm(props: {
         <input
           type="text"
           inputmode="url"
-          maxLength={200}
+          maxlength={200}
           aria-label={t("YouTube or Twitch clip link (optional)")}
           placeholder={t("YouTube or Twitch clip link (optional)")}
           value={link()}
@@ -2064,13 +2067,11 @@ function Admin(props: {
       setSettings,
     );
 
-  onMount(() => void loadRecent());
+  onSettled(() => void loadRecent());
   createEffect(
-    on(
-      () => props.recentChanges,
-      () => void loadRecent(),
-      { defer: true },
-    ),
+    () => props.recentChanges,
+    () => void loadRecent(),
+    { defer: true },
   );
 
   const save = (changes: Partial<SettingsChanges>) =>
@@ -2739,7 +2740,7 @@ function MoblinSettings(props: {
                 >
                   <input
                     type="text"
-                    maxLength={30}
+                    maxlength={30}
                     aria-label={t("Device name")}
                     placeholder={t("Device name")}
                     value={name()}
@@ -2816,13 +2817,13 @@ function DeviceList(props: {
 }) {
   return (
     <ul class="flex flex-col divide-y-[1.5px] divide-line rounded-2xl border-[1.5px] border-line">
-      <Index each={props.devices}>
+      <For keyed={false} each={props.devices}>
         {(device) => (
           <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
             {props.children(device)}
           </li>
         )}
-      </Index>
+      </For>
     </ul>
   );
 }
@@ -2870,13 +2871,13 @@ function DeviceRow(props: {
       <Show when={props.device.watchers.length > 0}>
         <span class="flex basis-full items-center gap-2 pl-[22px] text-[15px] text-ink-2">
           <span class="flex shrink-0 -space-x-1.5">
-            <Index each={props.device.watchers}>
+            <For keyed={false} each={props.device.watchers}>
               {(watcher) => (
                 <span title={watcher().name} class="flex rounded-full ring-2 ring-card">
                   <Avatar picked={watcher()} class="size-6 text-[11px]" />
                 </span>
               )}
-            </Index>
+            </For>
           </span>
           <span class="min-w-0">
             {t("Watching now: {names}", {
@@ -2980,7 +2981,7 @@ function SignedIn(props: {
   onSignOutEverywhere: () => Promise<void>;
 }) {
   const [target, setTarget] = createSignal(readTarget(true));
-  const shown = createMemo(() => resolve(props.account, target()), undefined, {
+  const shown = createMemo(() => resolve(props.account, target()), {
     equals: (a, b) => a.channel === b.channel && a.page === b.page && a.device === b.device,
   });
   const channel = () => shown().channel;
@@ -3005,8 +3006,8 @@ function SignedIn(props: {
   const [mediaChanges, setMediaChanges] = createSignal(0);
 
   createEffect(
-    on(page, (id) => {
-      const assisted = channel();
+    () => ({ id: page(), assisted: untrack(channel) }),
+    ({ id, assisted }) => {
       setPageAccount(known.get(id) ?? null);
       setFailure(null);
       const refresh = async () => {
@@ -3029,50 +3030,49 @@ function SignedIn(props: {
       if (!fresh.delete(id)) {
         void refresh();
       }
-      onCleanup(
-        subscribeChanges(
-          pageEventsUrl(id),
-          props.session,
-          {
-            account: () => void refresh(),
-            recent: () => setRecentChanges((count) => count + 1),
-            media: () => setMediaChanges((count) => count + 1),
-          },
-          (status) => {
-            if (status === 401) {
-              props.onSignOut();
-            }
-          },
-        ),
+      return subscribeChanges(
+        pageEventsUrl(id),
+        props.session,
+        {
+          account: () => void refresh(),
+          recent: () => setRecentChanges((count) => count + 1),
+          media: () => setMediaChanges((count) => count + 1),
+        },
+        (status) => {
+          if (status === 401) {
+            props.onSignOut();
+          }
+        },
       );
-    }),
+    },
   );
 
-  createEffect(() => {
-    const picked = channel();
+  createEffect(channel, (picked) => {
     rememberChannel(picked ? channelKey(picked) : "");
   });
 
-  createEffect(() => {
-    const { channel, page, device } = shown();
-    const there = resolve(props.account, readTarget(false));
-    if (
-      there.page !== page ||
-      there.device !== device ||
-      (!device &&
-        (location.pathname.startsWith(asset(pages.device)) ||
-          location.pathname.startsWith(asset(pages.monitor)) ||
-          location.pathname.startsWith(asset(pages.admin)) ||
-          location.pathname.startsWith(asset(pages.account)) ||
-          location.pathname.startsWith(asset(pages.connect))))
-    ) {
-      history.replaceState(
-        null,
-        "",
-        `${device ? urlOf(page, device) : dashboardUrl(channel)}${location.search}${location.hash}`,
-      );
-    }
-  });
+  createEffect(
+    () => ({ ...shown(), account: props.account }),
+    ({ channel, page, device, account }) => {
+      const there = resolve(account, readTarget(false));
+      if (
+        there.page !== page ||
+        there.device !== device ||
+        (!device &&
+          (location.pathname.startsWith(asset(pages.device)) ||
+            location.pathname.startsWith(asset(pages.monitor)) ||
+            location.pathname.startsWith(asset(pages.admin)) ||
+            location.pathname.startsWith(asset(pages.account)) ||
+            location.pathname.startsWith(asset(pages.connect))))
+      ) {
+        history.replaceState(
+          null,
+          "",
+          `${device ? urlOf(page, device) : dashboardUrl(channel)}${location.search}${location.hash}`,
+        );
+      }
+    },
+  );
 
   const onPopState = () => setTarget(readTarget(false));
   addEventListener("popstate", onPopState);
@@ -3138,12 +3138,17 @@ function SignedIn(props: {
           channel.platform === "kick" ? t("{name} on Kick", { name: channel.name }) : channel.name,
       })),
   ];
-  createEffect(() => setFullWindow(monitor()));
-  createEffect(() => {
-    if (!monitor() && fullscreen()) {
-      toggleFullscreen();
-    }
+  createEffect(monitor, (shown) => {
+    setFullWindow(shown);
   });
+  createEffect(
+    () => !monitor() && fullscreen(),
+    (leave) => {
+      if (leave) {
+        toggleFullscreen();
+      }
+    },
+  );
   onCleanup(() => setFullWindow(false));
 
   const content = () => (
@@ -3156,21 +3161,27 @@ function SignedIn(props: {
             <Show
               when={device() === connectPage}
               fallback={
-                <AccountView
-                  session={props.session}
-                  account={known.get(props.account.settings.id) ?? props.account}
-                  linkResult={props.linkResult}
-                  onAccount={update}
-                  onSignOut={props.onSignOut}
-                  onSignOutEverywhere={props.onSignOutEverywhere}
-                />
+                <Loading>
+                  <AccountView
+                    session={props.session}
+                    account={known.get(props.account.settings.id) ?? props.account}
+                    linkResult={props.linkResult}
+                    onAccount={update}
+                    onSignOut={props.onSignOut}
+                    onSignOutEverywhere={props.onSignOutEverywhere}
+                  />
+                </Loading>
               }
             >
-              <ConnectView session={props.session} onSignOut={props.onSignOut} />
+              <Loading>
+                <ConnectView session={props.session} onSignOut={props.onSignOut} />
+              </Loading>
             </Show>
           }
         >
-          <AdminView session={props.session} onSignOut={props.onSignOut} />
+          <Loading>
+            <AdminView session={props.session} onSignOut={props.onSignOut} />
+          </Loading>
         </Show>
       }
     >
@@ -3207,14 +3218,16 @@ function SignedIn(props: {
                   <Show
                     when={picked() !== monitorPage}
                     fallback={
-                      <Monitor
-                        session={props.session}
-                        page={id}
-                        account={account()}
-                        copyTargets={copyTargets()}
-                        recentChanges={recentChanges()}
-                        onSignOut={props.onSignOut}
-                      />
+                      <Loading>
+                        <Monitor
+                          session={props.session}
+                          page={id}
+                          account={account()}
+                          copyTargets={copyTargets()}
+                          recentChanges={recentChanges()}
+                          onSignOut={props.onSignOut}
+                        />
+                      </Loading>
                     }
                   >
                     <Show
@@ -3227,19 +3240,21 @@ function SignedIn(props: {
                         </div>
                       }
                     >
-                      <DeviceView
-                        session={props.session}
-                        page={id}
-                        device={picked()}
-                        preview={account().preview}
-                        goLive={account().goLive}
-                        secrets={account().secrets}
-                        remoteControl={account().remoteControl === "control"}
-                        nameOf={(device) =>
-                          account().devices.find((candidate) => candidate.id === device)?.name
-                        }
-                        onSignOut={props.onSignOut}
-                      />
+                      <Loading>
+                        <DeviceView
+                          session={props.session}
+                          page={id}
+                          device={picked()}
+                          preview={account().preview}
+                          goLive={account().goLive}
+                          secrets={account().secrets}
+                          remoteControl={account().remoteControl === "control"}
+                          nameOf={(device) =>
+                            account().devices.find((candidate) => candidate.id === device)?.name
+                          }
+                          onSignOut={props.onSignOut}
+                        />
+                      </Loading>
                     </Show>
                   </Show>
                 )}
@@ -3328,11 +3343,18 @@ export default function Dashboard() {
   const { session, loading, signInFailed, linkResult, signOut, signOutAll } =
     createAccountSession();
 
-  createEffect(() => {
-    if (!loading() && !session() && location.pathname !== asset(pages.dashboard)) {
-      history.replaceState(null, "", `${asset(pages.dashboard)}${location.search}${location.hash}`);
-    }
-  });
+  createEffect(
+    () => !loading() && !session(),
+    (signedOut) => {
+      if (signedOut && location.pathname !== asset(pages.dashboard)) {
+        history.replaceState(
+          null,
+          "",
+          `${asset(pages.dashboard)}${location.search}${location.hash}`,
+        );
+      }
+    },
+  );
 
   return (
     <Show

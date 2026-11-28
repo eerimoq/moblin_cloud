@@ -1,4 +1,5 @@
-import { createEffect, createSignal, For, on, onMount, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, For, Show, onSettled } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon from "./Icon";
 import { timeAgo, VideoLink } from "./Latest";
 import { ask } from "./Modal";
@@ -102,13 +103,11 @@ export default function MediaQueue(props: {
     }
   };
 
-  onMount(() => void load());
+  onSettled(() => void load());
   createEffect(
-    on(
-      () => props.changes,
-      () => void load(),
-      { defer: true },
-    ),
+    () => props.changes,
+    () => void load(),
+    { defer: true },
   );
 
   const run = async (id: string, action: () => Promise<unknown>) => {

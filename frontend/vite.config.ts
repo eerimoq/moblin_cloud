@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { defineConfig } from "vite";
-import solid from "vite-plugin-solid";
+import solid from "@solidjs/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 
 // On a custom domain (public/CNAME present) the site lives at the root.

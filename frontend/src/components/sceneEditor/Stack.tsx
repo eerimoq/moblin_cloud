@@ -1,4 +1,5 @@
-import { createSignal, Show, type Accessor, type JSX } from "solid-js";
+import { createSignal, Show, type Accessor } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon from "../Icon";
 
 export type Page = { title: string | (() => string); render: () => JSX.Element };

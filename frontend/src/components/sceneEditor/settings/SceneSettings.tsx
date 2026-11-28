@@ -1,4 +1,4 @@
-import { createMemo, onMount, Show } from "solid-js";
+import { createMemo, Show, onSettled } from "solid-js";
 import Icon from "../../Icon";
 import {
   ButtonRow,
@@ -70,7 +70,7 @@ function DefaultMic(props: {
   edit: (change: (scene: SettingsScene) => void) => void;
 }) {
   const readOnly = useReadOnly();
-  onMount(() => {
+  onSettled(() => {
     const current = props.editor.state.currentMic;
     if (!readOnly() && props.micId === "" && current) {
       props.edit((draft) => {
@@ -168,7 +168,7 @@ export function SceneSettings(props: {
                       <button
                         type="button"
                         role="switch"
-                        aria-checked={widget().enabled}
+                        aria-checked={widget().enabled ? "true" : "false"}
                         aria-label={widget().name}
                         class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
                           widget().enabled ? "bg-phone-switch" : "bg-phone-separator"

@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, Show, onSettled } from "solid-js";
 import Icon from "../../../Icon";
 import {
   ButtonRow,
@@ -62,7 +62,7 @@ function EffectPage(props: WidgetFormProps & { effectId: string }) {
     });
   const snapshot = () =>
     props.editor.state.snapshots[props.widget.id.toUpperCase()] ?? asset("gamla-linkoping.jpg");
-  onMount(() => props.editor.loadSnapshot(props.widget.id));
+  onSettled(() => props.editor.loadSnapshot(props.widget.id));
   const portrait = () => props.editor.state.portrait;
   const [selectedPoint, setSelectedPoint] = createSignal<number | null>(null);
   const [selectedEdge, setSelectedEdge] = createSignal<number | null>(null);
@@ -507,7 +507,7 @@ export function EffectsSection(props: WidgetFormProps) {
             <button
               type="button"
               role="switch"
-              aria-checked={effect.enabled}
+              aria-checked={effect.enabled ? "true" : "false"}
               aria-label={effectTypeName(effect.type)}
               class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
                 effect.enabled ? "bg-phone-switch" : "bg-phone-separator"

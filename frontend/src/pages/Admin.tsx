@@ -1,4 +1,5 @@
-import { createSignal, For, Index, onMount, Show, type JSX } from "solid-js";
+import { createSignal, For, Show, onSettled } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon, { type IconName } from "../components/Icon";
 import { Avatar } from "../components/HeaderPickers";
 import {
@@ -422,7 +423,7 @@ function Info(props: { icon?: IconName; label?: string; children: JSX.Element })
       <button
         type="button"
         aria-label={props.label ?? "What is this?"}
-        aria-expanded={open()}
+        aria-expanded={open() ? "true" : "false"}
         class="peer ml-1.5 inline-flex size-6 items-center justify-center rounded-full align-middle text-muted transition-colors hover:bg-ghost hover:text-ink aria-expanded:bg-ghost aria-expanded:text-ink"
         onClick={() => setOpen(!open())}
         onBlur={() => setOpen(false)}
@@ -457,7 +458,7 @@ function StepTable(props: { steps: Step[] }) {
             </For>
           </tr>
         </thead>
-        <Index each={props.steps}>
+        <For keyed={false} each={props.steps}>
           {(step) => {
             const seen = () =>
               step()
@@ -482,7 +483,9 @@ function StepTable(props: { steps: Step[] }) {
                       <Info icon="failed" label="Never failed with">
                         <span class="font-semibold">Never failed with</span>
                         <ul class="mt-1 list-disc pl-4">
-                          <Index each={never()}>{(failure) => <li>{failure().label}</li>}</Index>
+                          <For keyed={false} each={never()}>
+                            {(failure) => <li>{failure().label}</li>}
+                          </For>
                         </ul>
                       </Info>
                     </Show>
@@ -500,7 +503,7 @@ function StepTable(props: { steps: Step[] }) {
                     </td>
                     <Cells counts={failed()} class="pt-1 pb-0.5 text-[13px] text-muted" />
                   </tr>
-                  <Index each={seen()}>
+                  <For keyed={false} each={seen()}>
                     {(failure) => (
                       <tr>
                         <td class="px-4 py-0.5 text-[14px] sm:px-5">
@@ -524,12 +527,12 @@ function StepTable(props: { steps: Step[] }) {
                         />
                       </tr>
                     )}
-                  </Index>
+                  </For>
                 </Show>
               </tbody>
             );
           }}
-        </Index>
+        </For>
       </table>
     </div>
   );
@@ -575,13 +578,13 @@ function StatusTable(props: { statuses: (readonly [number, number])[]; total: nu
             when={props.statuses.length > 0}
             fallback={
               <tr>
-                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={3}>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colspan={3}>
                   No requests yet.
                 </td>
               </tr>
             }
           >
-            <Index each={props.statuses}>
+            <For keyed={false} each={props.statuses}>
               {(entry) => {
                 const status = () => entry()[0];
                 const count = () => entry()[1];
@@ -600,7 +603,7 @@ function StatusTable(props: { statuses: (readonly [number, number])[]; total: nu
                   </tr>
                 );
               }}
-            </Index>
+            </For>
           </Show>
         </tbody>
       </table>
@@ -638,13 +641,13 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
             when={props.endpoints.length > 0}
             fallback={
               <tr>
-                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={4}>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colspan={4}>
                   No requests yet.
                 </td>
               </tr>
             }
           >
-            <Index each={props.endpoints}>
+            <For keyed={false} each={props.endpoints}>
               {(endpoint) => {
                 const clientErrors = () => statusesFrom(endpoint().statuses, 400);
                 const serverErrors = () => statusesFrom(endpoint().statuses, 500);
@@ -673,7 +676,7 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
                   </tr>
                 );
               }}
-            </Index>
+            </For>
           </Show>
         </tbody>
       </table>
@@ -703,13 +706,13 @@ function DatabaseTable(props: { database: AdminStats["database"] }) {
             when={props.database.files.length > 0}
             fallback={
               <tr>
-                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={3}>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colspan={3}>
                   In memory, no files on disk.
                 </td>
               </tr>
             }
           >
-            <Index each={props.database.files}>
+            <For keyed={false} each={props.database.files}>
               {(file) => (
                 <tr>
                   <td class="px-4 py-0.5 font-mono text-[13px] break-all sm:px-5">{file().name}</td>
@@ -721,7 +724,7 @@ function DatabaseTable(props: { database: AdminStats["database"] }) {
                   </td>
                 </tr>
               )}
-            </Index>
+            </For>
             <tr class="font-semibold">
               <td class="px-4 pt-1.5 text-[14px] sm:px-5">Total</td>
               <td class="px-2 pt-1.5 text-right font-mono text-[14px] tabular-nums sm:px-4">
@@ -761,13 +764,13 @@ function MessageTable(props: {
             when={props.kinds.length > 0}
             fallback={
               <tr>
-                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colSpan={3}>
+                <td class="px-4 py-3 text-[14px] text-muted sm:px-5" colspan={3}>
                   No messages yet.
                 </td>
               </tr>
             }
           >
-            <Index each={props.kinds}>
+            <For keyed={false} each={props.kinds}>
               {(kind) => (
                 <tr
                   class={
@@ -785,7 +788,7 @@ function MessageTable(props: {
                   </td>
                 </tr>
               )}
-            </Index>
+            </For>
           </Show>
         </tbody>
       </table>
@@ -873,7 +876,9 @@ function Status(props: { counters: Counters; problems: Problem[]; services: stri
             {plural(issues().length, "problem", "problems")} today
           </span>
           <ul class="flex flex-col gap-0.5 text-[15px]">
-            <Index each={issues()}>{(issue) => <li>{issue()}</li>}</Index>
+            <For keyed={false} each={issues()}>
+              {(issue) => <li>{issue()}</li>}
+            </For>
           </ul>
         </div>
       </div>
@@ -1113,7 +1118,7 @@ function Premium(props: {
           aria-label="Twitch or Kick login or name"
           autocomplete="off"
           autocapitalize="off"
-          spellcheck={false}
+          spellcheck="false"
           class={`${inputClass} min-w-0 flex-1`}
         />
         <button type="submit" class={buttonClass} disabled={busy() || !text().trim()}>
@@ -1435,11 +1440,11 @@ function Loaded(props: {
           hint="The counts are right now, not per day."
         >
           <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Index each={accounts()}>
+            <For keyed={false} each={accounts()}>
               {(account) => (
                 <Tile label={account()[0]} value={format(account()[2])} hint={account()[1]} />
               )}
-            </Index>
+            </For>
           </div>
           <Part
             title="Sign in"
@@ -1479,7 +1484,7 @@ function Loaded(props: {
           <div
             class={`${cardClass} flex-row! flex-wrap gap-x-6! gap-y-2! px-5! py-3! sm:px-5! sm:py-3!`}
           >
-            <Index each={integrations()}>
+            <For keyed={false} each={integrations()}>
               {(integration) => (
                 <span class="flex items-center gap-2 text-[15px] font-semibold text-ink-2">
                   <span
@@ -1495,7 +1500,7 @@ function Loaded(props: {
                   <Info>{integration()[1]}</Info>
                 </span>
               )}
-            </Index>
+            </For>
           </div>
           <DatabaseTable database={props.stats.database} />
           <Part
@@ -1593,20 +1598,22 @@ function Stats(props: { session: string; onSignOut: () => void }) {
   const [stats, setStats] = createSignal<AdminStats | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
-  onMount(async () => {
-    try {
-      setStats(await fetchAdminOverview(props.session));
-    } catch (error) {
-      if (error instanceof BackendError && error.status === 401) {
-        props.onSignOut();
-        return;
+  onSettled(() => {
+    void (async () => {
+      try {
+        setStats(await fetchAdminOverview(props.session));
+      } catch (error) {
+        if (error instanceof BackendError && error.status === 401) {
+          props.onSignOut();
+          return;
+        }
+        setError(
+          error instanceof BackendError && error.status === 403
+            ? "This account is not an admin."
+            : "The statistics could not be loaded.",
+        );
       }
-      setError(
-        error instanceof BackendError && error.status === 403
-          ? "This account is not an admin."
-          : "The statistics could not be loaded.",
-      );
-    }
+    })();
   });
 
   return (

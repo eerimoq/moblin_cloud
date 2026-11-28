@@ -1,4 +1,4 @@
-import { onMount, Show } from "solid-js";
+import { Show, onSettled } from "solid-js";
 import Icon from "../../../Icon";
 import {
   ButtonRow,
@@ -135,7 +135,7 @@ function SimpleOptions(props: WidgetFormProps) {
       });
     }
   };
-  onMount(() => {
+  onSettled(() => {
     if (!readOnly()) {
       setText(text());
     }

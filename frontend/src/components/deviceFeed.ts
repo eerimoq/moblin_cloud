@@ -1,4 +1,4 @@
-import { type Accessor, createRoot, createSignal, onCleanup } from "solid-js";
+import { type Accessor, createRoot, createSignal, onCleanup, runWithOwner } from "solid-js";
 import {
   controlDevice,
   deviceEventsUrl,
@@ -47,7 +47,9 @@ type Shared<T> = {
 const shared = <T>(cache: Map<string, Shared<T>>, key: string, create: () => T): T => {
   let entry = cache.get(key);
   if (!entry) {
-    entry = createRoot((dispose) => ({ value: create(), users: 0, dispose }));
+    entry = runWithOwner(null, () =>
+      createRoot((dispose) => ({ value: create(), users: 0, dispose })),
+    );
     cache.set(key, entry);
   }
   const used = entry;

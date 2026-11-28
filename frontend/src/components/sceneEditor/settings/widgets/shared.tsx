@@ -198,7 +198,7 @@ export function Lines(props: {
         class="min-h-[110px] w-full resize-none bg-transparent px-4 py-2 text-[17px] outline-none placeholder:text-phone-border"
         value={text() ?? props.value}
         placeholder={props.placeholder}
-        readOnly={readOnly()}
+        readonly={readOnly()}
         onInput={(event) => setText(event.currentTarget.value)}
         onBlur={() => {
           const typed = text();

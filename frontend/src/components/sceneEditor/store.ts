@@ -1,5 +1,15 @@
-import { batch, createMemo, createRoot, createSignal, onCleanup, type Accessor } from "solid-js";
-import { createStore, produce, reconcile, unwrap, type SetStoreFunction } from "solid-js/store";
+import {
+  createMemo,
+  createRoot,
+  createSignal,
+  createStore,
+  flush as flushUpdates,
+  onCleanup,
+  reconcile,
+  snapshot,
+  type Accessor,
+} from "solid-js";
+import { removeWhere, storeSetter, type SetStore } from "../../store";
 import { BackendError } from "../../data/backend";
 import {
   encodeScene,
@@ -42,7 +52,7 @@ export type EditorState = {
 
 export type Editor = {
   state: EditorState;
-  set: SetStoreFunction<EditorState>;
+  set: SetStore<EditorState>;
   reload: () => Promise<void>;
   loadSnapshot: (widgetId: string, again?: boolean) => void;
   request: <T>(control: Control) => Promise<T>;
@@ -62,7 +72,7 @@ export type Editor = {
   dispose: () => void;
 };
 
-export const clone = <T>(value: T): T => structuredClone(unwrap(value));
+export const clone = <T>(value: T): T => structuredClone(snapshot(value));
 
 export const same = (first: unknown, second: unknown) =>
   JSON.stringify(first) === JSON.stringify(second);
@@ -108,7 +118,7 @@ export function createEditor(
   readOnly: Accessor<boolean> = () => false,
 ): Editor {
   return createRoot((dispose) => {
-    const [state, set] = createStore<EditorState>({
+    const [state, setState] = createStore<EditorState>({
       loading: true,
       loaded: false,
       error: null,
@@ -130,6 +140,12 @@ export function createEditor(
       syncing: false,
       dirty: false,
     });
+    const set = storeSetter(setState);
+    const write = storeSetter(setState, flushUpdates);
+    const update = (change: (draft: EditorState) => void) => {
+      setState(change);
+      flushUpdates();
+    };
     let synced = {
       scenes: [] as SettingsScene[],
       widgets: [] as SettingsWidget[],
@@ -160,39 +176,38 @@ export function createEditor(
     };
 
     const reload = async () => {
-      set("loading", true);
+      if (!state.loading) {
+        write("loading", true);
+      }
       try {
         const fresh = await fetchAll();
         if (disposed) {
           return;
         }
-        batch(() => {
-          const scenes = mergeFresh(fresh.scenes, clone(state.scenes), synced.scenes);
-          const widgets = mergeFresh(fresh.widgets, clone(state.widgets), synced.widgets);
-          synced = {
-            scenes: clone(fresh.scenes),
-            widgets: clone(fresh.widgets),
-            players: clone(fresh.options.scoreboardPlayers),
-          };
-          set("scenes", reconcile(scenes, { key: "id" }));
-          set("widgets", reconcile(widgets, { key: "id" }));
-          set("videoSources", fresh.videoSources);
-          set("gallery", fresh.gallery);
-          set("options", fresh.options);
-          set(
-            "scoreboardPlayers",
-            same(state.scoreboardPlayers, synced.players)
-              ? fresh.options.scoreboardPlayers
-              : state.scoreboardPlayers,
-          );
-          set("loaded", true);
-          set("error", null);
+        const scenes = mergeFresh(fresh.scenes, clone(state.scenes), synced.scenes);
+        const widgets = mergeFresh(fresh.widgets, clone(state.widgets), synced.widgets);
+        synced = {
+          scenes: clone(fresh.scenes),
+          widgets: clone(fresh.widgets),
+          players: clone(fresh.options.scoreboardPlayers),
+        };
+        update((draft) => {
+          reconcile(scenes, "id")(draft.scenes);
+          reconcile(widgets, "id")(draft.widgets);
+          draft.videoSources = fresh.videoSources;
+          draft.gallery = fresh.gallery;
+          draft.options = fresh.options;
+          if (same(draft.scoreboardPlayers, synced.players)) {
+            draft.scoreboardPlayers = fresh.options.scoreboardPlayers;
+          }
+          draft.loaded = true;
+          draft.error = null;
         });
         setVersion((version) => version + 1);
       } catch (error) {
-        set("error", errorText(error));
+        write("error", errorText(error));
       } finally {
-        set("loading", false);
+        write("loading", false);
       }
     };
 
@@ -202,12 +217,16 @@ export function createEditor(
         return;
       }
       if (!(key in state.snapshots)) {
-        set("snapshots", key, null);
+        update((draft) => {
+          draft.snapshots[key] = null;
+        });
       }
       void request<{ image: string | null }>({ getVideoSourceSnapshot: { id: widgetId } })
         .then((answer) => {
           if (!disposed) {
-            set("snapshots", key, answer.image ? dataUrl(answer.image) : null);
+            update((draft) => {
+              draft.snapshots[key] = answer.image ? dataUrl(answer.image) : null;
+            });
           }
         })
         .catch(() => {});
@@ -225,7 +244,7 @@ export function createEditor(
     });
 
     const markDirty = () => {
-      set("dirty", true);
+      write("dirty", true);
       if (timer !== undefined || syncing || disposed) {
         return;
       }
@@ -276,13 +295,13 @@ export function createEditor(
         if (index < 0) {
           continue;
         }
-        const placeholder = state.scenes[index].widgets.find((sceneWidget) =>
+        const placeholderId = state.scenes[index].widgets.find((sceneWidget) =>
           sameId(sceneWidget.widgetId, widgetId),
-        );
-        batch(() => {
-          set("scenes", index, produce(adopt));
-          if (placeholder && sameId(state.selection, placeholder.id)) {
-            set("selection", added.id);
+        )?.id;
+        update((draft) => {
+          adopt(draft.scenes[index]);
+          if (placeholderId !== undefined && sameId(draft.selection, placeholderId)) {
+            draft.selection = added.id;
           }
         });
       }
@@ -294,8 +313,8 @@ export function createEditor(
       }
       const run = async () => {
         lastSync = Date.now();
-        set("syncing", true);
-        set("dirty", false);
+        write("syncing", true);
+        write("dirty", false);
         try {
           const scenes = clone(state.scenes);
           const widgets = clone(state.widgets);
@@ -372,14 +391,14 @@ export function createEditor(
             const id = pendingSwitch;
             pendingSwitch = null;
             if (sameId(state.sceneId, id)) {
-              set("sceneId", null);
+              write("sceneId", null);
             }
             void control({ setScene: { id } });
           }
-          set("error", null);
+          write("error", null);
         } catch (error) {
-          set("error", errorText(error));
-          set("dirty", true);
+          write("error", errorText(error));
+          write("dirty", true);
           if (!disposed) {
             timer = setTimeout(() => {
               timer = undefined;
@@ -387,7 +406,7 @@ export function createEditor(
             }, 5000);
           }
         } finally {
-          set("syncing", false);
+          write("syncing", false);
         }
       };
       syncing = run();
@@ -430,23 +449,23 @@ export function createEditor(
           return;
         }
         if (readOnly()) {
-          set("sceneId", id);
+          write("sceneId", id);
           return;
         }
         if (
           picked.enabled &&
           !synced.scenes.some((scene) => scene.enabled && sameId(scene.id, id))
         ) {
-          set("sceneId", id);
+          write("sceneId", id);
           pendingSwitch = id;
         } else if (picked.enabled) {
-          set("sceneId", null);
+          write("sceneId", null);
           pendingSwitch = null;
           if (!sameId(currentScene(), id)) {
             void control({ setScene: { id } });
           }
         } else {
-          set("sceneId", id);
+          write("sceneId", id);
           if (sameId(pendingSwitch, id)) {
             pendingSwitch = null;
           }
@@ -458,7 +477,7 @@ export function createEditor(
         }
         const index = state.scenes.findIndex((scene) => sameId(scene.id, id));
         if (index >= 0) {
-          set("scenes", index, produce(change));
+          update((draft) => change(draft.scenes[index]));
           markDirty();
         }
       },
@@ -468,7 +487,7 @@ export function createEditor(
         }
         const index = state.widgets.findIndex((widget) => sameId(widget.id, id));
         if (index >= 0) {
-          set("widgets", index, produce(change));
+          update((draft) => change(draft.widgets[index]));
           markDirty();
         }
       },
@@ -476,7 +495,9 @@ export function createEditor(
         if (readOnly()) {
           return;
         }
-        set("scenes", (scenes) => [...scenes, scene]);
+        update((draft) => {
+          draft.scenes.push(scene);
+        });
         markDirty();
       },
       removeScene: (id) => {
@@ -490,39 +511,34 @@ export function createEditor(
             }
           }
         };
-        batch(() => {
-          set("scenes", (scenes) => scenes.filter((scene) => !sameId(scene.id, id)));
-          set("widgets", produce(clearScene));
-          clearScene(synced.widgets);
-          if (sameId(state.sceneId, id)) {
-            set("sceneId", null);
+        update((draft) => {
+          removeWhere(draft.scenes, (scene) => sameId(scene.id, id));
+          clearScene(draft.widgets);
+          if (sameId(draft.sceneId, id)) {
+            draft.sceneId = null;
           }
         });
+        clearScene(synced.widgets);
         markDirty();
       },
       addWidget: (widget) => {
         if (readOnly()) {
           return;
         }
-        set("widgets", (widgets) => [...widgets, widget]);
+        update((draft) => {
+          draft.widgets.push(widget);
+        });
         markDirty();
       },
       removeWidget: (id) => {
         if (readOnly()) {
           return;
         }
-        batch(() => {
-          set("widgets", (widgets) => widgets.filter((widget) => !sameId(widget.id, id)));
-          set(
-            "scenes",
-            produce((scenes) => {
-              for (const scene of scenes) {
-                scene.widgets = scene.widgets.filter(
-                  (sceneWidget) => !sameId(sceneWidget.widgetId, id),
-                );
-              }
-            }),
-          );
+        update((draft) => {
+          removeWhere(draft.widgets, (widget) => sameId(widget.id, id));
+          for (const scene of draft.scenes) {
+            removeWhere(scene.widgets, (sceneWidget) => sameId(sceneWidget.widgetId, id));
+          }
         });
         markDirty();
       },
@@ -530,7 +546,7 @@ export function createEditor(
         if (readOnly()) {
           return;
         }
-        set("scoreboardPlayers", players);
+        write("scoreboardPlayers", players);
         markDirty();
       },
       flush,

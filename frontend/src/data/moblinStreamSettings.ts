@@ -1,3 +1,4 @@
+import { snapshot } from "solid-js";
 import {
   derivedId,
   idOf,
@@ -443,7 +444,7 @@ export const encodeStream = (stream: SettingsStream): Record<string, unknown> =>
 });
 
 export const cloneStream = (stream: SettingsStream): SettingsStream => {
-  const copy = structuredClone(stream);
+  const copy = structuredClone(snapshot(stream));
   copy.id = newUuid();
   copy.enabled = false;
   copy.twitchLoggedIn = false;

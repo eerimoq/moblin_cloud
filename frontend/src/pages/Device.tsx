@@ -65,13 +65,15 @@ export default function DeviceView(props: {
 
   const [previewHidden, setPreviewHidden] = createSignal(readStored(previewHiddenKey) === "1");
   const togglePreview = () => {
-    setPreviewHidden(!previewHidden());
-    store(previewHiddenKey, previewHidden() ? "1" : null);
+    const hidden = !previewHidden();
+    setPreviewHidden(hidden);
+    store(previewHiddenKey, hidden ? "1" : null);
   };
   const [windowed, setWindowed] = createSignal(readStored(phoneWindowKey) === "1");
   const toggleWindow = () => {
-    setWindowed(!windowed());
-    store(phoneWindowKey, windowed() ? "1" : null);
+    const shown = !windowed();
+    setWindowed(shown);
+    store(phoneWindowKey, shown ? "1" : null);
   };
   const previewDevice = createMemo(() =>
     active() === "phone" && props.preview === true && !previewHidden() ? props.device : null,
@@ -103,7 +105,7 @@ export default function DeviceView(props: {
                   <div class="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      aria-pressed={windowed()}
+                      aria-pressed={windowed() ? "true" : "false"}
                       onClick={toggleWindow}
                       class="inline-flex h-8 items-center gap-1.5 rounded-full border border-line px-3 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-ghost hover:text-ink"
                     >
@@ -113,7 +115,7 @@ export default function DeviceView(props: {
                     <Show when={props.preview === true}>
                       <button
                         type="button"
-                        aria-pressed={previewHidden()}
+                        aria-pressed={previewHidden() ? "true" : "false"}
                         title={t("Hiding the stream preview saves bandwidth on the phone.")}
                         onClick={togglePreview}
                         class="inline-flex h-8 items-center gap-1.5 rounded-full border border-line px-3 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-ghost hover:text-ink"

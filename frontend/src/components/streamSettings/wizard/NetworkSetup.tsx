@@ -1,4 +1,5 @@
-import { For, Match, Switch, type JSX } from "solid-js";
+import { For, Match, Switch } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon from "../../Icon";
 import { rowClass } from "../../MoblinParts";
 import { Section } from "../../sceneEditor/Form";

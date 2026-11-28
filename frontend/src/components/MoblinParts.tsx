@@ -1,4 +1,5 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import Icon, { type IconName } from "./Icon";
 import { type Control, type DeviceSettings, type DeviceState, type Named } from "../data/account";
 import { t } from "../i18n";
@@ -166,7 +167,7 @@ export function Toggle(props: {
     <button
       type="button"
       role="switch"
-      aria-checked={props.on}
+      aria-checked={props.on ? "true" : "false"}
       aria-label={props.label}
       disabled={props.disabled}
       class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
