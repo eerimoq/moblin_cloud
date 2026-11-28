@@ -39,7 +39,7 @@ runs:
         TEST_URL: ${{ inputs.test-url }}
       run: |
         docker run --detach --name image-under-test $RUN_OPTIONS image-under-test
-        curl --fail --silent --show-error --output /dev/null \
+        curl --fail --no-progress-meter --output /dev/null --write-out '%{url} answered %{http_code}\n' \
           --retry 10 --retry-delay 1 --retry-all-errors "$TEST_URL" \
           || (docker logs image-under-test; exit 1)
     - uses: docker/build-push-action@v7
