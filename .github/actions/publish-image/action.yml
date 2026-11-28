@@ -1,0 +1,54 @@
+name: Publish image
+description: Builds an image, starts it, requests a URL from it and publishes it for amd64 and arm64.
+inputs:
+  image:
+    description: Directory of the image, and the end of its name.
+    required: true
+  run-options:
+    description: Options to docker run the image with when testing it.
+    required: true
+  test-url:
+    description: URL the started image has to answer.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@v4
+    - uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    - id: meta
+      uses: docker/metadata-action@v6
+      with:
+        images: ghcr.io/${{ github.repository }}-${{ inputs.image }}
+        tags: |
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+    - uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.image }}
+        load: true
+        tags: image-under-test
+        build-args: VERSION=${{ steps.meta.outputs.version }}
+        cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-${{ inputs.image }}:buildcache
+    - shell: bash
+      env:
+        RUN_OPTIONS: ${{ inputs.run-options }}
+        TEST_URL: ${{ inputs.test-url }}
+      run: |
+        docker run --detach --name image-under-test $RUN_OPTIONS image-under-test
+        curl --fail --silent --show-error --output /dev/null \
+          --retry 10 --retry-delay 1 --retry-all-errors "$TEST_URL" \
+          || (docker logs image-under-test; exit 1)
+    - uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.image }}
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: VERSION=${{ steps.meta.outputs.version }}
+        cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-${{ inputs.image }}:buildcache
+        cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-${{ inputs.image }}:buildcache,mode=max
