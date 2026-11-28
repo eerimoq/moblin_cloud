@@ -423,8 +423,8 @@ class MediaTestSend(MediaTestCase):
             self.assert_equal(
                 [video["kind"]["mediaShare"] for video in videos],
                 [
-                    {"source": {"youTube": {"videoId": "aaaaaaaaaaa", "start": 9}}, "duration": 15},
-                    {"source": {"youTube": {"videoId": VIDEO, "start": 0}}, "duration": 15},
+                    {"source": {"youTube": {"videoId": "aaaaaaaaaaa", "start": 9}}, "duration": 600},
+                    {"source": {"youTube": {"videoId": VIDEO, "start": 0}}, "duration": 600},
                     {"source": {"youTube": {"videoId": VIDEO, "start": 70}}, "duration": 45},
                 ],
             )

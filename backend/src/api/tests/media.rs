@@ -326,7 +326,7 @@ async fn streamers_test_their_videos() {
     assert_eq!(request["request"]["data"]["tip"]["name"], "Erik");
     assert_eq!(
         request["request"]["data"]["tip"]["kind"],
-        json!({"mediaShare": {"source": {"youTube": {"videoId": "aaaaaaaaaaa", "start": 9}}, "duration": 10}})
+        json!({"mediaShare": {"source": {"youTube": {"videoId": "aaaaaaaaaaa", "start": 9}}, "duration": 600}})
     );
     answer(&mut socket, &request, Value::Null).await;
     let response = test(json!({})).await.unwrap();

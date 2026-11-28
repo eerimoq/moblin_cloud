@@ -12,22 +12,20 @@ function secondsBetween(start: string, end: string) {
 export function createTimeRange(options: {
   start?: string;
   end?: string;
-  length: number;
   longest: () => number;
   tooLong: () => string;
   off: () => boolean;
 }) {
   const [start, setStart] = createSignal(options.start ?? "0:00");
-  const [end, setEnd] = createSignal(
-    options.end ?? timeText((parseTime(start()) ?? 0) + options.length),
-  );
+  const [end, setEnd] = createSignal(options.end ?? "");
+  const endLeftOut = () => end().trim() === "";
   const seconds = () => secondsBetween(start(), end());
-  let length = seconds() ?? options.length;
+  let length = seconds();
 
   const startError = () =>
     !options.off() && parseTime(start()) === null ? t("Enter a time like 1:30.") : "";
   const endError = () => {
-    if (options.off()) {
+    if (options.off() || endLeftOut()) {
       return "";
     }
     const to = parseTime(end());
@@ -47,7 +45,7 @@ export function createTimeRange(options: {
   const changeStart = (value: string) => {
     setStart(value);
     const from = parseTime(value);
-    if (from !== null) {
+    if (from !== null && length !== null && !endLeftOut()) {
       setEnd(timeText(from + length));
     }
   };
@@ -62,6 +60,7 @@ export function createTimeRange(options: {
     end,
     seconds,
     off: options.off,
+    endLeftOut,
     startError,
     endError,
     changeStart,
@@ -106,16 +105,14 @@ export function TimeRangeInputs(props: { range: TimeRange }) {
         />
       </label>
       <label class="flex flex-col gap-2">
-        <span class="text-[15px] font-semibold text-ink-2">{t("End at")}</span>
+        <span class="text-[15px] font-semibold text-ink-2">{t("End at (optional)")}</span>
         <input
           ref={(element) => (endInput = element)}
           type="text"
           inputmode="numeric"
-          required={!props.range.off()}
           maxlength={8}
           value={props.range.end()}
           onInput={(event) => props.range.changeEnd(event.currentTarget.value)}
-          placeholder="0:30"
           autocomplete="off"
           class={[inputClass, "max-w-32"]}
         />

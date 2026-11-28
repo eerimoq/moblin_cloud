@@ -1271,12 +1271,12 @@ function MediaJar(props: {
   const range = createTimeRange({
     start: saved?.start,
     end: saved?.end,
-    length: Math.min(30, longest()),
     longest,
     tooLong: () => t("The streamer plays at most {length}.", { length: lengthText(longest()) }),
     off: () => clip(),
   });
-  const { start, end, seconds, changeStart } = range;
+  const { start, end, changeStart } = range;
+  const seconds = () => (range.endLeftOut() ? longest() : range.seconds());
   const [message, setMessage] = createSignal(saved?.message ?? "");
   let form: HTMLFormElement | undefined;
   let linkInput: HTMLInputElement | undefined;

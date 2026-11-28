@@ -1885,7 +1885,6 @@ function SendForm(props: {
     return found !== null && found.platform !== "youtube";
   };
   const range = createTimeRange({
-    length: 15,
     longest: () => 600,
     tooLong: () => t("Test videos play at most 10 minutes."),
     off: () => !props.link || clip(),
@@ -2010,7 +2009,7 @@ const testTexts: Record<RecentKind, { description: string; label: string }> = {
   },
   media: {
     description: t(
-      "Play a part of a YouTube video, or a Twitch clip, in Moblin, to check that it works. Test videos need no approval.",
+      "Play a YouTube video or a Twitch clip in Moblin, to check that it works. Without an end time a video plays whole, at most 10 minutes. Test videos need no approval.",
     ),
     label: t("Send test video"),
   },

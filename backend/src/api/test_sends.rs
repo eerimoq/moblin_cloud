@@ -205,9 +205,7 @@ async fn test_media(
     let item = match youtube::video_id(link) {
         Some(video) => {
             let start = request.start.or_else(|| youtube::start(link)).unwrap_or(0);
-            let seconds = request
-                .seconds
-                .unwrap_or_else(|| api.pages.get(&page_id).media_rules().seconds.min(15));
+            let seconds = request.seconds.unwrap_or(600);
             if start > 24 * 60 * 60 || !(1..=600).contains(&seconds) {
                 return Err(failure(
                     "invalid-video",
