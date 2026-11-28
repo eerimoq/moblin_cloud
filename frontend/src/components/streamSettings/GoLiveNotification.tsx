@@ -79,7 +79,7 @@ export function GoLiveNotificationSettings(props: StreamFormProps) {
         />
       </Section>
       <Section>
-        <div class={`${rowClass} justify-between`}>
+        <div class={[rowClass, "justify-between"]}>
           <a
             class="min-w-0 flex-1 truncate text-phone-tint"
             href={`${links.website}/#streamers`}

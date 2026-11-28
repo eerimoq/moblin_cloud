@@ -22,9 +22,10 @@ export function ToolButton(props: {
       aria-label={props.label}
       title={props.label}
       disabled={props.disabled}
-      class={`grid size-[44px] shrink-0 place-items-center disabled:opacity-35 ${
-        props.red ? "text-phone-live" : "text-phone-tint"
-      }`}
+      class={[
+        "grid size-[44px] shrink-0 place-items-center disabled:opacity-35",
+        props.red ? "text-phone-live" : "text-phone-tint",
+      ]}
       onClick={() => props.onClick()}
     >
       <Icon name={props.icon} class="size-[22px]" />
@@ -35,7 +36,10 @@ export function ToolButton(props: {
 function Divider(props: { vertical: boolean }) {
   return (
     <div
-      class={`shrink-0 bg-phone-border ${props.vertical ? "my-px h-px w-[32px]" : "mx-px h-[32px] w-px"}`}
+      class={[
+        "shrink-0 bg-phone-border",
+        props.vertical ? "my-px h-px w-[32px]" : "mx-px h-[32px] w-px",
+      ]}
     />
   );
 }
@@ -144,9 +148,13 @@ export default function Toolbar(props: {
           (candidate) => candidate.id !== selected.sceneWidget.id,
         );
       });
-      props.editor.set("selection", null);
+      props.editor.set((state) => {
+        state.selection = null;
+      });
     } else if (picked === 1) {
-      props.editor.set("selection", null);
+      props.editor.set((state) => {
+        state.selection = null;
+      });
       props.editor.removeWidget(selected.widget.id);
     }
   };
@@ -157,7 +165,9 @@ export default function Toolbar(props: {
       return;
     }
     if (await ask(t("Delete scene {name}?", { name: scene.name }), t("Delete"))) {
-      props.editor.set("selection", null);
+      props.editor.set((state) => {
+        state.selection = null;
+      });
       props.editor.removeScene(scene.id);
     }
   };
@@ -179,10 +189,10 @@ export default function Toolbar(props: {
     const widgetId = props.scene?.widgets.find(
       (candidate) => candidate.id === props.editor.state.selection,
     )?.widgetId;
-    props.editor.set(
-      "selection",
-      scene.widgets.find((candidate) => sameId(candidate.widgetId, widgetId))?.id ?? null,
-    );
+    props.editor.set((state) => {
+      state.selection =
+        scene.widgets.find((candidate) => sameId(candidate.widgetId, widgetId))?.id ?? null;
+    });
     props.editor.selectScene(scene.id);
     close();
   };
@@ -197,19 +207,25 @@ export default function Toolbar(props: {
     props.editor.editScene(scene.id, (draft) => {
       draft.widgets.push(sceneWidget);
     });
-    props.editor.set("selection", sceneWidget.id);
+    props.editor.set((state) => {
+      state.selection = sceneWidget.id;
+    });
     close();
   };
 
-  const toggleSettings = () => props.editor.set("showingSettings", (showing) => !showing);
+  const toggleSettings = () =>
+    props.editor.set((state) => {
+      state.showingSettings = !state.showingSettings;
+    });
   const side = () => (props.vertical ? "left" : "above");
 
   return (
-    <div class={`relative shrink-0 ${props.vertical ? "h-full w-[52px]" : "h-[52px] w-full"}`}>
+    <div class={["relative shrink-0", props.vertical ? "h-full w-[52px]" : "h-[52px] w-full"]}>
       <div
-        class={`flex h-full w-full items-center gap-[2px] [scrollbar-width:none] ${
-          props.vertical ? "flex-col overflow-y-auto" : "overflow-x-auto"
-        }`}
+        class={[
+          "flex h-full w-full items-center gap-[2px] [scrollbar-width:none]",
+          props.vertical ? "flex-col overflow-y-auto" : "overflow-x-auto",
+        ]}
       >
         <ToolButton icon="close" label={t("Close")} onClick={() => props.onClose()} />
         <Divider vertical={props.vertical} />
@@ -312,7 +328,7 @@ export default function Toolbar(props: {
         </Show>
       </div>
       <div
-        class={`absolute ${props.vertical ? "right-[48px]" : "bottom-[48px]"}`}
+        class={["absolute", props.vertical ? "right-[48px]" : "bottom-[48px]"]}
         style={props.vertical ? { top: `${popoverOffset()}px` } : { left: `${popoverOffset()}px` }}
       >
         <Popover open={open() === "scenes"} side={side()} onClose={close}>
@@ -380,7 +396,9 @@ export default function Toolbar(props: {
                   icon={widgetIcon(outline.widget.type)}
                   text={outline.widget.name}
                   onClick={() => {
-                    props.editor.set("selection", outline.id);
+                    props.editor.set((state) => {
+                      state.selection = outline.id;
+                    });
                     close();
                   }}
                 />

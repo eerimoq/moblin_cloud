@@ -19,9 +19,10 @@ export default function Modal(props: {
         dialog = element;
         props.ref(element);
       }}
-      class={`m-auto w-[calc(100%-2rem)] rounded-3xl border-[1.5px] border-line bg-card text-ink backdrop:bg-black/60 ${
-        props.class ?? "max-w-md p-6 sm:p-8"
-      }`}
+      class={[
+        "m-auto w-[calc(100%-2rem)] rounded-3xl border-[1.5px] border-line bg-card text-ink backdrop:bg-black/60",
+        props.class ?? "max-w-md p-6 sm:p-8",
+      ]}
       onClick={(event) => {
         if (event.target === dialog) {
           dialog?.close();
@@ -58,7 +59,10 @@ export function ask(text: string, action: string): Promise<boolean> {
               </button>
               <button
                 type="button"
-                class={`${ghostButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
+                class={[
+                  ghostButtonClass,
+                  "border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!",
+                ]}
                 onClick={() => {
                   confirmed = true;
                   dialog?.close();
@@ -102,7 +106,10 @@ export function choose(title: string, actions: string[]): Promise<number | null>
                 {(action, index) => (
                   <button
                     type="button"
-                    class={`${ghostButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
+                    class={[
+                      ghostButtonClass,
+                      "border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!",
+                    ]}
                     onClick={() => {
                       chosen = index();
                       dialog?.close();

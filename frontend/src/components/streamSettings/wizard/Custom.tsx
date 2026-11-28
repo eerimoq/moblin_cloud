@@ -1,3 +1,4 @@
+import { onSettled } from "solid-js";
 import { LinkRow, Section } from "../../sceneEditor/Form";
 import { NextRow } from "../../sceneEditor/wizards/Sheet";
 import { General } from "./General";
@@ -37,7 +38,12 @@ export function SrtUrlFields(props: WizardPageProps) {
         placeholder="srt://107.32.12.132:5000?streamid=1234"
         error={srtUrlError(wizard)}
         onInput={(url) =>
-          wizard.set({ customSrtUrl: url, customSrtStreamId: extractSrtStreamId(url) ?? "" })
+          wizard.set((state) => {
+            Object.assign(state, {
+              customSrtUrl: url,
+              customSrtStreamId: extractSrtStreamId(url) ?? "",
+            });
+          })
         }
       />
       <Field
@@ -45,7 +51,11 @@ export function SrtUrlFields(props: WizardPageProps) {
         value={wizard.state.customSrtStreamId}
         placeholder="#!::r=stream/-NDZ1WPA4zjMBTJTyNwU,m=publish,..."
         footer={t("Replaces or adds the stream id to the URL.")}
-        onInput={(streamId) => wizard.set("customSrtStreamId", streamId)}
+        onInput={(streamId) =>
+          wizard.set((state) => {
+            state.customSrtStreamId = streamId;
+          })
+        }
       />
     </>
   );
@@ -60,13 +70,21 @@ export function RtmpUrlFields(props: WizardPageProps) {
         value={wizard.state.customRtmpUrl}
         placeholder="rtmp://arn03.contribute.live-video.net/app/"
         error={rtmpUrlError(wizard)}
-        onInput={(url) => wizard.set("customRtmpUrl", url)}
+        onInput={(url) =>
+          wizard.set((state) => {
+            state.customRtmpUrl = url;
+          })
+        }
       />
       <Field
         header={t("Stream key")}
         value={wizard.state.customRtmpStreamKey}
         placeholder="live_48950233_okF4f455GRWEF443fFr23GRbt5rEv"
-        onInput={(streamKey) => wizard.set("customRtmpStreamKey", streamKey)}
+        onInput={(streamKey) =>
+          wizard.set((state) => {
+            state.customRtmpStreamKey = streamKey;
+          })
+        }
       />
     </>
   );
@@ -76,7 +94,11 @@ const pushGeneral = (wizard: Wizard) => pushPage(wizard, t("General"), General);
 
 function CustomSrt(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set({ customProtocol: "srt", name: wizard.uniqueName(t("Custom SRT")) });
+  onSettled(() =>
+    wizard.set((state) => {
+      Object.assign(state, { customProtocol: "srt", name: wizard.uniqueName(t("Custom SRT")) });
+    }),
+  );
   return (
     <>
       <SrtUrlFields wizard={wizard} />
@@ -87,7 +109,11 @@ function CustomSrt(props: WizardPageProps) {
 
 function CustomRtmp(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set({ customProtocol: "rtmp", name: wizard.uniqueName(t("Custom RTMP")) });
+  onSettled(() =>
+    wizard.set((state) => {
+      Object.assign(state, { customProtocol: "rtmp", name: wizard.uniqueName(t("Custom RTMP")) });
+    }),
+  );
   return (
     <>
       <RtmpUrlFields wizard={wizard} />
@@ -98,7 +124,11 @@ function CustomRtmp(props: WizardPageProps) {
 
 function CustomRist(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set({ customProtocol: "rist", name: wizard.uniqueName(t("Custom RIST")) });
+  onSettled(() =>
+    wizard.set((state) => {
+      Object.assign(state, { customProtocol: "rist", name: wizard.uniqueName(t("Custom RIST")) });
+    }),
+  );
   const error = () => urlError(wizard.state.customRistUrl, ["rist"]);
   return (
     <>
@@ -107,7 +137,11 @@ function CustomRist(props: WizardPageProps) {
         value={wizard.state.customRistUrl}
         placeholder="rist://120.35.234.2:2030"
         error={error()}
-        onInput={(url) => wizard.set("customRistUrl", url)}
+        onInput={(url) =>
+          wizard.set((state) => {
+            state.customRistUrl = url;
+          })
+        }
       />
       <NextRow
         disabled={wizard.state.customRistUrl === "" || error() !== ""}
@@ -119,7 +153,11 @@ function CustomRist(props: WizardPageProps) {
 
 function CustomWhip(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set({ customProtocol: "whip", name: wizard.uniqueName(t("Custom WHIP")) });
+  onSettled(() =>
+    wizard.set((state) => {
+      Object.assign(state, { customProtocol: "whip", name: wizard.uniqueName(t("Custom WHIP")) });
+    }),
+  );
   const error = () => urlError(wizard.state.customWhipUrl, ["whip", "whips"]);
   return (
     <>
@@ -128,7 +166,11 @@ function CustomWhip(props: WizardPageProps) {
         value={wizard.state.customWhipUrl}
         placeholder="whip://120.12.32.12:8889/mystream/whip"
         error={error()}
-        onInput={(url) => wizard.set("customWhipUrl", url)}
+        onInput={(url) =>
+          wizard.set((state) => {
+            state.customWhipUrl = url;
+          })
+        }
       />
       <NextRow
         disabled={wizard.state.customWhipUrl === "" || error() !== ""}
@@ -140,7 +182,15 @@ function CustomWhip(props: WizardPageProps) {
 
 export function Custom(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set({ platform: "custom", customProtocol: "none", name: wizard.uniqueName(t("Custom")) });
+  onSettled(() =>
+    wizard.set((state) => {
+      Object.assign(state, {
+        platform: "custom",
+        customProtocol: "none",
+        name: wizard.uniqueName(t("Custom")),
+      });
+    }),
+  );
   return (
     <>
       <Section header={t("Protocol")}>

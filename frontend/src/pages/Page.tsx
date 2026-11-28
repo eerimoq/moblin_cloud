@@ -12,7 +12,6 @@ import {
   Switch,
   type Setter,
   onSettled,
-  flush,
 } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { asset } from "../asset";
@@ -344,9 +343,10 @@ function PayPalButton(props: { config: PayPalConfig; options: PayOptions; disabl
     <>
       <div
         ref={(element) => (container = element)}
-        class={`text-center transition-opacity [color-scheme:light] [&>paypal-button]:mx-auto ${
-          props.disabled ? "pointer-events-none opacity-40" : ""
-        }`}
+        class={[
+          "text-center transition-opacity [color-scheme:light] [&>paypal-button]:mx-auto",
+          { "pointer-events-none opacity-40": props.disabled },
+        ]}
       />
       <Show when={props.config.environment === "sandbox"}>
         <Notice status>
@@ -480,7 +480,7 @@ function StripeCard(props: {
       <Show when={!payment()}>
         <button
           type="button"
-          class={`${stripeButtonClass} h-[45px] w-[135px] self-center rounded-[4px] px-3`}
+          class={[stripeButtonClass, "h-[45px] w-[135px] self-center rounded-[4px] px-3"]}
           disabled={props.disabled || working()}
           onClick={() => void open()}
         >
@@ -511,7 +511,7 @@ function StripeCard(props: {
             <div class="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                class={`${stripeButtonClass} h-12 rounded-lg px-6`}
+                class={[stripeButtonClass, "h-12 rounded-lg px-6"]}
                 disabled={working()}
                 onClick={() => void pay()}
               >
@@ -825,7 +825,7 @@ function SubscriberBox(props: {
             <Show when={current().left > 0}>
               <button
                 type="button"
-                class={`${ghostButtonClass} self-center`}
+                class={[ghostButtonClass, "self-center"]}
                 disabled={props.disabled}
                 onClick={() => props.onRequest()}
               >
@@ -927,7 +927,7 @@ function NameField(props: {
   hidden?: boolean;
 }) {
   return (
-    <label class={`flex flex-col gap-2 ${props.hidden ? "hidden" : ""}`}>
+    <label class={["flex flex-col gap-2", { hidden: props.hidden }]}>
       <span class="text-[15px] font-semibold text-ink-2">{t("Your name (optional)")}</span>
       <input
         type="text"
@@ -961,7 +961,7 @@ function MessageField(props: {
         value={props.message}
         onInput={(event) => props.onMessage(event.currentTarget.value)}
         placeholder={props.placeholder}
-        class={`${inputClass} h-auto resize-y py-3`}
+        class={[inputClass, "h-auto resize-y py-3"]}
       />
     </label>
   );
@@ -1277,11 +1277,12 @@ function MediaJar(props: {
   let startInput: HTMLInputElement | undefined;
   let endInput: HTMLInputElement | undefined;
 
-  const seconds = () => {
-    const from = parseTime(start());
-    const to = parseTime(end());
+  const secondsBetween = (start: string, end: string) => {
+    const from = parseTime(start);
+    const to = parseTime(end);
     return from !== null && to !== null && to > from ? to - from : null;
   };
+  const seconds = () => secondsBetween(start(), end());
   let length = seconds() ?? Math.min(30, longest());
   const endError = () => {
     if (clip()) {
@@ -1357,8 +1358,7 @@ function MediaJar(props: {
 
   const changeEnd = (value: string) => {
     setEnd(value);
-    flush();
-    length = seconds() ?? length;
+    length = secondsBetween(start(), value) ?? length;
   };
 
   const changeLink = (value: string) => {
@@ -1472,7 +1472,7 @@ function MediaJar(props: {
           />
         )}
       </Show>
-      <div class={`flex flex-col gap-2 ${clip() ? "hidden" : ""}`}>
+      <div class={["flex flex-col gap-2", { hidden: clip() }]}>
         <div class="flex flex-wrap gap-3">
           <label class="flex flex-col gap-2">
             <span class="text-[15px] font-semibold text-ink-2">{t("Start at")}</span>
@@ -1486,7 +1486,7 @@ function MediaJar(props: {
               onInput={(event) => changeStart(event.currentTarget.value)}
               placeholder="0:00"
               autocomplete="off"
-              class={`${inputClass} max-w-32`}
+              class={[inputClass, "max-w-32"]}
             />
           </label>
           <label class="flex flex-col gap-2">
@@ -1501,7 +1501,7 @@ function MediaJar(props: {
               onInput={(event) => changeEnd(event.currentTarget.value)}
               placeholder="0:30"
               autocomplete="off"
-              class={`${inputClass} max-w-32`}
+              class={[inputClass, "max-w-32"]}
             />
           </label>
         </div>
@@ -1592,9 +1592,10 @@ function SoundInfo(props: {
       </button>
       <span
         role="tooltip"
-        class={`absolute right-0 bottom-full z-10 w-max max-w-[min(18rem,calc(100vw-5rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-[14px] leading-snug text-ink-2 shadow-xl ${
-          open() ? "block" : "hidden group-hover:block group-has-[:focus-visible]:block"
-        }`}
+        class={[
+          "absolute right-0 bottom-full z-10 w-max max-w-[min(18rem,calc(100vw-5rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-[14px] leading-snug text-ink-2 shadow-xl",
+          open() ? "block" : "hidden group-hover:block group-has-[:focus-visible]:block",
+        ]}
       >
         <span class="block font-semibold text-ink">
           {t("{name} by {author}", { name: props.credit.title, author: props.credit.author })}
@@ -1628,7 +1629,11 @@ function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) 
       when={props.streamer.avatar}
       fallback={
         <span
-          class={`flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${ring()} ${props.class}`}
+          class={[
+            "flex shrink-0 items-center justify-center rounded-full bg-moss font-display font-semibold text-white",
+            ring(),
+            props.class,
+          ]}
         >
           {props.streamer.name.slice(0, 1).toUpperCase()}
         </span>
@@ -1638,7 +1643,7 @@ function Avatar(props: { streamer: Streamer; class: string; cutout?: boolean }) 
         <img
           src={avatar()}
           alt=""
-          class={`shrink-0 rounded-full bg-ghost object-cover ${ring()} ${props.class}`}
+          class={["shrink-0 rounded-full bg-ghost object-cover", ring(), props.class]}
         />
       )}
     </Show>
@@ -1649,7 +1654,7 @@ function MoblinIcon(props: { icon: string | null; class: string }) {
   return (
     <Show when={props.icon}>
       {(icon) => (
-        <img src={moblinIconUrl(icon())} alt="" class={`w-auto shrink-0 ${props.class}`} />
+        <img src={moblinIconUrl(icon())} alt="" class={["w-auto shrink-0", props.class]} />
       )}
     </Show>
   );
@@ -2105,13 +2110,14 @@ function WaysToTip(props: {
       </div>
       <div
         role="tablist"
-        class={`grid gap-2 sm:gap-3 ${
+        class={[
+          "grid gap-2 sm:gap-3",
           props.ways.length > 3
             ? "grid-cols-2 sm:grid-cols-4"
             : props.ways.length > 2
               ? "grid-cols-3"
-              : "grid-cols-2"
-        }`}
+              : "grid-cols-2",
+        ]}
       >
         <For each={props.ways}>
           {(way) => {
@@ -2124,20 +2130,22 @@ function WaysToTip(props: {
                 disabled={!way.enabled}
                 title={way.text}
                 onClick={() => props.onSection(way.section)}
-                class={`flex min-w-0 flex-col items-center gap-2 rounded-3xl border-[1.5px] px-2 py-4 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                class={[
+                  "flex min-w-0 flex-col items-center gap-2 rounded-3xl border-[1.5px] px-2 py-4 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45",
                   selected()
                     ? "border-moss bg-well"
-                    : "border-line bg-card enabled:hover:border-leaf"
-                }`}
+                    : "border-line bg-card enabled:hover:border-leaf",
+                ]}
               >
                 <span
-                  class={`flex size-12 shrink-0 items-center justify-center rounded-full transition-colors ${
+                  class={[
+                    "flex size-12 shrink-0 items-center justify-center rounded-full transition-colors",
                     selected()
                       ? "bg-moss text-white"
                       : way.enabled
                         ? "bg-well text-leaf"
-                        : "bg-well text-muted"
-                  }`}
+                        : "bg-well text-muted",
+                  ]}
                 >
                   <Icon name={kindIcons[way.section]} class="size-6" />
                 </span>
@@ -2338,8 +2346,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  const refreshTips = async () => {
-    const current = id();
+  const refreshTips = async (current = id()) => {
     if (current) {
       try {
         setTips(await streamerTips(current));
@@ -2353,8 +2360,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  const refreshEffects = async () => {
-    const current = id();
+  const refreshEffects = async (current = id()) => {
     if (current) {
       try {
         const found = await streamerEffects(current);
@@ -2371,8 +2377,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  const refreshMedia = async () => {
-    const current = id();
+  const refreshMedia = async (current = id()) => {
     if (current) {
       try {
         setMediaOffer(await streamerMedia(current));
@@ -2386,8 +2391,7 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
     }
   };
 
-  const refreshSpin = async () => {
-    const current = id();
+  const refreshSpin = async (current = id()) => {
     if (current) {
       try {
         const found = await streamerSpin(current);
@@ -2415,15 +2419,16 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
   let stopChanges: (() => void) | undefined;
   onSettled(() => {
     void (async () => {
+      let found = props.id;
       if (props.platform && props.login) {
         try {
-          setId(await idOfLogin(props.platform, props.login));
-          flush();
+          found = await idOfLogin(props.platform, props.login);
+          setId(found);
         } catch {
           setUnknown(true);
         }
       }
-      const current = id();
+      const current = found;
       if (current) {
         const signIn = takeViewerSignIn();
         if (signIn.viewer) {
@@ -2455,10 +2460,10 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
           .catch(() => {})
           .finally(() => setStyled(true));
       }
-      void refreshTips();
-      void refreshSpin();
-      void refreshEffects();
-      void refreshMedia();
+      void refreshTips(current);
+      void refreshSpin(current);
+      void refreshEffects(current);
+      void refreshMedia(current);
       if (current) {
         stopChanges = subscribeChanges(pageEventsUrl(current), null, {
           page: () => void refreshPage(),
@@ -2491,7 +2496,10 @@ function Viewer(props: { id: string | null; platform: Platform | null; login: st
           }
         >
           <div
-            class={`mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8 ${styled() ? "" : "invisible"}`}
+            class={[
+              "mx-auto flex max-w-[720px] flex-col gap-6 px-5 sm:px-8",
+              { invisible: !styled() },
+            ]}
           >
             <WaysToTip
               streamer={streamerName()}

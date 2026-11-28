@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { flush } from "solid-js";
 import { createStreams, type Streams } from "./store";
+import { clone } from "../sceneEditor/store";
 import { BackendError } from "../../data/backend";
 import type { Control, DeviceSettings } from "../../data/account";
 
@@ -143,7 +145,7 @@ describe("streams store", () => {
       Object.values(moblin.streams).some((stream) => stream.name === "Kick");
     const kick = await streams.load(kickId);
     streams.remove(kickId);
-    streams.add({ ...structuredClone(kick!), id: newId, enabled: false });
+    streams.add({ ...clone(kick!), id: newId, enabled: false });
     expect(listed(streams)).toEqual([
       ["Twitch", true],
       ["Kick", false],
@@ -195,7 +197,7 @@ describe("streams store", () => {
     const { moblin, streams } = setUp();
     moblin.refuse = (control) => kindOf(control) === "createStream";
     const kick = await streams.load(kickId);
-    streams.add({ ...structuredClone(kick!), id: newId, name: "Copy" });
+    streams.add({ ...clone(kick!), id: newId, name: "Copy" });
     streams.select(newId);
     await streams.flush();
     expect(listed(streams)).toEqual([
@@ -209,6 +211,7 @@ describe("streams store", () => {
     const { moblin, streams } = setUp();
     moblin.refuse = (control) => kindOf(control) === "deleteStream";
     streams.remove(kickId);
+    flush();
     expect(listed(streams)).toEqual([["Twitch", true]]);
     await streams.flush();
     expect(listed(streams)).toEqual([
@@ -246,7 +249,7 @@ describe("streams store", () => {
   test("a new stream is selected only once it is created", async () => {
     const { moblin, streams } = setUp();
     const kick = await streams.load(kickId);
-    streams.add({ ...structuredClone(kick!), id: newId, name: "Copy" });
+    streams.add({ ...clone(kick!), id: newId, name: "Copy" });
     streams.select(newId);
     await streams.flush();
     await vi.runAllTimersAsync();
@@ -259,7 +262,7 @@ describe("streams store", () => {
     streams.edit(kickId, (draft) => {
       draft.fps = 60;
     });
-    streams.add({ ...structuredClone(kick!), id: newId, name: "Copy" });
+    streams.add({ ...clone(kick!), id: newId, name: "Copy" });
     streams.remove(twitchId);
     streams.select(kickId);
     await streams.flush();

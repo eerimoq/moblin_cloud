@@ -184,7 +184,11 @@ function PaneMenu(props: {
           ref={(element) => (popup = element)}
           role="menu"
           style={{ "max-height": `${placement().room}px` }}
-          class={`absolute z-30 flex w-max ${popupSide(placement())} min-w-48 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
+          class={[
+            "absolute z-30 flex w-max",
+            popupSide(placement()),
+            "min-w-48 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl",
+          ]}
         >
           <Show when={fullscreenOffered()}>
             <button
@@ -359,9 +363,10 @@ function PanePicker(props: {
             setOpen(true);
           }
         }}
-        class={`flex h-7 max-w-full min-w-0 items-center gap-1 rounded-md px-1.5 text-ink transition-colors outline-none hover:bg-ghost focus-visible:bg-ghost aria-expanded:bg-ghost ${
-          props.plain ? "" : "font-semibold"
-        }`}
+        class={[
+          "flex h-7 max-w-full min-w-0 items-center gap-1 rounded-md px-1.5 text-ink transition-colors outline-none hover:bg-ghost focus-visible:bg-ghost aria-expanded:bg-ghost",
+          { "font-semibold": !props.plain },
+        ]}
       >
         <Show when={props.icon}>
           {(icon) => <Icon name={icon()} class="size-4 shrink-0 text-muted" />}
@@ -379,7 +384,11 @@ function PanePicker(props: {
           aria-label={props.label}
           onKeyDown={onKeyDown}
           style={{ "max-height": `${placement().room}px` }}
-          class={`absolute z-30 flex w-max ${popupSide(placement())} max-w-72 min-w-44 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl`}
+          class={[
+            "absolute z-30 flex w-max",
+            popupSide(placement()),
+            "max-w-72 min-w-44 flex-col overflow-y-auto rounded-xl border-[1.5px] border-line bg-card py-1.5 shadow-xl",
+          ]}
         >
           <For each={props.options}>
             {(option) => (
@@ -399,7 +408,7 @@ function PanePicker(props: {
                   {(icon) => <Icon name={icon()} class="size-4 shrink-0 text-muted" />}
                 </Show>
                 <Show when={option.dot}>
-                  {(dot) => <span class={`size-2 shrink-0 rounded-full ${dot()}`} />}
+                  {(dot) => <span class={["size-2 shrink-0 rounded-full", dot()]} />}
                 </Show>
                 <span class="min-w-0 flex-1 truncate">{option.label}</span>
                 <Icon
@@ -613,7 +622,10 @@ function PhonePanel(props: {
 function StatusRow(props: { icon: IconName; item: StatusItem }) {
   return (
     <li
-      class={`flex min-w-0 items-center gap-2 ${props.item.ok === false ? "text-danger" : "text-ink"}`}
+      class={[
+        "flex min-w-0 items-center gap-2",
+        props.item.ok === false ? "text-danger" : "text-ink",
+      ]}
       title={props.item.message}
     >
       <Icon name={props.icon} class="size-3.5 shrink-0 text-muted" />

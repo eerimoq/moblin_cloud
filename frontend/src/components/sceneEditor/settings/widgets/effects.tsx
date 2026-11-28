@@ -509,9 +509,10 @@ export function EffectsSection(props: WidgetFormProps) {
               role="switch"
               aria-checked={effect.enabled ? "true" : "false"}
               aria-label={effectTypeName(effect.type)}
-              class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-                effect.enabled ? "bg-phone-switch" : "bg-phone-separator"
-              }`}
+              class={[
+                "relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50",
+                effect.enabled ? "bg-phone-switch" : "bg-phone-separator",
+              ]}
               disabled={readOnly()}
               onClick={() =>
                 props.edit((draft) => {
@@ -523,9 +524,10 @@ export function EffectsSection(props: WidgetFormProps) {
               }
             >
               <span
-                class={`absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform ${
-                  effect.enabled ? "translate-x-[20px]" : ""
-                }`}
+                class={[
+                  "absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform",
+                  { "translate-x-[20px]": effect.enabled },
+                ]}
               />
             </button>
           </div>
@@ -544,7 +546,11 @@ export function EffectsSection(props: WidgetFormProps) {
       />
       <ButtonRow
         label={t("Create")}
-        onClick={() => props.editor.set("effectWizard", props.widget.id)}
+        onClick={() =>
+          props.editor.set((state) => {
+            state.effectWizard = props.widget.id;
+          })
+        }
       />
     </Section>
   );

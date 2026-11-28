@@ -29,7 +29,10 @@ function SignInButtons(props: { notSetUp?: string }) {
 function Toast(props: { icon: IconName; label: string; text: string; class: string }) {
   return (
     <div
-      class={`absolute flex w-56 items-center gap-3 rounded-2xl border-[1.5px] border-line bg-card px-3.5 py-3 shadow-xl ${props.class}`}
+      class={[
+        "absolute flex w-56 items-center gap-3 rounded-2xl border-[1.5px] border-line bg-card px-3.5 py-3 shadow-xl",
+        props.class,
+      ]}
     >
       <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-moss text-white">
         <Icon name={props.icon} class="size-[18px]" />
@@ -79,14 +82,16 @@ function PageMockup() {
           <For each={ways}>
             {(way, index) => (
               <div
-                class={`flex items-center gap-3 rounded-2xl border-[1.5px] px-3 py-2.5 ${
-                  index() === 0 ? "border-moss bg-well" : "border-line bg-card"
-                }`}
+                class={[
+                  "flex items-center gap-3 rounded-2xl border-[1.5px] px-3 py-2.5",
+                  index() === 0 ? "border-moss bg-well" : "border-line bg-card",
+                ]}
               >
                 <span
-                  class={`flex size-9 items-center justify-center rounded-full ${
-                    index() === 0 ? "bg-moss text-white" : "bg-well text-leaf"
-                  }`}
+                  class={[
+                    "flex size-9 items-center justify-center rounded-full",
+                    index() === 0 ? "bg-moss text-white" : "bg-well text-leaf",
+                  ]}
                 >
                   <Icon name={way.icon} class="size-[18px]" />
                 </span>

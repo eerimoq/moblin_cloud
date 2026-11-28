@@ -1,6 +1,5 @@
 import { untrack } from "solid-js";
-import { createStore, runWithOwner } from "solid-js";
-import { storeSetter } from "../../../store";
+import { createStore } from "solid-js";
 import { LinkRow, Section } from "../../sceneEditor/Form";
 import type { Page, Stack } from "../../sceneEditor/Stack";
 import { Custom } from "./Custom";
@@ -26,7 +25,7 @@ export function StreamWizard(props: {
     const [state, setState] = createStore(defaultWizard());
     return {
       state,
-      set: storeSetter((change) => runWithOwner(null, () => setState(change))),
+      set: setState,
       stack: props.stack,
       uniqueName: (name) => makeUniqueName(name, props.streams.names()),
       create: () => props.onCreated(createStreamFromWizard(state, props.highestBitrate)),

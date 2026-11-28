@@ -20,7 +20,11 @@ export function ObsRemoteControl(props: WizardPageProps) {
         <ToggleRow
           label={t("Enabled")}
           on={wizard.state.obsRemoteControlEnabled}
-          onToggle={(on) => wizard.set("obsRemoteControlEnabled", on)}
+          onToggle={(on) =>
+            wizard.set((state) => {
+              state.obsRemoteControlEnabled = on;
+            })
+          }
         />
       </Section>
       <Show when={wizard.state.obsRemoteControlEnabled}>
@@ -37,7 +41,11 @@ export function ObsRemoteControl(props: WizardPageProps) {
               </span>
             </>
           }
-          onInput={(url) => wizard.set("obsRemoteControlUrl", url)}
+          onInput={(url) =>
+            wizard.set((state) => {
+              state.obsRemoteControlUrl = url;
+            })
+          }
         />
         <Field
           header={t("Password")}
@@ -46,7 +54,11 @@ export function ObsRemoteControl(props: WizardPageProps) {
           footer={t(
             "Copy from OBS Show Connect Info as seen in the screenshot below. Tools → WebSocket Server Settings → Show Connect Info → Server Password.",
           )}
-          onInput={(password) => wizard.set("obsRemoteControlPassword", password)}
+          onInput={(password) =>
+            wizard.set((state) => {
+              state.obsRemoteControlPassword = password;
+            })
+          }
         />
         <Field
           header={t("Main scene")}
@@ -55,7 +67,11 @@ export function ObsRemoteControl(props: WizardPageProps) {
           footer={t(
             "The name of your main scene in OBS. Moblin will periodically try to switch to this scene from your BRB scene if the stream is likely working.",
           )}
-          onInput={(scene) => wizard.set("obsRemoteControlMainScene", scene)}
+          onInput={(scene) =>
+            wizard.set((state) => {
+              state.obsRemoteControlMainScene = scene;
+            })
+          }
         />
         <Field
           header={t("BRB scene")}
@@ -64,14 +80,22 @@ export function ObsRemoteControl(props: WizardPageProps) {
           footer={t(
             "The name of your BRB scene in OBS. Moblin will periodically try to switch from your main scene to this scene if the stream is likely broken.",
           )}
-          onInput={(scene) => wizard.set("obsRemoteControlBrbScene", scene)}
+          onInput={(scene) =>
+            wizard.set((state) => {
+              state.obsRemoteControlBrbScene = scene;
+            })
+          }
         />
         <Field
           header={t("Source name")}
           value={wizard.state.obsRemoteControlSourceName}
           placeholder={t("My source")}
           footer={t("The name of the Source in OBS that receives the stream from Moblin.")}
-          onInput={(source) => wizard.set("obsRemoteControlSourceName", source)}
+          onInput={(source) =>
+            wizard.set((state) => {
+              state.obsRemoteControlSourceName = source;
+            })
+          }
         />
       </Show>
       <NextRow disabled={nextDisabled()} onClick={() => pushPage(wizard, t("General"), General)} />

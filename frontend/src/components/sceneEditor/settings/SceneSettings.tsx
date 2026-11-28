@@ -170,9 +170,10 @@ export function SceneSettings(props: {
                         role="switch"
                         aria-checked={widget().enabled ? "true" : "false"}
                         aria-label={widget().name}
-                        class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-                          widget().enabled ? "bg-phone-switch" : "bg-phone-separator"
-                        }`}
+                        class={[
+                          "relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50",
+                          widget().enabled ? "bg-phone-switch" : "bg-phone-separator",
+                        ]}
                         disabled={readOnly()}
                         onClick={() =>
                           editor.editWidget(widget().id, (draft) => {
@@ -181,9 +182,10 @@ export function SceneSettings(props: {
                         }
                       >
                         <span
-                          class={`absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform ${
-                            widget().enabled ? "translate-x-[20px]" : ""
-                          }`}
+                          class={[
+                            "absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform",
+                            { "translate-x-[20px]": widget().enabled },
+                          ]}
                         />
                       </button>
                     </div>

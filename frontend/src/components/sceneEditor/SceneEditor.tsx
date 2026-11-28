@@ -66,17 +66,27 @@ export default function SceneEditor(props: {
   createEffect(
     () => ({ preview: props.preview, portrait: canvas().height > canvas().width }),
     ({ preview, portrait }) => {
-      editor.set("preview", preview);
-      editor.set("portrait", portrait);
+      editor.set((state) => {
+        state.preview = preview;
+      });
+      editor.set((state) => {
+        state.portrait = portrait;
+      });
     },
   );
   createEffect(
     () => props.state.mic ?? null,
-    (mic) => editor.set("currentMic", mic),
+    (mic) =>
+      editor.set((state) => {
+        state.currentMic = mic;
+      }),
   );
   createEffect(
     () => (props.state.macros ?? []).map((macro) => ({ id: macro.id, name: macro.name })),
-    (macros) => editor.set("macros", macros),
+    (macros) =>
+      editor.set((state) => {
+        state.macros = macros;
+      }),
   );
 
   const [wizard, setWizard] = createSignal<"scene" | "widget" | null>(null);
@@ -165,7 +175,7 @@ export default function SceneEditor(props: {
   });
 
   return (
-    <div class={`flex h-full w-full bg-black text-white ${landscape() ? "" : "flex-col"}`}>
+    <div class={["flex h-full w-full bg-black text-white", { "flex-col": !landscape() }]}>
       <div
         class="relative min-h-0 min-w-0 flex-1"
         style={{ width: `${area().width}px`, height: `${area().height}px` }}
@@ -199,7 +209,11 @@ export default function SceneEditor(props: {
               canvas={canvas()}
               size={fit()}
               selected={editor.state.selection}
-              onSelect={(id) => editor.set("selection", id)}
+              onSelect={(id) =>
+                editor.set((state) => {
+                  state.selection = id;
+                })
+              }
               onMove={onMove}
               onResize={onResize}
               readOnly={editor.readOnly()}
@@ -213,7 +227,11 @@ export default function SceneEditor(props: {
               <button
                 type="button"
                 aria-label={t("Close")}
-                onClick={() => editor.set("error", null)}
+                onClick={() =>
+                  editor.set((state) => {
+                    state.error = null;
+                  })
+                }
               >
                 <Icon name="close" class="size-[14px]" />
               </button>
@@ -228,7 +246,7 @@ export default function SceneEditor(props: {
       </div>
       <Show when={editor.state.showingSettings}>
         <div
-          class={`relative shrink-0 overflow-hidden ${landscape() ? "h-full" : "w-full"}`}
+          class={["relative shrink-0 overflow-hidden", landscape() ? "h-full" : "w-full"]}
           style={
             landscape() ? { width: `${settingsHalfWidth}px` } : { height: `${panelHeight()}px` }
           }
@@ -238,7 +256,11 @@ export default function SceneEditor(props: {
             type="button"
             aria-label={t("Close")}
             class="absolute top-[7px] right-[7px] grid size-[30px] place-items-center rounded-full border border-phone-border bg-phone-screen text-phone-border"
-            onClick={() => editor.set("showingSettings", false)}
+            onClick={() =>
+              editor.set((state) => {
+                state.showingSettings = false;
+              })
+            }
           >
             <Icon name="close" class="size-[14px]" />
           </button>
@@ -271,7 +293,11 @@ export default function SceneEditor(props: {
           <EffectWizard
             editor={editor}
             widgetId={widgetId()}
-            onClose={() => editor.set("effectWizard", null)}
+            onClose={() =>
+              editor.set((state) => {
+                state.effectWizard = null;
+              })
+            }
           />
         )}
       </Show>

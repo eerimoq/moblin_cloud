@@ -47,7 +47,7 @@ export function VideoLink(props: {
       href={props.link ?? youTubeUrl(props.video, props.start ?? 0)}
       target="_blank"
       rel="noopener noreferrer"
-      class={`underline decoration-line underline-offset-2 hover:text-ink ${props.class ?? ""}`}
+      class={["underline decoration-line underline-offset-2 hover:text-ink", props.class]}
     >
       {props.title}
     </a>
@@ -60,12 +60,19 @@ export function ReceivedDevices(props: {
 }) {
   return (
     <ul
-      class={`flex flex-wrap ${props.compact ? "gap-x-2.5 text-[12px]" : "gap-x-3 gap-y-0.5 text-[15px]"}`}
+      class={[
+        "flex flex-wrap",
+        props.compact ? "gap-x-2.5 text-[12px]" : "gap-x-3 gap-y-0.5 text-[15px]",
+      ]}
     >
       <For keyed={false} each={props.devices}>
         {(device) => (
           <li
-            class={`flex items-center ${props.compact ? "gap-0.5" : "gap-1"} ${device().received ? "text-leaf" : "text-muted"}`}
+            class={[
+              "flex items-center",
+              props.compact ? "gap-0.5" : "gap-1",
+              device().received ? "text-leaf" : "text-muted",
+            ]}
           >
             <Icon
               name={device().received ? "check" : "clock"}
@@ -121,9 +128,11 @@ export function Status(props: { item: Recent; compact?: boolean }) {
     <Show when={status()}>
       {(status) => (
         <span
-          class={`inline-flex items-center self-start rounded-full font-semibold ${
-            props.compact ? "gap-1 px-2 py-0.5 text-[12px]" : "gap-1.5 px-3 py-1 text-[14px]"
-          } ${status().color}`}
+          class={[
+            "inline-flex items-center self-start rounded-full font-semibold",
+            props.compact ? "gap-1 px-2 py-0.5 text-[12px]" : "gap-1.5 px-3 py-1 text-[14px]",
+            status().color,
+          ]}
         >
           <Icon name={status().icon} class={`${props.compact ? "size-3" : "size-4"} shrink-0`} />
           {status().text}
@@ -254,7 +263,7 @@ export function Latest(props: {
                       <Show when={item.status !== "held"}>
                         <button
                           type="button"
-                          class={`${ghostButtonClass} ml-auto h-9! px-4! text-[15px]!`}
+                          class={[ghostButtonClass, "ml-auto h-9! px-4! text-[15px]!"]}
                           disabled={resending() !== null}
                           onClick={() => resend(item)}
                         >
@@ -274,7 +283,7 @@ export function Latest(props: {
             <Show when={list().more}>
               <button
                 type="button"
-                class={`${ghostButtonClass} self-start`}
+                class={[ghostButtonClass, "self-start"]}
                 disabled={loading()}
                 onClick={more}
               >

@@ -57,7 +57,7 @@ export default function ConnectView(props: { session: string; onSignOut: () => v
               <label class="flex flex-col gap-2">
                 <span class="font-semibold">{t("Code")}</span>
                 <input
-                  class={`${inputClass} max-w-60 font-mono text-[21px] tracking-[0.12em] uppercase`}
+                  class={[inputClass, "max-w-60 font-mono text-[21px] tracking-[0.12em] uppercase"]}
                   value={code()}
                   placeholder="XXXX-XXXX"
                   autofocus

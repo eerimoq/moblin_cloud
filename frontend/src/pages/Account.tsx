@@ -193,7 +193,10 @@ function DeleteAccount(props: { session: string; onSignOut: () => void }) {
       <div class="flex flex-wrap items-center gap-4">
         <button
           type="button"
-          class={`${ghostButtonClass} border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!`}
+          class={[
+            ghostButtonClass,
+            "border-danger-line! bg-danger-bg! text-danger! hover:bg-danger-line!",
+          ]}
           disabled={working()}
           onClick={remove}
         >

@@ -12,7 +12,11 @@ export function General(props: WizardPageProps) {
         header={t("Stream name")}
         value={wizard.state.name}
         placeholder={t("Name")}
-        onInput={(name) => wizard.set("name", name)}
+        onInput={(name) =>
+          wizard.set((state) => {
+            state.name = name;
+          })
+        }
       />
       <Show
         when={wizard.state.platform === "mobcam"}
@@ -21,7 +25,11 @@ export function General(props: WizardPageProps) {
             <ToggleRow
               label={t("Background streaming")}
               on={wizard.state.backgroundStreaming}
-              onToggle={(on) => wizard.set("backgroundStreaming", on)}
+              onToggle={(on) =>
+                wizard.set((state) => {
+                  state.backgroundStreaming = on;
+                })
+              }
             />
           </Section>
         }
@@ -30,12 +38,16 @@ export function General(props: WizardPageProps) {
           <ToggleRow
             label={t("Auto go live")}
             on={wizard.state.autoGoLive}
-            onToggle={(on) => wizard.set("autoGoLive", on)}
+            onToggle={(on) =>
+              wizard.set((state) => {
+                state.autoGoLive = on;
+              })
+            }
           />
         </Section>
       </Show>
       <Section>
-        <div class={`${rowClass} justify-between`}>
+        <div class={[rowClass, "justify-between"]}>
           <span class="min-w-0 flex-1">
             {tRich("Send Go live notification to {link}", {
               link: (
@@ -49,7 +61,11 @@ export function General(props: WizardPageProps) {
             label={t("Send Go live notification to Moblin website")}
             on={wizard.state.goLiveNotificationMoblinWebsite}
             disabled={false}
-            onToggle={(on) => wizard.set("goLiveNotificationMoblinWebsite", on)}
+            onToggle={(on) =>
+              wizard.set((state) => {
+                state.goLiveNotificationMoblinWebsite = on;
+              })
+            }
           />
         </div>
       </Section>

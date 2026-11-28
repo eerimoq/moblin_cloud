@@ -168,7 +168,7 @@ export function CommitSlider(props: {
   const value = () => dragging() ?? props.value;
   const readOnly = useReadOnly();
   return (
-    <div class={`${rowClass} gap-3`}>
+    <div class={[rowClass, "gap-3"]}>
       <Show when={props.label}>
         <span class="shrink-0">{props.label}</span>
       </Show>

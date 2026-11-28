@@ -10,7 +10,6 @@ import {
   Show,
   onSettled,
   Loading,
-  untrack,
 } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { encode } from "uqr";
@@ -405,7 +404,7 @@ function CurrencySettings(props: {
         disabled={props.locked}
         value={currency()}
         onChange={(event) => setCurrency(event.currentTarget.value)}
-        class={`${inputClass} max-w-32`}
+        class={[inputClass, "max-w-32"]}
       >
         <For each={currencies}>{(code) => <option value={code}>{code}</option>}</For>
       </select>
@@ -686,7 +685,7 @@ function StripeAccount(props: {
           <select
             value={country()}
             onChange={(event) => setCountry(event.currentTarget.value)}
-            class={`${inputClass} max-w-80`}
+            class={[inputClass, "max-w-80"]}
           >
             <option value="" disabled>
               {t("Pick your country")}
@@ -702,7 +701,7 @@ function StripeAccount(props: {
           </span>
         </label>
       </Show>
-      <div class={`flex flex-wrap items-center gap-4 ${waiting() ? "hidden" : ""}`}>
+      <div class={["flex flex-wrap items-center gap-4", { hidden: waiting() }]}>
         <Show when={!props.settings.stripeAccountId}>
           <button
             type="button"
@@ -799,7 +798,10 @@ function BannerImage(props: {
       </span>
       <div class="flex flex-wrap items-center gap-3">
         <label
-          class={`${smallButtonClass} cursor-pointer has-[:disabled]:cursor-default has-[:disabled]:opacity-60 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink`}
+          class={[
+            smallButtonClass,
+            "cursor-pointer has-[:disabled]:cursor-default has-[:disabled]:opacity-60 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink",
+          ]}
         >
           <input
             type="file"
@@ -912,7 +914,7 @@ function YourPage(props: {
               href={address.url}
               target="_blank"
               rel="noopener"
-              class={`${ghostButtonClass} shrink-0`}
+              class={[ghostButtonClass, "shrink-0"]}
             >
               {t("Open tip page")}
             </a>
@@ -932,7 +934,7 @@ function YourPage(props: {
           value={message()}
           onInput={(event) => setMessage(event.currentTarget.value)}
           placeholder={t("Thanks for hanging out! Say hi in chat!")}
-          class={`${inputClass} h-auto resize-y py-3`}
+          class={[inputClass, "h-auto resize-y py-3"]}
         />
       </label>
       <fieldset class="flex flex-col gap-2">
@@ -1142,7 +1144,7 @@ function SubscriberSettings(props: {
                       amounts: amounts().map((old, at) => (at === tier - 1 ? value : old)),
                     });
                   }}
-                  class={`${inputClass} max-w-28`}
+                  class={[inputClass, "max-w-28"]}
                 />
               </label>
             )}
@@ -1495,7 +1497,7 @@ function AssistantList(props: {
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
-            class={`${inputClass} min-w-0 flex-1`}
+            class={[inputClass, "min-w-0 flex-1"]}
           />
           <button type="submit" class={buttonClass} disabled={busy() || !username().trim()}>
             {t("Add")}
@@ -1533,7 +1535,7 @@ function MoneyInput(props: {
       aria-label={props.label}
       value={props.value}
       onInput={(event) => props.onValue(event.currentTarget.value)}
-      class={`${inputClass} max-w-32`}
+      class={[inputClass, "max-w-32"]}
     />
   );
 }
@@ -1736,7 +1738,7 @@ function MediaSettings(props: {
           inputmode="numeric"
           value={form().seconds}
           onInput={(event) => change({ seconds: event.currentTarget.value })}
-          class={`${inputClass} max-w-32`}
+          class={[inputClass, "max-w-32"]}
         />
       </label>
       <EnableToggle checked={form().moderated} onChange={(moderated) => change({ moderated })}>
@@ -1828,7 +1830,7 @@ function SpinSettings(props: {
                     aria-label={t("Spins {number}", { number: index + 1 })}
                     value={option().spins}
                     onInput={(event) => changeOption(index, { spins: event.currentTarget.value })}
-                    class={`${inputClass} max-w-20`}
+                    class={[inputClass, "max-w-20"]}
                   />
                   <span class="shrink-0">{t("spins for")}</span>
                   <MoneyInput
@@ -1929,7 +1931,7 @@ function SendForm(props: {
             aria-label={t("Effect")}
             value={effect()}
             onChange={(event) => setEffect(event.currentTarget.value)}
-            class={`${inputClass} max-w-60`}
+            class={[inputClass, "max-w-60"]}
           >
             <For each={effects()}>{(id) => <option value={id}>{effectName(id)}</option>}</For>
           </select>
@@ -2745,7 +2747,7 @@ function MoblinSettings(props: {
                     placeholder={t("Device name")}
                     value={name()}
                     onInput={(event) => setName(event.currentTarget.value)}
-                    class={`${inputClass} max-w-64`}
+                    class={[inputClass, "max-w-64"]}
                   />
                   <button
                     type="submit"
@@ -2805,7 +2807,7 @@ const deviceGets = (device: Device) =>
 function ActivityLine(props: { at: number; now: string; then: (time: string) => string }) {
   const recent = () => now() / 1000 - props.at < 180;
   return (
-    <div class={`truncate text-[14px] ${recent() ? "font-semibold text-leaf" : "text-muted"}`}>
+    <div class={["truncate text-[14px]", recent() ? "font-semibold text-leaf" : "text-muted"]}>
       {recent() ? props.now : props.then(timeAgo(props.at))}
     </div>
   );
@@ -2838,7 +2840,10 @@ function DeviceRow(props: {
   return (
     <>
       <span
-        class={`size-2.5 shrink-0 rounded-full ${props.device.connected ? "bg-leaf" : props.device.reconnecting ? "bg-amber" : "bg-muted"}`}
+        class={[
+          "size-2.5 shrink-0 rounded-full",
+          props.device.connected ? "bg-leaf" : props.device.reconnecting ? "bg-amber" : "bg-muted",
+        ]}
         title={
           props.device.connected
             ? t("Connected")
@@ -3006,7 +3011,7 @@ function SignedIn(props: {
   const [mediaChanges, setMediaChanges] = createSignal(0);
 
   createEffect(
-    () => ({ id: page(), assisted: untrack(channel) }),
+    () => ({ id: page(), assisted: channel() }),
     ({ id, assisted }) => {
       setPageAccount(known.get(id) ?? null);
       setFailure(null);

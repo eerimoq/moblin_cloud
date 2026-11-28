@@ -108,7 +108,10 @@ function Picker(props: {
             setOpen(true);
           }
         }}
-        class={`${ghostButtonClass} h-11! w-full max-w-72 justify-start! gap-2! pr-4! pl-1.5! text-base! aria-expanded:bg-ghost-hover max-sm:w-11 max-sm:px-0! max-sm:justify-center!`}
+        class={[
+          ghostButtonClass,
+          "h-11! w-full max-w-72 justify-start! gap-2! pr-4! pl-1.5! text-base! aria-expanded:bg-ghost-hover max-sm:w-11 max-sm:px-0! max-sm:justify-center!",
+        ]}
       >
         <span class="shrink-0">{current().badge()}</span>
         <span class="min-w-0 truncate max-sm:hidden">{current().label}</span>
@@ -165,7 +168,10 @@ export function Avatar(props: { picked: { name: string; avatar: string | null };
       when={props.picked.avatar}
       fallback={
         <span
-          class={`flex items-center justify-center rounded-full bg-moss font-display font-semibold text-white ${props.class ?? "size-8 text-sm"}`}
+          class={[
+            "flex items-center justify-center rounded-full bg-moss font-display font-semibold text-white",
+            props.class ?? "size-8 text-sm",
+          ]}
         >
           {props.picked.name.slice(0, 1).toUpperCase()}
         </span>
@@ -176,7 +182,7 @@ export function Avatar(props: { picked: { name: string; avatar: string | null };
           src={avatar()}
           alt=""
           referrerpolicy="no-referrer"
-          class={`rounded-full bg-ghost object-cover ${props.class ?? "size-8"}`}
+          class={["rounded-full bg-ghost object-cover", props.class ?? "size-8"]}
         />
       )}
     </Show>
@@ -188,7 +194,14 @@ function DeviceBadge(props: { device: Device | undefined }) {
     <span class="relative flex size-8 items-center justify-center rounded-full bg-ghost-hover text-ink">
       <Icon name="smartphone" class="size-5" />
       <span
-        class={`absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-card ${props.device?.connected ? "bg-leaf" : props.device?.reconnecting ? "bg-amber" : "bg-muted"}`}
+        class={[
+          "absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-card",
+          props.device?.connected
+            ? "bg-leaf"
+            : props.device?.reconnecting
+              ? "bg-amber"
+              : "bg-muted",
+        ]}
       />
     </span>
   );

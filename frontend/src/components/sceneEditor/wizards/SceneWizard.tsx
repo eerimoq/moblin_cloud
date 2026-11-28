@@ -54,7 +54,9 @@ export function SceneWizard(props: { editor: Editor; onClose: () => void }) {
         });
       }
     }
-    editor.set("selection", null);
+    editor.set((state) => {
+      state.selection = null;
+    });
     editor.selectScene(created.id);
     props.onClose();
   };

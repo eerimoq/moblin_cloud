@@ -43,9 +43,10 @@ export default function CopyButton(props: { text: string; label?: string }) {
   return (
     <button
       type="button"
-      class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors ${
-        copied() ? "text-leaf" : "text-muted hover:bg-ghost hover:text-ink"
-      }`}
+      class={[
+        "inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors",
+        copied() ? "text-leaf" : "text-muted hover:bg-ghost hover:text-ink",
+      ]}
       aria-label={copied() ? t("Copied") : t("Copy {label}", { label: props.label ?? props.text })}
       title={copied() ? t("Copied") : t("Copy")}
       onClick={copy}

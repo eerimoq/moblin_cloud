@@ -40,9 +40,10 @@ export function Popover(props: {
     <Show when={props.open}>
       <div
         ref={(element) => (card = element)}
-        class={`absolute z-30 rounded-[13px] bg-phone-row text-white shadow-[0_8px_30px_rgba(0,0,0,0.6)] ${
-          props.side === "above" ? "bottom-0 left-0" : "top-0 right-0"
-        }`}
+        class={[
+          "absolute z-30 rounded-[13px] bg-phone-row text-white shadow-[0_8px_30px_rgba(0,0,0,0.6)]",
+          props.side === "above" ? "bottom-0 left-0" : "top-0 right-0",
+        ]}
         onPointerDown={(event) => event.stopPropagation()}
       >
         {props.children}
@@ -69,9 +70,10 @@ export function PopoverRow(props: {
   return (
     <button
       type="button"
-      class={`flex items-center gap-[8px] p-[11px] text-left text-[17px] ${
-        props.tinted ? "text-phone-tint" : "text-white"
-      }`}
+      class={[
+        "flex items-center gap-[8px] p-[11px] text-left text-[17px]",
+        props.tinted ? "text-phone-tint" : "text-white",
+      ]}
       onClick={() => props.onClick()}
     >
       <Icon name={props.icon} class="size-[20px] w-[32px] shrink-0" />

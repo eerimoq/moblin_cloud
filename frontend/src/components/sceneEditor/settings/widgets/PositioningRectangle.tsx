@@ -122,7 +122,10 @@ export function PositioningRectangle(props: {
   return (
     <div
       ref={(element) => (surface = element)}
-      class={`relative w-full overflow-hidden bg-phone-preview-dark select-none ${readOnly() ? "" : "touch-none"}`}
+      class={[
+        "relative w-full overflow-hidden bg-phone-preview-dark select-none",
+        { "touch-none": !readOnly() },
+      ]}
       style={{ "aspect-ratio": props.aspect ?? (props.portrait ? "9 / 16" : "16 / 9") }}
       onPointerDown={(event) => {
         if (readOnly()) {

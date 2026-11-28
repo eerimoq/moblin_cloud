@@ -42,11 +42,12 @@ export function Notice(props: {
   return (
     <p
       role={props.error ? "alert" : props.status ? "status" : undefined}
-      class={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[15px] font-semibold ${
+      class={[
+        "flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-[15px] font-semibold",
         props.error
           ? "border-danger-line bg-danger-bg text-danger-ink"
-          : "border-amber-line bg-amber-bg text-amber-ink"
-      }`}
+          : "border-amber-line bg-amber-bg text-amber-ink",
+      ]}
     >
       <span>{props.children}</span>
       <Show when={props.onClose}>{(onClose) => <CloseNotice onClose={onClose()} />}</Show>
@@ -86,9 +87,11 @@ export function PlatformSignIn(props: {
     <a
       href={props.href ?? signInUrl(props.platform)}
       aria-label={t("Sign in with {platform}", { platform: platformNames[props.platform] })}
-      class={`inline-flex items-center justify-center rounded-full font-display font-semibold whitespace-nowrap transition-colors ${
-        props.large ? "h-13 gap-2.5 px-6 text-lg" : "h-11 gap-2 px-5 text-base"
-      } ${platformButtonClass(props.platform)}`}
+      class={[
+        "inline-flex items-center justify-center rounded-full font-display font-semibold whitespace-nowrap transition-colors",
+        props.large ? "h-13 gap-2.5 px-6 text-lg" : "h-11 gap-2 px-5 text-base",
+        platformButtonClass(props.platform),
+      ]}
     >
       <Icon name={props.platform} class="size-5" />
       {props.children ?? platformNames[props.platform]}
@@ -149,14 +152,16 @@ export function CloudHeader(props: {
 }) {
   return (
     <header
-      class={`sticky top-0 z-20 border-b border-line/40 bg-page/92 backdrop-blur transition-transform duration-200 ${
-        props.hidden ? "-translate-y-full" : ""
-      }`}
+      class={[
+        "sticky top-0 z-20 border-b border-line/40 bg-page/92 backdrop-blur transition-transform duration-200",
+        { "-translate-y-full": props.hidden },
+      ]}
     >
       <div
-        class={`mx-auto flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1.5 ${
-          props.wide ? "px-3" : "max-w-[1120px] px-5 sm:px-8"
-        }`}
+        class={[
+          "mx-auto flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1.5",
+          props.wide ? "px-3" : "max-w-[1120px] px-5 sm:px-8",
+        ]}
       >
         <a
           href={asset(pages.dashboard)}
@@ -313,7 +318,7 @@ export function Hero(props: { eyebrow?: string; title: string; children: JSX.Ele
 
 export function Band(props: { children: JSX.Element; tight?: boolean }) {
   return (
-    <section class={`bg-band ${props.tight ? "py-8 lg:py-12" : "py-16 lg:py-20"}`}>
+    <section class={["bg-band", props.tight ? "py-8 lg:py-12" : "py-16 lg:py-20"]}>
       <div class="mx-auto flex max-w-[1120px] flex-col gap-6 px-5 sm:px-8">{props.children}</div>
     </section>
   );

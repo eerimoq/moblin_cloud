@@ -1,6 +1,5 @@
-import { Show, type Component } from "solid-js";
+import { Show, type Component, type StoreSetter } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import type { SetStore } from "../../../store";
 import { rowClass } from "../../MoblinParts";
 import { ButtonRow, ErrorText, Footer, Section } from "../../sceneEditor/Form";
 import type { Stack } from "../../sceneEditor/Stack";
@@ -9,7 +8,7 @@ import { t } from "../../../i18n";
 
 export type Wizard = {
   state: CreateStreamWizard;
-  set: SetStore<CreateStreamWizard>;
+  set: StoreSetter<CreateStreamWizard>;
   stack: Stack;
   uniqueName: (name: string) => string;
   create: () => void;
@@ -42,7 +41,7 @@ export function Field(props: {
     >
       <input
         type="text"
-        class={`${rowClass} bg-transparent outline-none placeholder:text-phone-border`}
+        class={[rowClass, "bg-transparent outline-none placeholder:text-phone-border"]}
         value={props.value}
         placeholder={props.placeholder}
         autocapitalize="off"

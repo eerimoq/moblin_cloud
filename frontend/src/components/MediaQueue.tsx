@@ -201,7 +201,7 @@ export default function MediaQueue(props: {
                         <div class="flex gap-2">
                           <button
                             type="button"
-                            class={`${buttonClass} ${smallButtonClass}`}
+                            class={[buttonClass, smallButtonClass]}
                             disabled={working() !== null}
                             onClick={() => void approve(video)}
                           >
@@ -209,7 +209,7 @@ export default function MediaQueue(props: {
                           </button>
                           <button
                             type="button"
-                            class={`${ghostButtonClass} ${smallButtonClass}`}
+                            class={[ghostButtonClass, smallButtonClass]}
                             disabled={working() !== null}
                             onClick={() => void reject(video)}
                           >
@@ -232,7 +232,7 @@ export default function MediaQueue(props: {
                     <div class="flex gap-2">
                       <button
                         type="button"
-                        class={`${ghostButtonClass} ${smallButtonClass}`}
+                        class={[ghostButtonClass, smallButtonClass]}
                         disabled={working() !== null}
                         onClick={() =>
                           void run("pause", () =>
@@ -245,7 +245,7 @@ export default function MediaQueue(props: {
                       </button>
                       <button
                         type="button"
-                        class={`${ghostButtonClass} ${smallButtonClass}`}
+                        class={[ghostButtonClass, smallButtonClass]}
                         disabled={working() !== null || queue().playing === null}
                         onClick={() => control("skip", { skipMediaShare: {} })}
                       >

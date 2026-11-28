@@ -21,7 +21,10 @@ type Props = {
 export default function BrandIcon(props: Props) {
   return (
     <span
-      class={`inline-flex shrink-0 items-center justify-center rounded-full ${props.class ?? "size-6"}`}
+      class={[
+        "inline-flex shrink-0 items-center justify-center rounded-full",
+        props.class ?? "size-6",
+      ]}
       style={brandColors[props.name]}
       aria-hidden="true"
     >

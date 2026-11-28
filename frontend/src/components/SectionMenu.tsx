@@ -42,15 +42,17 @@ export function createSectionChoice(visible: () => Section[], initial = location
 function Status(props: { status: SectionStatus }) {
   return (
     <span
-      class={`ml-auto flex items-center gap-1.5 pl-1 text-[13px] whitespace-nowrap ${
-        props.status.attention ? "font-semibold text-amber" : "text-muted"
-      }`}
+      class={[
+        "ml-auto flex items-center gap-1.5 pl-1 text-[13px] whitespace-nowrap",
+        props.status.attention ? "font-semibold text-amber" : "text-muted",
+      ]}
     >
       <Show when={props.status.attention || props.status.on !== undefined}>
         <span
-          class={`size-2 shrink-0 rounded-full ${
-            props.status.attention ? "bg-amber" : props.status.on ? "bg-leaf" : "bg-muted/50"
-          }`}
+          class={[
+            "size-2 shrink-0 rounded-full",
+            props.status.attention ? "bg-amber" : props.status.on ? "bg-leaf" : "bg-muted/50",
+          ]}
         />
       </Show>
       {props.status.text}

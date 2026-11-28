@@ -55,7 +55,7 @@ export default function MomMessage(props: {
       }
     >
       <form
-        class={`flex ${props.compact ? "gap-2" : "flex-wrap gap-3"}`}
+        class={["flex", props.compact ? "gap-2" : "flex-wrap gap-3"]}
         onSubmit={(event) => void send(event)}
       >
         <input
@@ -67,11 +67,15 @@ export default function MomMessage(props: {
           maxlength={300}
           autocomplete="off"
           disabled={!props.enabled}
-          class={`${inputClass} min-w-0 flex-1 disabled:opacity-60 ${props.compact ? "h-9! rounded-xl! px-3! text-[15px]!" : ""}`}
+          class={[
+            inputClass,
+            "min-w-0 flex-1 disabled:opacity-60",
+            { "h-9! rounded-xl! px-3! text-[15px]!": props.compact },
+          ]}
         />
         <button
           type="submit"
-          class={`${buttonClass} ${props.compact ? "h-9! gap-1.5! px-4! text-[15px]!" : ""}`}
+          class={[buttonClass, { "h-9! gap-1.5! px-4! text-[15px]!": props.compact }]}
           disabled={!props.enabled || busy() || !text().trim()}
         >
           <Icon name="chat" class={props.compact ? "size-4" : "size-5"} />

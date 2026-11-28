@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { flush } from "solid-js";
 import { createEditor } from "./store";
 import type { Control } from "../../data/account";
 
@@ -96,6 +97,7 @@ test("an enabled scene is switched to once the device has it enabled", async () 
     draft.enabled = true;
   });
   editor.selectScene(brbId);
+  flush();
   expect(editor.state.sceneId).toBe(brbId);
   await editor.flush();
   await vi.runAllTimersAsync();

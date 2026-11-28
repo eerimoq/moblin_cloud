@@ -1,4 +1,4 @@
-import { For, Match, Switch } from "solid-js";
+import { For, Match, Switch, onSettled } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import Icon from "../../Icon";
 import { rowClass } from "../../MoblinParts";
@@ -17,7 +17,11 @@ const pushObsRemoteControl = (wizard: Wizard) =>
 
 export function NetworkSetupObs(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set("networkSetup", "obs");
+  onSettled(() =>
+    wizard.set((state) => {
+      state.networkSetup = "obs";
+    }),
+  );
   const portError = () => {
     const port = wizard.state.obsPort.trim();
     if (port === "" || (/^\d+$/.test(port) && Number(port) > 0 && Number(port) <= 65535)) {
@@ -36,7 +40,11 @@ export function NetworkSetupObs(props: WizardPageProps) {
         value={wizard.state.obsAddress}
         placeholder="213.33.45.132"
         footer={t("Your public IP address if streaming over the internet.")}
-        onInput={(address) => wizard.set("obsAddress", address)}
+        onInput={(address) =>
+          wizard.set((state) => {
+            state.obsAddress = address;
+          })
+        }
       />
       <Field
         header={t("Port")}
@@ -44,7 +52,11 @@ export function NetworkSetupObs(props: WizardPageProps) {
         placeholder="7654"
         error={portError()}
         footer={t("Configure port forwarding in your router to forward incoming traffic to OBS.")}
-        onInput={(port) => wizard.set("obsPort", port)}
+        onInput={(port) =>
+          wizard.set((state) => {
+            state.obsPort = port;
+          })
+        }
       />
       <Section header={t("Configure OBS on your computer")}>
         <div class="flex flex-col gap-4 px-4 py-2 text-[17px]">
@@ -61,7 +73,11 @@ export function NetworkSetupObs(props: WizardPageProps) {
 
 function NetworkSetupBelabox(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set("networkSetup", "belaboxCloudObs");
+  onSettled(() =>
+    wizard.set((state) => {
+      state.networkSetup = "belaboxCloudObs";
+    }),
+  );
   const error = () => urlError(wizard.state.belaboxUrl, ["srt", "srtla"]);
   return (
     <>
@@ -73,7 +89,11 @@ function NetworkSetupBelabox(props: WizardPageProps) {
         footer={t(
           'Press "Add automatically to Moblin" on https://cloud.belabox.net SRT(LA) relays (requires login). See screenshot below.',
         )}
-        onInput={(url) => wizard.set("belaboxUrl", url)}
+        onInput={(url) =>
+          wizard.set((state) => {
+            state.belaboxUrl = url;
+          })
+        }
       />
       <NextRow
         disabled={wizard.state.belaboxUrl.trim() === "" || error() !== ""}
@@ -85,7 +105,11 @@ function NetworkSetupBelabox(props: WizardPageProps) {
 
 function NetworkSetupDirect(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set("networkSetup", "direct");
+  onSettled(() =>
+    wizard.set((state) => {
+      state.networkSetup = "direct";
+    }),
+  );
   const ingestError = () => {
     const url = cleanUrl(wizard.state.directIngest);
     return url === "" ? "" : (isValidUrl(url, undefined, false) ?? "");
@@ -101,7 +125,11 @@ function NetworkSetupDirect(props: WizardPageProps) {
       placeholder={placeholder}
       error={ingestError()}
       footer={footer}
-      onInput={(url) => wizard.set("directIngest", url)}
+      onInput={(url) =>
+        wizard.set((state) => {
+          state.directIngest = url;
+        })
+      }
     />
   );
   const streamKey = (placeholder: string, footer: JSX.Element) => (
@@ -110,7 +138,11 @@ function NetworkSetupDirect(props: WizardPageProps) {
       value={wizard.state.directStreamKey}
       placeholder={placeholder}
       footer={footer}
-      onInput={(key) => wizard.set("directStreamKey", key)}
+      onInput={(key) =>
+        wizard.set((state) => {
+          state.directStreamKey = key;
+        })
+      }
     />
   );
   return (

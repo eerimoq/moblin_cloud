@@ -1,13 +1,13 @@
 import {
   createRoot,
   createStore,
-  flush as flushUpdates,
   onCleanup,
   reconcile,
   type Accessor,
   runWithOwner,
+  type StoreSetter,
 } from "solid-js";
-import { removeWhere, storeSetter, type SetStore } from "../../store";
+import { removeWhere } from "../../store";
 import { clone, errorText, same } from "../sceneEditor/store";
 import { BackendError } from "../../data/backend";
 import { sameId, type EditorOptions } from "../../data/moblinSettings";
@@ -34,7 +34,7 @@ export type StreamsState = {
 
 export type Streams = {
   state: StreamsState;
-  set: SetStore<StreamsState>;
+  set: StoreSetter<StreamsState>;
   list: () => StreamItem[];
   names: () => string[];
   load: (id: string) => Promise<SettingsStream | undefined>;
@@ -71,11 +71,12 @@ export function createStreams(
         syncing: false,
         dirty: false,
       });
-      const set = storeSetter(setState);
-      const write = storeSetter(setState, flushUpdates);
-      const update = (change: (draft: StreamsState) => void) => {
-        setState(change);
-        flushUpdates();
+      let dirty = false;
+      const setDirty = (value: boolean) => {
+        dirty = value;
+        setState((draft) => {
+          draft.dirty = value;
+        });
       };
       let synced: SettingsStream[] = [];
       let deleted: string[] = [];
@@ -106,8 +107,8 @@ export function createStreams(
       };
 
       const setDraft = (stream: SettingsStream) => {
-        const index = state.drafts.findIndex((candidate) => sameId(candidate.id, stream.id));
-        update((draft) => {
+        setState((draft) => {
+          const index = draft.drafts.findIndex((candidate) => sameId(candidate.id, stream.id));
           if (index < 0) {
             draft.drafts.push(stream);
           } else {
@@ -123,7 +124,7 @@ export function createStreams(
           return loaded;
         }
         const before = loaded ? clone(loaded) : undefined;
-        update((draft) => {
+        setState((draft) => {
           draft.loading.push(id);
         });
         try {
@@ -145,14 +146,21 @@ export function createStreams(
           } else {
             setDraft(fresh);
           }
-          write("options", options.options);
-          write("error", null);
+          setState((draft) => {
+            draft.options = options.options;
+          });
+          setState((draft) => {
+            draft.error = null;
+          });
+          await Promise.resolve();
           return draft(id);
         } catch (error) {
-          write("error", errorText(error));
+          setState((draft) => {
+            draft.error = errorText(error);
+          });
           return undefined;
         } finally {
-          update((draft) => removeWhere(draft.loading, (candidate) => sameId(candidate, id)));
+          setState((draft) => removeWhere(draft.loading, (candidate) => sameId(candidate, id)));
         }
       };
 
@@ -162,7 +170,7 @@ export function createStreams(
         if (deselect) {
           pendingSelect = null;
         }
-        update((draft) => {
+        setState((draft) => {
           removeWhere(draft.drafts, (stream) => sameId(stream.id, id));
           removeWhere(draft.added, (candidate) => sameId(candidate, id));
           if (deselect) {
@@ -186,7 +194,7 @@ export function createStreams(
       };
 
       const markDirty = () => {
-        write("dirty", true);
+        setDirty(true);
         if (timer !== undefined || syncing || disposed) {
           return;
         }
@@ -207,9 +215,12 @@ export function createStreams(
         }
         const run = async () => {
           lastSync = Date.now();
-          write("syncing", true);
-          write("dirty", false);
+          setState((draft) => {
+            draft.syncing = true;
+          });
+          setDirty(false);
           try {
+            await Promise.resolve();
             for (const id of state.removed.filter((id) => !has(deleted, id))) {
               try {
                 if (!has(state.added, id) || syncedStream(id)) {
@@ -222,7 +233,9 @@ export function createStreams(
                   throw error;
                 }
                 refusal = errorText(error);
-                update((draft) => removeWhere(draft.removed, (candidate) => sameId(candidate, id)));
+                setState((draft) =>
+                  removeWhere(draft.removed, (candidate) => sameId(candidate, id)),
+                );
               }
             }
             for (const stream of clone(state.drafts)) {
@@ -252,12 +265,20 @@ export function createStreams(
             if (pendingSelect && syncedStream(pendingSelect)) {
               const id = pendingSelect;
               pendingSelect = null;
-              void control({ setStream: { id } }).finally(() => write("selected", null));
+              void control({ setStream: { id } }).finally(() =>
+                setState((draft) => {
+                  draft.selected = null;
+                }),
+              );
             }
-            write("error", refusal);
+            setState((draft) => {
+              draft.error = refusal;
+            });
           } catch (error) {
-            write("error", errorText(error));
-            write("dirty", true);
+            setState((draft) => {
+              draft.error = errorText(error);
+            });
+            setDirty(true);
             if (!disposed) {
               timer = setTimeout(() => {
                 timer = undefined;
@@ -265,7 +286,9 @@ export function createStreams(
               }, 5000);
             }
           } finally {
-            write("syncing", false);
+            setState((draft) => {
+              draft.syncing = false;
+            });
           }
         };
         syncing = run();
@@ -274,7 +297,7 @@ export function createStreams(
         } finally {
           syncing = null;
         }
-        if (state.dirty && timer === undefined) {
+        if (dirty && timer === undefined) {
           markDirty();
         }
       };
@@ -287,14 +310,14 @@ export function createStreams(
           clearTimeout(timer);
           timer = undefined;
         }
-        if (state.dirty) {
+        if (dirty) {
           await sync();
         }
       };
 
       const streams: Streams = {
         state,
-        set,
+        set: setState,
         list,
         names: () => list().map((item) => item.name),
         load,
@@ -305,9 +328,15 @@ export function createStreams(
             return;
           }
           refusal = null;
-          const index = state.drafts.findIndex((stream) => sameId(stream.id, id));
-          if (index >= 0) {
-            update((draft) => change(draft.drafts[index]));
+          let found = false;
+          setState((draft) => {
+            const stream = draft.drafts.find((stream) => sameId(stream.id, id));
+            if (stream) {
+              change(stream);
+              found = true;
+            }
+          });
+          if (found) {
             markDirty();
           }
         },
@@ -316,7 +345,7 @@ export function createStreams(
             return;
           }
           refusal = null;
-          update((draft) => {
+          setState((draft) => {
             draft.drafts.push(stream);
             draft.added.push(stream.id);
           });
@@ -327,7 +356,7 @@ export function createStreams(
             return;
           }
           refusal = null;
-          update((draft) => {
+          setState((draft) => {
             draft.removed.push(id);
             removeWhere(draft.drafts, (stream) => sameId(stream.id, id));
           });
@@ -338,12 +367,20 @@ export function createStreams(
             return;
           }
           refusal = null;
-          write("selected", id);
-          if (has(state.added, id) && !syncedStream(id)) {
+          let unsynced = false;
+          setState((draft) => {
+            draft.selected = id;
+            unsynced = has(draft.added, id) && !syncedStream(id);
+          });
+          if (unsynced) {
             pendingSelect = id;
             markDirty();
           } else {
-            void control({ setStream: { id } }).finally(() => write("selected", null));
+            void control({ setStream: { id } }).finally(() =>
+              setState((draft) => {
+                draft.selected = null;
+              }),
+            );
           }
         },
         flush,

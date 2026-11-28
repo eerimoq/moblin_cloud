@@ -274,7 +274,7 @@ function WindowEdges() {
       <For each={Object.keys(edgeStrips) as Exclude<Zone, "center">[]}>
         {(name) => (
           <div
-            class={`absolute z-30 flex items-center justify-center ${edgeStrips[name].strip}`}
+            class={["absolute z-30 flex items-center justify-center", edgeStrips[name].strip]}
             onDragOver={(event) => {
               if (!dragging.movesToEdge(name)) {
                 setEdge(null);
@@ -294,7 +294,10 @@ function WindowEdges() {
             }}
           >
             <span
-              class={`rounded-full bg-leaf/60 ${name === "left" || name === "right" ? "h-16 w-1" : "h-1 w-16"}`}
+              class={[
+                "rounded-full bg-leaf/60",
+                name === "left" || name === "right" ? "h-16 w-1" : "h-1 w-16",
+              ]}
             />
           </div>
         )}
@@ -302,7 +305,10 @@ function WindowEdges() {
       <Show when={edge()}>
         {(shown) => (
           <div
-            class={`pointer-events-none absolute z-30 rounded-xl border-2 border-leaf bg-leaf/20 ${edgeStrips[shown()].preview}`}
+            class={[
+              "pointer-events-none absolute z-30 rounded-xl border-2 border-leaf bg-leaf/20",
+              edgeStrips[shown()].preview,
+            ]}
           />
         )}
       </Show>
@@ -386,11 +392,11 @@ function LeafSlot(props: { path: Path; class?: string; children: JSX.Element }) 
   const [zone, setZone] = createSignal<Zone | null>(null);
   const source = () => samePath(dragging.from(), props.path);
   return (
-    <div class={`relative flex min-h-0 min-w-0 p-[3px] ${props.class ?? "size-full"}`}>
+    <div class={["relative flex min-h-0 min-w-0 p-[3px]", props.class ?? "size-full"]}>
       {props.children}
       <Show when={dragging.from()}>
         <div
-          class={`absolute inset-[3px] z-20 rounded-xl ${source() ? "bg-page/50" : ""}`}
+          class={["absolute inset-[3px] z-20 rounded-xl", { "bg-page/50": source() }]}
           onDragOver={(event) => {
             const at = zoneAt(event, event.currentTarget);
             if (source() || !dragging.moves(props.path, at)) {
@@ -416,7 +422,10 @@ function LeafSlot(props: { path: Path; class?: string; children: JSX.Element }) 
           <Show when={zone()}>
             {(shown) => (
               <div
-                class={`pointer-events-none absolute rounded-xl border-2 border-leaf bg-leaf/20 ${zoneClasses[shown()]}`}
+                class={[
+                  "pointer-events-none absolute rounded-xl border-2 border-leaf bg-leaf/20",
+                  zoneClasses[shown()],
+                ]}
               />
             )}
           </Show>
@@ -503,7 +512,7 @@ function SplitView(props: {
   return (
     <div
       ref={(element) => (container = element)}
-      class={`relative flex size-full min-h-0 min-w-0 ${row() ? "flex-row" : "flex-col"}`}
+      class={["relative flex size-full min-h-0 min-w-0", row() ? "flex-row" : "flex-col"]}
     >
       <For keyed={false} each={props.split.children}>
         {(child, index) => {
@@ -513,7 +522,7 @@ function SplitView(props: {
           };
           return (
             <div
-              class={`min-h-0 min-w-0 ${shown() === false ? "hidden" : "flex"}`}
+              class={["min-h-0 min-w-0", shown() === false ? "hidden" : "flex"]}
               style={{ flex: shown() ? "1 1 0px" : `${sizes()[index] ?? 0} 1 0px` }}
             >
               <Node
@@ -540,9 +549,10 @@ function SplitView(props: {
               aria-valuenow={Math.round(sizes()[index - 1]! * 100)}
               onPointerDown={(event) => startDrag(index, event)}
               onKeyDown={(event) => onKey(index, event)}
-              class={`group absolute z-10 flex touch-none items-center justify-center outline-none ${
-                row() ? "inset-y-0 w-1.5 cursor-col-resize" : "inset-x-0 h-1.5 cursor-row-resize"
-              }`}
+              class={[
+                "group absolute z-10 flex touch-none items-center justify-center outline-none",
+                row() ? "inset-y-0 w-1.5 cursor-col-resize" : "inset-x-0 h-1.5 cursor-row-resize",
+              ]}
               style={
                 row()
                   ? { left: `calc(${boundary(index)}% - 3px)` }
@@ -550,9 +560,10 @@ function SplitView(props: {
               }
             >
               <span
-                class={`rounded-full bg-transparent transition-colors group-hover:bg-leaf/60 group-focus-visible:bg-leaf ${
-                  row() ? "h-10 w-0.5" : "h-0.5 w-10"
-                }`}
+                class={[
+                  "rounded-full bg-transparent transition-colors group-hover:bg-leaf/60 group-focus-visible:bg-leaf",
+                  row() ? "h-10 w-0.5" : "h-0.5 w-10",
+                ]}
               />
             </div>
           );

@@ -1,4 +1,4 @@
-import { For, onCleanup, Show, runWithOwner } from "solid-js";
+import { For, onCleanup, Show, onSettled } from "solid-js";
 import { Empty, Loading, PanelView, type Remote } from "../MoblinParts";
 import { ButtonRow, ErrorText, LinkRow, ReadOnly, Section } from "../sceneEditor/Form";
 import { createStack, pageTitle, type Page, type Stack } from "../sceneEditor/Stack";
@@ -49,7 +49,7 @@ export const formProps = (
 };
 
 function StreamPage(props: { streams: Streams; remote: Remote; stack: Stack; id: string }) {
-  runWithOwner(null, () => void props.streams.load(props.id));
+  onSettled(() => void props.streams.load(props.id));
   return (
     <Show
       when={formProps(props.streams, props.remote, props.stack, props.id)}

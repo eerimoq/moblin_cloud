@@ -321,9 +321,10 @@ export default function Canvas(props: {
           <div class="flex w-full shrink-0">
             <div class="min-w-0" style={{ flex: `0 1 ${Math.max(rect().x + 4, 0)}px` }} />
             <div
-              class={`flex shrink-0 items-center gap-[3px] rounded-[3px] px-[4px] py-[2px] text-[13px] leading-[16px] whitespace-nowrap text-white ${
-                selected() ? "bg-phone-tint font-semibold" : "bg-black/60"
-              }`}
+              class={[
+                "flex shrink-0 items-center gap-[3px] rounded-[3px] px-[4px] py-[2px] text-[13px] leading-[16px] whitespace-nowrap text-white",
+                selected() ? "bg-phone-tint font-semibold" : "bg-black/60",
+              ]}
             >
               <Icon name={widgetIcon(outline.widget.type)} class="size-[13px]" />
               <span>{outline.widget.name}</span>
@@ -364,11 +365,12 @@ export default function Canvas(props: {
     };
     return (
       <div
-        class={`absolute grid size-[44px] -translate-1/2 place-items-center ${
+        class={[
+          "absolute grid size-[44px] -translate-1/2 place-items-center",
           anchor === "TopLeft" || anchor === "BottomRight"
             ? "cursor-nwse-resize"
-            : "cursor-nesw-resize"
-        }`}
+            : "cursor-nesw-resize",
+        ]}
         style={{ left: `${point().x}px`, top: `${point().y}px` }}
         onPointerDown={(event) => {
           event.stopPropagation();

@@ -400,13 +400,15 @@ function Cells(props: { counts: Counts; class: string; attention?: boolean }) {
         const value = () => props.counts[period];
         return (
           <td
-            class={`px-2 text-right align-top font-mono tabular-nums sm:px-4 ${props.class} ${
+            class={[
+              "px-2 text-right align-top font-mono tabular-nums sm:px-4",
+              props.class,
               value() === 0
                 ? "text-muted/40"
                 : props.attention && index() === 0
                   ? "font-bold text-amber"
-                  : ""
-            }`}
+                  : "",
+            ]}
           >
             {format(value())}
           </td>
@@ -432,9 +434,10 @@ function Info(props: { icon?: IconName; label?: string; children: JSX.Element })
       </button>
       <span
         role="tooltip"
-        class={`absolute top-full left-0 z-10 mt-1.5 w-max max-w-[min(24rem,calc(100vw-4rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-left font-body text-[14px] leading-snug font-normal tracking-normal text-ink-2 normal-case shadow-xl text-pretty ${
-          open() ? "block" : "hidden peer-hover:block peer-focus-visible:block"
-        }`}
+        class={[
+          "absolute top-full left-0 z-10 mt-1.5 w-max max-w-[min(24rem,calc(100vw-4rem))] rounded-2xl border-[1.5px] border-line bg-card px-4 py-3 text-left font-body text-[14px] leading-snug font-normal tracking-normal text-ink-2 normal-case shadow-xl text-pretty",
+          open() ? "block" : "hidden peer-hover:block peer-focus-visible:block",
+        ]}
       >
         {props.children}
       </span>
@@ -444,7 +447,7 @@ function Info(props: { icon?: IconName; label?: string; children: JSX.Element })
 
 function StepTable(props: { steps: Step[] }) {
   return (
-    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+    <div class={[cardClass, "gap-0! p-0! sm:p-0!"]}>
       <table class="w-full">
         <thead>
           <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
@@ -473,9 +476,10 @@ function StepTable(props: { steps: Step[] }) {
               <tbody class="border-t-[1.5px] border-line [&>tr:last-child>td]:pb-3">
                 <tr>
                   <td
-                    class={`px-4 pt-3 pb-2 align-top text-[16px] font-semibold sm:px-5 ${
-                      step().problem && step().counts.total > 0 ? "text-amber-ink" : "text-ink"
-                    }`}
+                    class={[
+                      "px-4 pt-3 pb-2 align-top text-[16px] font-semibold sm:px-5",
+                      step().problem && step().counts.total > 0 ? "text-amber-ink" : "text-ink",
+                    ]}
                   >
                     {step().label}
                     <Show when={step().hint}>{(hint) => <Info>{hint()}</Info>}</Show>
@@ -508,14 +512,16 @@ function StepTable(props: { steps: Step[] }) {
                       <tr>
                         <td class="px-4 py-0.5 text-[14px] sm:px-5">
                           <span
-                            class={`flex items-baseline gap-2 ${
-                              failure().problem ? "text-amber-ink" : "text-ink-2"
-                            }`}
+                            class={[
+                              "flex items-baseline gap-2",
+                              failure().problem ? "text-amber-ink" : "text-ink-2",
+                            ]}
                           >
                             <span
-                              class={`size-1.5 shrink-0 translate-y-[-2px] rounded-full ${
-                                failure().problem ? "bg-amber" : "bg-muted/40"
-                              }`}
+                              class={[
+                                "size-1.5 shrink-0 translate-y-[-2px] rounded-full",
+                                failure().problem ? "bg-amber" : "bg-muted/40",
+                              ]}
                             />
                             {failure().label}
                           </span>
@@ -564,7 +570,7 @@ const statusLabels: Record<number, string> = {
 
 function StatusTable(props: { statuses: (readonly [number, number])[]; total: number }) {
   return (
-    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+    <div class={[cardClass, "gap-0! p-0! sm:p-0!"]}>
       <table class="w-full">
         <thead>
           <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
@@ -620,7 +626,7 @@ const statusesFrom = (statuses: Record<string, number>, from: number) =>
 
 function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["endpoints"] }) {
   return (
-    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+    <div class={[cardClass, "gap-0! p-0! sm:p-0!"]}>
       <table class="w-full">
         <thead>
           <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
@@ -660,16 +666,18 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
                       {format(endpoint().total)}
                     </td>
                     <td
-                      class={`px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4 ${
-                        clientErrors() === 0 ? "text-muted/40" : ""
-                      }`}
+                      class={[
+                        "px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4",
+                        { "text-muted/40": clientErrors() === 0 },
+                      ]}
                     >
                       {format(clientErrors())}
                     </td>
                     <td
-                      class={`px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4 ${
-                        serverErrors() === 0 ? "text-muted/40" : "font-bold text-amber"
-                      }`}
+                      class={[
+                        "px-2 py-0.5 text-right font-mono text-[14px] tabular-nums sm:px-4",
+                        serverErrors() === 0 ? "text-muted/40" : "font-bold text-amber",
+                      ]}
                     >
                       {format(serverErrors())}
                     </td>
@@ -686,7 +694,7 @@ function EndpointTable(props: { endpoints: AdminStats["server"]["requests"]["end
 
 function DatabaseTable(props: { database: AdminStats["database"] }) {
   return (
-    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+    <div class={[cardClass, "gap-0! p-0! sm:p-0!"]}>
       <table class="w-full">
         <thead>
           <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
@@ -747,7 +755,7 @@ function MessageTable(props: {
   kinds: AdminStats["moblin"]["messages"]["sent"];
 }) {
   return (
-    <div class={`${cardClass} gap-0! p-0! sm:p-0!`}>
+    <div class={[cardClass, "gap-0! p-0! sm:p-0!"]}>
       <table class="w-full">
         <thead>
           <tr class="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">
@@ -822,11 +830,12 @@ function Part(props: { title: string; hint?: string; children: JSX.Element }) {
 
 function Tile(props: { label: string; value: string; hint: string; attention?: boolean }) {
   return (
-    <div class={`${cardClass} gap-1! p-5!`}>
+    <div class={[cardClass, "gap-1! p-5!"]}>
       <span
-        class={`font-display text-[32px] leading-none font-bold ${
-          props.attention ? "text-amber" : ""
-        }`}
+        class={[
+          "font-display text-[32px] leading-none font-bold",
+          { "text-amber": props.attention },
+        ]}
       >
         {props.value}
       </span>
@@ -918,7 +927,7 @@ function Rows<T>(props: {
         <Show when={props.hint}>{(hint) => <Info>{hint()}</Info>}</Show>
       </h3>
       <Show when={props.items.length > 0} fallback={<p class="text-muted">{props.empty}</p>}>
-        <ul class={`${cardClass} gap-0! divide-y divide-line p-0! sm:p-0!`}>
+        <ul class={[cardClass, "gap-0! divide-y divide-line p-0! sm:p-0!"]}>
           <For each={props.items}>{(item) => props.children(item)}</For>
         </ul>
       </Show>
@@ -972,9 +981,10 @@ function createActions() {
   const action = (label: string, danger: boolean, task: () => Promise<void>) => (
     <button
       type="button"
-      class={`text-[15px] font-semibold hover:underline disabled:opacity-60 ${
-        danger ? "text-danger" : "text-leaf"
-      }`}
+      class={[
+        "text-[15px] font-semibold hover:underline disabled:opacity-60",
+        danger ? "text-danger" : "text-leaf",
+      ]}
       disabled={busy()}
       onClick={() => void run(task)}
     >
@@ -995,7 +1005,7 @@ function SignIn(props: {
 
   return (
     <div class="flex flex-col gap-5">
-      <div class={`${cardClass} flex-row! flex-wrap items-center justify-between gap-4! p-5!`}>
+      <div class={[cardClass, "flex-row! flex-wrap items-center justify-between gap-4! p-5!"]}>
         <div class="flex min-w-0 flex-1 flex-col gap-1">
           <span class="font-display text-xl font-bold">
             {props.access.restricted ? "Only allowed accounts" : "Everyone"}
@@ -1119,7 +1129,7 @@ function Premium(props: {
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
-          class={`${inputClass} min-w-0 flex-1`}
+          class={[inputClass, "min-w-0 flex-1"]}
         />
         <button type="submit" class={buttonClass} disabled={busy() || !text().trim()}>
           Search
@@ -1482,18 +1492,24 @@ function Loaded(props: {
             />
           </div>
           <div
-            class={`${cardClass} flex-row! flex-wrap gap-x-6! gap-y-2! px-5! py-3! sm:px-5! sm:py-3!`}
+            class={[
+              cardClass,
+              "flex-row! flex-wrap gap-x-6! gap-y-2! px-5! py-3! sm:px-5! sm:py-3!",
+            ]}
           >
             <For keyed={false} each={integrations()}>
               {(integration) => (
                 <span class="flex items-center gap-2 text-[15px] font-semibold text-ink-2">
                   <span
-                    class={`size-2 rounded-full ${integration()[2] ? "bg-leaf" : "bg-amber"}`}
+                    class={["size-2 rounded-full", integration()[2] ? "bg-leaf" : "bg-amber"]}
                     aria-hidden="true"
                   />
                   {integration()[0]}
                   <span
-                    class={`font-mono text-[13px] ${integration()[2] ? "text-muted" : "text-amber-ink"}`}
+                    class={[
+                      "font-mono text-[13px]",
+                      integration()[2] ? "text-muted" : "text-amber-ink",
+                    ]}
                   >
                     {integration()[2] ? "On" : "Off"}
                   </span>

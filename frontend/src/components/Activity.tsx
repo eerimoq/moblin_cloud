@@ -43,7 +43,7 @@ function ActivityRow(props: {
   const [expanded, setExpanded] = createSignal(false);
   const item = () => props.item;
   return (
-    <li class={`flex gap-2.5 px-3 py-2 ${props.fresh ? "arrival-flash" : ""}`}>
+    <li class={["flex gap-2.5 px-3 py-2", { "arrival-flash": props.fresh }]}>
       <Icon
         name={kindIcons[item().kind]}
         class="mt-0.5 size-4 shrink-0 text-ink"
@@ -91,7 +91,7 @@ function ActivityRow(props: {
             <button
               type="button"
               onClick={() => setExpanded(!expanded())}
-              class={`text-left text-ink wrap-anywhere ${expanded() ? "" : "line-clamp-2"}`}
+              class={["text-left text-ink wrap-anywhere", { "line-clamp-2": !expanded() }]}
             >
               {message()}
             </button>

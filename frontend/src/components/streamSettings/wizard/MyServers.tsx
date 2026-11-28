@@ -1,3 +1,4 @@
+import { onSettled } from "solid-js";
 import { LinkRow, Section } from "../../sceneEditor/Form";
 import { NextRow } from "../../sceneEditor/wizards/Sheet";
 import { RtmpUrlFields, rtmpNextDisabled, SrtUrlFields, srtNextDisabled } from "./Custom";
@@ -10,7 +11,11 @@ const pushObsRemoteControl = (wizard: Wizard) =>
 
 function MyServersSrt(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set("customProtocol", "srt");
+  onSettled(() =>
+    wizard.set((state) => {
+      state.customProtocol = "srt";
+    }),
+  );
   return (
     <>
       <SrtUrlFields wizard={wizard} />
@@ -21,7 +26,11 @@ function MyServersSrt(props: WizardPageProps) {
 
 function MyServersRtmp(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set("customProtocol", "rtmp");
+  onSettled(() =>
+    wizard.set((state) => {
+      state.customProtocol = "rtmp";
+    }),
+  );
   return (
     <>
       <RtmpUrlFields wizard={wizard} />
@@ -32,7 +41,11 @@ function MyServersRtmp(props: WizardPageProps) {
 
 export function MyServers(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set("networkSetup", "myServers");
+  onSettled(() =>
+    wizard.set((state) => {
+      state.networkSetup = "myServers";
+    }),
+  );
   return (
     <Section header={t("Protocol")}>
       <LinkRow label={t("SRT(LA)")} onClick={() => pushPage(wizard, t("SRT(LA)"), MyServersSrt)} />

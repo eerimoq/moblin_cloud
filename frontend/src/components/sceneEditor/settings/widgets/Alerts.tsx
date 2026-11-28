@@ -896,7 +896,7 @@ function NamedAlertList(props: WidgetFormProps & { kind: "commands" | "strings" 
             class="flex min-h-[44px] w-full items-center gap-2 pr-2 pl-3 text-left text-[17px]"
             onClick={() => open(item.id)}
           >
-            <span class={`min-w-0 flex-1 truncate ${commands() ? "capitalize" : ""}`}>
+            <span class={["min-w-0 flex-1 truncate", { capitalize: commands() }]}>
               {item.label}
             </span>
             <Icon name="chevron-right" class="size-[16px] shrink-0 text-phone-border" />

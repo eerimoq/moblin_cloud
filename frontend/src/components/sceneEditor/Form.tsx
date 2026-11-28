@@ -99,7 +99,11 @@ export function ButtonRow(props: {
   return (
     <button
       type="button"
-      class={`${rowClass} justify-center ${props.destructive ? "text-phone-live" : "text-phone-tint"}`}
+      class={[
+        rowClass,
+        "justify-center",
+        props.destructive ? "text-phone-live" : "text-phone-tint",
+      ]}
       disabled={props.disabled || readOnly()}
       onClick={() => props.onClick()}
     >
@@ -143,7 +147,7 @@ export function TextEditPage(props: {
         fallback={
           <input
             type="text"
-            class={`${rowClass} bg-transparent outline-none placeholder:text-phone-border`}
+            class={[rowClass, "bg-transparent outline-none placeholder:text-phone-border"]}
             value={value()}
             placeholder={props.placeholder}
             autofocus
@@ -319,7 +323,7 @@ export function MenuRow(props: {
 }) {
   const readOnly = useReadOnly();
   return (
-    <label class={`${rowClass} justify-between`}>
+    <label class={[rowClass, "justify-between"]}>
       <span class="min-w-0 flex-1 truncate">{props.label}</span>
       <select
         class="max-w-[50%] truncate bg-transparent text-right text-phone-border outline-none disabled:opacity-50"
@@ -353,7 +357,7 @@ export function SliderRow(props: {
   const readOnly = useReadOnly();
   return (
     <fieldset disabled={readOnly()} class="contents">
-      <div class={`${rowClass} gap-3`}>
+      <div class={[rowClass, "gap-3"]}>
         <Show when={props.label}>
           <span class="shrink-0">{props.label}</span>
         </Show>
@@ -503,7 +507,7 @@ export function ColorRow(props: {
   const readOnly = useReadOnly();
   return (
     <fieldset disabled={readOnly()} class="contents">
-      <div class={`${rowClass} justify-between`}>
+      <div class={[rowClass, "justify-between"]}>
         <span class="min-w-0 flex-1 truncate">{props.label}</span>
         <Show when={props.opacity}>
           <input
@@ -551,7 +555,7 @@ export function ReorderableList<T extends { id: string }>(props: {
     <For each={props.items}>
       {(item, index) => (
         <div
-          class={`flex min-h-[44px] items-center ${dragging() === index() ? "opacity-50" : ""}`}
+          class={["flex min-h-[44px] items-center", { "opacity-50": dragging() === index() }]}
           draggable={props.onMove !== undefined && !readOnly() ? "true" : "false"}
           onDragStart={(event) => {
             setDragging(index());

@@ -1,22 +1,11 @@
-import { createResource } from "../resource";
-import {
-  createEffect,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-  onSettled,
-  untrack,
-  getOwner,
-  runWithOwner,
-} from "solid-js";
+import { createEffect, createSignal, For, Show, onSettled, Loading, createMemo } from "solid-js";
 import Icon, { type IconName } from "./Icon";
 import { ask, rickRoll } from "./Modal";
 import { PanelButtons, panelWidth, type Remote } from "./MoblinParts";
 import Panels, { type Panel } from "./MoblinPanels";
 import { ReadOnly } from "./sceneEditor/Form";
 import SceneEditor from "./sceneEditor/SceneEditor";
-import { createEditor, type Editor } from "./sceneEditor/store";
+import { createEditor } from "./sceneEditor/store";
 import {
   type AudioLevel,
   type Control,
@@ -41,6 +30,20 @@ const screenHeight = 393;
 const bezel = 12;
 
 const icons = new Map<string, Promise<string | null>>();
+
+const iconOf = (id: string) => {
+  let found = icons.get(id);
+  if (!found) {
+    found = streamerProfile(id)
+      .then((profile) => profile.icon)
+      .catch(() => {
+        icons.delete(id);
+        return null;
+      });
+    icons.set(id, found);
+  }
+  return found;
+};
 
 export const topLeftIcons: [TopLeftItem, IconName][] = [
   ["stream", "broadcast"],
@@ -198,9 +201,10 @@ function Chip(props: { icon: IconName; text?: string; ok?: boolean; before?: boo
     <div class="flex items-center gap-px">
       <Show when={props.before}>{text()}</Show>
       <span
-        class={`grid h-[17px] w-[21px] shrink-0 place-items-center rounded-[5px] bg-phone-chip ${
-          props.ok === false ? "text-phone-live" : "text-white"
-        }`}
+        class={[
+          "grid h-[17px] w-[21px] shrink-0 place-items-center rounded-[5px] bg-phone-chip",
+          props.ok === false ? "text-phone-live" : "text-white",
+        ]}
       >
         <Icon name={props.icon} class="size-[13px]" />
       </span>
@@ -231,7 +235,7 @@ function AudioBar(props: { level: AudioLevel }) {
         <Show when={!("muted" in props.level)} fallback={t("Muted")}>
           <span class="flex py-[2px]">
             <For each={bars()}>
-              {(bar) => <span class={`h-[5px] ${bar.color}`} style={{ width: `${bar.width}px` }} />}
+              {(bar) => <span class={["h-[5px]", bar.color]} style={{ width: `${bar.width}px` }} />}
             </For>
           </span>
         </Show>
@@ -252,9 +256,10 @@ function Statuses(props: { status: DeviceStatus; verbose: boolean; onToggle: () 
     <>
       <button
         type="button"
-        class={`absolute top-[10px] left-[54px] z-10 flex items-start gap-px text-left ${
-          props.verbose ? "flex-col" : "flex-row"
-        }`}
+        class={[
+          "absolute top-[10px] left-[54px] z-10 flex items-start gap-px text-left",
+          props.verbose ? "flex-col" : "flex-row",
+        ]}
         onClick={() => props.onToggle()}
       >
         <For each={left()}>
@@ -269,9 +274,10 @@ function Statuses(props: { status: DeviceStatus; verbose: boolean; onToggle: () 
       </button>
       <button
         type="button"
-        class={`absolute top-[10px] right-[16px] z-10 flex items-end gap-px ${
-          props.verbose ? "flex-col" : "flex-row"
-        }`}
+        class={[
+          "absolute top-[10px] right-[16px] z-10 flex items-end gap-px",
+          props.verbose ? "flex-col" : "flex-row",
+        ]}
         onClick={() => props.onToggle()}
       >
         <Show when={props.verbose && props.status.topRight.audioInfo}>
@@ -316,9 +322,11 @@ function Segments(props: {
             role="radio"
             aria-checked={item.id === props.selected ? "true" : "false"}
             disabled={props.disabled}
-            class={`h-[40px] truncate border-phone-border/30 px-1 text-[15px] ${
-              index() < props.items.length - 1 ? "border-r" : ""
-            } ${item.id === props.selected ? "bg-phone-selected" : ""}`}
+            class={[
+              "h-[40px] truncate border-phone-border/30 px-1 text-[15px]",
+              { "border-r": index() < props.items.length - 1 },
+              { "bg-phone-selected": item.id === props.selected },
+            ]}
             style={{ width: `${props.width}px` }}
             onClick={() => item.id !== props.selected && props.onPick(item.id)}
           >
@@ -411,36 +419,25 @@ export default function MoblinScreen(props: {
   onRequest?: <T>(control: Control) => Promise<T>;
 }) {
   const [width, setWidth] = createSignal(screenWidth + 2 * bezel);
-  const owner = getOwner();
-  const [editor, setEditor] = createSignal<Editor | null>(null);
   const [sceneEditorOpen, setSceneEditorOpen] = createSignal(false);
   const [panel, setPanel] = createSignal<Panel | null>(null);
-  createEffect(
-    () => ({
-      needed: sceneEditorOpen() || panel() === "sceneWidgets",
-      current: untrack(editor),
-    }),
-    ({ needed, current }) => {
-      const request = props.onRequest;
-      if (needed && !current && request) {
-        setEditor(
-          runWithOwner(owner, () =>
-            createEditor(
-              request,
-              props.onControl,
-              () => props.state.scene,
-              () => props.secrets,
-              () => !props.remoteControl,
-            ),
-          ),
-        );
-      } else if (!needed && current) {
-        setEditor(null);
-        void current.flush().finally(() => current.dispose());
-      }
-    },
+  const editorNeeded = createMemo(
+    () => (sceneEditorOpen() || panel() === "sceneWidgets") && props.onRequest !== undefined,
   );
-  onCleanup(() => editor()?.dispose());
+  const editor = createMemo(() =>
+    editorNeeded()
+      ? createEditor(
+          (control) => props.onRequest!(control),
+          (control) => props.onControl(control),
+          () => props.state.scene,
+          () => props.secrets,
+          () => !props.remoteControl,
+        )
+      : null,
+  );
+  createEffect(editor, (current) =>
+    current ? () => void current.flush().finally(() => current.dispose()) : undefined,
+  );
   const openSceneEditor = () => {
     if (props.onRequest) {
       setSceneEditorOpen(true);
@@ -453,22 +450,7 @@ export default function MoblinScreen(props: {
   const [allPages, setAllPages] = createSignal(readStored("quickButtonsExpanded") === "1");
   const [filtering, setFiltering] = createSignal(false);
   const [filter, setFilter] = createSignal("");
-  const [icon] = createResource(
-    () => props.page,
-    (id) => {
-      let found = icons.get(id);
-      if (!found) {
-        found = streamerProfile(id)
-          .then((profile) => profile.icon)
-          .catch(() => {
-            icons.delete(id);
-            return null;
-          });
-        icons.set(id, found);
-      }
-      return found;
-    },
-  );
+  const icon = createMemo(() => iconOf(props.page));
   let container: HTMLDivElement | undefined;
 
   onSettled(() => {
@@ -766,9 +748,10 @@ export default function MoblinScreen(props: {
           }}
         >
           <div
-            class={`relative flex h-full overflow-hidden bg-phone-screen text-white select-none ${
-              props.window ? "" : "rounded-[50px]"
-            }`}
+            class={[
+              "relative flex h-full overflow-hidden bg-phone-screen text-white select-none",
+              { "rounded-[50px]": !props.window },
+            ]}
           >
             <Show when={sceneEditorOpen() && editor()}>
               {(editor) => (
@@ -827,7 +810,7 @@ export default function MoblinScreen(props: {
                     class="relative h-full shrink-0 overflow-hidden bg-phone-screen"
                     style={{ width: `${shownPanelWidth()}px` }}
                   >
-                    <div class={`h-full ${panelHidden() ? "opacity-0" : ""}`} inert={panelHidden()}>
+                    <div class={["h-full", { "opacity-0": panelHidden() }]} inert={panelHidden()}>
                       <ReadOnly value={() => !props.remoteControl}>
                         <Panels
                           panel={shown()}
@@ -873,11 +856,12 @@ export default function MoblinScreen(props: {
                   </div>
                   <div
                     ref={(element) => (pager = element)}
-                    class={`flex min-h-0 flex-1 gap-[8px] ${
+                    class={[
+                      "flex min-h-0 flex-1 gap-[8px]",
                       allPages()
                         ? "overflow-hidden"
-                        : "snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
-                    }`}
+                        : "snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none]",
+                    ]}
                     onScroll={(event) =>
                       !allPages() &&
                       setPage(
@@ -892,9 +876,10 @@ export default function MoblinScreen(props: {
                     <For each={pages()}>
                       {(number) => (
                         <div
-                          class={`flex h-full shrink-0 flex-col ${
-                            allPages() ? "w-[100px]" : "w-full snap-start snap-always"
-                          }`}
+                          class={[
+                            "flex h-full shrink-0 flex-col",
+                            allPages() ? "w-[100px]" : "w-full snap-start snap-always",
+                          ]}
                         >
                           <Show when={number === 1}>
                             <div class="flex items-center justify-center gap-[4px] py-[2px] pr-[10px]">
@@ -903,18 +888,29 @@ export default function MoblinScreen(props: {
                                 aria-label="Moblin"
                                 onClick={() => rickRoll(props.page)}
                               >
-                                <img
-                                  src={moblinIconUrl(icon() ?? "plain")}
-                                  alt=""
-                                  class="size-[40px] object-contain"
-                                />
+                                <Loading
+                                  fallback={
+                                    <img
+                                      src={moblinIconUrl("plain")}
+                                      alt=""
+                                      class="size-[40px] object-contain"
+                                    />
+                                  }
+                                >
+                                  <img
+                                    src={moblinIconUrl(icon() ?? "plain")}
+                                    alt=""
+                                    class="size-[40px] object-contain"
+                                  />
+                                </Loading>
                               </button>
                               <button
                                 type="button"
                                 aria-label={t("Settings")}
-                                class={`grid size-[40px] place-items-center rounded-full border ${
-                                  panel() === "settings" ? "border-white" : "border-phone-border"
-                                }`}
+                                class={[
+                                  "grid size-[40px] place-items-center rounded-full border",
+                                  panel() === "settings" ? "border-white" : "border-phone-border",
+                                ]}
                                 onClick={() => toggle("settings")}
                               >
                                 <Icon name="gear" class="size-[20px]" />
@@ -955,9 +951,10 @@ export default function MoblinScreen(props: {
                                     ? undefined
                                     : t("The streamer has not let you go live.")
                                 }
-                                class={`min-w-[60px] rounded-[10px] bg-phone-live p-[5px] text-[17px] leading-tight whitespace-nowrap disabled:opacity-50 ${
-                                  props.state.streaming ? "border border-white" : ""
-                                }`}
+                                class={[
+                                  "min-w-[60px] rounded-[10px] bg-phone-live p-[5px] text-[17px] leading-tight whitespace-nowrap disabled:opacity-50",
+                                  { "border border-white": props.state.streaming },
+                                ]}
                                 onClick={() =>
                                   void (props.state.streaming
                                     ? confirmed(
@@ -994,9 +991,10 @@ export default function MoblinScreen(props: {
                           <button
                             type="button"
                             aria-label={t("Page {page}", { page: number })}
-                            class={`size-[6px] rounded-full border border-white ${
-                              number === page() ? "bg-white" : ""
-                            }`}
+                            class={[
+                              "size-[6px] rounded-full border border-white",
+                              { "bg-white": number === page() },
+                            ]}
                             onClick={() =>
                               pager?.scrollTo({
                                 left: index() * pageStride(pager),
@@ -1075,27 +1073,32 @@ export default function MoblinScreen(props: {
 export function NotConnected(props: { name: string; pane?: boolean }) {
   return (
     <div
-      class={`cheer-fade inset-0 z-10 flex items-center justify-center bg-page/60 backdrop-blur-md ${
-        props.pane ? "absolute overflow-hidden rounded-xl p-3" : "fixed px-4"
-      }`}
+      class={[
+        "cheer-fade inset-0 z-10 flex items-center justify-center bg-page/60 backdrop-blur-md",
+        props.pane ? "absolute overflow-hidden rounded-xl p-3" : "fixed px-4",
+      ]}
     >
       <div
         role="status"
-        class={`cheer-pop flex flex-col items-center border-[1.5px] border-line bg-card text-center shadow-2xl ${
+        class={[
+          "cheer-pop flex flex-col items-center border-[1.5px] border-line bg-card text-center shadow-2xl",
           props.pane
             ? "max-w-sm gap-3 rounded-2xl px-6 py-5"
-            : "max-w-md gap-4 rounded-3xl px-10 py-8"
-        }`}
+            : "max-w-md gap-4 rounded-3xl px-10 py-8",
+        ]}
       >
         <span
-          class={`grid place-items-center rounded-full bg-ghost text-muted ${props.pane ? "size-12" : "size-16"}`}
+          class={[
+            "grid place-items-center rounded-full bg-ghost text-muted",
+            props.pane ? "size-12" : "size-16",
+          ]}
         >
           <Icon name="smartphone" class={props.pane ? "size-6" : "size-8"} />
         </span>
-        <span class={`font-display font-semibold text-ink ${props.pane ? "text-lg" : "text-2xl"}`}>
+        <span class={["font-display font-semibold text-ink", props.pane ? "text-lg" : "text-2xl"]}>
           {t("{name} is not connected", { name: props.name })}
         </span>
-        <span class={`text-ink-2 ${props.pane ? "text-[13px]" : "text-[15px]"}`}>
+        <span class={["text-ink-2", props.pane ? "text-[13px]" : "text-[15px]"]}>
           {t("This page updates as soon as it connects again.")}
         </span>
       </div>

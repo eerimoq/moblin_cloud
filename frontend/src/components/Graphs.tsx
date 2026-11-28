@@ -126,7 +126,7 @@ function TimeChart(props: {
   };
 
   return (
-    <div class={`flex flex-col gap-2 ${props.fill ? "min-h-0 flex-1" : ""}`}>
+    <div class={["flex flex-col gap-2", { "min-h-0 flex-1": props.fill }]}>
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h3 class="text-[15px] font-semibold text-ink-2">{props.title}</h3>
         <Show when={props.series.length === 1 && latest(props.series[0]!) !== null}>
@@ -137,7 +137,7 @@ function TimeChart(props: {
       </div>
       <div
         ref={(element) => (container = element)}
-        class={`relative w-full ${props.fill ? "min-h-0 flex-1" : ""}`}
+        class={["relative w-full", { "min-h-0 flex-1": props.fill }]}
         onPointerMove={onPointer}
         onPointerLeave={() => setHover(null)}
       >
@@ -148,7 +148,7 @@ function TimeChart(props: {
           <svg
             width={width()}
             height={height()}
-            class={`block overflow-visible ${props.fill ? "absolute top-0 left-0" : ""}`}
+            class={["block overflow-visible", { "absolute top-0 left-0": props.fill }]}
             role="img"
             aria-label={props.title}
           >

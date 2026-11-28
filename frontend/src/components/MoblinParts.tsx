@@ -28,9 +28,10 @@ export function PanelButtons(props: {
     "grid size-[30px] place-items-center rounded-full border border-phone-border text-phone-border";
   return (
     <div
-      class={`absolute top-[3px] z-20 flex gap-[14px] rounded-[7px] p-[4px] ${
-        props.hidden ? "right-[2px] bg-phone-row" : "right-[3px]"
-      }`}
+      class={[
+        "absolute top-[3px] z-20 flex gap-[14px] rounded-[7px] p-[4px]",
+        props.hidden ? "right-[2px] bg-phone-row" : "right-[3px]",
+      ]}
     >
       <button
         type="button"
@@ -170,15 +171,17 @@ export function Toggle(props: {
       aria-checked={props.on ? "true" : "false"}
       aria-label={props.label}
       disabled={props.disabled}
-      class={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-        props.on ? "bg-phone-switch" : "bg-phone-separator"
-      }`}
+      class={[
+        "relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-50",
+        props.on ? "bg-phone-switch" : "bg-phone-separator",
+      ]}
       onClick={() => props.onToggle(!props.on)}
     >
       <span
-        class={`absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform ${
-          props.on ? "translate-x-[20px]" : ""
-        }`}
+        class={[
+          "absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform",
+          { "translate-x-[20px]": props.on },
+        ]}
       />
     </button>
   );
@@ -192,7 +195,7 @@ export function PhoneSwitch(props: {
   onToggle: (on: boolean) => void;
 }) {
   return (
-    <div class={`${rowClass} justify-between`}>
+    <div class={[rowClass, "justify-between"]}>
       <Show when={props.icon}>
         {(icon) => <Icon name={icon()} class="size-[18px] shrink-0 text-phone-tint" />}
       </Show>

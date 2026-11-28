@@ -150,9 +150,11 @@ export function MaskCanvas(props: {
     <div class="flex flex-col gap-2">
       <div
         ref={(element) => (surface = element)}
-        class={`relative w-full overflow-hidden bg-phone-preview-dark select-none ${
-          props.portrait ? "aspect-9/16" : "aspect-video"
-        } ${readOnly() ? "" : "touch-none"}`}
+        class={[
+          "relative w-full overflow-hidden bg-phone-preview-dark select-none",
+          props.portrait ? "aspect-9/16" : "aspect-video",
+          { "touch-none": !readOnly() },
+        ]}
         onPointerDown={(event) => {
           if (readOnly()) {
             return;
@@ -252,9 +254,10 @@ export function MaskCanvas(props: {
         </svg>
         {props.points.map((point, index) => (
           <span
-            class={`pointer-events-none absolute -translate-1/2 rounded-full border border-black ${
-              index === props.selectedPoint ? "size-[17px] bg-phone-warn" : "size-[12px] bg-white"
-            }`}
+            class={[
+              "pointer-events-none absolute -translate-1/2 rounded-full border border-black",
+              index === props.selectedPoint ? "size-[17px] bg-phone-warn" : "size-[12px] bg-white",
+            ]}
             style={{ left: `${point.x}%`, top: `${point.y}%` }}
           />
         ))}

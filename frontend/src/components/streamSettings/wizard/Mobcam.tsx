@@ -1,3 +1,4 @@
+import { onSettled } from "solid-js";
 import { Section } from "../../sceneEditor/Form";
 import { NextRow } from "../../sceneEditor/wizards/Sheet";
 import { General } from "./General";
@@ -6,7 +7,11 @@ import { t, tRich } from "../../../i18n";
 
 export function Mobcam(props: WizardPageProps) {
   const wizard = props.wizard;
-  wizard.set({ platform: "mobcam", name: wizard.uniqueName(t("Custom Mobcam")) });
+  onSettled(() =>
+    wizard.set((state) => {
+      Object.assign(state, { platform: "mobcam", name: wizard.uniqueName(t("Custom Mobcam")) });
+    }),
+  );
   return (
     <>
       <Section>

@@ -1,5 +1,13 @@
-import { createResource } from "../resource";
-import { createSignal, Match, Show, Switch, For } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  Errored,
+  For,
+  Loading as LoadingBoundary,
+  Match,
+  Show,
+  Switch,
+} from "solid-js";
 import Icon from "./Icon";
 import {
   Choices,
@@ -199,7 +207,7 @@ const cloudWidgetControl = (kind: CloudWidgetKind, id: string): Control => {
       : { setTipsMediaShareWidget: body };
 };
 
-type CloudWidgets = Record<CloudWidgetKind, Named[]> | undefined;
+type CloudWidgets = Record<CloudWidgetKind, Named[]>;
 
 const cloudWidgetsOf = (widgets: { id: string; name: string; type: string }[]): CloudWidgets => {
   const ofType = (type: string) =>
@@ -215,7 +223,6 @@ function CloudWidgetChoices(props: {
   remote: Remote;
   kind: CloudWidgetKind;
   widgets: CloudWidgets;
-  failed: boolean;
 }) {
   const cloud = () => props.remote.settings?.tips ?? props.remote.settings?.moblinCloud;
   const picked = () =>
@@ -231,17 +238,10 @@ function CloudWidgetChoices(props: {
         ? "setMoblinCloudWheelOfLuckWidget"
         : "setTipsMediaShareWidget";
   return (
-    <Show
-      when={props.widgets}
-      fallback={
-        <Show when={props.failed} fallback={<Loading />}>
-          <Empty text={t("Couldn't load the widgets.")} />
-        </Show>
-      }
-    >
-      {(widgets) => (
+    <Errored fallback={<Empty text={t("Couldn't load the widgets.")} />}>
+      <LoadingBoundary fallback={<Loading />}>
         <Choices
-          items={[{ id: "", name: t("None") }, ...widgets()[props.kind]]}
+          items={[{ id: "", name: t("None") }, ...props.widgets[props.kind]]}
           selected={picked()}
           disabled={props.remote.disabled(key())}
           footer={
@@ -259,8 +259,8 @@ function CloudWidgetChoices(props: {
           }
           onPick={(id) => void props.remote.control(cloudWidgetControl(props.kind, id))}
         />
-      )}
-    </Show>
+      </LoadingBoundary>
+    </Errored>
   );
 }
 
@@ -269,16 +269,12 @@ function MoblinCloud(props: {
   widgets: CloudWidgets;
   onOpen: (kind: CloudWidgetKind) => void;
 }) {
-  const name = (kind: CloudWidgetKind, id: string | undefined) => {
-    if (id === undefined) {
-      return t("None");
-    }
-    const widgets = props.widgets;
-    if (!widgets) {
-      return "…";
-    }
-    return widgets[kind].find((widget) => widget.id === id)?.name ?? t("Unknown widget");
-  };
+  const name = (kind: CloudWidgetKind, id: string | undefined) =>
+    id === undefined
+      ? t("None")
+      : (props.widgets[kind].find((widget) => widget.id === id)?.name ?? t("Unknown widget"));
+  const pendingName = (_kind: CloudWidgetKind, id: string | undefined) =>
+    id === undefined ? t("None") : "…";
   return (
     <Show when={props.remote.settings} fallback={<Loading />}>
       {(settings) => (
@@ -290,28 +286,35 @@ function MoblinCloud(props: {
             />
           }
         >
-          {(cloud) => (
-            <Group footer={t("The widgets that show what viewers do on your Moblin Cloud page.")}>
-              <NavRow
-                icon="chat"
-                label={t("Message")}
-                detail={name("alerts", cloud().alertsWidgetId)}
-                onClick={() => props.onOpen("alerts")}
-              />
-              <NavRow
-                icon="wheel"
-                label={t("Wheel of luck")}
-                detail={name("wheelOfLuck", cloud().wheelOfLuckWidgetId)}
-                onClick={() => props.onOpen("wheelOfLuck")}
-              />
-              <NavRow
-                icon="play-rectangle"
-                label={t("Media share")}
-                detail={name("media", cloud().mediaShareWidgetId)}
-                onClick={() => props.onOpen("media")}
-              />
-            </Group>
-          )}
+          {(cloud) => {
+            const rows = (name: (kind: CloudWidgetKind, id: string | undefined) => string) => (
+              <Group footer={t("The widgets that show what viewers do on your Moblin Cloud page.")}>
+                <NavRow
+                  icon="chat"
+                  label={t("Message")}
+                  detail={name("alerts", cloud().alertsWidgetId)}
+                  onClick={() => props.onOpen("alerts")}
+                />
+                <NavRow
+                  icon="wheel"
+                  label={t("Wheel of luck")}
+                  detail={name("wheelOfLuck", cloud().wheelOfLuckWidgetId)}
+                  onClick={() => props.onOpen("wheelOfLuck")}
+                />
+                <NavRow
+                  icon="play-rectangle"
+                  label={t("Media share")}
+                  detail={name("media", cloud().mediaShareWidgetId)}
+                  onClick={() => props.onOpen("media")}
+                />
+              </Group>
+            );
+            return (
+              <Errored fallback={rows(pendingName)}>
+                <LoadingBoundary fallback={rows(pendingName)}>{rows(name)}</LoadingBoundary>
+              </Errored>
+            );
+          }}
         </Show>
       )}
     </Show>
@@ -348,19 +351,19 @@ function Settings(props: { remote: Remote }) {
     media: "moblinCloud",
   };
   const parent = () => parents[page()];
-  const cloudPages: SettingsPage[] = ["moblinCloud", "alerts", "wheelOfLuck", "media"];
-  const [widgets] = createResource(
-    () => (cloudPages.includes(page()) ? props.remote.request : undefined),
-    async (request) =>
-      cloudWidgetsOf(
-        (
-          await request<{ widgets: { id: string; name: string; type: string }[] }>({
-            getWidgets: {},
-          })
-        ).widgets,
-      ),
+  const widgets = createMemo(
+    async () => {
+      const request = props.remote.request;
+      if (!request) {
+        throw new Error("no requests");
+      }
+      const answer = await request<{ widgets: { id: string; name: string; type: string }[] }>({
+        getWidgets: {},
+      });
+      return cloudWidgetsOf(answer.widgets);
+    },
+    { lazy: true },
   );
-  const loaded = (): CloudWidgets => (widgets.error ? undefined : widgets.latest);
   return (
     <Show
       when={page() !== "streams"}
@@ -390,31 +393,16 @@ function Settings(props: { remote: Remote }) {
             <Macros remote={props.remote} />
           </Match>
           <Match when={page() === "moblinCloud"}>
-            <MoblinCloud remote={props.remote} widgets={loaded()} onOpen={setPage} />
+            <MoblinCloud remote={props.remote} widgets={widgets()} onOpen={setPage} />
           </Match>
           <Match when={page() === "alerts"}>
-            <CloudWidgetChoices
-              remote={props.remote}
-              kind="alerts"
-              widgets={loaded()}
-              failed={widgets.error !== undefined}
-            />
+            <CloudWidgetChoices remote={props.remote} kind="alerts" widgets={widgets()} />
           </Match>
           <Match when={page() === "wheelOfLuck"}>
-            <CloudWidgetChoices
-              remote={props.remote}
-              kind="wheelOfLuck"
-              widgets={loaded()}
-              failed={widgets.error !== undefined}
-            />
+            <CloudWidgetChoices remote={props.remote} kind="wheelOfLuck" widgets={widgets()} />
           </Match>
           <Match when={page() === "media"}>
-            <CloudWidgetChoices
-              remote={props.remote}
-              kind="media"
-              widgets={loaded()}
-              failed={widgets.error !== undefined}
-            />
+            <CloudWidgetChoices remote={props.remote} kind="media" widgets={widgets()} />
           </Match>
         </Switch>
       </PanelView>
