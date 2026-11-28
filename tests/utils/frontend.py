@@ -391,9 +391,17 @@ class Dashboard(Client):
         return self.post(f"{self.page_path(page_id)}/test/effect", {"effect": effect, "message": message})
 
     def test_media(
-        self, url: str | None = None, message: str | None = None, page_id: str | None = None
+        self,
+        url: str | None = None,
+        message: str | None = None,
+        page_id: str | None = None,
+        start: int | None = None,
+        seconds: int | None = None,
     ) -> dict:
-        return self.post(f"{self.page_path(page_id)}/test/media", {"url": url, "message": message})
+        return self.post(
+            f"{self.page_path(page_id)}/test/media",
+            {"url": url, "message": message, "start": start, "seconds": seconds},
+        )
 
     def media_queue(self, page_id: str | None = None) -> dict:
         return self.get(f"{self.page_path(page_id)}/media")

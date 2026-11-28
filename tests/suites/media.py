@@ -407,18 +407,25 @@ class MediaTestSend(MediaTestCase):
             self.assert_backend_error(400, lambda: self.dashboard.test_media("https://vimeo.com/1"))
             self.assert_equal(self.dashboard.test_media("https://youtu.be/aaaaaaaaaaa?t=9", "Testing"), {})
             self.assert_equal(self.dashboard.test_media(), {})
+            self.assert_backend_error(400, lambda: self.dashboard.test_media(seconds=601))
+            self.assert_equal(self.dashboard.test_media(start=70, seconds=45), {})
             self.wait_until(
                 lambda: len(device.media_shares("youTube")) == 1, "the first test video in Moblin"
             )
             device.finish_media()
-            self.wait_until(lambda: len(device.media_shares("youTube")) == 2, "the test videos in Moblin")
+            self.wait_until(
+                lambda: len(device.media_shares("youTube")) == 2, "the second test video in Moblin"
+            )
+            device.finish_media()
+            self.wait_until(lambda: len(device.media_shares("youTube")) == 3, "the test videos in Moblin")
             videos = device.media_shares("youTube")
-            self.assert_equal([video["name"] for video in videos], ["mediatest", "mediatest"])
+            self.assert_equal([video["name"] for video in videos], ["mediatest"] * 3)
             self.assert_equal(
                 [video["kind"]["mediaShare"] for video in videos],
                 [
                     {"source": {"youTube": {"videoId": "aaaaaaaaaaa", "start": 9}}, "duration": 15},
                     {"source": {"youTube": {"videoId": VIDEO, "start": 0}}, "duration": 15},
+                    {"source": {"youTube": {"videoId": VIDEO, "start": 70}}, "duration": 45},
                 ],
             )
             self.assert_equal(self.dashboard.recent("media")["items"], [])

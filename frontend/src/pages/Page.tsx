@@ -21,6 +21,7 @@ import Icon, { kindIcons } from "../components/Icon";
 import Mascot from "../components/Mascot";
 import { fireConfetti } from "../confetti";
 import { subscribeChanges } from "../sse";
+import { createTimeRange, TimeRangeInputs } from "../components/TimeRange";
 import {
   cardClass,
   CloseNotice,
@@ -1266,43 +1267,19 @@ function MediaJar(props: {
 }) {
   const saved = restored(props.id).media;
   const [link, setLink] = createSignal(saved?.link ?? "");
-  const [start, setStart] = createSignal(saved?.start ?? "0:00");
   const longest = () => props.offer.seconds ?? 0;
-  const [end, setEnd] = createSignal(
-    saved?.end ?? timeText((parseTime(start()) ?? 0) + Math.min(30, longest())),
-  );
+  const range = createTimeRange({
+    start: saved?.start,
+    end: saved?.end,
+    length: Math.min(30, longest()),
+    longest,
+    tooLong: () => t("The streamer plays at most {length}.", { length: lengthText(longest()) }),
+    off: () => clip(),
+  });
+  const { start, end, seconds, changeStart } = range;
   const [message, setMessage] = createSignal(saved?.message ?? "");
   let form: HTMLFormElement | undefined;
   let linkInput: HTMLInputElement | undefined;
-  let startInput: HTMLInputElement | undefined;
-  let endInput: HTMLInputElement | undefined;
-
-  const secondsBetween = (start: string, end: string) => {
-    const from = parseTime(start);
-    const to = parseTime(end);
-    return from !== null && to !== null && to > from ? to - from : null;
-  };
-  const seconds = () => secondsBetween(start(), end());
-  let length = seconds() ?? Math.min(30, longest());
-  const endError = () => {
-    if (clip()) {
-      return "";
-    }
-    const to = parseTime(end());
-    if (to === null) {
-      return t("Enter a time like 1:30.");
-    }
-    const from = parseTime(start());
-    if (from === null) {
-      return "";
-    }
-    if (to <= from) {
-      return t("Enter an end time after the start time.");
-    }
-    return to - from > longest()
-      ? t("The streamer plays at most {length}.", { length: lengthText(longest()) })
-      : "";
-  };
   const found = () => mediaLink(link());
   const video = () => {
     const current = found();
@@ -1338,29 +1315,6 @@ function MediaJar(props: {
       );
     },
   );
-  createEffect(
-    () => !clip() && parseTime(start()) === null,
-    (invalid) => {
-      startInput?.setCustomValidity(invalid ? t("Enter a time like 1:30.") : "");
-    },
-  );
-  createEffect(endError, (error) => {
-    endInput?.setCustomValidity(error);
-  });
-
-  const changeStart = (value: string) => {
-    setStart(value);
-    const from = parseTime(value);
-    if (from !== null) {
-      setEnd(timeText(from + length));
-    }
-  };
-
-  const changeEnd = (value: string) => {
-    setEnd(value);
-    length = secondsBetween(start(), value) ?? length;
-  };
-
   const changeLink = (value: string) => {
     setLink(value);
     const from = youTubeStart(value);
@@ -1473,38 +1427,7 @@ function MediaJar(props: {
         )}
       </Show>
       <div class={["flex flex-col gap-2", { hidden: clip() }]}>
-        <div class="flex flex-wrap gap-3">
-          <label class="flex flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">{t("Start at")}</span>
-            <input
-              ref={(element) => (startInput = element)}
-              type="text"
-              inputmode="numeric"
-              required={!clip()}
-              maxlength={8}
-              value={start()}
-              onInput={(event) => changeStart(event.currentTarget.value)}
-              placeholder="0:00"
-              autocomplete="off"
-              class={[inputClass, "max-w-32"]}
-            />
-          </label>
-          <label class="flex flex-col gap-2">
-            <span class="text-[15px] font-semibold text-ink-2">{t("End at")}</span>
-            <input
-              ref={(element) => (endInput = element)}
-              type="text"
-              inputmode="numeric"
-              required={!clip()}
-              maxlength={8}
-              value={end()}
-              onInput={(event) => changeEnd(event.currentTarget.value)}
-              placeholder="0:30"
-              autocomplete="off"
-              class={[inputClass, "max-w-32"]}
-            />
-          </label>
-        </div>
+        <TimeRangeInputs range={range} />
         <p class="text-[15px] text-muted">
           {t("The streamer plays at most {length}.", { length: lengthText(longest()) })}
         </p>

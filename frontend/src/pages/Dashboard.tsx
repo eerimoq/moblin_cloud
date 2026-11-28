@@ -25,6 +25,8 @@ import {
 } from "../viewport";
 import { subscribeChanges } from "../sse";
 import { copyText } from "../components/CopyButton";
+import { createTimeRange, TimeRangeInputs } from "../components/TimeRange";
+import { mediaLink, parseTime, timeText, youTubeStart } from "../data/youtube";
 import Icon, { kindIcons } from "../components/Icon";
 import Modal, { ask } from "../components/Modal";
 import { createRecent, Latest, now, timeAgo } from "../components/Latest";
@@ -1868,11 +1870,33 @@ function SendForm(props: {
   label: string;
   effects?: string[];
   link?: boolean;
-  send: (message: string, effect: string | undefined, url: string | undefined) => Promise<unknown>;
+  send: (
+    message: string,
+    effect: string | undefined,
+    url: string | undefined,
+    times: { start?: number; seconds?: number },
+  ) => Promise<unknown>;
   onSignOut: () => void;
 }) {
   const [message, setMessage] = createSignal("");
   const [link, setLink] = createSignal("");
+  const clip = () => {
+    const found = mediaLink(link());
+    return found !== null && found.platform !== "youtube";
+  };
+  const range = createTimeRange({
+    length: 15,
+    longest: () => 600,
+    tooLong: () => t("Test videos play at most 10 minutes."),
+    off: () => !props.link || clip(),
+  });
+  const changeLink = (value: string) => {
+    setLink(value);
+    const from = youTubeStart(value);
+    if (from !== null) {
+      range.changeStart(timeText(from));
+    }
+  };
   const [effect, setEffect] = createSignal(props.effects?.[0]);
   const [sending, setSending] = createSignal(false);
   const [sent, flashSent] = createFlash(3000);
@@ -1886,7 +1910,17 @@ function SendForm(props: {
     setError(null);
     setSending(true);
     try {
-      await props.send(message(), effect(), link().trim() || undefined);
+      await props.send(
+        message(),
+        effect(),
+        link().trim() || undefined,
+        range.off()
+          ? {}
+          : {
+              start: parseTime(range.start()) ?? undefined,
+              seconds: range.seconds() ?? undefined,
+            },
+      );
       flashSent();
     } catch (error) {
       if (isSignedOut(error)) {
@@ -1921,9 +1955,12 @@ function SendForm(props: {
           aria-label={t("YouTube or Twitch clip link (optional)")}
           placeholder={t("YouTube or Twitch clip link (optional)")}
           value={link()}
-          onInput={(event) => setLink(event.currentTarget.value)}
+          onInput={(event) => changeLink(event.currentTarget.value)}
           class={inputClass}
         />
+        <div class={{ hidden: clip() }}>
+          <TimeRangeInputs range={range} />
+        </div>
       </Show>
       <Show when={props.effects}>
         {(effects) => (
@@ -1973,7 +2010,7 @@ const testTexts: Record<RecentKind, { description: string; label: string }> = {
   },
   media: {
     description: t(
-      "Play 15 seconds of a YouTube video, or a Twitch clip, in Moblin, to check that it works. Test videos need no approval.",
+      "Play a part of a YouTube video, or a Twitch clip, in Moblin, to check that it works. Test videos need no approval.",
     ),
     label: t("Send test video"),
   },
@@ -1993,8 +2030,8 @@ function TestSend(props: {
       effects={props.kind === "effect" ? effects : undefined}
       link={props.kind === "media"}
       onSignOut={props.onSignOut}
-      send={(message, effect, url) =>
-        sendTest(props.session, props.kind, { message, effect, url }, props.page)
+      send={(message, effect, url, times) =>
+        sendTest(props.session, props.kind, { message, effect, url, ...times }, props.page)
       }
     />
   );

@@ -24,6 +24,10 @@ pub(super) struct TestRequest {
     effect: Option<String>,
     #[serde(default)]
     url: Option<String>,
+    #[serde(default)]
+    start: Option<u32>,
+    #[serde(default)]
+    seconds: Option<u32>,
 }
 
 fn test_page(
@@ -199,17 +203,30 @@ async fn test_media(
     let link = request.url.as_deref().unwrap_or("dQw4w9WgXcQ");
     let user = account.name().to_string();
     let item = match youtube::video_id(link) {
-        Some(video) => deliveries::Item::Media {
-            user,
-            message,
-            video,
-            start: youtube::start(link).unwrap_or(0),
-            seconds: api.pages.get(&page_id).media_rules().seconds.min(15),
-            title: "Test".to_string(),
-            platform: MediaPlatform::YouTube,
-            link: None,
-            thumbnail: None,
-        },
+        Some(video) => {
+            let start = request.start.or_else(|| youtube::start(link)).unwrap_or(0);
+            let seconds = request
+                .seconds
+                .unwrap_or_else(|| api.pages.get(&page_id).media_rules().seconds.min(15));
+            if start > 24 * 60 * 60 || !(1..=600).contains(&seconds) {
+                return Err(failure(
+                    "invalid-video",
+                    StatusCode::BAD_REQUEST,
+                    "Enter a start time in the first 24 hours and a length from 1 to 600 seconds.",
+                ));
+            }
+            deliveries::Item::Media {
+                user,
+                message,
+                video,
+                start,
+                seconds,
+                title: "Test".to_string(),
+                platform: MediaPlatform::YouTube,
+                link: None,
+                thumbnail: None,
+            }
+        }
         None => video(api, 600, &VideoRequest::of(link.to_string()))
             .await?
             .delivery(user, message),

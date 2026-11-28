@@ -757,7 +757,7 @@ export type SettingsChanges = Page &
 export const sendTest = (
   session: string,
   kind: RecentKind,
-  body: { message?: string; effect?: string; url?: string },
+  body: { message?: string; effect?: string; url?: string; start?: number; seconds?: number },
   page: string,
 ) => call<object>(`${accountPath(page)}/test/${kind}`, session, post(body));
 

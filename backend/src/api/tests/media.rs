@@ -336,6 +336,32 @@ async fn streamers_test_their_videos() {
         request["request"]["data"]["tip"]["kind"]["mediaShare"]["source"]["youTube"]["videoId"],
         "dQw4w9WgXcQ"
     );
+    answer(&mut socket, &request, Value::Null).await;
+    for times in [
+        json!({"seconds": 0}),
+        json!({"seconds": 601}),
+        json!({"start": 86401}),
+    ] {
+        let response = test(times).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.text().await.unwrap(),
+            "Enter a start time in the first 24 hours and a length from 1 to 600 seconds."
+        );
+    }
+    let response = test(json!({
+        "url": "https://youtu.be/aaaaaaaaaaa?t=9",
+        "start": 70,
+        "seconds": 45
+    }))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let request = receive(&mut socket).await;
+    assert_eq!(
+        request["request"]["data"]["tip"]["kind"],
+        json!({"mediaShare": {"source": {"youTube": {"videoId": "aaaaaaaaaaa", "start": 70}}, "duration": 45}})
+    );
     socket.close(None).await.unwrap();
     for _ in 0..100 {
         if !api.remote_control.is_connected(&page_id) {
